@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import App from './App';
@@ -6,6 +6,11 @@ import { I18nProvider } from './i18n';
 import { BrandingContext, createAppTheme, ThemeModeContext, type ThemeMode } from './theme';
 import type { OrgBranding } from '@worktime3/shared/branding';
 import { DatePickerLocalization } from './ConfigField';
+import { parseReceiptHash } from './receiptHash';
+
+const PhoneUpload = lazy(() => import('./PhoneUpload'));
+// A phone that scanned the expense form's QR code gets the receipt page alone, without signing in.
+const receiptHandoff = parseReceiptHash(window.location.hash);
 
 const THEME_STORAGE_KEY = 'worktime.themeMode';
 
@@ -45,7 +50,13 @@ function Root() {
           <CssBaseline />
           <I18nProvider>
             <DatePickerLocalization>
-              <App />
+              {receiptHandoff ? (
+                <Suspense fallback={null}>
+                  <PhoneUpload token={receiptHandoff.token} lang={receiptHandoff.lang} />
+                </Suspense>
+              ) : (
+                <App />
+              )}
             </DatePickerLocalization>
           </I18nProvider>
         </ThemeProvider>

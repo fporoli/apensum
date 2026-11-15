@@ -118,7 +118,7 @@ export function useAttachmentDraft(onError: (message: string) => void, options: 
       </Box>
     ) : null;
 
-  return { files, clear: () => setFiles([]), onPaste, dropProps, dragging, button, chips };
+  return { files, add, clear: () => setFiles([]), onPaste, dropProps, dragging, button, chips };
 }
 
 /** Outline shown around a composer while files are dragged over it. */

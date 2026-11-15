@@ -27,6 +27,7 @@ import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon } from './icons';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
+import { ReceiptCaptureButtons } from './receiptCapture';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -155,6 +156,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const [receipt, setReceipt] = useState<Attachment | null>(null);
   const onDraftError = useCallback((message: string) => setError(message), []);
   const draft = useAttachmentDraft(onDraftError, { max: 1 });
+  const addDraftFiles = draft.add;
+  const addReceiptFile = useCallback((file: File) => addDraftFiles([file]), [addDraftFiles]);
 
   async function reload() {
     setLoading(true);
@@ -472,7 +475,10 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                 )}
                 {draft.chips}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {draft.button}
+                  <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                    {draft.button}
+                    <ReceiptCaptureButtons orgId={orgId} authHeaders={authHeaders} onFile={addReceiptFile} onError={onDraftError} />
+                  </Box>
                   <Typography variant="body2" color="text.secondary">
                     {receipt && editingId ? t('expenses.receipt.replaceHint') : t('expenses.receipt.hint')}
                   </Typography>

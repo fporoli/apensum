@@ -35,6 +35,8 @@ import { BalancesService } from './balances.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
 import { ExpensesController } from './expenses.controller';
+import { ReceiptHandoffController } from './receipt-handoff.controller';
+import { ReceiptHandoffService } from './receipt-handoff.service';
 import { ExpenseReportsController } from './expense-reports.controller';
 import { WorkflowsController } from './workflows.controller';
 import { StaticDataController } from './static-data.controller';
@@ -78,6 +80,7 @@ import { DbService } from './db.service';
     TimesheetsController,
     ProjectTimesheetsController,
     ExpensesController,
+    ReceiptHandoffController,
     ExpenseReportsController,
     WorkflowsController,
     StaticDataController,
@@ -92,6 +95,7 @@ import { DbService } from './db.service';
     BalancesService,
     WorkTimeModelService,
     DocumentsService,
+    ReceiptHandoffService,
     TimesheetDocumentsService,
     ForwardMailService,
     RbacService,

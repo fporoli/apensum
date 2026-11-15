@@ -294,7 +294,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   person, each shared with the person (listed on their Documents page, notified) or HR only. Access is the
   grant alone, not the reporting line; a person never edits their own file.
 - Expenses: the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
-  shown there when editing; the list is newest first.
+  shown there when editing; the list is newest first. `receiptCapture.tsx` adds a photo (phone camera via
+  `capture`, webcam dialog on a computer), a screen area (`getDisplayMedia` + crop) and a QR code: the PC
+  creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone
+  opens `#/receipt/<token>` (`PhoneUpload.tsx`, rendered by `main.tsx` without login, token = credential)
+  and sends the photo; the PC polls, takes the file into the form and uploads it as usual.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).
