@@ -25,4 +25,12 @@ async function bootstrap() {
     );
   }
 }
-void bootstrap();
+bootstrap().catch((err: NodeJS.ErrnoException) => {
+  // eslint-disable-next-line no-console
+  console.error(
+    err?.code === 'EADDRINUSE'
+      ? `ERROR: port ${process.env.API_PORT ?? 8001} is already in use (another API still running?)`
+      : err,
+  );
+  process.exit(1);
+});

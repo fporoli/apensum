@@ -41,7 +41,8 @@ only pg/Keycloak/Mailpit in Docker, with the API and web on the host: pg 5431,
 Keycloak 8091, web 3001, API 8001, Mailpit SMTP 1025 / inbox UI 8025. This is
 the day-to-day setup. **local** (N=2, `.env.local`) runs everything in Docker
 behind Caddy on 5432/8092/3002/8002. The VS Code "Development …" launch configs
-debug the host-run API and web against `.env.dev`; "Local Full Stack: Docker +
+debug the host-run API and web against `.env.dev` (the API launch first stops a leftover
+Node API on 8001, `scripts/free-port.mjs`; Chrome waits for the fresh API, `scripts/wait-for-api.mjs`); "Local Full Stack: Docker +
 Chrome" brings up the local compose stack (task `local: stack up`) and opens
 Chrome on 3002. Host processes must not run on local's ports, which Caddy holds.
 
@@ -251,6 +252,22 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   revert them silently.
 - Re-resolve the user's role when they switch organizations. Never cache one
   global role.
+- Modules (`packages/shared/src/modules.ts`): optional feature areas an org switches on or off
+  (Organization settings -> Modules, `GET/PUT organizations/:id/modules`, stored in
+  `organizations.settings.modules`, unset = the module's default). A module owns permission objects;
+  `permissionIdsOf` drops them when it is off, so its navbar entries disappear and every `can()` on
+  them fails, with no per-endpoint module check. A new module: a registry entry, its permission
+  objects (with a changelog as usual) and i18n `modules.<id>` / `modules.<id>.description`.
+- Requests (module `requests`, `requests.controller.ts`, `Requests.tsx`, tables 052): tickets to the
+  line manager or a department, with a message thread (`request_messages`, kind `message` or `event`).
+  Handlers are worked out per call, never stored: the requester's manager in force, or the department's
+  members in force and its leader, plus `nav.requests:edit:all` (admin). Any handler takes, answers, sets
+  the status, archives; the requester answers and resolves/reopens. Every change notifies the other
+  side (`source_table = 'requests'`, the bell opens the thread).
+  Messages carry attachments (054): files go through `DocumentsService` (`documents` rows, linked by
+  `request_message_documents`), uploaded multipart in `files` on create/reply, downloaded via
+  `requests/:id/attachments/:documentId` with the request's access check; the web composer takes the
+  paperclip, drag-and-drop and pasted screenshots (`attachments.tsx`).
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

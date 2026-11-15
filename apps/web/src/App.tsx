@@ -54,6 +54,7 @@ import {
   TimerIcon,
   TuneIcon,
   WorkspacesIcon,
+  ForumIcon,
 } from './icons';
 
 const Home = lazy(() => import('./Home'));
@@ -77,6 +78,7 @@ const TeamView = lazy(() => import('./TeamView'));
 const BalanceReport = lazy(() => import('./BalanceReport'));
 const AuditLog = lazy(() => import('./AuditLog'));
 const Users = lazy(() => import('./Users'));
+const Requests = lazy(() => import('./Requests'));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DRAWER_WIDTH = 232;
@@ -97,6 +99,7 @@ type Section =
   | 'balances'
   | 'invitations'
   | 'approvals'
+  | 'requests'
   | 'users'
   | 'audit'
   | 'admin'
@@ -116,6 +119,7 @@ const SECTION_TO_HASH: Record<Section, string> = {
   hours: '#/team-hours',
   balances: '#/balances',
   approvals: '#/approvals',
+  requests: '#/requests',
   users: '#/users',
   invitations: '#/invitations',
   management: '#/teams',
@@ -188,6 +192,7 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   balances: 'nav.balances',
   invitations: 'nav.invitations',
   approvals: 'nav.approvals',
+  requests: 'nav.requests',
   users: 'nav.users',
   audit: 'nav.audit',
   admin: 'nav.admin',
@@ -217,6 +222,7 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'absences':
     case 'expenses':
     case 'expenseReports':
+    case 'requests':
       return true;
     case 'users':
       return flags.canSeeUsers;
@@ -270,6 +276,11 @@ export default function App() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [approvalsCount, setApprovalsCount] = useState(0);
   const [hrPendingCount, setHrPendingCount] = useState(0);
+  const [requestsCount, setRequestsCount] = useState(0);
+  // A request to open on the Requests page (from a notification).
+  const [requestFocus, setRequestFocus] = useState<string | null>(null);
+  // Bumped when an organization's modules change, so the permissions (and navbar) reload.
+  const [permissionsVersion, setPermissionsVersion] = useState(0);
 
   const orgId = currentOrgId;
   const flags = useMemo(() => resolveRoleFlags(session, orgId), [session, orgId]);
@@ -340,7 +351,7 @@ export default function App() {
     };
     // authHeaders changes when the SSO token refreshes; that must not drop and refetch permissions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.userId, orgId]);
+  }, [session?.userId, orgId, permissionsVersion]);
 
   // The organization's look and feel (theme colors, app bar logo); the default theme when signed out.
   const { branding, setBranding } = useBranding();
@@ -369,6 +380,7 @@ export default function App() {
     if (!session || !orgId) {
       setApprovalsCount(0);
       setHrPendingCount(0);
+      setRequestsCount(0);
       return;
     }
     try {
@@ -394,9 +406,19 @@ export default function App() {
       } else {
         setHrPendingCount(0);
       }
+      if (allowed('requests')) {
+        tasks.push(
+          fetch(`${API}/organizations/${orgId}/requests/summary`, { headers })
+            .then((r) => r.json())
+            .then((d) => setRequestsCount(typeof d?.inbox === 'number' ? d.inbox : 0))
+            .catch(() => {}),
+        );
+      } else {
+        setRequestsCount(0);
+      }
       await Promise.all(tasks);
     } catch { /* offline fallback */ }
-  }, [session, orgId, flags.canManage, isReviewer, authHeaders]);
+  }, [session, orgId, flags.canManage, isReviewer, authHeaders, allowed]);
 
   const refreshWorkStatus = useCallback(async () => {
     if (!session) {
@@ -471,6 +493,11 @@ export default function App() {
   function navigateToNotification(n: Notification) {
     if (n.type === 'workflow.assigned') {
       navigate('approvals');
+      return;
+    }
+    if (n.source_table === 'requests') {
+      setRequestFocus(n.source_table_uuid);
+      navigate('requests');
       return;
     }
     if (n.source_table === 'expense_reports') navigate('expenseReports');
@@ -577,6 +604,7 @@ export default function App() {
         { id: 'workTime', section: 'workTime', label: t('nav.workTime'), icon: <TimerIcon fontSize="small" />, visible: allowed('workTime') },
         { id: 'absences', section: 'absences', label: t('nav.absences'), icon: <BeachAccessIcon fontSize="small" />, visible: allowed('absences') },
         { id: 'timesheet', section: 'timesheet', label: t('nav.monthlyTimesheet'), icon: <CalendarMonthIcon fontSize="small" />, visible: allowed('timesheet') },
+        { id: 'requests', section: 'requests', label: t('nav.requests'), icon: <ForumIcon fontSize="small" />, visible: allowed('requests'), badge: requestsCount },
       ],
     },
     {
@@ -972,6 +1000,16 @@ export default function App() {
                   onChanged={() => void refreshBadges()}
                 />
               )}
+              {section === 'requests' && allowed('requests') && orgId && (
+                <Requests
+                  orgId={orgId}
+                  userId={session?.userId ?? null}
+                  authHeaders={authHeaders}
+                  focusId={requestFocus}
+                  refreshKey={liveNotification}
+                  onChanged={() => void refreshBadges()}
+                />
+              )}
               {section === 'users' && allowed('users') && orgId && (
                 <Users
                   orgId={orgId}
@@ -995,7 +1033,7 @@ export default function App() {
                 />
               )}
               {section === 'orgSettings' && allowed('orgSettings') && orgId && (
-                <OrganizationSettings orgId={orgId} authHeaders={authHeaders} />
+                <OrganizationSettings orgId={orgId} authHeaders={authHeaders} onModulesChanged={() => setPermissionsVersion((v) => v + 1)} />
               )}
               {section === 'expenseProcessing' && allowed('expenseProcessing') && orgId && (
                 <ExpenseProcessing orgId={orgId} authHeaders={authHeaders} />

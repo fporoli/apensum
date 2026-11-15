@@ -3,7 +3,7 @@ import { and, asc, eq, getTableColumns, gte, inArray, lt, sql, type SQL } from '
 import { alias } from 'drizzle-orm/pg-core';
 import { DbService } from './db.service';
 import { VersionsService } from './versions.service';
-import { callerUserId, can, canManageItem, canManageTeamMembers, isOrgMember, reachesAll } from './access';
+import { callerUserId, can, canManageItem, canManageTeamMembers, isOrgMember, listableUserIds, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { teams, team_members, organization_memberships, users, roles, project_times, projects, subprojects } from './db/schema';
 
@@ -192,13 +192,16 @@ export class TeamsController {
       return { members: [], entries: [] };
     }
 
-    const members = await db
+    const allMembers = await db
       .select({ user_id: organization_memberships.user_id, email: users.email, display_name: users.display_name })
       .from(team_members)
       .innerJoin(organization_memberships, eq(organization_memberships.id, team_members.membership_id))
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(eq(team_members.team_id, id))
       .orderBy(asc(users.display_name));
+    // Only the members the caller may see (`nav.teamHours` scope, plus self and their reports).
+    const visible = await listableUserIds(db, team.organization_id, callerId, 'nav.teamHours');
+    const members = visible === 'all' ? allMembers : allMembers.filter((m) => visible.includes(m.user_id));
     if (members.length === 0) return { members: [], entries: [] };
 
     const memberIds = members.map((m) => m.user_id);

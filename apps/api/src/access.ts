@@ -9,6 +9,7 @@ import {
   type Action,
   type Scope,
 } from '@worktime3/shared/permissions';
+import { resolveModules, withoutDisabledModules } from '@worktime3/shared/modules';
 
 /** The slice of Db these helpers need — easy to fake in tests, satisfied by any real Db. */
 export type Executor = Pick<Db, 'execute'>;
@@ -215,13 +216,16 @@ export async function isProjectPeriodLocked(
 /** The caller's permission ids in this organization, merged across all their active roles. */
 export async function permissionIdsOf(db: Executor, organizationId: string, userId: string): Promise<Set<string>> {
   const rows = await db.execute(
-    sql`SELECT r.name, rp.permission_id FROM organization_memberships m
+    sql`SELECT r.name, rp.permission_id, o.settings -> 'modules' AS modules FROM organization_memberships m
+        JOIN organizations o ON o.id = m.organization_id
         JOIN membership_roles mr ON mr.membership_id = m.id
         JOIN roles r ON r.id = mr.role_id
         LEFT JOIN role_permissions rp ON rp.role_id = r.id
         WHERE m.organization_id = ${organizationId} AND m.user_id = ${userId} AND m.status = 'active'`,
   );
-  return mergePermissionRows(rows.rows as { name: string; permission_id: string | null }[]);
+  const list = rows.rows as { name: string; permission_id: string | null; modules?: unknown }[];
+  // A module the organization switched off takes its navbar entries' permissions with it (modules.ts).
+  return withoutDisabledModules(mergePermissionRows(list), resolveModules(list[0]?.modules));
 }
 
 /** Folds `(role name, permission id)` rows into one set; an `owner` row means the whole catalogue. */

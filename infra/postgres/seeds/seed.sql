@@ -655,3 +655,37 @@ SELECT pg_temp.seed_id(e.id || ':item'), pg_temp.seed_id(e.user_id || ':expense-
 FROM seed_expenses e
 WHERE EXISTS (SELECT 1 FROM expense_reports r WHERE r.id = pg_temp.seed_id(e.user_id || ':expense-report:' || e.month))
 ON CONFLICT DO NOTHING;
+
+-- Requests (module "requests"): a few demo tickets to HR and to line managers, with their threads.
+-- Fixed ids, so re-seeding adds nothing.
+INSERT INTO requests (id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, assignee_user_id, opened_at, last_activity_at, resolved_at, archived_at) VALUES
+  ('eeee0000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222227', 'department', 'dddddddd-0000-0000-0000-000000000002',
+   'New home address', 'in_progress', '22222222-2222-2222-2222-222222222226', now() - interval '3 days', now() - interval '2 days', NULL, NULL),
+  ('eeee0000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222228', 'department', 'dddddddd-0000-0000-0000-000000000002',
+   'Question about my payslip', 'open', NULL, now() - interval '5 hours', now() - interval '5 hours', NULL, NULL),
+  ('eeee0000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222227', 'manager', NULL,
+   'Home office on Fridays', 'open', NULL, now() - interval '1 day', now() - interval '1 day', NULL, NULL),
+  ('eeee0000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222224', 'manager', NULL,
+   'Training budget for the sales team', 'resolved', '22222222-2222-2222-2222-222222222223', now() - interval '20 days', now() - interval '14 days', now() - interval '14 days', now() - interval '14 days')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO request_messages (id, request_id, author_user_id, kind, body, data, posted_at) VALUES
+  ('eeee1111-0000-0000-0000-000000000001', 'eeee0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222227', 'message',
+   E'Hello HR,\nI moved last weekend. My new address is Bahnhofstrasse 12, 8001 Zürich. Could you update it?', '{}', now() - interval '3 days'),
+  ('eeee1111-0000-0000-0000-000000000002', 'eeee0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222226', 'event', NULL,
+   '{"assignee": "22222222-2222-2222-2222-222222222226", "status": "in_progress"}', now() - interval '2 days 1 hour'),
+  ('eeee1111-0000-0000-0000-000000000003', 'eeee0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222226', 'message',
+   'Thanks Ueli. Please also send the change through My data so it is recorded; I will approve it right away.', '{}', now() - interval '2 days'),
+  ('eeee1111-0000-0000-0000-000000000004', 'eeee0000-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222228', 'message',
+   'My last payslip shows fewer overtime hours than my timesheet. Could someone check it?', '{}', now() - interval '5 hours'),
+  ('eeee1111-0000-0000-0000-000000000005', 'eeee0000-0000-0000-0000-000000000003', '22222222-2222-2222-2222-222222222227', 'message',
+   'Could I work from home on Fridays from next month on?', '{}', now() - interval '1 day'),
+  ('eeee1111-0000-0000-0000-000000000006', 'eeee0000-0000-0000-0000-000000000004', '22222222-2222-2222-2222-222222222224', 'message',
+   'We would like to book a negotiation training for the sales team (CHF 4,800). Is there budget left this year?', '{}', now() - interval '20 days'),
+  ('eeee1111-0000-0000-0000-000000000007', 'eeee0000-0000-0000-0000-000000000004', '22222222-2222-2222-2222-222222222223', 'message',
+   'Yes, approved. Go ahead and book it.', '{}', now() - interval '14 days'),
+  ('eeee1111-0000-0000-0000-000000000008', 'eeee0000-0000-0000-0000-000000000004', '22222222-2222-2222-2222-222222222223', 'event', NULL,
+   '{"status": "resolved"}', now() - interval '14 days'),
+  ('eeee1111-0000-0000-0000-000000000009', 'eeee0000-0000-0000-0000-000000000004', '22222222-2222-2222-2222-222222222223', 'event', NULL,
+   '{"archived": true}', now() - interval '14 days')
+ON CONFLICT DO NOTHING;

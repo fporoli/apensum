@@ -619,6 +619,59 @@ erDiagram
 > of a row that already exists here, so a missed push is never a lost
 > notification, only a delayed one.
 
+## Requests (3 tables)
+
+The "requests" module (052): a ticket a person sends to their line manager or
+to a department, with a message thread. Who handles it is not stored: for
+`target_kind = 'manager'` it is the requester's manager in force
+(`employee_assignments`), for `'department'` everyone whose assignment in force
+is in `target_department_id` plus its leader. Changes notify the other side
+through `notifications` (`source_table = 'requests'`).
+
+```mermaid
+erDiagram
+    ORGANIZATIONS ||--o{ REQUESTS : "scopes"
+    USERS ||--o{ REQUESTS : "requester_user_id"
+    USERS ||--o{ REQUESTS : "assignee_user_id"
+    DEPARTMENTS ||--o{ REQUESTS : "target_department_id"
+    REQUESTS ||--o{ REQUEST_MESSAGES : "thread"
+    REQUEST_MESSAGES ||--o{ REQUEST_MESSAGE_DOCUMENTS : "attachments"
+    DOCUMENTS ||--o{ REQUEST_MESSAGE_DOCUMENTS : "document_id"
+    USERS ||--o{ REQUEST_MESSAGES : "author_user_id"
+
+    REQUESTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid requester_user_id FK
+        text target_kind "manager | department"
+        uuid target_department_id FK "nullable — set iff target_kind = department"
+        text subject
+        text status "open | in_progress | resolved"
+        uuid assignee_user_id FK "nullable — the handler who took it"
+        timestamptz opened_at
+        timestamptz last_activity_at
+        timestamptz resolved_at "nullable"
+        timestamptz archived_at "nullable — out of the inboxes, read-only"
+    }
+    REQUEST_MESSAGES {
+        uuid id PK
+        uuid request_id FK
+        uuid author_user_id FK "nullable"
+        text kind "message | event"
+        text body "nullable — a message needs text or an attachment (checked by the API)"
+        jsonb data "event details: status, assignee, archived"
+        timestamptz posted_at
+    }
+    REQUEST_MESSAGE_DOCUMENTS {
+        uuid message_id PK, FK
+        uuid document_id PK, FK
+    }
+    ORGANIZATIONS { uuid id PK }
+    USERS { uuid id PK }
+    DEPARTMENTS { uuid id PK }
+    DOCUMENTS { uuid id PK }
+```
+
 ## Versioning (1 table)
 
 Generic per-record version history: one row per tracked

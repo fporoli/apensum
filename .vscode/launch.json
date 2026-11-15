@@ -20,7 +20,7 @@
       "name": "Development Web: Launch Chrome",
       "url": "http://localhost:3001",
       "webRoot": "${workspaceFolder}/apps/web",
-      "preLaunchTask": "web: dev server",
+      "preLaunchTask": "web: dev server + API",
       "sourceMaps": true,
       "cleanUp": "wholeBrowser"
     },

@@ -10,6 +10,7 @@ import { isValidEmail } from './auth.controller';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { parseBranding, validateBranding, type OrgBranding } from '@worktime3/shared/branding';
+import { MODULES, resolveModules, validateModules } from '@worktime3/shared/modules';
 import {
   organizations,
   organization_memberships,
@@ -136,6 +137,46 @@ export class OrgsController {
     void this.audit.record(id, callerId, 'organization.branding', 'organization', id, logged).catch(() => {});
     void this.versions.record('organizations', id, 'update_delta', callerId, logged).catch(() => {});
     return { ok: true, branding };
+  }
+
+  /**
+   * Which optional modules (packages/shared/src/modules.ts) the organization uses, for every member
+   * (the web app hides switched-off ones); `catalogue` lists every module with its default.
+   */
+  @Get(':id/modules')
+  async getModules(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const catalogue = MODULES.map((m) => ({ id: m.id, caption: m.caption, defaultEnabled: m.defaultEnabled }));
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true, modules: resolveModules(undefined), catalogue };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !(await isOrgMember(db, id, callerId))) return { ok: true, modules: resolveModules(undefined), catalogue };
+    const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, id));
+    const settings = (org?.settings ?? {}) as Record<string, unknown>;
+    return { ok: true, modules: resolveModules(settings.modules), catalogue };
+  }
+
+  /** Switches modules on or off: `{ "<module id>": true|false, ... }`, merged into the stored choice. */
+  @Put(':id/modules')
+  async setModules(@Param('id') id: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId) return { ok: false, error: 'unauthenticated' };
+    if (!(await can(db, id, callerId, 'nav.orgSettings', 'edit'))) return { ok: false, error: 'forbidden' };
+    const result = validateModules(body);
+    if (!result.ok) return result;
+    const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, id));
+    if (!org) return { ok: false, error: 'not-found' };
+    const stored = ((org.settings ?? {}) as Record<string, unknown>).modules;
+    const modules = { ...(stored && typeof stored === 'object' ? (stored as Record<string, boolean>) : {}), ...result.modules };
+    await db
+      .update(organizations)
+      .set({ settings: sql`${organizations.settings} || ${JSON.stringify({ modules })}::jsonb` })
+      .where(eq(organizations.id, id));
+    const logged = { settings: { modules } };
+    void this.audit.record(id, callerId, 'organization.modules', 'organization', id, logged).catch(() => {});
+    void this.versions.record('organizations', id, 'update_delta', callerId, logged).catch(() => {});
+    return { ok: true, modules: resolveModules(modules) };
   }
 
   @Patch(':id')

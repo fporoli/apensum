@@ -67,6 +67,10 @@
     <include file="049-permission-hr-team-overview.sql" relativeToChangelogFile="true"/>
     <include file="050-departments-employment.sql" relativeToChangelogFile="true"/>
     <include file="051-permission-employment.sql" relativeToChangelogFile="true"/>
+    <include file="052-requests.sql" relativeToChangelogFile="true"/>
+    <include file="053-permission-requests.sql" relativeToChangelogFile="true"/>
+    <include file="054-request-attachments.sql" relativeToChangelogFile="true"/>
+    <include file="055-permission-team-hours-reports.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

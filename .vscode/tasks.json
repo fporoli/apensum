@@ -13,8 +13,39 @@
         "panel": "shared"
       },
       "dependsOn": [
-        "dev: services up"
-      ]
+        "dev: services up",
+        "api: free port"
+      ],
+      "dependsOrder": "sequence"
+    },
+    {
+      "label": "api: free port",
+      "type": "shell",
+      "command": "node scripts/free-port.mjs 8001",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "api: wait",
+      "type": "shell",
+      "command": "node scripts/wait-for-api.mjs http://localhost:8001/api/v1/health",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "web: dev server + API",
+      "dependsOn": [
+        "web: dev server",
+        "api: wait"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
     },
     {
       "label": "web: dev server",

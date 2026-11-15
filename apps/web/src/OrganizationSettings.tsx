@@ -24,6 +24,7 @@ import { SettingsIcon } from './icons';
 import BrandingSettings from './BrandingSettings';
 import WorkTimeSettings from './WorkTimeSettings';
 import DepartmentSettings from './DepartmentSettings';
+import ModuleSettings from './ModuleSettings';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -52,9 +53,11 @@ interface SsoConfig {
 interface OrganizationSettingsProps {
   orgId: string;
   authHeaders: () => Promise<Record<string, string>>;
+  /** A module was switched on or off: the caller's permissions (and navbar) need reloading. */
+  onModulesChanged?: () => void;
 }
 
-export default function OrganizationSettings({ orgId, authHeaders }: OrganizationSettingsProps) {
+export default function OrganizationSettings({ orgId, authHeaders, onModulesChanged }: OrganizationSettingsProps) {
   const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -220,6 +223,8 @@ export default function OrganizationSettings({ orgId, authHeaders }: Organizatio
           </Button>
         </Box>
       </Paper>
+
+      <ModuleSettings orgId={orgId} authHeaders={authHeaders} onChanged={onModulesChanged} />
 
       <BrandingSettings orgId={orgId} authHeaders={authHeaders} />
 

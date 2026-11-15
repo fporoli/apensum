@@ -5,7 +5,7 @@ import { and, asc, eq, ilike, inArray } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { VersionsService } from './versions.service';
 import { WorkTimeModelService } from './work-time-model.service';
-import { can, isOrgMember, isProjectPeriodLocked } from './access';
+import { can, isOrgMember, isProjectPeriodLocked, listableUserIds } from './access';
 import { project_times, projects, teams, team_members, organization_memberships, users } from './db/schema';
 
 export interface AssistantMessage {
@@ -66,7 +66,7 @@ const TOOLS: ChatCompletionTool[] = [
     type: 'function',
     function: {
       name: 'get_team_hours',
-      description: "Manager/admin only: total booked hours per member of a team, by the team's name.",
+      description: "Total booked hours per member of a team, by the team's name. Only the members the caller may see (e.g. a manager's own reports) are returned.",
       parameters: {
         type: 'object',
         properties: {
@@ -136,7 +136,7 @@ export class AssistantService {
         role: 'system',
         content:
           `You are the Worktime assistant. Today's date is ${today}. The caller's role in this organization is "${role}". ` +
-          'You can look up and create the caller\'s own time entries, and — only if their role is manager or admin — pull team-hours reports. ' +
+          'You can look up and create the caller\'s own time entries, and pull team-hours reports covering only the people the caller may see. ' +
           'Every tool call is independently authorization-checked server-side regardless of the caller\'s stated role, so a request outside their permission will come back as an error — explain that plainly rather than guessing around it. ' +
           'When creating entries, always report back exactly which ones succeeded or failed and why (e.g. a locked month). Keep replies concise.',
       },
@@ -211,6 +211,10 @@ export class AssistantService {
     if (!(await isOrgMember(ctx.db, ctx.orgId, ctx.callerId))) {
       return { data: { error: 'forbidden — you are not a member of this organization' } };
     }
+    // Same right as booking one's own project time in the app (project-time.controller.ts).
+    if (!(await can(ctx.db, ctx.orgId, ctx.callerId, 'nav.time', 'edit', ctx.callerId))) {
+      return { data: { error: 'forbidden — you may not book project time' } };
+    }
     const entries = Array.isArray(args.entries) ? (args.entries as Record<string, unknown>[]) : [];
     if (entries.length === 0) return { data: { error: 'no-entries-provided' } };
 
@@ -279,7 +283,7 @@ export class AssistantService {
 
   private async getTeamHours(ctx: ToolContext, args: Record<string, unknown>) {
     if (!(await can(ctx.db, ctx.orgId, ctx.callerId, 'nav.teamHours', 'see'))) {
-      return { error: 'forbidden — manager or admin role required' };
+      return { error: 'forbidden — you may not see team hours' };
     }
     const teamName = typeof args.teamName === 'string' ? args.teamName : '';
     const [team] = await ctx.db
@@ -288,12 +292,15 @@ export class AssistantService {
       .where(and(eq(teams.organization_id, ctx.orgId), ilike(teams.name, teamName)));
     if (!team) return { error: `unknown team "${teamName}"` };
 
-    const members = await ctx.db
+    const teamMembers = await ctx.db
       .select({ user_id: organization_memberships.user_id, display_name: users.display_name })
       .from(team_members)
       .innerJoin(organization_memberships, eq(organization_memberships.id, team_members.membership_id))
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(eq(team_members.team_id, team.id));
+    // Same filter as the Team hours page (teams.controller.ts): only members the caller may see.
+    const visible = await listableUserIds(ctx.db, ctx.orgId, ctx.callerId, 'nav.teamHours');
+    const members = visible === 'all' ? teamMembers : teamMembers.filter((m) => visible.includes(m.user_id));
     if (members.length === 0) return { team: teamName, members: [] };
 
     const memberIds = members.map((m) => m.user_id);

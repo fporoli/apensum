@@ -58,6 +58,9 @@ export const NAV_OBJECTS: readonly PermissionObject[] = [
   { id: 'nav.teamHours', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.teamHours' },
   { id: 'nav.balances', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.balances' },
   { id: 'nav.approvals', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.approvals' },
+  // Requests module (modules.ts): `own` = send and follow one's own requests, `all` = handle every
+  // request of the organization. Handling as manager or department member needs no extra grant.
+  { id: 'nav.requests', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.requests' },
   { id: 'nav.users', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.users' },
   { id: 'nav.invitations', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.invitations' },
   // Scope here is ownership: `own` = teams you lead and projects/subprojects you own, `all` = every one.

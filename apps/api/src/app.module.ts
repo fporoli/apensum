@@ -24,6 +24,7 @@ import { BalancesController } from './balances.controller';
 import { WorkSchedulesController } from './work-schedules.controller';
 import { TeamOverviewController } from './team-overview.controller';
 import { EmploymentController } from './employment.controller';
+import { RequestsController } from './requests.controller';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
@@ -65,6 +66,7 @@ import { DbService } from './db.service';
     WorkSchedulesController,
     TeamOverviewController,
     EmploymentController,
+    RequestsController,
     TimesheetsController,
     ProjectTimesheetsController,
     ExpensesController,
