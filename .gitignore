@@ -154,3 +154,7 @@ apps/api/data/
 
 # Azure specs rendered by infra/azure/provision.sh (contain secrets)
 infra/azure/.rendered/
+
+# Website media (demo videos): recorded locally, shipped via the site-media release
+apps/site/media/
+apps/site/videos/out/

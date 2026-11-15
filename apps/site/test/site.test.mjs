@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DICTS, build, missingOperatorFields } from '../build.mjs';
@@ -53,7 +53,7 @@ test('builds every page; internal links resolve; nothing loads from third partie
       const digits = fullConfig.operator.phone.replace(/\D/g, '');
       assert.ok(!html.replace(/\D/g, ' ').includes(digits.slice(-7)) && !html.includes(fullConfig.operator.phone), `${file}: phone in plain text`);
       // Only same-site resources: no external src= and no external stylesheet.
-      for (const m of html.matchAll(/\s(?:src|href)="([^"]+)"/g)) {
+      for (const m of html.matchAll(/\s(?:src|href|poster)="([^"]+)"/g)) {
         const url = m[1];
         if (/^(mailto:|#)/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin].includes(url)) continue;
         if (/^https:\/\//.test(url)) {
@@ -106,4 +106,32 @@ test('/ picks the browser language, German otherwise', () => {
   assert.equal(preferredLang('en-US,en'), 'en');
   assert.equal(preferredLang('es-ES'), 'de');
   assert.equal(preferredLang(undefined), 'de');
+});
+
+test('the home page shows the role videos when all four are there, cards otherwise', () => {
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  const media = join(out, 'media-src');
+  try {
+    mkdirSync(media);
+    const quiet = { warn() {} };
+    build({ outDir: join(out, 'a'), config: fullConfig, log: quiet, mediaDir: media });
+    let html = readFileSync(join(out, 'a', 'de', 'index.html'), 'utf8');
+    assert.doesNotMatch(html, /<video/);
+    assert.match(html, /class="grid grid-4"/);
+
+    for (const r of ['employee', 'manager', 'hr', 'admin']) {
+      writeFileSync(join(media, `demo-${r}.mp4`), `video ${r}`);
+      writeFileSync(join(media, `demo-${r}.jpg`), `poster ${r}`);
+    }
+    build({ outDir: join(out, 'b'), config: fullConfig, log: quiet, mediaDir: media });
+    html = readFileSync(join(out, 'b', 'de', 'index.html'), 'utf8');
+    assert.equal((html.match(/<video /g) ?? []).length, 4);
+    assert.match(html, /<source src="\/media\/demo-hr\.mp4\?v=[0-9a-f]{10}" type="video\/mp4">/);
+    assert.match(html, /poster="\/media\/demo-hr\.jpg\?v=[0-9a-f]{10}"/);
+    assert.ok(existsSync(join(out, 'b', 'media', 'demo-admin.mp4')));
+    assert.doesNotMatch(html, /Video auf Deutsch/);
+    assert.match(readFileSync(join(out, 'b', 'fr', 'index.html'), 'utf8'), /Vidéo en allemand/);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
 });

@@ -382,3 +382,23 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 .profile-links a { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
 .profile-links a:hover { text-decoration: underline; }
 .profile .muted.small { margin-top: -6px; }
+
+/* Role demo videos (home) */
+.role-rows { display: grid; gap: 64px; }
+.role-row { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(0, 1.25fr); gap: 48px; align-items: center; }
+.role-row.flip { grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr); }
+.role-row.flip .role-text { order: 2; }
+.role-text h3 { font-size: 1.5rem; margin-bottom: 8px; }
+.role-text p { color: var(--muted); font-size: 1.05rem; }
+.role-text .small { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+.role-text .small .icon { width: 16px; height: 16px; }
+.role-video { margin: 0; }
+.role-video video {
+  display: block; width: 100%; height: auto; aspect-ratio: 16 / 10; border-radius: 14px;
+  border: 1px solid var(--line); background: #0f3fa8; box-shadow: var(--shadow-lg);
+}
+@media (max-width: 900px) {
+  .role-row, .role-row.flip { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .role-row.flip .role-text { order: 0; }
+  .role-rows { gap: 48px; }
+}

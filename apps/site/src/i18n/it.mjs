@@ -94,6 +94,8 @@ export default {
 
   'roles.title': 'La vista giusta per ognuno',
   'roles.lead': 'Ognuno vede ciò di cui ha bisogno – e solo ciò che può vedere.',
+  'roles.videoNote': 'Video in tedesco',
+  'roles.videoLabel': 'Video dimostrativo: {{role}}',
   'roles.employee.title': 'Collaboratori',
   'roles.employee.text': 'Registrare il tempo in pochi secondi, chiedere assenze, inserire spese e trovare tutti i documenti personali in un unico posto.',
   'roles.manager.title': 'Superiori',

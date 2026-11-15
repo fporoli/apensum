@@ -1,0 +1,14 @@
+{
+  "name": "apensum-demo-videos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Records the role demo videos for the website from the dev stack (not a workspace: installed only when recording)",
+  "type": "module",
+  "scripts": {
+    "record": "node record.mjs"
+  },
+  "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "1.1.0",
+    "playwright": "1.63.0"
+  }
+}

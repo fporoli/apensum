@@ -190,6 +190,38 @@ UPDATE roles SET translations = '{"de":"Administrator"}'::jsonb || translations 
 UPDATE roles SET translations = '{"de":"Manager"}'::jsonb || translations WHERE id = '00000000-0000-0000-0000-000000000006';
 UPDATE roles SET translations = '{"de":"Benutzer"}'::jsonb || translations WHERE id = '00000000-0000-0000-0000-000000000003';
 
+-- Acme's dropdown values in de/fr/it (the `values` above are English). Per language, keys already
+-- translated win, so translations edited since are kept and the seed stays re-runnable.
+UPDATE static_data s SET translation = s.translation || (
+  SELECT jsonb_object_agg(l.key, l.value || COALESCE(s.translation -> l.key, '{}'::jsonb)) FROM jsonb_each(v.t) l)
+FROM (VALUES
+  ('expenses', 'expense_category', '{
+    "de": {"travel": "Reisen", "meals": "Verpflegung & Bewirtung", "supplies": "Büromaterial", "software": "Software & Abonnemente", "other": "Sonstiges"},
+    "fr": {"travel": "Voyages", "meals": "Repas & représentation", "supplies": "Fournitures de bureau", "software": "Logiciels & abonnements", "other": "Autres"},
+    "it": {"travel": "Viaggi", "meals": "Pasti & rappresentanza", "supplies": "Materiale d''ufficio", "software": "Software & abbonamenti", "other": "Altro"}}'::jsonb),
+  ('expenses', 'expense_subcategory', '{
+    "de": {"travel$flight": "Flug", "travel$hotel": "Hotel", "travel$taxi": "Taxi/Fahrdienst", "meals$client_lunch": "Kundenessen", "meals$team_lunch": "Teamessen"},
+    "fr": {"travel$flight": "Vol", "travel$hotel": "Hôtel", "travel$taxi": "Taxi/VTC", "meals$client_lunch": "Repas client", "meals$team_lunch": "Repas d''équipe"},
+    "it": {"travel$flight": "Volo", "travel$hotel": "Albergo", "travel$taxi": "Taxi/NCC", "meals$client_lunch": "Pranzo con clienti", "meals$team_lunch": "Pranzo di team"}}'::jsonb),
+  ('expenses', 'billing_type', '{
+    "de": {"billable": "Dem Kunden verrechenbar", "non_billable": "Nicht verrechenbar", "internal": "Intern / Gemeinkosten"},
+    "fr": {"billable": "Facturable au client", "non_billable": "Non facturable", "internal": "Interne / frais généraux"},
+    "it": {"billable": "Fatturabile al cliente", "non_billable": "Non fatturabile", "internal": "Interno / costi generali"}}'::jsonb),
+  ('projects', 'project_type', '{
+    "de": {"internal": "Intern", "customer": "Kunde", "research": "Forschung"},
+    "fr": {"internal": "Interne", "customer": "Client", "research": "Recherche"},
+    "it": {"internal": "Interno", "customer": "Cliente", "research": "Ricerca"}}'::jsonb),
+  ('project_times', 'billability', '{
+    "de": {"billable": "Verrechenbar", "non_billable": "Nicht verrechenbar"},
+    "fr": {"billable": "Facturable", "non_billable": "Non facturable"},
+    "it": {"billable": "Fatturabile", "non_billable": "Non fatturabile"}}'::jsonb),
+  ('organization_memberships', 'membership_status', '{
+    "de": {"active": "Aktiv", "invited": "Eingeladen", "suspended": "Gesperrt"},
+    "fr": {"active": "Actif", "invited": "Invité", "suspended": "Suspendu"},
+    "it": {"active": "Attivo", "invited": "Invitato", "suspended": "Sospeso"}}'::jsonb)
+) AS v(entity, enum_name, t)
+WHERE s.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND s.entity = v.entity AND s.enum_name = v.enum_name;
+
 
 -- Local password identities for the demo users: the password is the email's local part
 -- (admin@acme.com / admin, adam@acme.com / adam, ...). Lets the web login screen sign in

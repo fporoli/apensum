@@ -24,7 +24,7 @@ import {
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { DescriptionIcon, DownloadIcon, SearchIcon, VisibilityIcon } from './icons';
-import { formatFileSize, formatLocaleDate, formatLocaleNumber } from './localeFormat';
+import { formatFileSize, formatLocaleDate } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -89,6 +89,25 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
     void load();
   }, [load]);
 
+  // Expense category labels (static data, translated per language) for the expense lines.
+  const [expenseCategories, setExpenseCategories] = useState<{ values: Record<string, string>; translation: Record<string, Record<string, string>> }>({ values: {}, translation: {} });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/organizations/${orgId}/static-data/expenses`, { headers: await authHeaders() });
+        const rows = await res.json();
+        const row = Array.isArray(rows) ? rows.find((r: { enum_name?: string }) => r.enum_name === 'expense_category') : undefined;
+        if (!cancelled && row) setExpenseCategories({ values: row.values ?? {}, translation: row.translation ?? {} });
+      } catch {
+        /* the raw key is shown instead */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, authHeaders]);
+
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview.url);
   }, [preview]);
@@ -124,8 +143,13 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
           return [label, `${formatLocaleDate(d.date, locale)}${end}`].filter(Boolean).join(' · ');
         }
         case 'expense': {
-          const amount = c.value != null && c.value !== '' ? `${formatLocaleNumber(Number(c.value), locale)} ${c.currency ?? ''}`.trim() : '';
-          return [c.category, amount, c.comment, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
+          const amount =
+            c.value != null && c.value !== ''
+              ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.value))} ${c.currency ?? ''}`.trim()
+              : '';
+          const key = String(c.category ?? '');
+          const label = key ? (expenseCategories.translation[locale]?.[key] ?? expenseCategories.values[key] ?? key) : '';
+          return [label, amount, c.comment, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         }
         case 'request':
           return [c.subject, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
@@ -133,7 +157,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
           return [c.title, c.category ? t(`personnelDocs.category.${c.category}`) : '', formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
       }
     },
-    [locale, monthLabel, translated, t],
+    [locale, monthLabel, translated, t, expenseCategories],
   );
 
   const years = useMemo(() => [...new Set((docs ?? []).map((d) => d.date.slice(0, 4)))].sort().reverse(), [docs]);

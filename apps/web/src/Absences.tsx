@@ -302,7 +302,9 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
             onChange={(d: Dayjs | null) => {
               const next = d && d.isValid() ? d.format('YYYY-MM-DD') : '';
               setDateStart(next);
-              if (next && !dateEnd) setDateEnd(next);
+              // Typing a date passes through valid-looking partial years (2, 20, 202): only a full
+              // year moves the end date along, when it is empty or would lie before the start.
+              if (next && d && d.year() >= 1900 && (!dateEnd || dateEnd < next)) setDateEnd(next);
             }}
             slotProps={{ textField: { size: 'small', sx: { minWidth: 160 } } }}
           />

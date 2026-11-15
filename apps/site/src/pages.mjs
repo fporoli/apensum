@@ -135,6 +135,34 @@ function holidayCard(ctx) {
 </div>`;
 }
 
+/**
+ * One row per role with its demo video (apps/site/media/demo-<role>.mp4, recorded by
+ * videos/record.mjs), alternating sides. Null when the videos are not there: the cards are shown.
+ */
+function roleVideos(ctx) {
+  const { t, lang, assets } = ctx;
+  const video = (key) => assets.media?.[`demo-${key}.mp4`];
+  if (!ROLES.every(([key]) => video(key))) return null;
+  const rows = ROLES.map(([key, ic], i) => {
+    const poster = assets.media[`demo-${key}.jpg`];
+    const title = t(`roles.${key}.title`);
+    return `<div class="role-row${i % 2 ? ' flip' : ''}">
+      <div class="role-text">
+        <div class="feature-icon">${icon(ic)}</div>
+        <h3>${title}</h3>
+        <p>${t(`roles.${key}.text`)}</p>
+        ${lang === 'de' ? '' : `<p class="muted small">${icon('globe')}${t('roles.videoNote')}</p>`}
+      </div>
+      <figure class="role-video">
+        <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} aria-label="${t('roles.videoLabel', { role: title })}" width="1440" height="900">
+          <source src="${video(key)}" type="video/mp4">
+        </video>
+      </figure>
+    </div>`;
+  });
+  return `<div class="role-rows">\n    ${rows.join('\n    ')}\n    </div>`;
+}
+
 export function home(ctx) {
   const { t, link } = ctx;
   const card = (prefix, [key, ic]) => `<article class="card feature">
@@ -192,15 +220,13 @@ export function home(ctx) {
   </div>
 </section>
 
-<section class="section">
+<section class="section" id="roles">
   <div class="wrap">
     <div class="section-head">
       <h2>${t('roles.title')}</h2>
       <p class="lead">${t('roles.lead')}</p>
     </div>
-    <div class="grid grid-4">
-    ${ROLES.map((r) => card('roles', r)).join('\n    ')}
-    </div>
+    ${roleVideos(ctx) ?? `<div class="grid grid-4">\n    ${ROLES.map((r) => card('roles', r)).join('\n    ')}\n    </div>`}
   </div>
 </section>
 

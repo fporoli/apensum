@@ -94,6 +94,8 @@ export default {
 
   'roles.title': 'Für alle die passende Sicht',
   'roles.lead': 'Alle sehen, was sie brauchen – und nur, was sie sehen dürfen.',
+  'roles.videoNote': 'Video auf Deutsch',
+  'roles.videoLabel': 'Demo-Video: {{role}}',
   'roles.employee.title': 'Mitarbeitende',
   'roles.employee.text': 'Zeit in Sekunden erfassen, Absenzen beantragen, Spesen einreichen und alle persönlichen Dokumente an einem Ort finden.',
   'roles.manager.title': 'Vorgesetzte',

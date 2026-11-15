@@ -95,6 +95,8 @@ export default {
 
   'roles.title': 'La bonne vue pour chacun',
   'roles.lead': 'Chacun voit ce dont il a besoin – et seulement ce qu’il a le droit de voir.',
+  'roles.videoNote': 'Vidéo en allemand',
+  'roles.videoLabel': 'Vidéo de démonstration\u00a0: {{role}}',
   'roles.employee.title': 'Collaborateurs',
   'roles.employee.text': 'Saisir son temps en quelques secondes, demander des absences, déclarer des frais et retrouver tous ses documents au même endroit.',
   'roles.manager.title': 'Responsables',

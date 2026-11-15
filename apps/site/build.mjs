@@ -4,7 +4,7 @@
 //   node build.mjs            build (warns about an incomplete legal notice)
 //   node build.mjs --strict   fail instead (the deploy uses this)
 import { createHash } from 'node:crypto';
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import baseConfig, { REQUIRED_OPERATOR_FIELDS } from './site.config.mjs';
@@ -46,7 +46,7 @@ function multilingual({ title, blocks, assets, noindex }) {
 `;
 }
 
-export function build({ outDir = join(ROOT, 'dist'), strict = false, config = baseConfig, log = console } = {}) {
+export function build({ outDir = join(ROOT, 'dist'), strict = false, config = baseConfig, log = console, mediaDir = join(ROOT, 'media') } = {}) {
   const missing = missingOperatorFields(config);
   if (missing.length) {
     const msg = `site: the legal notice (Impressum) lacks operator.${missing.join(', operator.')} in apps/site/site.config.mjs`;
@@ -59,7 +59,17 @@ export function build({ outDir = join(ROOT, 'dist'), strict = false, config = ba
   cpSync(join(ROOT, 'static'), outDir, { recursive: true });
   // Assets are cached for a year (infra/site/Caddyfile): the ?v= content hash makes a change visible.
   const versioned = (name) => `/assets/${name}?v=${createHash('sha256').update(readFileSync(join(ROOT, 'static', 'assets', name))).digest('hex').slice(0, 10)}`;
-  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js') };
+  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), media: {} };
+  // Demo videos and posters (apps/site/media, not in git: recorded by videos/record.mjs, deployed
+  // from the site-media release). Pages show only what is there.
+  if (existsSync(mediaDir)) {
+    mkdirSync(join(outDir, 'media'), { recursive: true });
+    for (const name of readdirSync(mediaDir).filter((f) => /^[\w.-]+\.(mp4|webm|jpg|png)$/.test(f))) {
+      const data = readFileSync(join(mediaDir, name));
+      writeFileSync(join(outDir, 'media', name), data);
+      assets.media[name] = `/media/${name}?v=${createHash('sha256').update(data).digest('hex').slice(0, 10)}`;
+    }
+  }
 
   const files = [];
   const write = (path, content) => {

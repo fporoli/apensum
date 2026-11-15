@@ -151,11 +151,20 @@ const SOURCE_TITLE_FNS: Record<string, (item: ActionItem) => string | null> = {
     item.project_time_period ? `${item.project_time_period.project_name} · ${getSourceTitle(item.project_time_period.period_start)}` : null,
 };
 
-function correspondingObject(item: ActionItem): string {
+/** The API's (English) source labels, shown in the user's language. Others are shown as they come. */
+const SOURCE_KEYS: Record<string, string> = {
+  'Vacation Request': 'approvals.source.absence',
+  'Expense Report': 'approvals.source.expenseReport',
+  'Project time': 'approvals.source.projectTimesheet',
+  'Timesheet Period': 'approvals.source.timesheet',
+};
+
+function correspondingObject(item: ActionItem, t: TFunction): string {
   if (!item.source) return '—';
+  const source = SOURCE_KEYS[item.source] ? t(SOURCE_KEYS[item.source]) : item.source;
   const fn = item.source_name ? SOURCE_TITLE_FNS[item.source_name] : undefined;
   const title = fn?.(item);
-  return title ? `${item.source} ${title}` : item.source;
+  return title ? `${source} ${title}` : source;
 }
 
 interface ApprovalsProps {
@@ -442,7 +451,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
     const person = itemPerson(item);
     const detail = actionItemDetail(item);
     return [
-      t('approvals.mail.intro', { kind: actionItemLabel(item.definition_name, t), object: correspondingObject(item) }),
+      t('approvals.mail.intro', { kind: actionItemLabel(item.definition_name, t), object: correspondingObject(item, t) }),
       person ? `${person.name} <${person.email}>` : '',
       detail !== '—' ? detail : '',
       item.started ? t('approvals.mail.since', { date: formatLocaleDate(item.started.slice(0, 10), locale) }) : '',
@@ -464,7 +473,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
       item.project_time_period?.user_display_name,
       item.project_time_period?.user_email,
       actionItemLabel(item.definition_name, t),
-      correspondingObject(item),
+      correspondingObject(item, t),
       actionItemDetail(item),
     ]
       .filter(Boolean)
@@ -527,7 +536,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                     </TableCell>
                     <TableCell><Chip label={actionItemLabel(item.definition_name, t)} size="small" variant="outlined" /></TableCell>
                     <TableCell>
-                      {correspondingObject(item)}
+                      {correspondingObject(item, t)}
                       {item.absence && (
                         <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5 }}>
                           <Chip label={formatAbsenceType(item.absence.absence_type, t)} size="small" variant="outlined" />
@@ -909,7 +918,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
               ? [{ id: itemPersonId(forwardingItem) as string, name: itemPerson(forwardingItem)!.name, email: itemPerson(forwardingItem)!.email }]
               : []
           }
-          defaultSubject={t('approvals.mail.subject', { kind: actionItemLabel(forwardingItem.definition_name, t), object: correspondingObject(forwardingItem) })}
+          defaultSubject={t('approvals.mail.subject', { kind: actionItemLabel(forwardingItem.definition_name, t), object: correspondingObject(forwardingItem, t) })}
           defaultMessage={itemMessage(forwardingItem)}
           authHeaders={authHeaders}
         />

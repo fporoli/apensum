@@ -95,6 +95,8 @@ export default {
 
   'roles.title': 'The right view for everyone',
   'roles.lead': 'Everyone sees what they need – and only what they are allowed to see.',
+  'roles.videoNote': 'Video in German',
+  'roles.videoLabel': 'Demo video: {{role}}',
   'roles.employee.title': 'Employees',
   'roles.employee.text': 'Record time in seconds, request absences, file expenses and find every personal document in one place.',
   'roles.manager.title': 'Managers',
