@@ -296,7 +296,7 @@ export default {
   'contact.showPhone': 'Show phone number',
   'about.bio': [
     'Hello, I am {{name}}, a computer science graduate of ETH Zurich with more than 30 years in Swiss IT. I turn complex business processes into robust software.',
-    'I have built mission-critical systems from the ground up: the UBS CRM Workbench, used by about 1,500 people, the Swiss-wide rollout of TWINT and a new geoportal. Since 2016 I have been developing EFIT, the new-vehicle ordering platform of Emil Frey, and as CTO of Salomo AG I built an AI platform – from speech recognition to generated reports. In 1995 I was the first Java engineer in Switzerland, at Sun Microsystems.',
+    'I have built mission-critical systems from the ground up: the UBS CRM Workbench, used globally in FX operations, the Swiss-wide rollout of TWINT and a new geoportal. Since 2016 I have been developing EFIT, the new-vehicle ordering platform of Emil Frey, and as CTO of Salomo AG I built an AI platform – from speech recognition to generated reports. In 1995 I was the first Java engineer in Switzerland, at Sun Microsystems.',
     'Apensum brings together what I do best: clean data models, well-thought-out workflows and modern, AI-assisted development. I speak Italian, German, French and English – which is why Apensum has been in four languages from day one. My motto: where there’s a will, there’s a way.',
   ],
   'about.status.title': 'Where Apensum stands',
