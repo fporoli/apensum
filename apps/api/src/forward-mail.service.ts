@@ -11,12 +11,12 @@ const MAX_SUBJECT = 200;
 const MAX_MESSAGE = 5000;
 
 const FOOTER: Record<string, (name: string) => string> = {
-  en: (name) => `Sent by ${name} via Worktime. Reply to this e-mail to answer ${name}.`,
-  de: (name) => `Gesendet von ${name} über Worktime. Antworte auf diese E-Mail, um ${name} zu antworten.`,
-  fr: (name) => `Envoyé par ${name} via Worktime. Répondez à cet e-mail pour répondre à ${name}.`,
-  it: (name) => `Inviato da ${name} tramite Worktime. Rispondi a questa e-mail per rispondere a ${name}.`,
+  en: (name) => `Sent by ${name} via Apensum. Reply to this e-mail to answer ${name}.`,
+  de: (name) => `Gesendet von ${name} über Apensum. Antworte auf diese E-Mail, um ${name} zu antworten.`,
+  fr: (name) => `Envoyé par ${name} via Apensum. Répondez à cet e-mail pour répondre à ${name}.`,
+  it: (name) => `Inviato da ${name} tramite Apensum. Rispondi a questa e-mail per rispondere a ${name}.`,
 };
-const OPEN: Record<string, string> = { en: 'Open in Worktime', de: 'In Worktime öffnen', fr: 'Ouvrir dans Worktime', it: 'Apri in Worktime' };
+const OPEN: Record<string, string> = { en: 'Open in Apensum', de: 'In Apensum öffnen', fr: 'Ouvrir dans Apensum', it: 'Apri in Apensum' };
 
 export interface ForwardInput {
   userIds?: unknown;

@@ -135,7 +135,7 @@ export class AssistantService {
       {
         role: 'system',
         content:
-          `You are the Worktime assistant. Today's date is ${today}. The caller's role in this organization is "${role}". ` +
+          `You are the Apensum assistant. Today's date is ${today}. The caller's role in this organization is "${role}". ` +
           'You can look up and create the caller\'s own time entries, and pull team-hours reports covering only the people the caller may see. ' +
           'Every tool call is independently authorization-checked server-side regardless of the caller\'s stated role, so a request outside their permission will come back as an error — explain that plainly rather than guessing around it. ' +
           'When creating entries, always report back exactly which ones succeeded or failed and why (e.g. a locked month). Keep replies concise.',

@@ -211,7 +211,7 @@ export class AuthController {
     // Best-effort welcome mail (local catcher); never fail registration over it.
     void sendMail({
       to: email,
-      subject: 'Welcome to Worktime',
+      subject: 'Welcome to Apensum',
       text: `Hi ${body.displayName.trim()},\n\nYour account and personal workspace "${slug}" are ready.\n`,
     }).catch(() => {});
     return { ok: true, ...session };

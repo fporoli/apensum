@@ -8,7 +8,7 @@ export type Locale = 'en' | 'de' | 'fr' | 'it';
 // prettier-ignore
 export const DICTIONARIES: Record<Locale, Record<string, string>> = {
   en: {
-    'appbar.title': 'Worktime',
+    'appbar.title': 'Apensum',
 
     'nav.myWork': 'My Work',
     'nav.home': 'Home',
@@ -1312,7 +1312,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'mail.toPlaceholder': "Choose colleagues",
     'mail.subject': "Subject",
     'mail.message': "Message",
-    'mail.hint': "Sent by Worktime with a link to this item. Replies go to your own e-mail address.",
+    'mail.hint': "Sent by Apensum with a link to this item. Replies go to your own e-mail address.",
     'mail.send': "Send",
     'mail.sent': "E-mail sent to {{count}} recipient(s).",
     'mail.error.generic': "The e-mail could not be sent: {{error}}",
@@ -1474,7 +1474,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'users.col.department': "Department / function",
   },
   de: {
-    'appbar.title': 'Worktime',
+    'appbar.title': 'Apensum',
 
     'nav.myWork': 'Meine Arbeit',
     'nav.home': 'Übersicht',
@@ -2778,7 +2778,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'mail.toPlaceholder': "Kolleginnen und Kollegen wählen",
     'mail.subject': "Betreff",
     'mail.message': "Nachricht",
-    'mail.hint': "Wird von Worktime mit einem Link auf diesen Eintrag versendet. Antworten gehen an deine eigene E-Mail-Adresse.",
+    'mail.hint': "Wird von Apensum mit einem Link auf diesen Eintrag versendet. Antworten gehen an deine eigene E-Mail-Adresse.",
     'mail.send': "Senden",
     'mail.sent': "E-Mail an {{count}} Empfänger gesendet.",
     'mail.error.generic': "Die E-Mail konnte nicht gesendet werden: {{error}}",
@@ -2940,7 +2940,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'users.col.department': "Abteilung / Funktion",
   },
   fr: {
-    'appbar.title': 'Worktime',
+    'appbar.title': 'Apensum',
 
     'nav.myWork': 'Mon travail',
     'nav.home': 'Tableau de bord',
@@ -4244,7 +4244,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'mail.toPlaceholder': "Choisir des collègues",
     'mail.subject': "Objet",
     'mail.message': "Message",
-    'mail.hint': "Envoyé par Worktime avec un lien vers cet élément. Les réponses arrivent à votre propre adresse e-mail.",
+    'mail.hint': "Envoyé par Apensum avec un lien vers cet élément. Les réponses arrivent à votre propre adresse e-mail.",
     'mail.send': "Envoyer",
     'mail.sent': "E-mail envoyé à {{count}} destinataire(s).",
     'mail.error.generic': "L’e-mail n’a pas pu être envoyé : {{error}}",
@@ -4406,7 +4406,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'users.col.department': "Département / fonction",
   },
   it: {
-    'appbar.title': 'Worktime',
+    'appbar.title': 'Apensum',
 
     'nav.myWork': 'Il mio lavoro',
     'nav.home': 'Dashboard',
@@ -5710,7 +5710,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'mail.toPlaceholder': "Scegli colleghi",
     'mail.subject': "Oggetto",
     'mail.message': "Messaggio",
-    'mail.hint': "Inviato da Worktime con un link a questa voce. Le risposte arrivano al tuo indirizzo e-mail.",
+    'mail.hint': "Inviato da Apensum con un link a questa voce. Le risposte arrivano al tuo indirizzo e-mail.",
     'mail.send': "Invia",
     'mail.sent': "E-mail inviata a {{count}} destinatari.",
     'mail.error.generic': "Impossibile inviare l’e-mail: {{error}}",

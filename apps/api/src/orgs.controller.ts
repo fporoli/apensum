@@ -28,7 +28,7 @@ export function appBaseUrl(): string {
 export function buildInviteEmail(orgName: string, token: string): { subject: string; text: string } {
   const link = `${appBaseUrl()}/?invite=${encodeURIComponent(token)}`;
   return {
-    subject: `You've been invited to ${orgName} on Worktime`,
+    subject: `You've been invited to ${orgName} on Apensum`,
     text: `Hi,\n\nYou've been invited to join "${orgName}".\n\nAccept it here: ${link}\n\nOr paste this token on the Invited tab of the login screen: ${token}\n`,
   };
 }

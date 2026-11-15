@@ -65,7 +65,7 @@ test('forwarding needs recipients, a subject and a message, within limits', () =
 test('the forwarded mail carries the link and who sent it, in the recipient language', () => {
   const text = forwardMailText('Bitte anschauen', 'https://app/#/approvals', 'Marta A', 'de-CH');
   assert.match(text, /Bitte anschauen/);
-  assert.match(text, /In Worktime öffnen: https:\/\/app\/#\/approvals/);
+  assert.match(text, /In Apensum öffnen: https:\/\/app\/#\/approvals/);
   assert.match(text, /Gesendet von Marta A/);
   assert.match(forwardMailText('x', 'l', 'M', 'es'), /Sent by M/);
 });
