@@ -1,0 +1,109 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DICTS, build, missingOperatorFields } from '../build.mjs';
+import { LANGS, PAGES, pagePath } from '../src/layout.mjs';
+import { preferredLang } from '../serve.mjs';
+import baseConfig from '../site.config.mjs';
+
+const placeholders = (v) => [...JSON.stringify(v).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
+const fullConfig = { ...baseConfig, appUrl: 'https://app.example.ch', operator: { ...baseConfig.operator, name: 'Test Person', street: 'Weg 1', city: '8000 Zürich' } };
+
+test('every language has the same texts as English', () => {
+  const ref = DICTS.en;
+  for (const lang of LANGS) {
+    const dict = DICTS[lang];
+    assert.deepEqual(Object.keys(dict).sort(), Object.keys(ref).sort(), `${lang}: keys differ from en`);
+    for (const key of Object.keys(ref)) {
+      assert.equal(Array.isArray(dict[key]), Array.isArray(ref[key]), `${lang} ${key}: list vs text`);
+      if (Array.isArray(ref[key])) assert.equal(dict[key].length, ref[key].length, `${lang} ${key}: list length`);
+      assert.deepEqual(placeholders(dict[key]), placeholders(ref[key]), `${lang} ${key}: placeholders`);
+      assert.ok(JSON.stringify(dict[key]).trim().length > 2, `${lang} ${key}: empty`);
+    }
+  }
+});
+
+test('German texts use Swiss spelling (no ß)', () => {
+  assert.doesNotMatch(JSON.stringify(DICTS.de), /ß/);
+});
+
+test('slugs are unique per language and URL-safe', () => {
+  for (const lang of LANGS) {
+    const paths = PAGES.map((p) => pagePath(DICTS, lang, p));
+    assert.equal(new Set(paths).size, paths.length, lang);
+    for (const p of paths) assert.match(p, /^\/[a-z]{2}\/([a-z-]+\/)?$/, p);
+  }
+});
+
+test('builds every page; internal links resolve; nothing loads from third parties', () => {
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  try {
+    const { files, missing } = build({ outDir: out, config: fullConfig, log: { warn() {} } });
+    assert.deepEqual(missing, []);
+    for (const lang of LANGS) for (const page of PAGES) assert.ok(files.includes(join(pagePath(DICTS, lang, page), 'index.html')), `${lang} ${page}`);
+    for (const f of ['index.html', '404.html', 'sitemap.xml', 'robots.txt', 'favicon.svg', 'assets/site.css']) assert.ok(existsSync(join(out, f)), f);
+
+    for (const file of files.filter((f) => f.endsWith('.html'))) {
+      const html = readFileSync(join(out, file), 'utf8');
+      assert.doesNotMatch(html, /\{\{\w+\}\}/, `${file}: unfilled placeholder`);
+      assert.doesNotMatch(html, /undefined|\[object Object\]/, `${file}: rendering bug`);
+      // The phone number is only behind the reveal button, never readable in the HTML.
+      const digits = fullConfig.operator.phone.replace(/\D/g, '');
+      assert.ok(!html.replace(/\D/g, ' ').includes(digits.slice(-7)) && !html.includes(fullConfig.operator.phone), `${file}: phone in plain text`);
+      // Only same-site resources: no external src= and no external stylesheet.
+      for (const m of html.matchAll(/\s(?:src|href)="([^"]+)"/g)) {
+        const url = m[1];
+        if (/^(mailto:|#)/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin].includes(url)) continue;
+        if (/^https:\/\//.test(url)) {
+          assert.ok(url.startsWith(`https://${fullConfig.domain}/`), `${file}: external link ${url}`);
+          continue;
+        }
+        const path = url.split(/[?#]/)[0];
+        const target = path.endsWith('/') ? join(out, path, 'index.html') : join(out, path);
+        assert.ok(existsSync(target), `${file}: broken link ${url}`);
+      }
+    }
+    const home = readFileSync(join(out, 'de', 'index.html'), 'utf8');
+    assert.match(home, /<html lang="de">/);
+    for (const lang of LANGS) assert.match(home, new RegExp(`hreflang="${lang}" href="https://${fullConfig.domain}/${lang}/"`));
+    assert.match(readFileSync(join(out, 'fr', 'index.html'), 'utf8'), /Canton VD/);
+    assert.match(readFileSync(join(out, 'sitemap.xml'), 'utf8'), /\/it\/sicurezza\//);
+    // Every "Demo" button goes to the live demo; prices and the operator are on their pages.
+    assert.match(home, new RegExp(`class="btn btn-primary btn-sm" href="${fullConfig.demoUrl}">Demo<`));
+    assert.match(readFileSync(join(out, 'de', 'preise', 'index.html'), 'utf8'), /CHF&nbsp;130\.–/);
+    assert.match(readFileSync(join(out, 'fr', 'a-propos', 'index.html'), 'utf8'), /Bonjour, je suis Test Person, ingénieur/);
+    const impressum = readFileSync(join(out, 'de', 'impressum', 'index.html'), 'utf8');
+    assert.match(impressum, /<dt>Betreiber<\/dt><dd>Test Person<\/dd>/);
+    // The reveal button decodes back to the number, and its script is on that page.
+    const encoded = impressum.match(/data-v="([^"]+)"/)[1];
+    assert.equal([...Buffer.from(encoded, 'base64').toString('utf8')].reverse().join(''), fullConfig.operator.phone);
+    assert.match(impressum, /<script src="\/assets\/reveal\.js\?v=[0-9a-f]{10}" defer><\/script>/);
+    assert.doesNotMatch(home, /reveal\.js/);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('a strict build refuses an incomplete legal notice', () => {
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  try {
+    const empty = { ...baseConfig, operator: { ...baseConfig.operator, name: '', street: '', city: '' } };
+    assert.deepEqual(missingOperatorFields(empty), ['name', 'street', 'city']);
+    assert.throws(() => build({ outDir: out, strict: true, config: empty }), /Impressum/);
+    const warnings = [];
+    build({ outDir: out, config: empty, log: { warn: (m) => warnings.push(m) } });
+    assert.equal(warnings.length, 1);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('/ picks the browser language, German otherwise', () => {
+  assert.equal(preferredLang('fr-CH,fr;q=0.9,en;q=0.8'), 'fr');
+  assert.equal(preferredLang('it'), 'it');
+  assert.equal(preferredLang('en-US,en'), 'en');
+  assert.equal(preferredLang('es-ES'), 'de');
+  assert.equal(preferredLang(undefined), 'de');
+});

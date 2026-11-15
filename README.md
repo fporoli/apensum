@@ -492,6 +492,24 @@ ssh -N -L 5434:127.0.0.1:<PG_PORT> <VPS_USER>@<VPS_HOST>
 Then connect a normal client to `localhost:5434` as role `worktime`, database
 `worktime`, with that environment's `POSTGRES_PASSWORD`.
 
+### Website (apensum.ch)
+
+The marketing website is `apps/site`: static pages in German, French, Italian and English,
+built by a dependency-free Node script (texts in `apps/site/src/i18n/<lang>.mjs`, templates in
+`src/pages.mjs`). `npm run site:dev` previews it on http://localhost:3010 with rebuilds on save.
+`apps/site/site.config.mjs` holds the demo link (`demoUrl`, every "Demo" button), the contact
+address and the operator for the legal notice: fill in its street and postcode/place before the
+first deploy, the deploy's strict build fails without them. An optional portrait for the About
+page goes in `static/assets/` (`about.photo`).
+
+Deploy with the `site` workflow (Actions -> site -> Run workflow): `environment` picks the
+server (that GitHub Environment's `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY`; it must already run a
+worktime3 instance, for the shared edge Caddy), `domain` the hostname, `app_url` the optional
+"Log in" target. `infra/site/remote.sh` installs it at `/opt/apensum-site` as its own Caddy
+container (`apensum-site`) and adds `apensum-site.caddy` to the edge, which gets the
+certificates for the domain and `www.` (both DNS records must point at the server). Each deploy
+is a new release in `www/releases/`, switched atomically via `www/current`; `remove` takes it down.
+
 ### Azure environment
 
 The `azure` GitHub Environment uses the same names as `azure.yml` lists

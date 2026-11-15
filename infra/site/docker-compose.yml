@@ -1,0 +1,18 @@
+# The Apensum website (apps/site): one small Caddy serving static files, reachable only through
+# the shared edge Caddy (infra/caddy/edge) on the "edge" network, which terminates TLS.
+# Lives at /opt/apensum-site on the VPS and is written there by the `site` workflow
+# (.github/workflows/site.yml via infra/site/remote.sh). Releases are in ./www/releases/<id>,
+# ./www/current points at the live one (switched atomically, no restart needed).
+name: apensum-site
+services:
+  site:
+    image: caddy:2
+    container_name: apensum-site
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./www:/srv:ro
+    networks: [edge]
+    restart: unless-stopped
+networks:
+  edge:
+    external: true

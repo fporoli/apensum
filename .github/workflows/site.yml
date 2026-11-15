@@ -1,0 +1,73 @@
+name: site
+run-name: 'site: ${{ inputs.action }} ${{ inputs.domain }} on ${{ inputs.environment }}'
+# The Apensum website (apps/site): builds the static pages (tests + a strict build that refuses
+# an incomplete legal notice), ships them over SSH and runs infra/site/remote.sh, which serves
+# them from a small Caddy container behind the server's shared edge Caddy. `environment` only
+# picks the server: the GitHub Environment whose VPS_HOST / VPS_USER / VPS_SSH_KEY are used
+# (a server already running a worktime3 instance, so the edge Caddy exists). The domain's DNS
+# (and www.) must point at that server.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to run'
+        required: true
+        type: choice
+        options: [deploy, remove]
+      environment: { description: 'GitHub Environment = the server to use (its VPS_HOST)', default: 'preprod' }
+      domain: { description: 'Website hostname, without www', default: 'apensum.ch' }
+      app_url: { description: 'App address for the "Log in" button (empty = no button)', default: '' }
+permissions:
+  contents: read
+# Same group as the vps workflow: both reload the shared edge Caddy.
+concurrency:
+  group: worktime3-vps
+  cancel-in-progress: false
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24 }
+      - name: Test and build
+        if: inputs.action == 'deploy'
+        working-directory: apps/site
+        env:
+          SITE_DOMAIN: ${{ inputs.domain }}
+          SITE_APP_URL: ${{ inputs.app_url }}
+        run: npm test && npm run build:strict
+      - name: Package
+        run: |
+          if [ "${{ inputs.action }}" = deploy ]; then
+            tar czf site-release.tgz apps/site/dist infra/site
+          else
+            tar czf site-release.tgz infra/site
+          fi
+      - name: Upload to VPS
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: site-release.tgz
+          target: /tmp/apensum-site-release
+      - name: Run on VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          ACTION: ${{ inputs.action }}
+          SITE_DOMAIN: ${{ inputs.domain }}
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: ACTION,SITE_DOMAIN
+          script: |
+            set -eu
+            rm -rf /tmp/apensum-site-release/src
+            mkdir -p /tmp/apensum-site-release/src
+            tar xzf /tmp/apensum-site-release/site-release.tgz -C /tmp/apensum-site-release/src
+            bash /tmp/apensum-site-release/src/infra/site/remote.sh "$ACTION"
+            rm -rf /tmp/apensum-site-release

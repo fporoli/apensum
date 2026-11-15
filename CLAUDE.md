@@ -327,3 +327,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   (pg), `3000+N` (web), `8000+N` (API). Each compose file has a one-shot
   `migrate` service that runs before the API and Keycloak start.
 - Keycloak realm config: `infra/keycloak/realm-worktime.json`.
+- Website (`apps/site`, apensum.ch): static marketing pages in de/fr/it/en, built by `build.mjs`
+  with no dependencies (no framework, nothing loaded from third parties; the only script is
+  `assets/reveal.js`, which shows the phone number on click so it is not in the HTML). Texts are in `src/i18n/<lang>.mjs`, all four with the same keys, list lengths and
+  `{{placeholders}}` (`test/site.test.mjs`); German is Swiss (no ß). The holiday card imports
+  `packages/shared/src/worktime.ts`. Claims must match what the app does. Deployed only by the
+  `site` workflow (`infra/site/`: own Caddy container behind the shared edge, `remote.sh`);
+  `npm run site:dev` previews on :3010.

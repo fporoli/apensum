@@ -1,0 +1,13 @@
+{
+  "name": "@worktime3/site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketing website for Apensum (apensum.ch): static HTML in de/fr/it/en, no dependencies",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:strict": "node build.mjs --strict",
+    "dev": "node serve.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}
