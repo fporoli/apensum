@@ -72,7 +72,11 @@ test('builds every page; internal links resolve; nothing loads from third partie
     assert.match(readFileSync(join(out, 'sitemap.xml'), 'utf8'), /\/it\/sicurezza\//);
     // Every "Demo" button goes to the live demo; prices and the operator are on their pages.
     assert.match(home, new RegExp(`class="btn btn-primary btn-sm" href="${fullConfig.demoUrl}">Demo<`));
-    assert.match(readFileSync(join(out, 'de', 'preise', 'index.html'), 'utf8'), /CHF&nbsp;130\.–/);
+    // The hourly rate is only in the popup behind a button ("ab CHF 120.–"), and 130 nowhere.
+    const pricing = readFileSync(join(out, 'de', 'preise', 'index.html'), 'utf8');
+    assert.match(pricing, /<button type="button" class="rate-button" popovertarget="rate">/);
+    assert.match(pricing, /<div id="rate" popover[^>]*>[\s\S]*<span>ab<\/span><strong>CHF&nbsp;120\.–<\/strong>/);
+    assert.doesNotMatch(pricing, /130/);
     assert.match(readFileSync(join(out, 'fr', 'a-propos', 'index.html'), 'utf8'), /Bonjour, je suis Test Person, ingénieur/);
     const impressum = readFileSync(join(out, 'de', 'impressum', 'index.html'), 'utf8');
     assert.match(impressum, /<dt>Betreiber<\/dt><dd>Test Person<\/dd>/);

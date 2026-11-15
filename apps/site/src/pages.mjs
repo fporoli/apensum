@@ -447,7 +447,16 @@ export function pricing(ctx) {
     <article class="card plan">
       <h2 class="h3">${t('pricing.custom.name')}</h2>
       <p class="muted">${t('pricing.custom.text')}</p>
-      <p class="price"><strong>CHF&nbsp;130.–</strong><span>${t('pricing.custom.period')}</span></p>
+      <p class="price"><button type="button" class="rate-button" popovertarget="rate">${icon('tag')}${t('pricing.custom.show')}</button></p>
+      <div id="rate" popover class="rate-popover" role="dialog" aria-labelledby="rate-title">
+        <h3 id="rate-title">${t('pricing.custom.rateTitle')}</h3>
+        <p class="price"><span>${t('pricing.custom.rateFrom')}</span><strong>CHF&nbsp;120.–</strong><span>${t('pricing.custom.period')}</span></p>
+        <p>${t('pricing.custom.rateText')}</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="${ctx.mailto('pricing.custom.mailSubject')}">${icon('mail')}${t('pricing.custom.cta')}</a>
+          <button type="button" class="btn btn-ghost" popovertarget="rate" popovertargetaction="hide">${t('pricing.custom.close')}</button>
+        </div>
+      </div>
       ${checklist(t.list('pricing.custom.items'))}
       <a class="btn btn-ghost" href="${ctx.mailto('pricing.custom.mailSubject')}">${icon('mail')}${t('pricing.custom.cta')}</a>
     </article>

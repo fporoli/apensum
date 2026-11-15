@@ -402,3 +402,20 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
   .role-row.flip .role-text { order: 0; }
   .role-rows { gap: 48px; }
 }
+
+/* Hourly rate behind a click (pricing) */
+.rate-button {
+  display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 10px; cursor: pointer;
+  font: inherit; font-weight: 600; color: var(--brand); background: var(--brand-soft); border: 1px dashed var(--brand);
+}
+.rate-button:hover { background: color-mix(in srgb, var(--brand) 14%, var(--card)); }
+.rate-button .icon { width: 18px; height: 18px; }
+.rate-popover {
+  width: min(460px, calc(100vw - 32px)); margin: auto; padding: 28px; border: 1px solid var(--line); border-radius: 18px;
+  background: var(--card); color: var(--text); box-shadow: var(--shadow-lg);
+}
+.rate-popover::backdrop { background: rgba(15, 23, 42, 0.45); }
+.rate-popover h3 { margin-bottom: 4px; }
+.rate-popover .price span:first-child { color: var(--muted); }
+.rate-popover p { color: var(--muted); }
+.rate-popover .actions { margin-top: 18px; }
