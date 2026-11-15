@@ -505,7 +505,7 @@ page goes in `static/assets/` (`about.photo`).
 Deploy with the `site` workflow (Actions -> site -> Run workflow): `environment` picks the
 server (that GitHub Environment's `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY`; it must already run a
 worktime3 instance, for the shared edge Caddy), `domain` the hostname, `app_url` the optional
-"Log in" target. `infra/site/remote.sh` installs it at `/opt/apensum-site` as its own Caddy
+"Log in" target. `infra/site/remote.sh` installs it at `/opt/edge/apensum-site` as its own Caddy
 container (`apensum-site`) and adds `apensum-site.caddy` to the edge, which gets the
 certificates for the domain and `www.` (both DNS records must point at the server). Each deploy
 is a new release in `www/releases/`, switched atomically via `www/current`; `remove` takes it down.

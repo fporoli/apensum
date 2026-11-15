@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs on the VPS, called by .github/workflows/site.yml from the unpacked release (the built
 # website in apps/site/dist plus infra/site). Installs the website as its own small stack at
-# /opt/apensum-site behind the shared edge Caddy, which must already run on this server
+# /opt/edge/apensum-site behind the shared edge Caddy, which must already run on this server
 # (it does once any worktime3 instance was deployed there with the vps workflow).
 #   SITE_DOMAIN=apensum.ch bash infra/site/remote.sh deploy
 #   SITE_DOMAIN=apensum.ch bash infra/site/remote.sh remove
@@ -9,7 +9,7 @@ set -euo pipefail
 
 ACTION="${1:-deploy}"
 SRC="$(cd "$(dirname "$0")/../.." && pwd)"
-DIR=/opt/apensum-site
+DIR=/opt/edge/apensum-site
 EDGE=/opt/edge
 SITE_FILE="$EDGE/sites/apensum-site.caddy"
 DOMAIN="${SITE_DOMAIN:?SITE_DOMAIN is required}"
