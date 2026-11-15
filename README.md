@@ -1,4 +1,4 @@
-# worktime3
+# APensum
 
 Enterprise + individual time tracking: NestJS API, React+MUI web, Postgres,
 Keycloak (same database, `auth` schema), and Caddy as the edge reverse proxy
