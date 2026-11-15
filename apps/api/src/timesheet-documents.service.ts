@@ -22,7 +22,7 @@ export type Lang = 'en' | 'de' | 'fr' | 'it';
 const LABELS: Record<Lang, Record<string, string>> = {
   en: {
     timesheet: 'Monthly timesheet',
-    projectTimesheet: 'Project timesheet',
+    projectTimesheet: 'Project report',
     person: 'Person',
     organization: 'Organization',
     month: 'Month',
@@ -50,6 +50,14 @@ const LABELS: Record<Lang, Record<string, string>> = {
     summary: 'Summary',
     entries: 'Entries',
     autoApproved: 'approved on submission',
+    overview: 'Overview',
+    status: 'Status',
+    hours: 'Hours',
+    noProject: 'No project',
+    'status.approved': 'approved',
+    'status.submitted': 'submitted, awaiting approval',
+    'status.rejected': 'rejected',
+    'status.open': 'not submitted',
   },
   de: {
     timesheet: 'Monatsrapport',
@@ -81,10 +89,18 @@ const LABELS: Record<Lang, Record<string, string>> = {
     summary: 'Zusammenfassung',
     entries: 'Einträge',
     autoApproved: 'bei Einreichung genehmigt',
+    overview: 'Übersicht',
+    status: 'Status',
+    hours: 'Stunden',
+    noProject: 'Ohne Projekt',
+    'status.approved': 'genehmigt',
+    'status.submitted': 'eingereicht, Genehmigung ausstehend',
+    'status.rejected': 'abgelehnt',
+    'status.open': 'nicht eingereicht',
   },
   fr: {
     timesheet: 'Relevé mensuel',
-    projectTimesheet: 'Relevé de projet',
+    projectTimesheet: 'Rapport de projets',
     person: 'Personne',
     organization: 'Organisation',
     month: 'Mois',
@@ -112,10 +128,18 @@ const LABELS: Record<Lang, Record<string, string>> = {
     summary: 'Résumé',
     entries: 'Saisies',
     autoApproved: 'approuvé à la soumission',
+    overview: 'Vue d’ensemble',
+    status: 'Statut',
+    hours: 'Heures',
+    noProject: 'Sans projet',
+    'status.approved': 'approuvé',
+    'status.submitted': 'soumis, en attente d’approbation',
+    'status.rejected': 'refusé',
+    'status.open': 'non soumis',
   },
   it: {
     timesheet: 'Rapporto mensile',
-    projectTimesheet: 'Rapporto di progetto',
+    projectTimesheet: 'Rapporto progetti',
     person: 'Persona',
     organization: 'Organizzazione',
     month: 'Mese',
@@ -143,6 +167,14 @@ const LABELS: Record<Lang, Record<string, string>> = {
     summary: 'Riepilogo',
     entries: 'Voci',
     autoApproved: 'approvato all’invio',
+    overview: 'Panoramica',
+    status: 'Stato',
+    hours: 'Ore',
+    noProject: 'Senza progetto',
+    'status.approved': 'approvato',
+    'status.submitted': 'inviato, in attesa di approvazione',
+    'status.rejected': 'rifiutato',
+    'status.open': 'non inviato',
   },
 };
 
@@ -191,18 +223,24 @@ export interface TimesheetPdfData {
   totals: { scheduled: number; holiday: number; absenceByType: Record<string, number>; target: number; actual: number; delta: number; vacationDays: number };
 }
 
-export interface ProjectTimesheetPdfData {
+export type ProjectStatus = 'approved' | 'submitted' | 'rejected' | 'open';
+
+export interface ProjectReportPdfData {
   organization: string;
   person: string;
-  project: string;
-  owner: string | null;
   periodStart: string;
-  approvedBy: string | null;
-  approvedAt: string | null;
-  submittedAt: string | null;
-  autoApproved: boolean;
   timeZone: string;
-  entries: { start: string; end: string; minutes: number; subproject: string | null; comment: string | null }[];
+  /** Every project with hours in the month (`project` null: hours without a project), with its own approval. */
+  projects: {
+    project: string | null;
+    owner: string | null;
+    status: ProjectStatus;
+    approvedBy: string | null;
+    approvedAt: string | null;
+    submittedAt: string | null;
+    autoApproved: boolean;
+    entries: { start: string; end: string; minutes: number; subproject: string | null; comment: string | null }[];
+  }[];
 }
 
 interface Column {
@@ -266,11 +304,26 @@ class Sheet {
     columns.forEach((c, i) => {
       // Space between a right-aligned column and a left-aligned one after it.
       const pad = i > 0 && columns[i - 1].align === 'right' && c.align !== 'right' ? 12 : 2;
-      this.doc.text(cells[i] ?? '', x + pad, y, { width: c.width - pad - 2, align: c.align ?? 'left', lineBreak: false, ellipsis: true });
+      const width = c.width - pad - 2;
+      this.doc.text(this.fit(cells[i] ?? '', width), x + pad, y, { width, align: c.align ?? 'left', lineBreak: false });
       x += c.width;
     });
     if (opts.rule) this.doc.moveTo(this.left, y + height - 2).lineTo(this.left + this.width, y + height - 2).lineWidth(0.5).stroke('#999');
     this.doc.y = y + height;
+  }
+
+  /** One line: pdfkit still wraps long words at `width`, so cut the text to fit and end it with "…". */
+  private fit(text: string, width: number): string {
+    const clean = text.replace(/\s+/g, ' ').trim();
+    if (this.doc.widthOfString(clean) <= width) return clean;
+    let lo = 0;
+    let hi = clean.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (this.doc.widthOfString(`${clean.slice(0, mid).trimEnd()}…`) <= width) lo = mid;
+      else hi = mid - 1;
+    }
+    return `${clean.slice(0, lo).trimEnd()}…`;
   }
 
   /** Starts a new page when less than `space` is left; true when it did. */
@@ -345,17 +398,31 @@ export async function renderTimesheetPdf(d: TimesheetPdfData, lang: Lang, issued
   return sheet.finish(`${d.organization} · ${d.person} · ${L.issued} ${formatInstant(issuedAt, lang, d.timeZone)}`);
 }
 
-export async function renderProjectTimesheetPdf(d: ProjectTimesheetPdfData, lang: Lang, issuedAt = new Date().toISOString()): Promise<Buffer> {
+export async function renderProjectReportPdf(d: ProjectReportPdfData, lang: Lang, issuedAt = new Date().toISOString()): Promise<Buffer> {
   const L = LABELS[lang];
-  const sheet = new Sheet(L.projectTimesheet, `${d.project} · ${monthTitle(d.periodStart, lang)}`);
-  sheet.facts([
-    [L.person, d.person],
-    [L.organization, d.organization],
-    [L.project, d.project],
-    ...(d.owner ? [[L.owner, d.owner] as [string, string]] : []),
-    ...approvalFacts(L, d, lang),
-  ]);
+  const sheet = new Sheet(L.projectTimesheet, monthTitle(d.periodStart, lang));
+  sheet.facts([[L.person, d.person], [L.organization, d.organization]]);
   const w = sheet.width;
+  const name = (p: ProjectReportPdfData['projects'][number]) => p.project ?? L.noProject;
+  const minutesOf = (p: ProjectReportPdfData['projects'][number]) => p.entries.reduce((s, e) => s + e.minutes, 0);
+  const statusText = (p: ProjectReportPdfData['projects'][number]) => (p.project ? L[`status.${p.status}`] : '');
+
+  sheet.heading(L.overview);
+  sheet.table(
+    [
+      { label: L.project, width: w * 0.38 },
+      { label: L.owner, width: w * 0.22 },
+      { label: L.status, width: w * 0.28 },
+      { label: L.hours, width: w * 0.12, align: 'right' },
+    ],
+    [
+      ...d.projects.map((p) => ({ cells: [name(p), p.owner ?? '', statusText(p), hm(minutesOf(p))] })),
+      { cells: [L.total, '', '', hm(d.projects.reduce((s, p) => s + minutesOf(p), 0))], bold: true },
+    ],
+  );
+
+  const time = (iso: string) => new Intl.DateTimeFormat(intlLocale(lang), { hour: '2-digit', minute: '2-digit', timeZone: d.timeZone }).format(new Date(iso));
+  const day = (iso: string) => new Intl.DateTimeFormat(intlLocale(lang), { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: d.timeZone }).format(new Date(iso));
   const columns: Column[] = [
     { label: L.date, width: w * 0.2 },
     { label: L.time, width: w * 0.16 },
@@ -363,34 +430,37 @@ export async function renderProjectTimesheetPdf(d: ProjectTimesheetPdfData, lang
     { label: L.subproject, width: w * 0.18 },
     { label: L.comment, width: w * 0.36 },
   ];
-  const time = (iso: string) => new Intl.DateTimeFormat(intlLocale(lang), { hour: '2-digit', minute: '2-digit', timeZone: d.timeZone }).format(new Date(iso));
-  const day = (iso: string) => new Intl.DateTimeFormat(intlLocale(lang), { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: d.timeZone }).format(new Date(iso));
-  const total = d.entries.reduce((s, e) => s + e.minutes, 0);
-  sheet.table(columns, [
-    ...d.entries.map((e) => ({ cells: [day(e.start), `${time(e.start)}–${time(e.end)}`, hm(e.minutes), e.subproject ?? '', e.comment ?? ''] })),
-    { cells: [`${L.total} (${d.entries.length} ${L.entries})`, '', hm(total), '', ''], bold: true },
-  ]);
+  for (const p of d.projects) {
+    sheet.heading(name(p));
+    const facts: [string, string][] = [];
+    if (p.owner) facts.push([L.owner, p.owner]);
+    if (p.project) facts.push([L.status, statusText(p)]);
+    if (p.status === 'approved') facts.push(...approvalFacts(L, { ...p, timeZone: d.timeZone }, lang));
+    else if (p.submittedAt) facts.push([L.submittedOn, formatInstant(p.submittedAt, lang, d.timeZone)]);
+    if (facts.length) sheet.facts(facts);
+    sheet.table(columns, [
+      ...p.entries.map((e) => ({ cells: [day(e.start), `${time(e.start)}–${time(e.end)}`, hm(e.minutes), e.subproject ?? '', e.comment ?? ''] })),
+      { cells: [`${L.total} (${p.entries.length} ${L.entries})`, '', hm(minutesOf(p)), '', ''], bold: true },
+    ]);
+  }
   return sheet.finish(`${d.organization} · ${d.person} · ${L.issued} ${formatInstant(issuedAt, lang, d.timeZone)}`);
 }
 
-/** `timesheet-2026-10.pdf`, `project-timesheet-2026-10-website-relaunch.pdf`. */
-export function pdfFileName(kind: PeriodKind, periodStart: string, project?: string | null): string {
+/** `timesheet-2026-10.pdf`, `project-report-2026-10.pdf`. */
+export function pdfFileName(kind: PeriodKind, periodStart: string): string {
   const month = periodStart.slice(0, 7);
-  if (kind === 'timesheet') return `timesheet-${month}.pdf`;
-  const slug = (project ?? 'project')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40);
-  return `project-timesheet-${month}${slug ? `-${slug}` : ''}.pdf`;
+  return kind === 'timesheet' ? `timesheet-${month}.pdf` : `project-report-${month}.pdf`;
 }
 
-const PERIOD_TABLE: Record<PeriodKind, { table: string; column: string }> = {
-  timesheet: { table: 'timesheet_periods', column: 'timesheet_period_id' },
-  project_timesheet: { table: 'project_time_periods', column: 'project_time_period_id' },
-};
+interface Owner {
+  organization_id: string;
+  user_id: string;
+  org_name: string;
+  person: string;
+  locale: string | null;
+}
+
+const iso = (v: string | Date | null) => (v ? new Date(v).toISOString() : null);
 
 @Injectable()
 export class TimesheetDocumentsService {
@@ -401,12 +471,15 @@ export class TimesheetDocumentsService {
   ) {}
 
   /**
-   * Issues the PDF of an approved month, superseding an earlier one. Best effort: an approval never
-   * fails because of it (the PDF is issued on first download instead).
+   * Issues the PDF after an approval: the working-time timesheet of `periodId`, or the project report
+   * of the month of the project month `periodId` (all projects, superseding the previous version).
+   * Best effort: an approval never fails because of it (Documents issues missing PDFs of the year).
    */
   async issue(db: Db, kind: PeriodKind, periodId: string, actorUserId: string | null): Promise<string | null> {
     try {
-      return await this.issueOrThrow(db, kind, periodId, actorUserId);
+      if (kind === 'timesheet') return await this.issueTimesheet(db, periodId, actorUserId);
+      const month = await this.projectMonthOf(db, periodId);
+      return month ? await this.issueProjectReport(db, month.organization_id, month.user_id, month.period_start, actorUserId) : null;
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(`timesheet document for ${kind} ${periodId} not issued: ${err instanceof Error ? err.message : err}`);
@@ -414,164 +487,213 @@ export class TimesheetDocumentsService {
     }
   }
 
-  /** The current PDF's document id, issuing it first when the approved month has none. */
-  async current(db: Db, kind: PeriodKind, periodId: string): Promise<string | null> {
-    const { column } = PERIOD_TABLE[kind];
-    const rows = await db.execute(
-      sql`SELECT document_id FROM timesheet_documents WHERE ${sql.raw(column)} = ${periodId} AND superseded_at IS NULL`,
-    );
-    const existing = (rows.rows[0] as { document_id: string } | undefined)?.document_id;
-    return existing ?? this.issueOrThrow(db, kind, periodId, null);
-  }
-
-  /** Reopening a month: its PDF stays listed, marked as superseded. */
-  async supersede(db: Executor, kind: PeriodKind, periodId: string): Promise<void> {
-    const { column } = PERIOD_TABLE[kind];
-    await db.execute(
-      sql`UPDATE timesheet_documents SET superseded_at = now() WHERE ${sql.raw(column)} = ${periodId} AND superseded_at IS NULL`,
-    );
-  }
-
-  private async issueOrThrow(db: Db, kind: PeriodKind, periodId: string, actorUserId: string | null): Promise<string | null> {
-    const { table, column } = PERIOD_TABLE[kind];
-    const result = await db.execute(sql`
-      SELECT p.organization_id, p.user_id, to_char(p.period_start, 'YYYY-MM-DD') AS period_start,
-             to_char(p.period_end, 'YYYY-MM-DD') AS period_end, p.status,
-             p.submitted_at, p.reviewed_at, p.reviewed_by_user_id,
-             o.name AS org_name, coalesce(u.display_name, u.email) AS person, u.locale,
-             coalesce(rv.display_name, rv.email) AS reviewer
-      FROM ${sql.raw(table)} p
-      JOIN organizations o ON o.id = p.organization_id
-      JOIN users u ON u.id = p.user_id
-      LEFT JOIN users rv ON rv.id = p.reviewed_by_user_id
-      WHERE p.id = ${periodId}`);
-    const p = result.rows[0] as
-      | {
-          organization_id: string;
-          user_id: string;
-          period_start: string;
-          period_end: string;
-          status: string;
-          submitted_at: string | Date | null;
-          reviewed_at: string | Date | null;
-          reviewed_by_user_id: string | null;
-          org_name: string;
-          person: string;
-          locale: string | null;
-          reviewer: string | null;
-        }
-      | undefined;
-    if (!p || p.status !== 'approved') return null;
-    const lang = pdfLang(p.locale);
-    const timeZone = await this.workTime.timeZone(db, p.user_id);
-    const iso = (v: string | Date | null) => (v ? new Date(v).toISOString() : null);
-    const approval = {
-      approvedBy: p.reviewer,
-      approvedAt: iso(p.reviewed_at),
-      submittedAt: iso(p.submitted_at),
-      autoApproved: p.reviewed_by_user_id === p.user_id,
-      timeZone,
-    };
-
-    let buffer: Buffer;
-    let fileName: string;
+  /**
+   * After a month is reopened: its PDF stays listed as superseded. A project report is issued again
+   * right away when other projects of that month are still approved (showing this one as open).
+   */
+  async supersede(db: Db, kind: PeriodKind, periodId: string): Promise<void> {
     if (kind === 'timesheet') {
-      const [targets, attended, holidays] = await Promise.all([
-        this.workTime.targets(db, p.organization_id, p.user_id, p.period_start, p.period_end),
-        this.workTime.attendanceByDay(db, p.organization_id, p.user_id, p.period_start, p.period_end, timeZone, false),
-        this.workTime.holidays(db, p.organization_id, p.period_start, p.period_end),
-      ]);
-      // The closed month (balances.service closeMonth) holds the approved totals.
-      const closed = await db.execute(sql`
-        SELECT scheduled_minutes, holiday_minutes, absence_minutes, target_minutes, actual_minutes, delta_minutes, vacation_days
-        FROM work_time_months WHERE timesheet_period_id = ${periodId}`);
-      const m = closed.rows[0] as Record<string, unknown> | undefined;
-      const sum = (f: (d: (typeof targets)[number]) => number) => targets.reduce((s, d) => s + f(d), 0);
-      const actual = targets.reduce((s, d) => s + (attended.get(d.date) ?? 0), 0);
-      const absenceByType: Record<string, number> = {};
-      for (const d of targets) if (d.absence && d.absenceType) absenceByType[d.absenceType] = (absenceByType[d.absenceType] ?? 0) + d.absence;
-      const totals = m
-        ? {
-            scheduled: Number(m.scheduled_minutes),
-            holiday: Number(m.holiday_minutes),
-            absenceByType: (m.absence_minutes as Record<string, number>) ?? {},
-            target: Number(m.target_minutes),
-            actual: Number(m.actual_minutes),
-            delta: Number(m.delta_minutes),
-            vacationDays: Number(m.vacation_days),
-          }
-        : { scheduled: sum((d) => d.scheduled), holiday: sum((d) => d.holiday), absenceByType, target: sum((d) => d.target), actual, delta: actual - sum((d) => d.target), vacationDays: 0 };
-      buffer = await renderTimesheetPdf(
-        {
-          organization: p.org_name,
-          person: p.person,
-          periodStart: p.period_start,
-          ...approval,
-          days: targets.map((d) => {
-            const h = holidays.get(d.date);
-            return {
-              date: d.date,
-              target: d.target,
-              actual: Math.round(attended.get(d.date) ?? 0),
-              holiday: h && d.holiday ? holidayName(h, lang) : undefined,
-              absence: d.absence && d.absenceType ? humanize(d.absenceType) : undefined,
-            };
-          }),
-          totals,
-        },
-        lang,
-      );
-      fileName = pdfFileName('timesheet', p.period_start);
-    } else {
-      const meta = await db.execute(sql`
-        SELECT pr.name AS project, coalesce(ow.display_name, ow.email) AS owner
-        FROM project_time_periods p JOIN projects pr ON pr.id = p.project_id LEFT JOIN users ow ON ow.id = pr.owner_user_id
-        WHERE p.id = ${periodId}`);
-      const { project, owner } = meta.rows[0] as { project: string; owner: string | null };
-      const entries = await db.execute(sql`
-        SELECT pt.start_time, pt.end_time, pt.comment, sp.name AS subproject,
-               EXTRACT(EPOCH FROM (pt.end_time - pt.start_time)) / 60 AS minutes
-        FROM project_times pt
-        JOIN project_time_periods p ON p.id = ${periodId}
-        LEFT JOIN subprojects sp ON sp.id = pt.subproject_id
-        WHERE pt.organization_id = p.organization_id AND pt.user_id = p.user_id AND pt.project_id = p.project_id
-          AND pt.start_time::date >= p.period_start AND pt.start_time::date < p.period_end
-        ORDER BY pt.start_time`);
-      buffer = await renderProjectTimesheetPdf(
-        {
-          organization: p.org_name,
-          person: p.person,
-          project,
-          owner,
-          periodStart: p.period_start,
-          ...approval,
-          entries: (entries.rows as Record<string, unknown>[]).map((e) => ({
-            start: new Date(e.start_time as string).toISOString(),
-            end: new Date(e.end_time as string).toISOString(),
-            minutes: Math.round(Number(e.minutes)),
-            subproject: (e.subproject as string | null) ?? null,
-            comment: (e.comment as string | null) ?? null,
-          })),
-        },
-        lang,
-      );
-      fileName = pdfFileName('project_timesheet', p.period_start, project);
+      await db.execute(sql`UPDATE timesheet_documents SET superseded_at = now() WHERE timesheet_period_id = ${periodId} AND superseded_at IS NULL`);
+      return;
     }
+    const month = await this.projectMonthOf(db, periodId);
+    if (!month) return;
+    await this.supersedeProjectReport(db, month.organization_id, month.user_id, month.period_start);
+    await this.issue(db, 'project_timesheet', periodId, null);
+  }
 
-    const documentId = await this.documents.store(db, p.organization_id, actorUserId, { name: fileName, mimeType: 'application/pdf', buffer }, { table, id: periodId });
-    await this.supersede(db, kind, periodId);
+  /**
+   * Issues the missing PDFs of `year` for one person: approved working-time months without a current
+   * PDF and months with an approved project but no current project report.
+   */
+  async issueMissing(db: Db, orgId: string, userId: string, year: number): Promise<void> {
+    const from = `${year}-01-01`;
+    const to = `${year + 1}-01-01`;
+    const timesheets = await db.execute(sql`
+      SELECT p.id FROM timesheet_periods p
+      WHERE p.organization_id = ${orgId} AND p.user_id = ${userId} AND p.status = 'approved'
+        AND p.period_start >= ${from}::date AND p.period_start < ${to}::date
+        AND NOT EXISTS (SELECT 1 FROM timesheet_documents td WHERE td.timesheet_period_id = p.id AND td.superseded_at IS NULL)`);
+    for (const r of timesheets.rows as { id: string }[]) await this.issue(db, 'timesheet', r.id, null);
+    const months = await db.execute(sql`
+      SELECT DISTINCT to_char(p.period_start, 'YYYY-MM-DD') AS period_start FROM project_time_periods p
+      WHERE p.organization_id = ${orgId} AND p.user_id = ${userId} AND p.status = 'approved'
+        AND p.period_start >= ${from}::date AND p.period_start < ${to}::date
+        AND NOT EXISTS (SELECT 1 FROM timesheet_documents td
+                        WHERE td.kind = 'project_timesheet' AND td.organization_id = p.organization_id AND td.user_id = p.user_id
+                          AND td.period_start = p.period_start AND td.superseded_at IS NULL)`);
+    for (const r of months.rows as { period_start: string }[]) {
+      try {
+        await this.issueProjectReport(db, orgId, userId, r.period_start, null);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`project report ${userId} ${r.period_start} not issued: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+
+  private async projectMonthOf(db: Db, projectPeriodId: string) {
+    const rows = await db.execute(sql`
+      SELECT organization_id, user_id, to_char(period_start, 'YYYY-MM-DD') AS period_start FROM project_time_periods WHERE id = ${projectPeriodId}`);
+    return rows.rows[0] as { organization_id: string; user_id: string; period_start: string } | undefined;
+  }
+
+  private async supersedeProjectReport(db: Executor, orgId: string, userId: string, periodStart: string): Promise<void> {
+    await db.execute(sql`
+      UPDATE timesheet_documents SET superseded_at = now()
+      WHERE kind = 'project_timesheet' AND organization_id = ${orgId} AND user_id = ${userId}
+        AND period_start = ${periodStart}::date AND superseded_at IS NULL`);
+  }
+
+  private async owner(db: Db, orgId: string, userId: string): Promise<Owner | undefined> {
+    const rows = await db.execute(sql`
+      SELECT o.id AS organization_id, u.id AS user_id, o.name AS org_name, coalesce(u.display_name, u.email) AS person, u.locale
+      FROM organizations o, users u WHERE o.id = ${orgId} AND u.id = ${userId}`);
+    return rows.rows[0] as unknown as Owner | undefined;
+  }
+
+  /** Stores the PDF and links it as the current one (a concurrent issue of the same month wins). */
+  private async link(db: Db, owner: Owner, kind: PeriodKind, periodStart: string, timesheetPeriodId: string | null, buffer: Buffer, actorUserId: string | null, source: { table: string; id: string }): Promise<string | null> {
+    const documentId = await this.documents.store(db, owner.organization_id, actorUserId, { name: pdfFileName(kind, periodStart), mimeType: 'application/pdf', buffer }, source);
+    if (kind === 'timesheet') {
+      await db.execute(sql`UPDATE timesheet_documents SET superseded_at = now() WHERE timesheet_period_id = ${timesheetPeriodId} AND superseded_at IS NULL`);
+    } else {
+      await this.supersedeProjectReport(db, owner.organization_id, owner.user_id, periodStart);
+    }
     const inserted = await db.execute(sql`
-      INSERT INTO timesheet_documents (organization_id, user_id, document_id, ${sql.raw(column)}, period_start)
-      VALUES (${p.organization_id}, ${p.user_id}, ${documentId}, ${periodId}, ${p.period_start})
+      INSERT INTO timesheet_documents (organization_id, user_id, document_id, kind, timesheet_period_id, period_start)
+      VALUES (${owner.organization_id}, ${owner.user_id}, ${documentId}, ${kind}, ${timesheetPeriodId}, ${periodStart}::date)
       ON CONFLICT DO NOTHING
       RETURNING id`);
     const row = inserted.rows[0] as { id: string } | undefined;
     if (!row) {
-      // Issued concurrently by someone else: keep theirs.
       await this.documents.remove(db, documentId);
-      return this.current(db, kind, periodId);
+      return null;
     }
-    void this.versions.record('timesheet_documents', row.id, 'insert', actorUserId, { kind, periodId, documentId }).catch(() => {});
+    void this.versions.record('timesheet_documents', row.id, 'insert', actorUserId, { kind, periodStart, timesheetPeriodId, documentId }).catch(() => {});
     return documentId;
+  }
+
+  private async issueTimesheet(db: Db, periodId: string, actorUserId: string | null): Promise<string | null> {
+    const result = await db.execute(sql`
+      SELECT p.organization_id, p.user_id, to_char(p.period_start, 'YYYY-MM-DD') AS period_start,
+             to_char(p.period_end, 'YYYY-MM-DD') AS period_end, p.status,
+             p.submitted_at, p.reviewed_at, p.reviewed_by_user_id, coalesce(rv.display_name, rv.email) AS reviewer
+      FROM timesheet_periods p LEFT JOIN users rv ON rv.id = p.reviewed_by_user_id
+      WHERE p.id = ${periodId}`);
+    const p = result.rows[0] as
+      | { organization_id: string; user_id: string; period_start: string; period_end: string; status: string; submitted_at: string | Date | null; reviewed_at: string | Date | null; reviewed_by_user_id: string | null; reviewer: string | null }
+      | undefined;
+    if (!p || p.status !== 'approved') return null;
+    const owner = await this.owner(db, p.organization_id, p.user_id);
+    if (!owner) return null;
+    const lang = pdfLang(owner.locale);
+    const timeZone = await this.workTime.timeZone(db, p.user_id);
+    const [targets, attended, holidays] = await Promise.all([
+      this.workTime.targets(db, p.organization_id, p.user_id, p.period_start, p.period_end),
+      this.workTime.attendanceByDay(db, p.organization_id, p.user_id, p.period_start, p.period_end, timeZone, false),
+      this.workTime.holidays(db, p.organization_id, p.period_start, p.period_end),
+    ]);
+    // The closed month (balances.service closeMonth) holds the approved totals.
+    const closed = await db.execute(sql`
+      SELECT scheduled_minutes, holiday_minutes, absence_minutes, target_minutes, actual_minutes, delta_minutes, vacation_days
+      FROM work_time_months WHERE timesheet_period_id = ${periodId}`);
+    const m = closed.rows[0] as Record<string, unknown> | undefined;
+    const sum = (f: (d: (typeof targets)[number]) => number) => targets.reduce((s, d) => s + f(d), 0);
+    const actual = targets.reduce((s, d) => s + (attended.get(d.date) ?? 0), 0);
+    const absenceByType: Record<string, number> = {};
+    for (const d of targets) if (d.absence && d.absenceType) absenceByType[d.absenceType] = (absenceByType[d.absenceType] ?? 0) + d.absence;
+    const totals = m
+      ? {
+          scheduled: Number(m.scheduled_minutes),
+          holiday: Number(m.holiday_minutes),
+          absenceByType: (m.absence_minutes as Record<string, number>) ?? {},
+          target: Number(m.target_minutes),
+          actual: Number(m.actual_minutes),
+          delta: Number(m.delta_minutes),
+          vacationDays: Number(m.vacation_days),
+        }
+      : { scheduled: sum((d) => d.scheduled), holiday: sum((d) => d.holiday), absenceByType, target: sum((d) => d.target), actual, delta: actual - sum((d) => d.target), vacationDays: 0 };
+    const buffer = await renderTimesheetPdf(
+      {
+        organization: owner.org_name,
+        person: owner.person,
+        periodStart: p.period_start,
+        approvedBy: p.reviewer,
+        approvedAt: iso(p.reviewed_at),
+        submittedAt: iso(p.submitted_at),
+        autoApproved: p.reviewed_by_user_id === p.user_id,
+        timeZone,
+        days: targets.map((d) => {
+          const h = holidays.get(d.date);
+          return {
+            date: d.date,
+            target: d.target,
+            actual: Math.round(attended.get(d.date) ?? 0),
+            holiday: h && d.holiday ? holidayName(h, lang) : undefined,
+            absence: d.absence && d.absenceType ? humanize(d.absenceType) : undefined,
+          };
+        }),
+        totals,
+      },
+      lang,
+    );
+    return this.link(db, owner, 'timesheet', p.period_start, periodId, buffer, actorUserId, { table: 'timesheet_periods', id: periodId });
+  }
+
+  /** The month's project report: every project with hours, each with its approval. Needs one approved project. */
+  private async issueProjectReport(db: Db, orgId: string, userId: string, periodStart: string, actorUserId: string | null): Promise<string | null> {
+    const owner = await this.owner(db, orgId, userId);
+    if (!owner) return null;
+    const periods = await db.execute(sql`
+      SELECT p.project_id, p.status, p.submitted_at, p.reviewed_at, p.reviewed_by_user_id, coalesce(rv.display_name, rv.email) AS reviewer
+      FROM project_time_periods p LEFT JOIN users rv ON rv.id = p.reviewed_by_user_id
+      WHERE p.organization_id = ${orgId} AND p.user_id = ${userId} AND p.period_start = ${periodStart}::date`);
+    const byProject = new Map((periods.rows as Record<string, unknown>[]).map((r) => [r.project_id as string, r]));
+    if (![...byProject.values()].some((r) => r.status === 'approved')) return null;
+    const entries = await db.execute(sql`
+      SELECT pt.project_id, pr.name AS project, coalesce(ow.display_name, ow.email) AS owner,
+             pt.start_time, pt.end_time, pt.comment, sp.name AS subproject,
+             EXTRACT(EPOCH FROM (pt.end_time - pt.start_time)) / 60 AS minutes
+      FROM project_times pt
+      LEFT JOIN projects pr ON pr.id = pt.project_id
+      LEFT JOIN users ow ON ow.id = pr.owner_user_id
+      LEFT JOIN subprojects sp ON sp.id = pt.subproject_id
+      WHERE pt.organization_id = ${orgId} AND pt.user_id = ${userId}
+        AND pt.start_time::date >= ${periodStart}::date AND pt.start_time::date < (${periodStart}::date + interval '1 month')
+      ORDER BY pr.name NULLS LAST, pt.start_time`);
+    const projects: ProjectReportPdfData['projects'] = [];
+    for (const e of entries.rows as Record<string, unknown>[]) {
+      const id = (e.project_id as string | null) ?? null;
+      let p = projects.find((x) => (x as { id?: string | null }).id === id);
+      if (!p) {
+        const period = id ? byProject.get(id) : undefined;
+        const status = ((period?.status as string | undefined) ?? 'open') as ProjectStatus;
+        p = Object.assign(
+          {
+            project: (e.project as string | null) ?? null,
+            owner: (e.owner as string | null) ?? null,
+            status,
+            approvedBy: status === 'approved' ? ((period?.reviewer as string | null) ?? null) : null,
+            approvedAt: status === 'approved' ? iso(period?.reviewed_at as string | null) : null,
+            submittedAt: iso((period?.submitted_at as string | null) ?? null),
+            autoApproved: status === 'approved' && period?.reviewed_by_user_id === userId,
+            entries: [],
+          },
+          { id },
+        );
+        projects.push(p);
+      }
+      p.entries.push({
+        start: new Date(e.start_time as string).toISOString(),
+        end: new Date(e.end_time as string).toISOString(),
+        minutes: Math.round(Number(e.minutes)),
+        subproject: (e.subproject as string | null) ?? null,
+        comment: (e.comment as string | null) ?? null,
+      });
+    }
+    const timeZone = await this.workTime.timeZone(db, userId);
+    const buffer = await renderProjectReportPdf({ organization: owner.org_name, person: owner.person, periodStart, timeZone, projects }, pdfLang(owner.locale));
+    return this.link(db, owner, 'project_timesheet', periodStart, null, buffer, actorUserId, { table: 'project_time_periods', id: [...byProject.keys()][0] });
   }
 }

@@ -519,6 +519,10 @@ export default function App() {
       navigate('approvals');
       return;
     }
+    if (n.source_table === 'personnel_documents') {
+      navigate('documents');
+      return;
+    }
     if (n.source_table === 'requests') {
       setRequestFocus(n.source_table_uuid);
       navigate('requests');
@@ -1045,6 +1049,7 @@ export default function App() {
                   canAccessBasicData={permissions ? seesOthersBasicData(permissions) : flags.isAdmin || flags.isHr}
                   canSeeWorkSchedules={permissions ? holdsBeyondOwn(permissions, 'section.workTime.schedule', 'see') : flags.isAdmin || flags.isHr || flags.canManage}
                   canSeeEmployment={permissions ? holdsBeyondOwn(permissions, 'section.people.employment', 'see') : flags.isAdmin || flags.isHr || flags.canManage}
+                  canSeePersonnelDocs={permissions ? holdsBeyondOwn(permissions, 'section.people.documents', 'see') : flags.isHr}
                   canManage={flags.canManage}
                   authHeaders={authHeaders}
                 />

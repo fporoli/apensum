@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -25,7 +25,8 @@ import { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField
 import { FieldDesignScope, useFormTemplate } from './designMode';
 import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon, UploadIcon } from './icons';
+import { DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon } from './icons';
+import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -150,6 +151,10 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const [showAdditional, setShowAdditional] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmRemoveDocId, setConfirmRemoveDocId] = useState<string | null>(null);
+  // The receipt in the form: the stored one of the expense being edited, and a new file to upload on save.
+  const [receipt, setReceipt] = useState<Attachment | null>(null);
+  const onDraftError = useCallback((message: string) => setError(message), []);
+  const draft = useAttachmentDraft(onDraftError, { max: 1 });
 
   async function reload() {
     setLoading(true);
@@ -244,6 +249,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
 
   function resetForm() {
     setEditingId(null);
+    setReceipt(null);
+    draft.clear();
     setValues(emptyForm(String(values.currency ?? '')));
     setFieldErrors({});
     setShowAdditional(false);
@@ -269,6 +276,14 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       if (!data.ok) {
         if (data.error === 'invalid-field' && Array.isArray(data.fields)) showFieldErrors(data.fields);
         else setError(ERROR_MESSAGES[data.error]?.(t) ?? t('expenses.saveFailed', { error: data.error ?? 'unknown error' }));
+        return;
+      }
+      const savedId: string = editingId ?? data.id;
+      const file = draft.files[0];
+      if (file && savedId && !(await uploadPayslip(savedId, file, false))) {
+        // The expense is saved; keep the form so the receipt can be attached again.
+        setEditingId(savedId);
+        await reload();
         return;
       }
       resetForm();
@@ -299,9 +314,10 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     }
   }
 
-  async function uploadPayslip(id: string, file: File) {
+  /** Uploads a receipt; false (with the error shown) when it failed. */
+  async function uploadPayslip(id: string, file: File, announce = true): Promise<boolean> {
     setError(null);
-    setSuccess(null);
+    if (announce) setSuccess(null);
     const body = new FormData();
     body.append('file', file);
     try {
@@ -309,12 +325,16 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       const data = await res.json();
       if (!data.ok) {
         setError(t('expenses.uploadFailed', { error: data.error ?? 'unknown error' }));
-        return;
+        return false;
       }
-      setSuccess(t('expenses.uploadSuccess'));
-      await reload();
+      if (announce) {
+        setSuccess(t('expenses.uploadSuccess'));
+        await reload();
+      }
+      return true;
     } catch {
       setError(t('expenses.uploadFailed', { error: 'offline' }));
+      return false;
     }
   }
 
@@ -329,6 +349,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
         return;
       }
       setSuccess(t('expenses.payslipRemoved'));
+      if (editingId === id) setReceipt(null);
       await reload();
     } catch {
       setError(t('expenses.saveFailedOffline'));
@@ -339,7 +360,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     try {
       const res = await fetch(`${API}/expenses/${id}/document`, { headers: await authHeaders() });
       const disposition = res.headers.get('content-disposition') ?? '';
-      const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'payslip';
+      const encoded = /filename\*=UTF-8''([^;]+)/.exec(disposition)?.[1];
+      const fileName = encoded ? decodeURIComponent(encoded) : (/filename="([^"]+)"/.exec(disposition)?.[1] ?? 'payslip');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -350,8 +372,21 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     } catch { /* offline fallback */ }
   }
 
+  async function loadReceipt(id: string) {
+    try {
+      const res = await fetch(`${API}/expenses/${id}/document/meta`, { headers: await authHeaders() });
+      const data = await res.json();
+      setReceipt(data?.id ? { id: data.id, file_name: data.file_name, mime_type: data.mime_type, size_bytes: data.size_bytes } : null);
+    } catch {
+      setReceipt(null);
+    }
+  }
+
   function startEdit(row: ExpenseRow) {
     setEditingId(row.id);
+    draft.clear();
+    setReceipt(null);
+    if (row.document_id) void loadReceipt(row.id);
     setValues(formFromRow(row));
     setFieldErrors({});
     setShowAdditional(true);
@@ -373,6 +408,13 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   );
   const disabledKeys = [...(category ? [] : ['subCategory']), ...(projectId && subprojects.length > 0 ? [] : ['subprojectId'])];
   const groupProps = { form, values, editing: true, onChange: updateField, options, errors: fieldErrors, disabledKeys };
+  const editingRow = editingId ? entries.find((e) => e.id === editingId) : undefined;
+  const editingLocked = editingRow ? isRowLocked(editingRow) : false;
+  // Newest first: the expense just added appears at the top.
+  const sortedEntries = useMemo(
+    () => [...entries].sort((a, b) => b.expense_date.localeCompare(a.expense_date) || b.id.localeCompare(a.id)),
+    [entries],
+  );
 
   return (
     <FieldDesignScope designer={designer}>
@@ -385,6 +427,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
 
         <Paper
           component="form"
+          onPaste={(e) => draft.onPaste(e)}
           onSubmit={(e) => {
             e.preventDefault();
             void save();
@@ -411,6 +454,32 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
               <ConfigFieldGroup group="additional" {...groupProps} />
             </Box>
           </Collapse>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 0.75 }}>{t('expenses.receipt')}</Typography>
+            <DropZone dragging={draft.dragging} dropProps={draft.dropProps}>
+              <Box sx={{ display: 'grid', gap: 1, p: 1.25, border: 1, borderStyle: 'dashed', borderColor: 'divider', borderRadius: 1 }}>
+                {receipt && draft.files.length === 0 && editingId && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <AttachmentView attachment={receipt} url={`${API}/expenses/${editingId}/document`} authHeaders={authHeaders} />
+                    {!editingLocked && (
+                      <Tooltip title={t('expenses.removePayslip')}>
+                        <IconButton size="small" color="error" aria-label={t('expenses.removePayslip')} onClick={() => setConfirmRemoveDocId(editingId)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    )}
+                  </Box>
+                )}
+                {draft.chips}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {draft.button}
+                  <Typography variant="body2" color="text.secondary">
+                    {receipt && editingId ? t('expenses.receipt.replaceHint') : t('expenses.receipt.hint')}
+                  </Typography>
+                </Box>
+              </Box>
+            </DropZone>
+          </Box>
           <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
             <Button type="submit" variant="contained" disabled={saving}>{editingId ? t('expenses.save') : t('time.add')}</Button>
             {editingId && <Button onClick={resetForm} disabled={saving}>{t('expenses.cancel')}</Button>}
@@ -434,7 +503,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                 </TableRow>
               </TableHead>
               <TableBody>
-                {entries.map((row) => {
+                {sortedEntries.map((row) => {
                   const locked = isRowLocked(row);
                   const numVal = Number(row.value);
                   const formattedVal = Number.isFinite(numVal) ? formatLocaleNumber(numVal, locale) : row.value;
@@ -459,29 +528,11 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                         )}
                       </TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                        {row.document_id ? (
-                          <>
-                            <Tooltip title={t('expenses.download')}>
-                              <IconButton size="small" aria-label={t('expenses.payslip')} onClick={() => void downloadPayslip(row.id)}>
-                                <DownloadIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            {!locked && (
-                              <Tooltip title={t('expenses.removePayslip')}>
-                                <IconButton size="small" color="error" aria-label={t('expenses.removePayslip')} onClick={() => setConfirmRemoveDocId(row.id)}>
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </>
-                        ) : (
-                          <Tooltip title={locked ? t('expenses.lockedTooltip') : t('expenses.attachPayslip')}>
-                            <span>
-                              <IconButton size="small" component="label" disabled={locked} aria-label={t('expenses.attachPayslip')}>
-                                <UploadIcon fontSize="small" />
-                                <input type="file" hidden disabled={locked} onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadPayslip(row.id, f); }} />
-                              </IconButton>
-                            </span>
+                        {row.document_id && (
+                          <Tooltip title={t('expenses.download')}>
+                            <IconButton size="small" aria-label={t('expenses.payslip')} onClick={() => void downloadPayslip(row.id)}>
+                              <DownloadIcon fontSize="small" />
+                            </IconButton>
                           </Tooltip>
                         )}
                         <Tooltip title={locked ? t('expenses.lockedTooltip') : t('time.edit')}>

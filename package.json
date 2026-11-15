@@ -14,6 +14,9 @@
     "db:migrate": "node infra/liquibase/migrate.mjs",
     "db:status": "node infra/liquibase/migrate.mjs status",
     "db:seed": "node infra/postgres/run-seed.mjs infra/postgres/seeds/seed.sql",
+    "db:documents": "cd apps/api && NODE_PATH=./node_modules tsx --conditions=source scripts/issue-documents.ts",
+    "db:encrypt-documents": "cd apps/api && NODE_PATH=./node_modules tsx --conditions=source scripts/encrypt-documents.ts",
+    "db:seed:documents": "npm run db:seed && npm run db:documents",
     "db:introspect": "npm run db:introspect --workspace=@worktime3/api",
     "db:checkschema": "npm run db:checkschema --workspace=@worktime3/api",
     "stack": "node scripts/stack.mjs",
@@ -24,9 +27,10 @@
     "dev:web": "node scripts/with-env.mjs dev npm run dev --workspace=@worktime3/web",
     "dev:migrate": "node scripts/with-env.mjs dev npm run db:migrate",
     "dev:status": "node scripts/with-env.mjs dev npm run db:status",
-    "dev:seed": "node scripts/with-env.mjs dev npm run db:seed",
+    "dev:seed": "node scripts/with-env.mjs dev npm run db:seed:documents",
+    "dev:encrypt-documents": "node scripts/with-env.mjs dev npm run db:encrypt-documents",
     "dev:resetdb": "node scripts/with-env.mjs dev node scripts/reset-db.mjs",
-    "dev:introspect":"node scripts/with-env.mjs dev npm run db:introspect",
+    "dev:introspect": "node scripts/with-env.mjs dev npm run db:introspect",
     "dev:checkschema": "node scripts/with-env.mjs dev npm run db:checkschema",
     "dev:psql": "node scripts/with-env.mjs dev docker compose -f compose/docker-compose.dev.yml exec pg psql -U worktime worktime",
     "local:up": "node scripts/with-env.mjs local docker compose -f compose/docker-compose.local.yml up -d --build",
@@ -38,7 +42,7 @@
     "local:resetdb": "node scripts/with-env.mjs local node scripts/reset-db.mjs",
     "local:introspect": "node scripts/with-env.mjs local npm run db:introspect",
     "local:checkschema": "node scripts/with-env.mjs local npm run db:checkschema",
-    "local:psql":"node scripts/with-env.mjs local docker compose -f compose/docker-compose.local.yml exec pg psql -U worktime worktime"
+    "local:psql": "node scripts/with-env.mjs local docker compose -f compose/docker-compose.local.yml exec pg psql -U worktime worktime"
   },
   "engines": {
     "node": ">=24"

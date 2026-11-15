@@ -8,6 +8,7 @@ import { callerUserId, can, isOrgMember, membershipManagerId, reachesAll, type E
 import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
+import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -109,6 +110,7 @@ export class RequestsController {
     private readonly notifications: NotificationsService,
     private readonly versions: VersionsService,
     private readonly documents: DocumentsService,
+    private readonly forwardMail: ForwardMailService,
   ) {}
 
   /** Inserts a message with its attachments (stored through DocumentsService). */
@@ -453,6 +455,16 @@ export class RequestsController {
   }
 
   /** Downloads an attachment of a request the caller may see. */
+  /** "Send by e-mail": mails the request to colleagues (`{ userIds, subject, message }`), anyone who may see it. */
+  @Post(':id/forward')
+  async forward(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: ForwardInput, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.caller(db, orgId, req);
+    if (!callerId || !(await this.access(db, orgId, callerId, id))) return { ok: false, error: 'not-found' };
+    return this.forwardMail.send(db, orgId, callerId, body ?? {}, { type: 'request', id, path: `#/requests?id=${id}` });
+  }
+
   @Get(':id/attachments/:documentId')
   async download(
     @Param('orgId') orgId: string,
@@ -476,7 +488,7 @@ export class RequestsController {
       res.status(404).json({ ok: false, error: 'not-found' });
       return;
     }
-    this.documents.send(res, doc);
+    await this.documents.send(res, doc);
   }
 
   private async displayName(db: Executor, userId: string): Promise<string> {

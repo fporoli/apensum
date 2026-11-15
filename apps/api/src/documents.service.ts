@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Db } from './db.service';
 import type { Response } from 'express';
 import { documents } from './db/schema';
+import { currentMasterKey, decryptDocument, encryptDocument, masterKeys } from './document-crypto';
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 // Resolved relative to this compiled file (dist/documents.service.js), so storage location
@@ -18,6 +18,9 @@ export const DOCUMENTS_ROOT = process.env.DOCUMENTS_DIR ?? join(__dirname, '..',
  * record that needs at most one attachment — an absence's doctor's note, an expense's pay slip.
  * The owning record (absences/expenses) holds a nullable `document_id` FK; this service doesn't
  * know or care which table that is.
+ *
+ * Files are encrypted at rest when DOCUMENTS_KEY is set (document-crypto.ts); reading always goes
+ * through `read`/`send`, which decrypt. Without the key files are stored plain (warned at startup).
  */
 @Injectable()
 export class DocumentsService {
@@ -48,8 +51,10 @@ export class DocumentsService {
     const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(-200) || 'document';
     const storedName = `${randomUUID()}-${safeName}`;
     const relativePath = join(organizationId, storedName);
+    const master = currentMasterKey();
+    const sealed = master ? encryptDocument(file.buffer, master) : null;
     await mkdir(join(DOCUMENTS_ROOT, organizationId), { recursive: true });
-    await writeFile(join(DOCUMENTS_ROOT, relativePath), file.buffer);
+    await writeFile(join(DOCUMENTS_ROOT, relativePath), sealed ? sealed.file : file.buffer);
 
     const [row] = await db
       .insert(documents)
@@ -62,21 +67,40 @@ export class DocumentsService {
         source_table: source.table,
         source_table_id: source.id,
         uploaded_by_user_id: uploadedByUserId,
+        encrypted_key: sealed?.encryptedKey ?? null,
+        key_id: sealed?.keyId ?? null,
       })
       .returning({ id: documents.id });
     return row.id;
   }
 
-  /** Streams a document as a download (the caller has checked access); 404 when the file is gone. */
-  send(res: Response, doc: { file_name: string; mime_type: string; storage_path: string }): void {
+  /** A document's content, decrypted. */
+  async read(doc: { storage_path: string; encrypted_key: string | null; key_id: string | null }): Promise<Buffer> {
+    const file = await readFile(join(DOCUMENTS_ROOT, doc.storage_path));
+    return doc.encrypted_key && doc.key_id ? decryptDocument(file, doc.encrypted_key, doc.key_id, masterKeys()) : file;
+  }
+
+  /** Sends a document as a download (the caller has checked access); 404 when the file is gone. */
+  async send(res: Response, doc: { file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }): Promise<void> {
+    let content: Buffer;
+    try {
+      content = await this.read(doc);
+    } catch (err) {
+      const missing = (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+      if (!missing) {
+        // eslint-disable-next-line no-console
+        console.error(`document ${doc.storage_path} could not be read: ${err instanceof Error ? err.message : err}`);
+      }
+      res.status(missing ? 404 : 500).json({ ok: false, error: missing ? 'not-found' : 'document-unreadable' });
+      return;
+    }
     res.set({
       'Content-Type': doc.mime_type,
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.file_name)}`,
       'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-store',
     });
-    createReadStream(join(DOCUMENTS_ROOT, doc.storage_path))
-      .on('error', () => res.status(404).end())
-      .pipe(res);
+    res.send(content);
   }
 
   async get(db: Db, documentId: string) {

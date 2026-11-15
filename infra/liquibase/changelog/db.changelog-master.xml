@@ -74,6 +74,10 @@
     <include file="056-permission-documents.sql" relativeToChangelogFile="true"/>
     <include file="057-timesheet-documents.sql" relativeToChangelogFile="true"/>
     <include file="058-permission-directory.sql" relativeToChangelogFile="true"/>
+    <include file="059-project-report-per-month.sql" relativeToChangelogFile="true"/>
+    <include file="060-document-encryption.sql" relativeToChangelogFile="true"/>
+    <include file="061-personnel-documents.sql" relativeToChangelogFile="true"/>
+    <include file="062-permission-personnel-documents.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

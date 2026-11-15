@@ -64,6 +64,9 @@ services:
       API_PORT: 8000
       # Compose passes only what is listed here: values come from .env.local via `npm run local:up`.
       API_JWT_SECRET: ${API_JWT_SECRET:-}
+      # Encryption of stored documents (empty = unencrypted, warned at startup).
+      DOCUMENTS_KEY: ${DOCUMENTS_KEY:-}
+      DOCUMENTS_KEY_PREVIOUS: ${DOCUMENTS_KEY_PREVIOUS:-}
       # Keycloak tokens carry the browser's address (via caddy :8092); the API fetches the
       # signing keys from the keycloak container directly, since localhost here is the API itself.
       JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8092/realms/worktime}

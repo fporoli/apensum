@@ -27,7 +27,9 @@ import { EmploymentController } from './employment.controller';
 import { RequestsController } from './requests.controller';
 import { DocumentsController } from './documents.controller';
 import { DirectoryController } from './directory.controller';
+import { PersonnelDocumentsController } from './personnel-documents.controller';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
+import { ForwardMailService } from './forward-mail.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
@@ -72,6 +74,7 @@ import { DbService } from './db.service';
     RequestsController,
     DocumentsController,
     DirectoryController,
+    PersonnelDocumentsController,
     TimesheetsController,
     ProjectTimesheetsController,
     ExpensesController,
@@ -90,6 +93,7 @@ import { DbService } from './db.service';
     WorkTimeModelService,
     DocumentsService,
     TimesheetDocumentsService,
+    ForwardMailService,
     RbacService,
     AuditService,
     VersionsService,

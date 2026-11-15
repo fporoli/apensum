@@ -28,7 +28,9 @@ function namedFile(file: File, pasted: boolean): File {
  * (screenshots and copied files) into its text field. Too large or too many files are refused
  * with a message, before anything is sent.
  */
-export function useAttachmentDraft(onError: (message: string) => void) {
+export function useAttachmentDraft(onError: (message: string) => void, options: { max?: number } = {}) {
+  // `max: 1` is a single slot (an expense's receipt): a new file replaces the previous one.
+  const max = options.max ?? MAX_ATTACHMENTS;
   const { t, locale } = useI18n();
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -38,13 +40,13 @@ export function useAttachmentDraft(onError: (message: string) => void) {
     (incoming: File[], pasted = false) => {
       if (incoming.length === 0) return;
       setFiles((current) => {
-        const next = [...current];
-        for (const raw of incoming) {
+        const next = max === 1 ? [] : [...current];
+        for (const raw of max === 1 ? incoming.slice(-1) : incoming) {
           const file = namedFile(raw, pasted);
           if (file.size > MAX_ATTACHMENT_BYTES) {
             onError(t('attachments.tooLarge', { name: file.name, max: formatFileSize(MAX_ATTACHMENT_BYTES, locale) }));
-          } else if (next.length >= MAX_ATTACHMENTS) {
-            onError(t('attachments.tooMany', { max: String(MAX_ATTACHMENTS) }));
+          } else if (next.length >= max) {
+            onError(t('attachments.tooMany', { max: String(max) }));
             break;
           } else {
             next.push(file);
@@ -53,7 +55,7 @@ export function useAttachmentDraft(onError: (message: string) => void) {
         return next;
       });
     },
-    [onError, t, locale],
+    [onError, t, locale, max],
   );
 
   const onPaste = (e: ClipboardEvent) => {
@@ -85,7 +87,7 @@ export function useAttachmentDraft(onError: (message: string) => void) {
       <input
         ref={inputRef}
         type="file"
-        multiple
+        multiple={max > 1}
         hidden
         onChange={(e) => {
           add(Array.from(e.target.files ?? []));

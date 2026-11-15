@@ -5,6 +5,7 @@ import { callerUserId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { workflows, workflow_definitions, timesheet_periods, expense_reports, absences, users } from './db/schema';
 import { WorkflowsService } from './workflows.service';
+import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 
 /**
  * Generic surface over any workflow_definitions-driven approval: a manager's
@@ -18,6 +19,7 @@ export class WorkflowsController {
   constructor(
     private readonly db: DbService,
     private readonly workflowsSvc: WorkflowsService,
+    private readonly forwardMail: ForwardMailService,
   ) {}
 
   /**
@@ -147,6 +149,17 @@ export class WorkflowsController {
       absence: r.source_table === 'absences' ? (absenceById.get(r.source_table_uuid) ?? null) : null,
       project_time_period: r.source_table === 'project_time_periods' ? (projectPeriodById.get(r.source_table_uuid) ?? null) : null,
     }));
+  }
+
+  /** "Send by e-mail" on an Approvals item: mails it to colleagues (`{ userIds, subject, message }`). */
+  @Post(':id/forward')
+  async forward(@Param('id') id: string, @Body() body: ForwardInput, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    const orgId = callerId && /^[0-9a-f-]{36}$/i.test(id) ? await this.workflowsSvc.actorOrganization(db, id, callerId) : null;
+    if (!callerId || !orgId) return { ok: false, error: 'not-found' };
+    return this.forwardMail.send(db, orgId, callerId, body ?? {}, { type: 'workflow', id, path: '#/approvals' });
   }
 
   @Post(':id/approve')

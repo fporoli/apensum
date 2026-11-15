@@ -31,7 +31,7 @@ import { getAbsenceTitle } from './Absences';
 import type { ExpenseRow } from './Expenses';
 import { PageHeader, TableEmptyRow } from './components';
 import { CheckCircleIcon, DownloadIcon, MailIcon, SearchIcon } from './icons';
-import { appLink, mailtoHref } from './mailto';
+import ForwardMailDialog from './ForwardMailDialog';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -172,6 +172,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [forwardingItem, setForwardingItem] = useState<ActionItem | null>(null);
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -432,26 +433,22 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
       .join(' + ');
   }, [inspectingExpenses, locale]);
 
-  /**
-   * "Send by e-mail": opens the approver's mail program with the item, addressed to the person it is
-   * about (e.g. to ask a question or as a reminder); they can change the recipient before sending.
-   */
-  function itemMailto(item: ActionItem): string {
+  /** "Send by e-mail" (ForwardMailDialog): suggested to the person the item is about, e.g. as a reminder or a question. */
+  function itemPersonId(item: ActionItem): string | null {
+    return (item.timesheet_period ?? item.expense_report ?? item.absence ?? item.project_time_period)?.user_id ?? null;
+  }
+
+  function itemMessage(item: ActionItem): string {
     const person = itemPerson(item);
-    const kind = actionItemLabel(item.definition_name, t);
-    const object = correspondingObject(item);
     const detail = actionItemDetail(item);
-    const body = [
-      t('approvals.mail.intro', { kind, object }),
+    return [
+      t('approvals.mail.intro', { kind: actionItemLabel(item.definition_name, t), object: correspondingObject(item) }),
       person ? `${person.name} <${person.email}>` : '',
       detail !== '—' ? detail : '',
       item.started ? t('approvals.mail.since', { date: formatLocaleDate(item.started.slice(0, 10), locale) }) : '',
-      '',
-      appLink('#/approvals'),
     ]
-      .filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== ''))
+      .filter(Boolean)
       .join('\n');
-    return mailtoHref({ to: [person?.email], subject: t('approvals.mail.subject', { kind, object }), body });
   }
 
   const filteredActionItems = actionItems.filter((item) => {
@@ -553,7 +550,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void viewAbsenceDocument(item.absence!)}>{t('approvals.documents')}</Button>
                       )}
                       <Tooltip title={t('approvals.mail.hint')}>
-                        <IconButton size="small" aria-label={t('approvals.mail')} sx={{ mr: 0.5 }} href={itemMailto(item)}>
+                        <IconButton size="small" aria-label={t('approvals.mail')} sx={{ mr: 0.5 }} onClick={() => setForwardingItem(item)}>
                           <MailIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
@@ -900,6 +897,23 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
           <Button onClick={closeAbsenceDialog}>{t('common.close')}</Button>
         </DialogActions>
       </Dialog>
+      {forwardingItem && (
+        <ForwardMailDialog
+          open
+          onClose={() => setForwardingItem(null)}
+          onSent={(count) => setSuccess(t('mail.sent', { count: String(count) }))}
+          orgId={orgId}
+          endpoint={`/workflows/${forwardingItem.id}/forward`}
+          suggested={
+            itemPersonId(forwardingItem) && itemPerson(forwardingItem)
+              ? [{ id: itemPersonId(forwardingItem) as string, name: itemPerson(forwardingItem)!.name, email: itemPerson(forwardingItem)!.email }]
+              : []
+          }
+          defaultSubject={t('approvals.mail.subject', { kind: actionItemLabel(forwardingItem.definition_name, t), object: correspondingObject(forwardingItem) })}
+          defaultMessage={itemMessage(forwardingItem)}
+          authHeaders={authHeaders}
+        />
+      )}
     </Box>
   );
 }

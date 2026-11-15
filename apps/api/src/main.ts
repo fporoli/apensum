@@ -15,6 +15,10 @@ async function bootstrap() {
   await app.listen(port);
   // eslint-disable-next-line no-console
   console.log(`api listening on ${port}`);
+  if (!process.env.DOCUMENTS_KEY) {
+    // eslint-disable-next-line no-console
+    console.warn('WARNING: DOCUMENTS_KEY is not set: uploaded documents are stored unencrypted. Generate one with `openssl rand -base64 32`.');
+  }
   if (!process.env.DATABASE_URL) {
     // Offline mode is deliberate (endpoints return empty/offline shapes), but it looks like
     // success from the UI — e.g. every login "works" and does nothing — so say so loudly.

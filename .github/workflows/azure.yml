@@ -83,6 +83,8 @@ jobs:
           SMTP_FROM: ${{ vars.SMTP_FROM }}
           SMTP_USER: ${{ vars.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DOCUMENTS_KEY: ${{ secrets.DOCUMENTS_KEY }}
+          DOCUMENTS_KEY_PREVIOUS: ${{ secrets.DOCUMENTS_KEY_PREVIOUS }}
           SMTP_SECURE: ${{ vars.SMTP_SECURE }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}

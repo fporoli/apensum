@@ -269,17 +269,32 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `requests/:id/attachments/:documentId` with the request's access check; the web composer takes the
   paperclip, drag-and-drop and pasted screenshots (`attachments.tsx`).
 - Documents (`nav.documents`, `documents.controller.ts`, `Documents.tsx`, Personal navbar group): the
-  caller's own documents only, as one list built per call: approved-timesheet PDFs, absence and expense
-  evidence, attachments of requests they sent; downloads are checked against that same list. Approving a
-  month (working-time or one project's) issues a PDF (`timesheet-documents.service.ts`, pdfkit, labels in
-  the person's `users.locale`) into `timesheet_documents` (057); reopening sets `superseded_at`, the next
-  approval issues a new one. Months approved without a PDF are listed and issued on first download
-  (`documents/periods/:kind/:periodId`). Issuing is best effort and never fails an approval.
+  caller's own documents only, as one list built per call: timesheet PDFs, monthly project reports, absence
+  and expense evidence, attachments of requests they sent; downloads are checked against that same list.
+  `timesheet-documents.service.ts` (pdfkit, labels in the person's `users.locale`) issues a working-time
+  timesheet PDF when that month is approved, and one project report per person and month (every project
+  with its own approval status) whenever one of that month's projects is approved or reopened; the previous
+  version gets `superseded_at` (`timesheet_documents`, 057/059). Issuing is best effort and never fails an
+  approval. Opening Documents issues the current year's missing PDFs; `npm run db:documents` does it for
+  everyone (run by `dev:seed` / `dev:resetdb`, dev only: the Docker stacks keep files in the API container).
 - Directory (`nav.directory:see:all`, everyone, 058; `directory.controller.ts`, `Directory.tsx`): active
   members with avatar, e-mail, basic-data `phone1` (deliberately shown org-wide), position and department
   of the assignment in force, and an open check-in. Return nothing more from basic data or time records.
-- "Send by e-mail" on requests and Approvals items is a `mailto:` link (`mailto.ts`) to the person's own
-  mail program, never server mail; `#/requests?id=` opens one request.
+- "Send by e-mail" on requests and Approvals items (`ForwardMailDialog.tsx`, `POST requests/:id/forward`,
+  `POST workflows/:id/forward`, `forward-mail.service.ts`): the server mails active members of the org only
+  (max 20), Reply-To the sender, with a link back; whoever may see the item may send it. It is the action
+  itself, so a mail failure is returned as an error (dev: Mailpit on :8025).
+- Documents are encrypted at rest (`document-crypto.ts`, 060): AES-256-GCM per file, its key wrapped with
+  `DOCUMENTS_KEY` (env/secret, never in the DB). Read files only through `DocumentsService.read`/`send`.
+  No key = stored plain with a startup WARNING. `npm run db:encrypt-documents` encrypts plain files;
+  rotation: new key in DOCUMENTS_KEY, old in DOCUMENTS_KEY_PREVIOUS, then `-- --rewrap`. Losing the key
+  loses the documents.
+- Personnel file (`personnel_documents` 061, `section.people.documents` 062, HR edit:all only, not admin;
+  `personnel-documents.controller.ts`, `PersonnelDocumentsPanel.tsx` on the Users page): HR's documents per
+  person, each shared with the person (listed on their Documents page, notified) or HR only. Access is the
+  grant alone, not the reporting line; a person never edits their own file.
+- Expenses: the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
+  shown there when editing; the list is newest first.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

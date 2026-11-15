@@ -61,6 +61,12 @@ try {
 
   console.log('\n== Seeding');
   run('npm', ['run', 'db:seed']);
+  // Dev only: there the API's documents live on this machine (apps/api/data). The Docker stacks keep
+  // them in the API container; their Documents page issues the PDFs when first opened.
+  if (env === 'dev') {
+    console.log("\n== Issuing this year's timesheet PDFs");
+    run('npm', ['run', 'db:documents']);
+  }
 } catch {
   console.error(`\nReset of the ${env} database failed (see above). Is its Postgres running (npm run ${env}:up)?`);
   process.exit(1);

@@ -28,7 +28,7 @@ import {
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { AddIcon, ChevronLeftIcon, MailIcon } from './icons';
-import { appLink, mailtoHref } from './mailto';
+import ForwardMailDialog, { type Recipient } from './ForwardMailDialog';
 import { formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
 
@@ -119,6 +119,8 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
+  const [forwarding, setForwarding] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const replyFiles = useAttachmentDraft(setError);
 
@@ -273,11 +275,16 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   );
 
   /**
-   * "Send by e-mail": opens the person's mail program, addressed to the other side (the handlers when
-   * they sent it, else the requester), with the thread's latest messages and a link back.
+   * "Send by e-mail": the server mails it (ForwardMailDialog). Suggested: the other side (the handlers
+   * when the caller sent it, else the requester); the message holds the thread's latest messages.
    */
-  function requestMailto(req: RequestItem, d: Detail): string {
-    const to = d.isRequester ? d.handlers.filter((h) => h.id !== userId).map((h) => h.email) : [req.requester_email];
+  function forwardSuggested(req: RequestItem, d: Detail): Recipient[] {
+    return d.isRequester
+      ? d.handlers.filter((h) => h.id !== userId).map((h) => ({ id: h.id, name: h.name, email: h.email }))
+      : [{ id: req.requester_user_id, name: req.requester_name ?? req.requester_email, email: req.requester_email }];
+  }
+
+  function forwardMessage(req: RequestItem, d: Detail): string {
     const messages = d.messages
       .filter((m) => m.kind === 'message')
       .slice(-3)
@@ -285,13 +292,11 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         const files = m.attachments.length ? `\n📎 ${m.attachments.map((f) => f.file_name).join(', ')}` : '';
         return `${m.author_name ?? '—'} · ${formatLocaleDateTime(m.posted_at, locale)}\n${m.body ?? ''}${files}`.trim();
       });
-    const body = [
+    return [
       t('requests.mail.intro', { subject: req.subject }),
       `${t('requests.from', { name: req.requester_name ?? req.requester_email })} · ${target(req)} · ${t(`requests.status.${req.status}`)}`,
-      appLink('#/requests', { id: req.id }),
       ...(messages.length ? ['', t('requests.mail.latest'), '', messages.join('\n\n---\n\n')] : []),
     ].join('\n');
-    return mailtoHref({ to, subject: t('requests.mail.subject', { subject: req.subject }), body });
   }
 
   const thread = r && detail && (
@@ -348,7 +353,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           )
         )}
         <Tooltip title={t('requests.mail.hint')}>
-          <Button size="small" startIcon={<MailIcon />} href={requestMailto(r, detail)}>
+          <Button size="small" startIcon={<MailIcon />} onClick={() => setForwarding(true)}>
             {t('requests.mail')}
           </Button>
         </Tooltip>
@@ -450,6 +455,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
       <Tabs
         value={box}
@@ -482,6 +488,20 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           )}
         </Box>
       </Box>
+
+      {r && detail && (
+        <ForwardMailDialog
+          open={forwarding}
+          onClose={() => setForwarding(false)}
+          onSent={(count) => setNotice(t('mail.sent', { count: String(count) }))}
+          orgId={orgId}
+          endpoint={`/organizations/${orgId}/requests/${r.id}/forward`}
+          suggested={forwardSuggested(r, detail)}
+          defaultSubject={t('requests.mail.subject', { subject: r.subject })}
+          defaultMessage={forwardMessage(r, detail)}
+          authHeaders={authHeaders}
+        />
+      )}
 
       <NewRequestDialog
         open={composeOpen}

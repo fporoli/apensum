@@ -2,30 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "api: build",
+      "label": "api: prepare",
+      "detail": "Postgres/Keycloak/Mailpit up, stop a leftover API on 8001, build the API (one terminal).",
       "type": "shell",
-      "command": "npm run build --workspace=@worktime3/api",
+      "command": "npm run dev:up && node scripts/free-port.mjs 8001 && npm run build --workspace=@worktime3/api",
       "problemMatcher": [
         "$tsc"
       ],
       "presentation": {
         "reveal": "silent",
-        "panel": "shared"
-      },
-      "dependsOn": [
-        "dev: services up",
-        "api: free port"
-      ],
-      "dependsOrder": "sequence"
-    },
-    {
-      "label": "api: free port",
-      "type": "shell",
-      "command": "node scripts/free-port.mjs 8001",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "silent",
-        "panel": "shared"
+        "panel": "shared",
+        "group": "dev",
+        "clear": true,
+        "showReuseMessage": false
       }
     },
     {
@@ -34,8 +23,10 @@
       "command": "node scripts/wait-for-api.mjs http://localhost:8001/api/v1/health",
       "problemMatcher": [],
       "presentation": {
-        "reveal": "silent",
-        "panel": "shared"
+        "reveal": "never",
+        "panel": "shared",
+        "close": true,
+        "showReuseMessage": false
       }
     },
     {

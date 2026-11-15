@@ -309,6 +309,20 @@ EOF
         value: \"$SMTP_PASSWORD\""
     smtp_env="          - { name: SMTP_PASSWORD, secretRef: smtp-password }"
   fi
+  # Documents at rest, optional: the master key (and older ones during a rotation) as secrets.
+  local docs_secret="" docs_env=""
+  if [ -n "${DOCUMENTS_KEY:-}" ]; then
+    docs_secret="      - name: documents-key
+        value: \"$DOCUMENTS_KEY\""
+    docs_env="          - { name: DOCUMENTS_KEY, secretRef: documents-key }"
+    if [ -n "${DOCUMENTS_KEY_PREVIOUS:-}" ]; then
+      docs_secret="$docs_secret
+      - name: documents-key-previous
+        value: \"$DOCUMENTS_KEY_PREVIOUS\""
+      docs_env="$docs_env
+          - { name: DOCUMENTS_KEY_PREVIOUS, secretRef: documents-key-previous }"
+    fi
+  fi
   # AI assistant, optional: each key is wired only when set (no key = assistant off).
   local ai_secret="" ai_env=""
   if [ -n "${GEMINI_API_KEY:-}" ]; then
@@ -333,6 +347,7 @@ EOF
       - name: api-jwt-secret
         value: "$API_JWT_SECRET"
 $smtp_secret
+$docs_secret
 $ai_secret
     ingress: { external: true, targetPort: 8000, transport: auto, allowInsecure: false }
   template:
@@ -357,6 +372,7 @@ $ai_secret
           - { name: GEMINI_MODEL, value: "${GEMINI_MODEL:-}" }
           - { name: OPENAI_MODEL, value: "${OPENAI_MODEL:-}" }
 $smtp_env
+$docs_env
 $ai_env
         volumeMounts:
           - { volumeName: documents, mountPath: /data/documents }
@@ -479,7 +495,7 @@ secrets() {
   # Config lives in the `azure` GitHub Environment (the workflows declare it). Creating it
   # is idempotent; the secrets and variables below are scoped to it, not the whole repo.
   gh api -X PUT "repos/$GITHUB_REPOSITORY/environments/azure" --silent
-  for name in GHCR_TOKEN POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET SMTP_PASSWORD GEMINI_API_KEY OPENAI_API_KEY; do
+  for name in GHCR_TOKEN POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS SMTP_PASSWORD GEMINI_API_KEY OPENAI_API_KEY; do
     [ -z "${!name:-}" ] || printf '%s' "${!name}" | gh secret set "$name" --repo "$GITHUB_REPOSITORY" --env azure
   done
   gh variable set AZURE_RESOURCE_GROUP --repo "$GITHUB_REPOSITORY" --env azure --body "$RESOURCE_GROUP"

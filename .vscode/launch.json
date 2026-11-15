@@ -8,11 +8,13 @@
       "cwd": "${workspaceFolder}/apps/api",
       "program": "${workspaceFolder}/apps/api/dist/main.js",
       "envFile": "${workspaceFolder}/.env.dev",
-      "preLaunchTask": "api: build",
+      "preLaunchTask": "api: prepare",
       "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js"],
       "sourceMaps": true,
       "skipFiles": ["<node_internals>/**"],
-      "console": "integratedTerminal"
+      // Output in the Debug Console: no extra terminal, and the process ends with the session.
+      "console": "internalConsole",
+      "outputCapture": "std"
     },
     {
       "type": "chrome",

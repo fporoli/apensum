@@ -444,7 +444,7 @@ erDiagram
 > `(organization_id, user_id, month)` (`uq_work_time_months`); absences are
 > refused for days in a submitted or approved month, whose numbers are frozen.
 
-## Documents (2 tables)
+## Documents (3 tables)
 
 Generic uploaded-file metadata (a doctor's note for an absence, a pay slip
 for an expense) — one table reused by any record that needs at most one
@@ -472,6 +472,8 @@ erDiagram
         uuid source_table_id "polymorphic — no FK; diagnostics/cleanup only"
         uuid uploaded_by_user_id FK "nullable"
         timestamptz created_at
+        text encrypted_key "wrapped per-file key (AES-256-GCM); NULL = plain file"
+        text key_id "fingerprint of the master key (DOCUMENTS_KEY) that wrapped it"
     }
     ORGANIZATIONS { uuid id PK }
     USERS { uuid id PK }
@@ -486,36 +488,65 @@ erDiagram
 > Uploading a replacement deletes the previous `documents` row and file
 > rather than keeping history.
 
-`timesheet_documents` (057) links the PDF issued when a month is approved
-to the person and the period: either a working-time timesheet
-(`timesheet_period_id`) or one project's month (`project_time_period_id`),
-never both. Reopening the month sets `superseded_at`; the next approval adds
-a new row, so at most one row per period is current (partial unique
-indexes). The Documents page lists these with the person's absence and
-expense evidence and the attachments of their requests.
+`timesheet_documents` (057, 059) links an issued PDF to a person and a month:
+`kind = 'timesheet'` is the working-time timesheet of `timesheet_period_id`;
+`kind = 'project_timesheet'` is the monthly project report (all of the
+person's projects that month, each with its approval status), identified by
+person and `period_start`. Approving or reopening a month issues a new
+version and sets `superseded_at` on the previous one, so at most one row per
+timesheet / person-month is current (partial unique indexes). The Documents
+page lists these with the person's absence and expense evidence, the
+attachments of their requests and the personnel-file documents shared with
+them.
+
+Files are encrypted at rest (060): each with its own key, wrapped with the
+master key `DOCUMENTS_KEY` from the environment (`encrypted_key`, `key_id`).
+
+`personnel_documents` (061) is HR's personnel file: one row per document HR
+keeps for a person (`category` evaluation, bonus, contract, certificate,
+salary, other; optional `document_date`), shared with the person when
+`visible_to_employee`.
+
+```mermaid
+erDiagram
+    DOCUMENTS ||--o| PERSONNEL_DOCUMENTS : "document_id"
+    USERS ||--o{ PERSONNEL_DOCUMENTS : "user_id / uploaded_by_user_id"
+
+    PERSONNEL_DOCUMENTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid user_id FK "whose file"
+        uuid document_id FK "unique"
+        text title
+        text category
+        date document_date "nullable"
+        boolean visible_to_employee
+        uuid uploaded_by_user_id FK "nullable"
+    }
+    DOCUMENTS { uuid id PK }
+    USERS { uuid id PK }
+```
 
 ```mermaid
 erDiagram
     DOCUMENTS ||--o| TIMESHEET_DOCUMENTS : "document_id"
     USERS ||--o{ TIMESHEET_DOCUMENTS : "user_id"
     TIMESHEET_PERIODS ||--o{ TIMESHEET_DOCUMENTS : "timesheet_period_id"
-    PROJECT_TIME_PERIODS ||--o{ TIMESHEET_DOCUMENTS : "project_time_period_id"
 
     TIMESHEET_DOCUMENTS {
         uuid id PK
         uuid organization_id FK
         uuid user_id FK
         uuid document_id FK
-        uuid timesheet_period_id FK "nullable; exactly one of the two period ids"
-        uuid project_time_period_id FK "nullable"
+        text kind "timesheet | project_timesheet"
+        uuid timesheet_period_id FK "kind timesheet only"
         date period_start
         timestamptz issued_at
-        timestamptz superseded_at "set when the month is reopened"
+        timestamptz superseded_at "set when a newer version is issued or the month reopened"
     }
     DOCUMENTS { uuid id PK }
     USERS { uuid id PK }
     TIMESHEET_PERIODS { uuid id PK }
-    PROJECT_TIME_PERIODS { uuid id PK }
 ```
 
 ## Expenses (3 tables)

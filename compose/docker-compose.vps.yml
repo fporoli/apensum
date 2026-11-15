@@ -99,6 +99,9 @@ services:
       # NODE_ENV=production makes jwt.ts refuse to boot without this instead of silently
       # falling back to the insecure hardcoded dev secret — set a real random value.
       API_JWT_SECRET: ${API_JWT_SECRET:?required}
+      # Master key for documents at rest (GitHub Environment secret; empty = unencrypted, warned).
+      DOCUMENTS_KEY: ${DOCUMENTS_KEY:-}
+      DOCUMENTS_KEY_PREVIOUS: ${DOCUMENTS_KEY_PREVIOUS:-}
       APP_BASE_URL: https://${WEB_HOST:?required}
       # AI assistant: one pair from the GitHub Environment (GEMINI wins if both are set);
       # none = the assistant answers assistant-not-configured.

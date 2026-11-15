@@ -14,6 +14,8 @@ export interface MailOptions {
   subject: string;
   text: string;
   from?: string;
+  /** Where answers go, e.g. the colleague who forwarded something (the sender stays the app). */
+  replyTo?: string;
 }
 
 export interface SmtpConfig {
@@ -57,6 +59,7 @@ export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<
       to: options.to,
       subject: options.subject,
       text: options.text,
+      replyTo: options.replyTo,
     });
   } finally {
     transport.close();

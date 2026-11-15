@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hm, pdfFileName, pdfLang, renderProjectTimesheetPdf, renderTimesheetPdf } from '../../apps/api/src/timesheet-documents.service';
+import { hm, pdfFileName, pdfLang, renderProjectReportPdf, renderTimesheetPdf } from '../../apps/api/src/timesheet-documents.service';
 import { DocumentsController } from '../../apps/api/src/documents.controller';
 
 test('hm formats signed hours and minutes', () => {
@@ -17,9 +17,9 @@ test('pdfLang falls back to English', () => {
   assert.equal(pdfLang(null), 'en');
 });
 
-test('pdfFileName names the month and the project', () => {
+test('pdfFileName names the month', () => {
   assert.equal(pdfFileName('timesheet', '2026-10-01'), 'timesheet-2026-10.pdf');
-  assert.equal(pdfFileName('project_timesheet', '2026-10-01', 'Café Relaunch / Phase 2'), 'project-timesheet-2026-10-cafe-relaunch-phase-2.pdf');
+  assert.equal(pdfFileName('project_timesheet', '2026-10-01'), 'project-report-2026-10.pdf');
 });
 
 const approval = { approvedBy: 'Adam A', approvedAt: '2026-11-03T08:10:00Z', submittedAt: '2026-11-01T16:30:00Z', autoApproved: false, timeZone: 'Europe/Zurich' };
@@ -44,20 +44,24 @@ test('renderTimesheetPdf produces a PDF', async () => {
   assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length, 1);
 });
 
-test('renderProjectTimesheetPdf produces a PDF', async () => {
-  const pdf = await renderProjectTimesheetPdf(
+test('renderProjectReportPdf puts every project of the month in one PDF', async () => {
+  const entry = (day: string, minutes: number) => ({ start: `2026-10-${day}T08:00:00Z`, end: `2026-10-${day}T10:30:00Z`, minutes, subproject: null, comment: 'Work' });
+  const pdf = await renderProjectReportPdf(
     {
       organization: 'Acme',
       person: 'Marta',
-      project: 'Website',
-      owner: 'Alice',
       periodStart: '2026-10-01',
-      ...approval,
-      entries: [{ start: '2026-10-06T10:00:00Z', end: '2026-10-06T12:30:00Z', minutes: 150, subproject: null, comment: 'Design' }],
+      timeZone: 'Europe/Zurich',
+      projects: [
+        { project: 'Website', owner: 'Alice', status: 'approved', approvedBy: 'Alice', approvedAt: '2026-11-04T10:00:00Z', submittedAt: '2026-11-01T16:35:00Z', autoApproved: false, entries: [entry('06', 150), entry('12', 150)] },
+        { project: 'Intranet', owner: 'Adam', status: 'submitted', approvedBy: null, approvedAt: null, submittedAt: '2026-11-01T16:35:00Z', autoApproved: false, entries: [entry('07', 150)] },
+        { project: null, owner: null, status: 'open', approvedBy: null, approvedAt: null, submittedAt: null, autoApproved: false, entries: [entry('08', 30)] },
+      ],
     },
     'fr',
   );
   assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+  assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length, 1);
 });
 
 test('documents list and downloads need nav.documents', async () => {

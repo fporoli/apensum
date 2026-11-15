@@ -26,11 +26,12 @@ import {
 import { BasicDataPanel } from './BasicDataPanel';
 import WorkSchedulePanel from './WorkSchedulePanel';
 import EmploymentPanel from './EmploymentPanel';
+import PersonnelDocumentsPanel from './PersonnelDocumentsPanel';
 import { BalancesPanel } from './BalancesPanel';
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { PageHeader, TableEmptyRow } from './components';
-import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon } from './icons';
+import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -60,6 +61,8 @@ interface UsersProps {
   canSeeWorkSchedules?: boolean;
   /** The caller may see other people's employment (section.people.employment beyond own). */
   canSeeEmployment?: boolean;
+  /** May open other members' personnel file (section.people.documents, HR by default). */
+  canSeePersonnelDocs?: boolean;
   canManage: boolean;
   authHeaders: () => Promise<Record<string, string>>;
 }
@@ -70,7 +73,7 @@ const STATUS_COLOR: Record<string, 'default' | 'success' | 'warning' | 'error'> 
   suspended: 'error',
 };
 
-export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSchedules = false, canSeeEmployment = false, canManage, authHeaders }: UsersProps) {
+export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSchedules = false, canSeeEmployment = false, canSeePersonnelDocs = false, canManage, authHeaders }: UsersProps) {
   const { t, locale } = useI18n();
   const [members, setMembers] = useState<Member[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
@@ -82,6 +85,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
   const [balancesFor, setBalancesFor] = useState<Member | null>(null);
   const [scheduleFor, setScheduleFor] = useState<Member | null>(null);
   const [employmentFor, setEmploymentFor] = useState<Member | null>(null);
+  const [personnelFor, setPersonnelFor] = useState<Member | null>(null);
 
   const canViewBalances = isAdmin || canManage;
 
@@ -216,7 +220,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
                 <TableCell>{t('users.col.manager')}</TableCell>
                 <TableCell>{t('users.col.roles')}</TableCell>
                 {isAdmin && <TableCell>{t('users.col.addRole')}</TableCell>}
-                {(canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment) && <TableCell align="right">{t('common.actions')}</TableCell>}
+                {(canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && <TableCell align="right">{t('common.actions')}</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -264,12 +268,19 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
                         </Box>
                       </TableCell>
                     )}
-                    {(canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment) && (
+                    {(canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         {canSeeEmployment && (
                           <Tooltip title={t('employment.title')}>
                             <IconButton size="small" aria-label={t('employment.title')} onClick={() => setEmploymentFor(m)}>
                               <BusinessIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {canSeePersonnelDocs && (
+                          <Tooltip title={t('personnelDocs.title')}>
+                            <IconButton size="small" aria-label={t('personnelDocs.title')} onClick={() => setPersonnelFor(m)}>
+                              <DescriptionIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                         )}
@@ -330,6 +341,18 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
           {employmentFor && (
 <EmploymentPanel orgId={orgId} userId={employmentFor.user_id} authHeaders={authHeaders} />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!personnelFor} onClose={() => setPersonnelFor(null)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h6" component="span">{personnelFor?.display_name}</Typography>
+          <IconButton size="small" aria-label={t('common.close')} onClick={() => setPersonnelFor(null)}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {personnelFor && <PersonnelDocumentsPanel orgId={orgId} userId={personnelFor.user_id} authHeaders={authHeaders} />}
         </DialogContent>
       </Dialog>
 

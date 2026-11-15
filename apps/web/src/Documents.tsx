@@ -28,18 +28,18 @@ import { formatFileSize, formatLocaleDate, formatLocaleNumber } from './localeFo
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-type Category = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request';
-const CATEGORIES: Category[] = ['timesheet', 'project_timesheet', 'absence', 'expense', 'request'];
+type Category = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel';
+const CATEGORIES: Category[] = ['personnel', 'timesheet', 'project_timesheet', 'absence', 'expense', 'request'];
 
 interface PersonalDocument {
-  documentId: string | null;
+  documentId: string;
   category: Category;
   sourceId: string;
   fileName: string;
   mimeType: string;
-  sizeBytes: number | null;
+  sizeBytes: number;
   date: string;
-  addedAt: string | null;
+  addedAt: string;
   superseded: boolean;
   context: Record<string, string | number | null>;
 }
@@ -50,12 +50,13 @@ const CATEGORY_COLOR: Record<Category, 'primary' | 'secondary' | 'info' | 'succe
   absence: 'info',
   expense: 'success',
   request: 'warning',
+  personnel: 'secondary',
 };
 
 /**
  * Documents: everything that concerns the signed-in person, in one list (API documents.controller.ts):
- * the PDFs of their approved timesheets, their absences' and expenses' evidence and their requests'
- * attachments. Only their own; there is no person picker.
+ * the PDFs of their approved timesheets and monthly project reports, their absences' and expenses'
+ * evidence and their requests' attachments. Only their own; there is no person picker.
  */
 export default function Documents({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const { t, locale } = useI18n();
@@ -92,7 +93,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
     if (preview) URL.revokeObjectURL(preview.url);
   }, [preview]);
 
-  const keyOf = (d: PersonalDocument) => d.documentId ?? `${d.category}:${d.sourceId}`;
+  const keyOf = (d: PersonalDocument) => d.documentId;
 
   const monthLabel = useCallback(
     (date: string) => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`)),
@@ -115,7 +116,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
         case 'timesheet':
           return monthLabel(d.date);
         case 'project_timesheet':
-          return [c.project, monthLabel(d.date)].filter(Boolean).join(' · ');
+          return monthLabel(d.date);
         case 'absence': {
           const type = String(c.absenceType ?? '');
           const label = type ? translated(`absences.type.${type}`, type) : '';
@@ -128,9 +129,11 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
         }
         case 'request':
           return [c.subject, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
+        case 'personnel':
+          return [c.title, c.category ? t(`personnelDocs.category.${c.category}`) : '', formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
       }
     },
-    [locale, monthLabel, translated],
+    [locale, monthLabel, translated, t],
   );
 
   const years = useMemo(() => [...new Set((docs ?? []).map((d) => d.date.slice(0, 4)))].sort().reverse(), [docs]);
@@ -150,9 +153,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
   }, [inYear]);
 
   async function fetchBlob(d: PersonalDocument): Promise<Blob | null> {
-    const url = d.documentId
-      ? `${API}/organizations/${orgId}/documents/${d.documentId}/download`
-      : `${API}/organizations/${orgId}/documents/periods/${d.category}/${d.sourceId}`;
+    const url = `${API}/organizations/${orgId}/documents/${d.documentId}/download`;
     setBusyKey(keyOf(d));
     setError(null);
     try {
@@ -161,10 +162,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
         setError(t('documents.openFailed'));
         return null;
       }
-      const blob = await res.blob();
-      // A timesheet PDF issued just now: reload so the row carries its document id.
-      if (!d.documentId) void load();
-      return blob;
+      return await res.blob();
     } catch {
       setError(t('common.cannotReachApi'));
       return null;
@@ -309,8 +307,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
                     secondary={
                       <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
                         {d.fileName}
-                        {d.sizeBytes != null ? ` · ${formatFileSize(d.sizeBytes, locale)}` : ''}
-                        {!d.documentId ? ` · ${t('documents.issuedOnOpen')}` : ''}
+                        {` · ${formatFileSize(d.sizeBytes, locale)}`}
                       </Typography>
                     }
                   />

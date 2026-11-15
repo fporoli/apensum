@@ -1,7 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { and, asc, eq, getTableColumns, gte, lt, sql, type SQL } from 'drizzle-orm';
-import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
@@ -9,7 +8,7 @@ import { VersionsService } from './versions.service';
 import { callerUserId, canSeeUserData, isOrgMember, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { expenses, expense_report_items, expense_reports, projects, subprojects } from './db/schema';
-import { DocumentsService, DOCUMENTS_ROOT, MAX_DOCUMENT_BYTES } from './documents.service';
+import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 import { FieldsService } from './fields.service';
 import { EXPENSE_FORM, mergeForm, validateFields, type ResolvedForm } from '@worktime3/shared/fields';
 
@@ -275,8 +274,7 @@ export class ExpensesController {
       res.status(404).json({ ok: false, error: 'not-found' });
       return;
     }
-    res.set({ 'Content-Type': doc.mime_type, 'Content-Disposition': `attachment; filename="${doc.file_name.replace(/"/g, '')}"` });
-    createReadStream(join(DOCUMENTS_ROOT, doc.storage_path)).pipe(res);
+    await this.documents.send(res, doc);
   }
 
   @Delete('expenses/:id/document')

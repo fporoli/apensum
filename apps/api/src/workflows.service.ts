@@ -284,6 +284,23 @@ export class WorkflowsService {
     return row ?? null;
   }
 
+  /**
+   * The organization of a workflow the caller acts on (assignee, through a team, or an approvals grant
+   * reaching everyone), else null: the same people `resolve` lets decide.
+   */
+  async actorOrganization(db: Db, workflowId: string, callerId: string): Promise<string | null> {
+    const [workflow] = await db
+      .select({ source_table: workflows.source_table, source_table_uuid: workflows.source_table_uuid, assigned_to_user_id: workflows.assigned_to_user_id, assigned_to_team_id: workflows.assigned_to_team_id })
+      .from(workflows)
+      .where(eq(workflows.workflow_id, workflowId));
+    if (!workflow) return null;
+    const organizationId = (await this.sourceOrgResolvers.get(workflow.source_table)?.(db, workflow.source_table_uuid)) ?? null;
+    if (!organizationId) return null;
+    if ((workflow.assigned_to_user_id ?? []).includes(callerId)) return organizationId;
+    if (workflow.assigned_to_team_id && (await this.callerTeamIds(db, callerId)).includes(workflow.assigned_to_team_id)) return organizationId;
+    return (await reachesAll(db, organizationId, callerId, 'nav.approvals', 'edit')) ? organizationId : null;
+  }
+
   /** Approve or reject a workflow's one pending step: authorizes, records the decision, and runs the side effect. */
   async resolve(
     db: Db,

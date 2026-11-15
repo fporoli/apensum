@@ -1,7 +1,6 @@
 import { Body, Controller, Delete, Get, OnModuleInit, Param, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { and, desc, eq, gte, inArray, isNull, lte, or, type SQL } from 'drizzle-orm';
-import { createReadStream } from 'node:fs';
 import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
@@ -14,7 +13,7 @@ import { VersionsService } from './versions.service';
 import { WorkflowsService, APPROVE_ABSENCE_WORKFLOW_NAME } from './workflows.service';
 import { absenceNeedsApproval } from './absence-types';
 import { NotificationsService } from './notifications.service';
-import { DocumentsService, DOCUMENTS_ROOT, MAX_DOCUMENT_BYTES } from './documents.service';
+import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 
 const STATUSES = ['pending', 'approved', 'rejected'] as const;
 type Status = (typeof STATUSES)[number];
@@ -318,8 +317,7 @@ export class AbsencesController implements OnModuleInit {
       res.status(404).json({ ok: false, error: 'not-found' });
       return;
     }
-    res.set({ 'Content-Type': doc.mime_type, 'Content-Disposition': `attachment; filename="${doc.file_name.replace(/"/g, '')}"` });
-    createReadStream(join(DOCUMENTS_ROOT, doc.storage_path)).pipe(res);
+    await this.documents.send(res, doc);
   }
 
   /** Caller removes the evidence document: the requester while their absence is still pending, or an org admin any time. */
