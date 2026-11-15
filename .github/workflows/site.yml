@@ -38,7 +38,8 @@ jobs:
         if: inputs.action == 'deploy'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download site-media --pattern 'demo-*' --dir apps/site/media --clobber || echo "No site-media release: building without videos."
+        run: |
+          gh release download site-media --pattern 'demo-*' --dir apps/site/media --clobber || echo "No site-media release, building without videos."
       - name: Test and build
         if: inputs.action == 'deploy'
         working-directory: apps/site
