@@ -444,7 +444,7 @@ erDiagram
 > `(organization_id, user_id, month)` (`uq_work_time_months`); absences are
 > refused for days in a submitted or approved month, whose numbers are frozen.
 
-## Documents (1 table)
+## Documents (2 tables)
 
 Generic uploaded-file metadata (a doctor's note for an absence, a pay slip
 for an expense) — one table reused by any record that needs at most one
@@ -485,6 +485,38 @@ erDiagram
 > can only ever have the *one* document that FK currently points to).
 > Uploading a replacement deletes the previous `documents` row and file
 > rather than keeping history.
+
+`timesheet_documents` (057) links the PDF issued when a month is approved
+to the person and the period: either a working-time timesheet
+(`timesheet_period_id`) or one project's month (`project_time_period_id`),
+never both. Reopening the month sets `superseded_at`; the next approval adds
+a new row, so at most one row per period is current (partial unique
+indexes). The Documents page lists these with the person's absence and
+expense evidence and the attachments of their requests.
+
+```mermaid
+erDiagram
+    DOCUMENTS ||--o| TIMESHEET_DOCUMENTS : "document_id"
+    USERS ||--o{ TIMESHEET_DOCUMENTS : "user_id"
+    TIMESHEET_PERIODS ||--o{ TIMESHEET_DOCUMENTS : "timesheet_period_id"
+    PROJECT_TIME_PERIODS ||--o{ TIMESHEET_DOCUMENTS : "project_time_period_id"
+
+    TIMESHEET_DOCUMENTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid user_id FK
+        uuid document_id FK
+        uuid timesheet_period_id FK "nullable; exactly one of the two period ids"
+        uuid project_time_period_id FK "nullable"
+        date period_start
+        timestamptz issued_at
+        timestamptz superseded_at "set when the month is reopened"
+    }
+    DOCUMENTS { uuid id PK }
+    USERS { uuid id PK }
+    TIMESHEET_PERIODS { uuid id PK }
+    PROJECT_TIME_PERIODS { uuid id PK }
+```
 
 ## Expenses (3 tables)
 

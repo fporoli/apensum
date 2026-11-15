@@ -373,6 +373,48 @@ export const subprojects = pgTable("subprojects", {
 		}).onDelete("set null"),
 ]);
 
+export const timesheet_documents = pgTable("timesheet_documents", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	document_id: uuid().notNull(),
+	timesheet_period_id: uuid(),
+	project_time_period_id: uuid(),
+	period_start: date().notNull(),
+	issued_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	superseded_at: timestamp({ withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("idx_timesheet_documents_user").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.user_id.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("uq_timesheet_documents_current_pt").using("btree", table.project_time_period_id.asc().nullsLast().op("uuid_ops")).where(sql`((superseded_at IS NULL) AND (project_time_period_id IS NOT NULL))`),
+	uniqueIndex("uq_timesheet_documents_current_ts").using("btree", table.timesheet_period_id.asc().nullsLast().op("uuid_ops")).where(sql`((superseded_at IS NULL) AND (timesheet_period_id IS NOT NULL))`),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "timesheet_documents_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "timesheet_documents_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.document_id],
+			foreignColumns: [documents.id],
+			name: "timesheet_documents_document_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.timesheet_period_id],
+			foreignColumns: [timesheet_periods.id],
+			name: "timesheet_documents_timesheet_period_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.project_time_period_id],
+			foreignColumns: [project_time_periods.id],
+			name: "timesheet_documents_project_time_period_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_timesheet_documents_period", sql`(timesheet_period_id IS NULL) <> (project_time_period_id IS NULL)`),
+]);
+
 export const timesheet_periods = pgTable("timesheet_periods", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),

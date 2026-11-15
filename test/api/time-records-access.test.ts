@@ -15,6 +15,9 @@ import type { ProjectTimeService } from '../../apps/api/src/project-time.service
 import type { WorkTimeModelService } from '../../apps/api/src/work-time-model.service';
 import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
 
+/** Timesheet PDFs (timesheet-documents.service.ts) are not under test here. */
+const timesheetDocs = { issue: async () => null, supersede: async () => {} } as never;
+
 // Who may change time records: the person, their designated manager, and HR (an edit grant
 // beyond own); never while the month is submitted or approved. Manager and HR reopen months.
 //
@@ -125,7 +128,7 @@ function timesheetSetup(status: string) {
   const f = fakeDb({ row: { organization_id: 'org', status, user_id: 'emp' } });
   const reopened: string[] = [];
   const balances = { reopenMonth: async (_db: unknown, id: string) => { reopened.push(id); } } as unknown as BalancesService;
-  const controller = new TimesheetsController(f.service, audit, versions, {} as WorkflowsService, balances);
+  const controller = new TimesheetsController(f.service, audit, versions, {} as WorkflowsService, balances, timesheetDocs);
   return { ...f, reopened, controller };
 }
 
@@ -150,7 +153,7 @@ test('project timesheet: the person’s manager and HR reopen a project month to
   const setup = () => {
     const f = fakeDb({ row: period });
     const workflowsSvc = { findPending: async () => null } as unknown as WorkflowsService;
-    return { ...f, controller: new ProjectTimesheetsController(f.service, audit, versions, workflowsSvc) };
+    return { ...f, controller: new ProjectTimesheetsController(f.service, audit, versions, workflowsSvc, timesheetDocs) };
   };
   assert.deepEqual(await setup().controller.reopen(period.id, as('boss')), { ok: true });
   assert.deepEqual(await setup().controller.reopen(period.id, as('hr')), { ok: true });

@@ -19,6 +19,8 @@ import {
   TableRow,
   TextField,
   Typography,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
@@ -28,7 +30,8 @@ import { getExpenseReportTitle } from './ExpenseReports';
 import { getAbsenceTitle } from './Absences';
 import type { ExpenseRow } from './Expenses';
 import { PageHeader, TableEmptyRow } from './components';
-import { CheckCircleIcon, DownloadIcon, SearchIcon } from './icons';
+import { CheckCircleIcon, DownloadIcon, MailIcon, SearchIcon } from './icons';
+import { appLink, mailtoHref } from './mailto';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -429,6 +432,28 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
       .join(' + ');
   }, [inspectingExpenses, locale]);
 
+  /**
+   * "Send by e-mail": opens the approver's mail program with the item, addressed to the person it is
+   * about (e.g. to ask a question or as a reminder); they can change the recipient before sending.
+   */
+  function itemMailto(item: ActionItem): string {
+    const person = itemPerson(item);
+    const kind = actionItemLabel(item.definition_name, t);
+    const object = correspondingObject(item);
+    const detail = actionItemDetail(item);
+    const body = [
+      t('approvals.mail.intro', { kind, object }),
+      person ? `${person.name} <${person.email}>` : '',
+      detail !== '—' ? detail : '',
+      item.started ? t('approvals.mail.since', { date: formatLocaleDate(item.started.slice(0, 10), locale) }) : '',
+      '',
+      appLink('#/approvals'),
+    ]
+      .filter((line, i, all) => line !== '' || (i > 0 && all[i - 1] !== ''))
+      .join('\n');
+    return mailtoHref({ to: [person?.email], subject: t('approvals.mail.subject', { kind, object }), body });
+  }
+
   const filteredActionItems = actionItems.filter((item) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
@@ -527,6 +552,11 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                       {item.absence?.document_id && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void viewAbsenceDocument(item.absence!)}>{t('approvals.documents')}</Button>
                       )}
+                      <Tooltip title={t('approvals.mail.hint')}>
+                        <IconButton size="small" aria-label={t('approvals.mail')} sx={{ mr: 0.5 }} href={itemMailto(item)}>
+                          <MailIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                       <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={() => void approveItem(item.id)}>{t('approvals.approve')}</Button>
                       <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t('approvals.reject')}</Button>
                     </TableCell>

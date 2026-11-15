@@ -25,6 +25,9 @@ import { WorkSchedulesController } from './work-schedules.controller';
 import { TeamOverviewController } from './team-overview.controller';
 import { EmploymentController } from './employment.controller';
 import { RequestsController } from './requests.controller';
+import { DocumentsController } from './documents.controller';
+import { DirectoryController } from './directory.controller';
+import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
@@ -67,6 +70,8 @@ import { DbService } from './db.service';
     TeamOverviewController,
     EmploymentController,
     RequestsController,
+    DocumentsController,
+    DirectoryController,
     TimesheetsController,
     ProjectTimesheetsController,
     ExpensesController,
@@ -84,6 +89,7 @@ import { DbService } from './db.service';
     BalancesService,
     WorkTimeModelService,
     DocumentsService,
+    TimesheetDocumentsService,
     RbacService,
     AuditService,
     VersionsService,

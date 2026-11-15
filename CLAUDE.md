@@ -268,6 +268,18 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `request_message_documents`), uploaded multipart in `files` on create/reply, downloaded via
   `requests/:id/attachments/:documentId` with the request's access check; the web composer takes the
   paperclip, drag-and-drop and pasted screenshots (`attachments.tsx`).
+- Documents (`nav.documents`, `documents.controller.ts`, `Documents.tsx`, Personal navbar group): the
+  caller's own documents only, as one list built per call: approved-timesheet PDFs, absence and expense
+  evidence, attachments of requests they sent; downloads are checked against that same list. Approving a
+  month (working-time or one project's) issues a PDF (`timesheet-documents.service.ts`, pdfkit, labels in
+  the person's `users.locale`) into `timesheet_documents` (057); reopening sets `superseded_at`, the next
+  approval issues a new one. Months approved without a PDF are listed and issued on first download
+  (`documents/periods/:kind/:periodId`). Issuing is best effort and never fails an approval.
+- Directory (`nav.directory:see:all`, everyone, 058; `directory.controller.ts`, `Directory.tsx`): active
+  members with avatar, e-mail, basic-data `phone1` (deliberately shown org-wide), position and department
+  of the assignment in force, and an open check-in. Return nothing more from basic data or time records.
+- "Send by e-mail" on requests and Approvals items is a `mailto:` link (`mailto.ts`) to the person's own
+  mail program, never server mail; `#/requests?id=` opens one request.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

@@ -1,0 +1,73 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { hm, pdfFileName, pdfLang, renderProjectTimesheetPdf, renderTimesheetPdf } from '../../apps/api/src/timesheet-documents.service';
+import { DocumentsController } from '../../apps/api/src/documents.controller';
+
+test('hm formats signed hours and minutes', () => {
+  assert.equal(hm(0), '0:00');
+  assert.equal(hm(485), '8:05');
+  assert.equal(hm(-42), '-0:42');
+  assert.equal(hm(8160), '136:00');
+});
+
+test('pdfLang falls back to English', () => {
+  assert.equal(pdfLang('de-CH'), 'de');
+  assert.equal(pdfLang('it'), 'it');
+  assert.equal(pdfLang('es'), 'en');
+  assert.equal(pdfLang(null), 'en');
+});
+
+test('pdfFileName names the month and the project', () => {
+  assert.equal(pdfFileName('timesheet', '2026-10-01'), 'timesheet-2026-10.pdf');
+  assert.equal(pdfFileName('project_timesheet', '2026-10-01', 'Café Relaunch / Phase 2'), 'project-timesheet-2026-10-cafe-relaunch-phase-2.pdf');
+});
+
+const approval = { approvedBy: 'Adam A', approvedAt: '2026-11-03T08:10:00Z', submittedAt: '2026-11-01T16:30:00Z', autoApproved: false, timeZone: 'Europe/Zurich' };
+
+test('renderTimesheetPdf produces a PDF', async () => {
+  const pdf = await renderTimesheetPdf(
+    {
+      organization: 'Acme',
+      person: 'Marta Müller',
+      periodStart: '2026-10-01',
+      ...approval,
+      days: [
+        { date: '2026-10-01', target: 480, actual: 438 },
+        { date: '2026-10-26', target: 0, actual: 0, absence: 'Vacation' },
+      ],
+      totals: { scheduled: 960, holiday: 0, absenceByType: { vacation: 480 }, target: 480, actual: 438, delta: -42, vacationDays: 1 },
+    },
+    'de',
+  );
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+  // One page: the footer must not push onto extra pages.
+  assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length, 1);
+});
+
+test('renderProjectTimesheetPdf produces a PDF', async () => {
+  const pdf = await renderProjectTimesheetPdf(
+    {
+      organization: 'Acme',
+      person: 'Marta',
+      project: 'Website',
+      owner: 'Alice',
+      periodStart: '2026-10-01',
+      ...approval,
+      entries: [{ start: '2026-10-06T10:00:00Z', end: '2026-10-06T12:30:00Z', minutes: 150, subproject: null, comment: 'Design' }],
+    },
+    'fr',
+  );
+  assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+});
+
+test('documents list and downloads need nav.documents', async () => {
+  // A db whose permission query returns nothing: the caller holds no grants.
+  const db = {
+    execute: async () => ({ rows: [] }),
+    select: () => ({ from: () => ({ where: async () => [{ id: 'u1' }], innerJoin: () => ({ where: async () => [{ id: 'm1' }] }) }) }),
+  };
+  const ctrl = new DocumentsController({ getDb: () => db } as never, {} as never, {} as never);
+  const res = await ctrl.list('org', { user: { sub: 'u1' } } as never);
+  assert.equal(res.ok, false);
+  assert.deepEqual(res.documents, []);
+});

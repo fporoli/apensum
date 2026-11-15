@@ -8,6 +8,7 @@ import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService, APPROVE_PROJECT_TIMESHEET_WORKFLOW_NAME } from './workflows.service';
 import { nextMonth } from '@worktime3/shared/worktime';
+import { TimesheetDocumentsService } from './timesheet-documents.service';
 
 const OBJECT = 'nav.projectTimesheet';
 
@@ -42,6 +43,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
     private readonly audit: AuditService,
     private readonly versions: VersionsService,
     private readonly workflowsSvc: WorkflowsService,
+    private readonly timesheetDocs: TimesheetDocumentsService,
   ) {}
 
   onModuleInit() {
@@ -53,6 +55,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
       const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
       await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, ctx.sourceTableUuid));
       void this.versions.record('project_time_periods', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
+      await this.timesheetDocs.issue(db, 'project_timesheet', ctx.sourceTableUuid, ctx.actorUserId);
     });
     this.workflowsSvc.registerAction('project-timesheet.reject', async (db, ctx) => {
       const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: ctx.decisionNote };
@@ -189,6 +192,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
           notification: { title: `Project time to review: ${t.project_name ?? ''}`.trim(), body: note ?? undefined },
         });
       }
+      if (!approver) await this.timesheetDocs.issue(db, 'project_timesheet', periodId, callerId);
       void this.audit
         .record(orgId, callerId, approver ? 'project-timesheet.submit' : 'project-timesheet.submit-auto-approved', 'project_time_period', periodId, { periodStart, projectId })
         .catch(() => {});
@@ -247,6 +251,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
     const patch = { status: 'open' as const, submitted_at: null, reviewed_by_user_id: null, reviewed_at: null, review_note: null };
     await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, id));
     void this.versions.record('project_time_periods', id, 'update_delta', callerId, patch).catch(() => {});
+    await this.timesheetDocs.supersede(db, 'project_timesheet', id);
     void this.audit.record(period.organization_id, callerId, 'project-timesheet.reopen', 'project_time_period', id, {}).catch(() => {});
     return { ok: true };
   }

@@ -71,6 +71,9 @@
     <include file="053-permission-requests.sql" relativeToChangelogFile="true"/>
     <include file="054-request-attachments.sql" relativeToChangelogFile="true"/>
     <include file="055-permission-team-hours-reports.sql" relativeToChangelogFile="true"/>
+    <include file="056-permission-documents.sql" relativeToChangelogFile="true"/>
+    <include file="057-timesheet-documents.sql" relativeToChangelogFile="true"/>
+    <include file="058-permission-directory.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

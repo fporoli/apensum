@@ -1,11 +1,9 @@
 import { Body, Controller, Get, Param, Post, Query, Req, Res, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { sql, type SQL } from 'drizzle-orm';
-import { createReadStream } from 'node:fs';
-import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
-import { DocumentsService, DOCUMENTS_ROOT, MAX_DOCUMENT_BYTES } from './documents.service';
+import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 import { callerUserId, can, isOrgMember, membershipManagerId, reachesAll, type Executor } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
@@ -284,10 +282,15 @@ export class RequestsController {
     for (const m of messages as Record<string, unknown>[]) {
       m.attachments = files.filter((f) => f.message_id === m.id).map(({ message_id: _m, ...f }) => f);
     }
-    // Who answers a request to the manager today (it follows a manager change).
-    const managerIds = a.r.target_kind === 'manager' ? await this.handlerIds(db, a.r) : [];
-    const handlers = managerIds.length
-      ? (await db.execute(sql`SELECT id, display_name AS name FROM users WHERE id IN (${sql.join(managerIds.map((x) => sql`${x}`), sql`, `)})`)).rows
+    // Who answers it today (the manager follows a manager change; a department's members change too),
+    // with e-mail addresses for "Send by e-mail" (both sides already see each other in the thread).
+    const handlerIds = await this.handlerIds(db, a.r);
+    const handlers = handlerIds.length
+      ? (
+          await db.execute(
+            sql`SELECT id, coalesce(display_name, email) AS name, email FROM users WHERE id IN (${sql.join(handlerIds.map((x) => sql`${x}`), sql`, `)}) ORDER BY 2`,
+          )
+        ).rows
       : [];
     return { ok: true, request, messages, handlers, isRequester: a.requester, isHandler: a.handler };
   }
@@ -473,14 +476,7 @@ export class RequestsController {
       res.status(404).json({ ok: false, error: 'not-found' });
       return;
     }
-    res.set({
-      'Content-Type': doc.mime_type,
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.file_name)}`,
-      'X-Content-Type-Options': 'nosniff',
-    });
-    createReadStream(join(DOCUMENTS_ROOT, doc.storage_path))
-      .on('error', () => res.status(404).end())
-      .pipe(res);
+    this.documents.send(res, doc);
   }
 
   private async displayName(db: Executor, userId: string): Promise<string> {

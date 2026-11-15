@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Db } from './db.service';
+import type { Response } from 'express';
 import { documents } from './db/schema';
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
@@ -32,7 +34,18 @@ export class DocumentsService {
     file: Express.Multer.File,
     source: { table: string; id: string },
   ): Promise<string> {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(-200) || 'document';
+    return this.store(db, organizationId, uploadedByUserId, { name: file.originalname, mimeType: file.mimetype, buffer: file.buffer }, source);
+  }
+
+  /** Like `upload`, for a file the API made itself (e.g. a timesheet PDF). */
+  async store(
+    db: Db,
+    organizationId: string,
+    uploadedByUserId: string | null,
+    file: { name: string; mimeType: string; buffer: Buffer },
+    source: { table: string; id: string },
+  ): Promise<string> {
+    const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(-200) || 'document';
     const storedName = `${randomUUID()}-${safeName}`;
     const relativePath = join(organizationId, storedName);
     await mkdir(join(DOCUMENTS_ROOT, organizationId), { recursive: true });
@@ -42,9 +55,9 @@ export class DocumentsService {
       .insert(documents)
       .values({
         organization_id: organizationId,
-        file_name: file.originalname,
-        mime_type: file.mimetype,
-        size_bytes: file.size,
+        file_name: file.name,
+        mime_type: file.mimeType,
+        size_bytes: file.buffer.length,
         storage_path: relativePath,
         source_table: source.table,
         source_table_id: source.id,
@@ -52,6 +65,18 @@ export class DocumentsService {
       })
       .returning({ id: documents.id });
     return row.id;
+  }
+
+  /** Streams a document as a download (the caller has checked access); 404 when the file is gone. */
+  send(res: Response, doc: { file_name: string; mime_type: string; storage_path: string }): void {
+    res.set({
+      'Content-Type': doc.mime_type,
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.file_name)}`,
+      'X-Content-Type-Options': 'nosniff',
+    });
+    createReadStream(join(DOCUMENTS_ROOT, doc.storage_path))
+      .on('error', () => res.status(404).end())
+      .pipe(res);
   }
 
   async get(db: Db, documentId: string) {

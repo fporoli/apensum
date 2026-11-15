@@ -23,10 +23,12 @@ import {
   Tabs,
   TextField,
   Typography,
+  Tooltip,
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { AddIcon, ChevronLeftIcon, MailIcon } from './icons';
+import { appLink, mailtoHref } from './mailto';
 import { formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
 
@@ -67,7 +69,7 @@ interface Message {
 interface Detail {
   request: RequestItem;
   messages: Message[];
-  handlers: { id: string; name: string }[];
+  handlers: { id: string; name: string; email: string }[];
   isRequester: boolean;
   isHandler: boolean;
 }
@@ -270,6 +272,28 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     </Paper>
   );
 
+  /**
+   * "Send by e-mail": opens the person's mail program, addressed to the other side (the handlers when
+   * they sent it, else the requester), with the thread's latest messages and a link back.
+   */
+  function requestMailto(req: RequestItem, d: Detail): string {
+    const to = d.isRequester ? d.handlers.filter((h) => h.id !== userId).map((h) => h.email) : [req.requester_email];
+    const messages = d.messages
+      .filter((m) => m.kind === 'message')
+      .slice(-3)
+      .map((m) => {
+        const files = m.attachments.length ? `\n📎 ${m.attachments.map((f) => f.file_name).join(', ')}` : '';
+        return `${m.author_name ?? '—'} · ${formatLocaleDateTime(m.posted_at, locale)}\n${m.body ?? ''}${files}`.trim();
+      });
+    const body = [
+      t('requests.mail.intro', { subject: req.subject }),
+      `${t('requests.from', { name: req.requester_name ?? req.requester_email })} · ${target(req)} · ${t(`requests.status.${req.status}`)}`,
+      appLink('#/requests', { id: req.id }),
+      ...(messages.length ? ['', t('requests.mail.latest'), '', messages.join('\n\n---\n\n')] : []),
+    ].join('\n');
+    return mailtoHref({ to, subject: t('requests.mail.subject', { subject: req.subject }), body });
+  }
+
   const thread = r && detail && (
     <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5, minWidth: 0, alignContent: 'start' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flexWrap: 'wrap' }}>
@@ -323,6 +347,11 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
             <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'resolved' })}>{t('requests.markResolved')}</Button>
           )
         )}
+        <Tooltip title={t('requests.mail.hint')}>
+          <Button size="small" startIcon={<MailIcon />} href={requestMailto(r, detail)}>
+            {t('requests.mail')}
+          </Button>
+        </Tooltip>
         {detail.isHandler && (
           <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/archive`, { archived: !r.archived_at })}>
             {r.archived_at ? t('requests.unarchive') : t('requests.archive')}

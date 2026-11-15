@@ -11,6 +11,9 @@ import type { ProjectTimeService } from '../../apps/api/src/project-time.service
 import type { WorkTimeModelService } from '../../apps/api/src/work-time-model.service';
 import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
 
+/** Timesheet PDFs (timesheet-documents.service.ts) are not under test here. */
+const timesheetDocs = { issue: async () => null, supersede: async () => {} } as never;
+
 function sqlText(query: any): string {
   return (query.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : '?')).join('');
 }
@@ -73,7 +76,7 @@ function submitSetup(totals: any[], existing: any[] = []) {
     ensureDefinition: async () => ({ workflow_def_id: 'def' }),
     createWorkflow: async (_db: unknown, p: any) => { workflowsCreated.push(p); return { id: 'wf' }; },
   } as unknown as WorkflowsService;
-  const controller = new ProjectTimesheetsController({ getDb: () => db } as unknown as DbService, audit, versions, workflowsSvc);
+  const controller = new ProjectTimesheetsController({ getDb: () => db } as unknown as DbService, audit, versions, workflowsSvc, timesheetDocs);
   return { controller, created, updated, workflowsCreated };
 }
 

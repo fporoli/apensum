@@ -55,6 +55,8 @@ import {
   TuneIcon,
   WorkspacesIcon,
   ForumIcon,
+  DescriptionIcon,
+  ContactsIcon,
 } from './icons';
 
 const Home = lazy(() => import('./Home'));
@@ -79,6 +81,8 @@ const BalanceReport = lazy(() => import('./BalanceReport'));
 const AuditLog = lazy(() => import('./AuditLog'));
 const Users = lazy(() => import('./Users'));
 const Requests = lazy(() => import('./Requests'));
+const Documents = lazy(() => import('./Documents'));
+const Directory = lazy(() => import('./Directory'));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DRAWER_WIDTH = 232;
@@ -100,6 +104,8 @@ type Section =
   | 'invitations'
   | 'approvals'
   | 'requests'
+  | 'documents'
+  | 'directory'
   | 'users'
   | 'audit'
   | 'admin'
@@ -120,6 +126,8 @@ const SECTION_TO_HASH: Record<Section, string> = {
   balances: '#/balances',
   approvals: '#/approvals',
   requests: '#/requests',
+  documents: '#/documents',
+  directory: '#/directory',
   users: '#/users',
   invitations: '#/invitations',
   management: '#/teams',
@@ -193,6 +201,8 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   invitations: 'nav.invitations',
   approvals: 'nav.approvals',
   requests: 'nav.requests',
+  documents: 'nav.documents',
+  directory: 'nav.directory',
   users: 'nav.users',
   audit: 'nav.audit',
   admin: 'nav.admin',
@@ -223,6 +233,8 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'expenses':
     case 'expenseReports':
     case 'requests':
+    case 'documents':
+    case 'directory':
       return true;
     case 'users':
       return flags.canSeeUsers;
@@ -297,6 +309,18 @@ export default function App() {
     if (typeof window !== 'undefined' && window.location.hash !== targetHash) {
       window.history.pushState(null, '', targetHash);
     }
+  }, []);
+
+  // A link to one request (`#/requests?id=...`, e.g. from a forwarded e-mail) opens it.
+  useEffect(() => {
+    const focusFromHash = () => {
+      const [path, query] = window.location.hash.split('?');
+      const id = path === '#/requests' ? new URLSearchParams(query ?? '').get('id') : null;
+      if (id) setRequestFocus(id);
+    };
+    focusFromHash();
+    window.addEventListener('hashchange', focusFromHash);
+    return () => window.removeEventListener('hashchange', focusFromHash);
   }, []);
 
   useEffect(() => {
@@ -583,7 +607,7 @@ export default function App() {
 
   const NAV_GROUPS: Array<{
     id: string;
-    /** Empty: no heading, the group starts after a line instead (My data, at the end). */
+    /** Empty: no heading, the group starts after a line instead. */
     header: string;
     items: Array<{
       id: string;
@@ -604,7 +628,6 @@ export default function App() {
         { id: 'workTime', section: 'workTime', label: t('nav.workTime'), icon: <TimerIcon fontSize="small" />, visible: allowed('workTime') },
         { id: 'absences', section: 'absences', label: t('nav.absences'), icon: <BeachAccessIcon fontSize="small" />, visible: allowed('absences') },
         { id: 'timesheet', section: 'timesheet', label: t('nav.monthlyTimesheet'), icon: <CalendarMonthIcon fontSize="small" />, visible: allowed('timesheet') },
-        { id: 'requests', section: 'requests', label: t('nav.requests'), icon: <ForumIcon fontSize="small" />, visible: allowed('requests'), badge: requestsCount },
       ],
     },
     {
@@ -627,6 +650,7 @@ export default function App() {
       id: 'organization',
       header: t('nav.organization'),
       items: [
+        { id: 'directory', section: 'directory', label: t('nav.directory'), icon: <ContactsIcon fontSize="small" />, visible: allowed('directory') },
         { id: 'hours', section: 'hours', label: t('nav.teamHours'), icon: <GroupIcon fontSize="small" />, visible: allowed('hours') },
         { id: 'balances', section: 'balances', label: t('nav.balances'), icon: <AccountBalanceWalletIcon fontSize="small" />, visible: allowed('balances') },
         {
@@ -653,9 +677,11 @@ export default function App() {
       ],
     },
     {
-      id: 'myData',
-      header: '',
+      id: 'personal',
+      header: t('nav.personal'),
       items: [
+        { id: 'requests', section: 'requests', label: t('nav.requests'), icon: <ForumIcon fontSize="small" />, visible: allowed('requests'), badge: requestsCount },
+        { id: 'documents', section: 'documents', label: t('nav.documents'), icon: <DescriptionIcon fontSize="small" />, visible: allowed('documents') },
         {
           id: 'myData',
           section: 'myData',
@@ -663,7 +689,6 @@ export default function App() {
           icon: <PersonIcon fontSize="small" />,
           visible: allowed('myData'),
           badge: isReviewer ? hrPendingCount : 0,
-          dividerBefore: true,
         },
       ],
     },
@@ -1000,6 +1025,8 @@ export default function App() {
                   onChanged={() => void refreshBadges()}
                 />
               )}
+              {section === 'documents' && allowed('documents') && orgId && <Documents orgId={orgId} authHeaders={authHeaders} />}
+              {section === 'directory' && allowed('directory') && orgId && <Directory orgId={orgId} authHeaders={authHeaders} />}
               {section === 'requests' && allowed('requests') && orgId && (
                 <Requests
                   orgId={orgId}
