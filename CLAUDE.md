@@ -128,6 +128,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Forgot password (`password-reset.ts`): `auth/reset` mails a signed link (30 min, bound to the current
   password hash, so one use; key from `purposeKey`), `#/reset/<token>` (`ResetPassword.tsx`, no login)
   sends it to `auth/reset/confirm`. No public endpoint may set a password from an e-mail address alone.
+  Registration is open: each registration gets its own workspace as owner; the instance's very first
+  user is also admin and superdeveloper (`registrationRoleIds`), so a fresh prod needs no SQL.
   Handlers take `@Req() req: AuthenticatedRequest`.
 - **Every org-scoped handler authorizes itself**, using helpers from `access.ts`:
   1. `const db = this.db.getDb(); if (!db) return <offline/empty shape>;`
@@ -167,7 +169,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   (e.g. `forbidden`, `period-locked`, `unknown-user`); success is `{ ok: true, ... }`.
   Read endpoints return empty shapes on denial.
 - Degrade gracefully: no `DATABASE_URL` means offline/empty responses; mail
-  (`mailer.ts`, nodemailer) is best-effort and never fails a request; the
+  (`mailer.ts`, nodemailer) is best-effort and never fails a request (failures are logged; the startup
+  `verifySmtp` and each send set `smtp` in the public `GET health`); the
   assistant returns `{ ok: false, error: 'assistant-not-configured' }`
   without `GEMINI_API_KEY`/`OPENAI_API_KEY`.
 - AI assistant (`assistant.service.ts`): OpenAI SDK pointed at Gemini's or

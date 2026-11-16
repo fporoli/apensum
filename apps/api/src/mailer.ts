@@ -40,9 +40,22 @@ export function smtpConfig(): SmtpConfig {
   };
 }
 
-export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<void> {
-  const config = smtpConfig();
-  const transport = nodemailer.createTransport({
+/**
+ * The relay as last seen: by the startup check (verifySmtp) and every send since. Public in
+ * GET health without any detail; the reason is only logged.
+ */
+export type SmtpStatus = 'unknown' | 'ok' | 'failed';
+let smtpStatus: SmtpStatus = 'unknown';
+export const lastSmtpStatus = (): SmtpStatus => smtpStatus;
+
+/** The relay's error without anything secret: nodemailer messages name the response, not the password. */
+function describe(err: unknown): string {
+  const e = err as { code?: string; responseCode?: number; message?: string };
+  return [e?.code, e?.responseCode, String(e?.message ?? err).replace(/\s+/g, ' ').slice(0, 300)].filter(Boolean).join(' ');
+}
+
+function transportFor(config: SmtpConfig, timeoutMs: number) {
+  return nodemailer.createTransport({
     host: config.host,
     port: config.port,
     secure: config.secure,
@@ -53,6 +66,30 @@ export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<
     // Local catchers rarely present a real cert; only demand one once real credentials are in play.
     tls: { rejectUnauthorized: !!config.auth },
   });
+}
+
+/** Startup check: connects and logs in (no mail sent), logs the outcome once. */
+export async function verifySmtp(timeoutMs = 10_000): Promise<SmtpStatus> {
+  const config = smtpConfig();
+  const transport = transportFor(config, timeoutMs);
+  try {
+    await transport.verify();
+    smtpStatus = 'ok';
+    // eslint-disable-next-line no-console
+    console.log(`SMTP ok: ${config.host}:${config.port}${config.auth ? ` as ${config.auth.user}` : ' (no login)'}`);
+  } catch (err) {
+    smtpStatus = 'failed';
+    // eslint-disable-next-line no-console
+    console.warn(`WARNING: SMTP ${config.host}:${config.port} not usable, mails will fail: ${describe(err)}`);
+  } finally {
+    transport.close();
+  }
+  return smtpStatus;
+}
+
+export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<void> {
+  const config = smtpConfig();
+  const transport = transportFor(config, timeoutMs);
   try {
     await transport.sendMail({
       from: options.from ?? config.from,
@@ -61,6 +98,12 @@ export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<
       text: options.text,
       replyTo: options.replyTo,
     });
+    smtpStatus = 'ok';
+  } catch (err) {
+    smtpStatus = 'failed';
+    // eslint-disable-next-line no-console
+    console.warn(`Mail "${options.subject.slice(0, 60)}" via ${config.host}:${config.port} failed: ${describe(err)}`);
+    throw err;
   } finally {
     transport.close();
   }

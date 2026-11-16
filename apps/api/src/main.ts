@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
+import { verifySmtp } from './mailer';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -19,6 +20,8 @@ async function bootstrap() {
     // eslint-disable-next-line no-console
     console.warn('WARNING: DOCUMENTS_KEY is not set: uploaded documents are stored unencrypted. Generate one with `openssl rand -base64 32`.');
   }
+  // In the background: a slow or unreachable relay must not hold up the start.
+  void verifySmtp();
   if (!process.env.DATABASE_URL) {
     // Offline mode is deliberate (endpoints return empty/offline shapes), but it looks like
     // success from the UI — e.g. every login "works" and does nothing — so say so loudly.

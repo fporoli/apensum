@@ -22,6 +22,11 @@ import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIM
 export const OWNER_ROLE_ID = '00000000-0000-0000-0000-000000000001';
 export const ADMIN_ROLE_ID = '00000000-0000-0000-0000-000000000002';
 
+/** Roles of a new registration in its own workspace: owner; the instance's very first user also admin. */
+export function registrationRoleIds(firstUserOfInstance: boolean): string[] {
+  return firstUserOfInstance ? [OWNER_ROLE_ID, ADMIN_ROLE_ID] : [OWNER_ROLE_ID];
+}
+
 export function isValidEmail(email: unknown): boolean {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
@@ -134,7 +139,11 @@ export class AuthController {
     private readonly versions: VersionsService,
   ) {}
 
-  /** Register a new admin user: creates the user, a personal workspace org, and an owner membership. */
+  /**
+   * Register a new admin user: creates the user, a personal workspace org, and an owner membership.
+   * The very first user of an instance (an empty production database) also becomes admin and
+   * superdeveloper, so a fresh instance needs no SQL to be run.
+   */
   @Public()
   @Post('register')
   async register(@Body() body: { email: string; displayName: string; password: string }) {
@@ -147,10 +156,12 @@ export class AuthController {
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing) return { ok: false, error: 'email-taken' };
     const passwordHash = await bcrypt.hash(body.password, 10);
-    const { u: user, orgId, membershipId, slug } = await db.transaction(async (tx) => {
+    const { u: user, orgId, membershipId, slug, first } = await db.transaction(async (tx) => {
+      const [anyone] = await tx.select({ id: users.id }).from(users).limit(1);
+      const first = !anyone;
       const [u] = await tx
         .insert(users)
-        .values({ email, display_name: body.displayName.trim() })
+        .values({ email, display_name: body.displayName.trim(), is_superdeveloper: first })
         .returning({ id: users.id, email: users.email, display_name: users.display_name });
       const uid = u.id;
       await tx
@@ -171,14 +182,14 @@ export class AuthController {
         .insert(organization_memberships)
         .values({ organization_id: org.id, user_id: uid, status: 'active' })
         .returning({ id: organization_memberships.id });
-      await tx.insert(membership_roles).values({ membership_id: membership.id, role_id: OWNER_ROLE_ID });
+      await tx.insert(membership_roles).values(registrationRoleIds(first).map((role_id) => ({ membership_id: membership.id, role_id })));
       // Static data (absence types, `locales`, `countries`) is inherited from the global rows
       // (`organization_id = null`); an org gets its own copy only when it customizes one.
-      return { u, orgId: org.id, membershipId: membership.id, slug: workspaceSlug };
+      return { u, orgId: org.id, membershipId: membership.id, slug: workspaceSlug, first };
     });
 
     const userId = user.id;
-    void this.versions.record('users', userId, 'insert', userId, user).catch(() => {});
+    void this.versions.record('users', userId, 'insert', userId, { ...user, ...(first ? { is_superdeveloper: true } : {}) }).catch(() => {});
     void this.versions.record('organizations', orgId, 'insert', userId, { id: orgId, slug, name: `${body.displayName.trim()}'s workspace`, type: 'personal' }).catch(() => {});
     void this.versions.record('organization_memberships', membershipId, 'insert', userId, { id: membershipId, organization_id: orgId, user_id: userId, status: 'active' }).catch(() => {});
 

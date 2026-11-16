@@ -122,3 +122,22 @@ test('smtpConfig requires both user and password — one alone does not enable a
     delete process.env.SMTP_USER;
   }
 });
+
+test('a failed send is logged and reported as smtp failed, without the password', async () => {
+  const { sendMail, lastSmtpStatus } = await import('../../apps/api/src/mailer');
+  const saved = { ...process.env };
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (m: string) => warnings.push(m);
+  try {
+    Object.assign(process.env, { SMTP_HOST: '127.0.0.1', SMTP_PORT: '9', SMTP_USER: 'info@example.ch', SMTP_PASSWORD: 'very-secret-pw' });
+    await assert.rejects(sendMail({ to: 'a@example.ch', subject: 'Test', text: 'x' }, 2000));
+    assert.equal(lastSmtpStatus(), 'failed');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /127\.0\.0\.1:9 failed/);
+    assert.doesNotMatch(warnings[0], /very-secret-pw/);
+  } finally {
+    console.warn = warn;
+    process.env = saved;
+  }
+});
