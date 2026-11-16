@@ -64,7 +64,7 @@ write_app_env() {
     umask 077
     for name in POSTGRES_PASSWORD KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS \
       SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS \
-      GEMINI_API_KEY GEMINI_MODEL OPENAI_API_KEY OPENAI_MODEL \
+      GEMINI_API_KEY GEMINI_MODEL OPENAI_API_KEY OPENAI_MODEL CONTACT_SITE_ORIGINS CONTACT_EMAIL \
       REALM_FILE CONTAINER_PREFIX PG_PORT WEB_HOST API_HOST AUTH_HOST; do
       printf "%s='%s'\n" "$name" "$(printenv "$name" || true)"
     done > "$ROOT/compose/.env"
@@ -182,9 +182,18 @@ reset_seed() {
   docker inspect "$PG" >/dev/null
   docker inspect "$PREFIX-api" >/dev/null
 
-  local auth_tables_before backup_dir timestamp backup_file counts
-  auth_tables_before="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth'")"
-  test "$auth_tables_before" -gt 0
+  local auth_tables_before backup_dir timestamp backup_file counts i
+  # Keycloak creates its auth schema on first start, which takes a while right after a deploy.
+  for i in $(seq 1 60); do
+    auth_tables_before="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth'")"
+    [ "$auth_tables_before" -gt 0 ] && break
+    [ "$i" = 1 ] && echo "Waiting for Keycloak to create its auth schema..."
+    sleep 5
+  done
+  if [ "$auth_tables_before" -eq 0 ]; then
+    echo "Keycloak has not created its auth schema after 5 minutes: see docker logs $PREFIX-keycloak" >&2
+    exit 1
+  fi
 
   backup_dir="$HOME/$PREFIX-db-backups"
   mkdir -p "$backup_dir"

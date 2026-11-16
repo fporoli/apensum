@@ -506,11 +506,17 @@ page goes in `static/assets/` (`about.photo`).
 
 Deploy with the `site` workflow (Actions -> site -> Run workflow): `environment` picks the
 server (that GitHub Environment's `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY`; it must already run a
-worktime3 instance, for the shared edge Caddy), `domain` the hostname, `app_url` the optional
-"Log in" target. `infra/site/remote.sh` installs it at `/opt/edge/apensum-site` as its own Caddy
-container (`apensum-site`) and adds `apensum-site.caddy` to the edge, which gets the
-certificates for the domain and `www.` (both DNS records must point at the server). Each deploy
-is a new release in `www/releases/`, switched atomically via `www/current`; `remove` takes it down.
+Apensum instance, for the shared edge Caddy), `domain` the hostname, `app_url` the optional
+"Log in" target, `contact_url` the contact form's API. For the main domain (`apensum.ch`)
+`infra/site/remote.sh` installs it at `/opt/edge/apensum-site` as its own Caddy container
+(`apensum-site`) and adds `apensum-site.caddy` to the edge, which gets the certificates for the
+domain and `www.` (both DNS records must point at the server). Any other host is a preview that
+runs next to it as `apensum-site-<first label>`, without `www.` and sent with `X-Robots-Tag: noindex`.
+For preprod: `domain` `wwwpp.apensum.ch`, `app_url` `https://apppp.apensum.ch`, `contact_url`
+`https://apipp.apensum.ch/api/v1/public/contact`, and the preprod variable `CONTACT_SITE_ORIGINS`
+`https://wwwpp.apensum.ch` (the API accepts only listed origins; its mail goes to preprod's Mailpit).
+Each deploy is a new release in `www/releases/`, switched atomically via `www/current`; `remove`
+takes it down.
 
 ### Azure environment
 

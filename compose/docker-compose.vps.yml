@@ -117,6 +117,10 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+      # Website contact form (site-contact.controller.ts): the site origins allowed to post
+      # (empty = apensum.ch, www.apensum.ch) and the address it mails (empty = info@apensum.ch).
+      CONTACT_SITE_ORIGINS: ${CONTACT_SITE_ORIGINS:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       mailpit: { condition: service_started }

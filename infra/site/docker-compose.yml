@@ -1,13 +1,14 @@
 # The Apensum website (apps/site): one small Caddy serving static files, reachable only through
 # the shared edge Caddy (infra/caddy/edge) on the "edge" network, which terminates TLS.
-# Lives at /opt/edge/apensum-site on the VPS and is written there by the `site` workflow
+# Lives at /opt/edge/<SITE_NAME> on the VPS (apensum-site for the main domain, apensum-site-<label>
+# for a preview such as wwwpp.apensum.ch) and is written there by the `site` workflow
 # (.github/workflows/site.yml via infra/site/remote.sh). Releases are in ./www/releases/<id>,
 # ./www/current points at the live one (switched atomically, no restart needed).
-name: apensum-site
+name: ${SITE_NAME:?set by infra/site/remote.sh}
 services:
   site:
     image: caddy:2
-    container_name: apensum-site
+    container_name: ${SITE_NAME:?set by infra/site/remote.sh}
     environment:
       # Origin the contact form may post to (CSP form-action), written to .env by remote.sh.
       SITE_FORM_ACTION: ${SITE_FORM_ACTION:?set by infra/site/remote.sh}

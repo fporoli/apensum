@@ -5,13 +5,14 @@
 # (it does once any worktime3 instance was deployed there with the vps workflow).
 #   SITE_DOMAIN=apensum.ch bash infra/site/remote.sh deploy
 #   SITE_DOMAIN=apensum.ch bash infra/site/remote.sh remove
+# A main domain (two labels, apensum.ch) runs as apensum-site and also answers www.<domain> with a
+# redirect. Any other host (wwwpp.apensum.ch) is a preview: its own stack apensum-site-<first label>,
+# so it can run next to the main site, without www. and marked noindex.
 set -euo pipefail
 
 ACTION="${1:-deploy}"
 SRC="$(cd "$(dirname "$0")/../.." && pwd)"
-DIR=/opt/edge/apensum-site
 EDGE=/opt/edge
-SITE_FILE="$EDGE/sites/apensum-site.caddy"
 DOMAIN="${SITE_DOMAIN:?SITE_DOMAIN is required}"
 KEEP=3
 
@@ -19,6 +20,13 @@ if ! printf '%s' "$DOMAIN" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]
   echo "Invalid SITE_DOMAIN: $DOMAIN" >&2
   exit 1
 fi
+if [ "$(printf '%s' "$DOMAIN" | tr -cd . | wc -c)" -eq 1 ]; then
+  MAIN=1 SITE_NAME=apensum-site
+else
+  MAIN=0 SITE_NAME="apensum-site-${DOMAIN%%.*}"
+fi
+DIR="$EDGE/$SITE_NAME"
+SITE_FILE="$EDGE/sites/$SITE_NAME.caddy"
 
 caddy_reload() {
   docker exec edge-caddy caddy validate --config /etc/caddy/Caddyfile
@@ -42,7 +50,7 @@ deploy() {
     case "$form_action" in https://*) ;; *) echo "Invalid SITE_CONTACT_URL: $SITE_CONTACT_URL" >&2; exit 1 ;; esac
     case "$form_action" in */*/*/*) echo "Invalid SITE_CONTACT_URL: $SITE_CONTACT_URL" >&2; exit 1 ;; esac
   fi
-  printf 'SITE_FORM_ACTION="%s"\n' "$form_action" > "$DIR/.env"
+  printf 'SITE_FORM_ACTION="%s"\nSITE_NAME="%s"\n' "$form_action" "$SITE_NAME" > "$DIR/.env"
 
   # New release next to the old ones, then switch the `current` link in one step: requests are
   # served from either the old or the new tree, never from a half-copied one.
@@ -55,9 +63,16 @@ deploy() {
   # Recreated when SITE_FORM_ACTION changed.
   (cd "$DIR" && docker compose up -d)
   # The Caddyfile is a bind mount: compose does not notice a changed file, so reload it.
-  docker exec apensum-site caddy reload --config /etc/caddy/Caddyfile >/dev/null
+  docker exec "$SITE_NAME" caddy reload --config /etc/caddy/Caddyfile >/dev/null
 
-  sed "s/__SITE_HOST__/$DOMAIN/g" "$SRC/infra/site/apensum-site.caddy.tpl" > "$SITE_FILE"
+  # __PREVIEW__ lines are kept (marker removed) on a preview and dropped on the main site.
+  local preview='/__PREVIEW__/d'
+  [ "$MAIN" = 0 ] && preview='s/__PREVIEW__ //'
+  sed -e "s/__SITE_HOST__/$DOMAIN/g" -e "s/__SITE_NAME__/$SITE_NAME/g" -e "$preview" \
+    "$SRC/infra/site/apensum-site.caddy.tpl" > "$SITE_FILE"
+  if [ "$MAIN" = 1 ]; then
+    printf 'www.%s {\n\tredir https://%s{uri} permanent\n}\n' "$DOMAIN" "$DOMAIN" >> "$SITE_FILE"
+  fi
   caddy_reload
 
   # Keep the last few releases for a quick manual rollback (re-point `current`).
@@ -70,7 +85,7 @@ remove() {
   rm -f "$SITE_FILE"
   rm -rf "$DIR"
   if docker inspect edge-caddy >/dev/null 2>&1; then caddy_reload; fi
-  echo "Website removed."
+  echo "Website $DOMAIN removed."
 }
 
 case "$ACTION" in
