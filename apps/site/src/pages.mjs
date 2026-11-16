@@ -1,6 +1,6 @@
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
 import { icon } from './icons.mjs';
-import { esc, layout } from './layout.mjs';
+import { esc, layout, pagePath } from './layout.mjs';
 
 /** The canton each language's holiday example shows. */
 const EXAMPLE_CANTON = { de: 'ZH', fr: 'VD', it: 'TI', en: 'BE' };
@@ -329,6 +329,53 @@ ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('security.meta.title'), description: t('security.meta.description'), body });
 }
 
+/** Paths of the pages the contact form's server sends the visitor back to. */
+export function contactResultPath(dicts, lang, kind) {
+  return `${pagePath(dicts, lang, 'contact')}${dicts[lang][kind === 'thanks' ? 'slug.contactThanks' : 'slug.contactFailed']}/`;
+}
+
+/**
+ * A plain HTML form (no script) posted to the API, which mails it and redirects back to the
+ * thank-you or error page. `website` is a honeypot: hidden from people, filled in by bots.
+ */
+function contactForm(ctx) {
+  const { t, config, lang, dicts } = ctx;
+  const field = (name, label, attrs) => `<label class="field"><span>${t(label)}</span>${attrs}</label>`;
+  return `<form class="card contact-card contact-form" method="post" action="${esc(config.contactUrl)}">
+        <div class="feature-icon">${icon('mail')}</div>
+        <h2 class="h3">${t('contact.form.title')}</h2>
+        <p>${t('contact.form.text')}</p>
+        ${field('name', 'contact.form.name', '<input name="name" required maxlength="120" autocomplete="name">')}
+        ${field('email', 'contact.form.email', '<input name="email" type="email" required maxlength="200" autocomplete="email">')}
+        ${field('organization', 'contact.form.organization', '<input name="organization" maxlength="200" autocomplete="organization">')}
+        ${field('message', 'contact.form.message', '<textarea name="message" required minlength="2" maxlength="5000" rows="6"></textarea>')}
+        <label class="hp" aria-hidden="true">${t('contact.form.honeypot')}<input name="website" tabindex="-1" autocomplete="off"></label>
+        <input type="hidden" name="lang" value="${lang}">
+        <input type="hidden" name="ok" value="${contactResultPath(dicts, lang, 'thanks')}">
+        <input type="hidden" name="fail" value="${contactResultPath(dicts, lang, 'failed')}">
+        <button class="btn btn-primary" type="submit">${t('contact.form.send')}</button>
+        <p class="muted small">${t('contact.form.note')}</p>
+        <p class="muted small">${t('contact.emailLabel')} <a href="mailto:${esc(config.email)}">${esc(config.email)}</a></p>
+        ${config.operator.phone ? `<p class="small">${phoneReveal(ctx)}</p>` : ''}
+      </form>`;
+}
+
+/** The page after sending: thanks, or what to do when it failed. */
+export function contactResult(ctx, kind) {
+  const { t, config } = ctx;
+  const ok = kind === 'thanks';
+  const body = `
+<section class="page-head">
+  <div class="wrap narrow">
+    <p class="eyebrow">${t('nav.contact')}</p>
+    <h1>${t(ok ? 'contact.thanks.title' : 'contact.failed.title')}</h1>
+    <p class="lead">${ok ? t('contact.thanks.text') : t('contact.failed.text', { email: `<a href="mailto:${esc(config.email)}">${esc(config.email)}</a>` })}</p>
+    <p class="actions">${ok ? '' : `<a class="btn btn-primary" href="${ctx.link('contact')}">${t('contact.retry')}</a>`}<a class="btn btn-ghost" href="${ctx.link('home')}">${t('contact.back')}</a></p>
+  </div>
+</section>`;
+  return layout(ctx, { title: `${t(ok ? 'contact.thanks.title' : 'contact.failed.title')} – Apensum`, description: t('contact.meta.description'), body, noindex: true, reveal: false });
+}
+
 export function contact(ctx) {
   const { t, config } = ctx;
   const body = `
@@ -342,14 +389,14 @@ export function contact(ctx) {
 <section class="section tight">
   <div class="wrap split top">
     <div class="stack">
-      <div class="card contact-card">
+      ${config.contactUrl ? contactForm(ctx) : `<div class="card contact-card">
         <div class="feature-icon">${icon('mail')}</div>
         <h2 class="h3">${t('contact.mailTitle')}</h2>
         <p>${t('contact.mailText')}</p>
         <a class="btn btn-primary" href="${ctx.mailto('contact.mailSubject')}">${t('contact.mailButton')}</a>
         <p class="muted small">${t('contact.emailLabel')} <a href="mailto:${esc(config.email)}">${esc(config.email)}</a></p>
         ${config.operator.phone ? `<p class="small">${phoneReveal(ctx)}</p>` : ''}
-      </div>
+      </div>`}
       <div class="card contact-card">
         <div class="feature-icon">${icon('sparkle')}</div>
         <h2 class="h3">${t('contact.demoTitle')}</h2>

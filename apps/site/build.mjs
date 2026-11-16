@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import baseConfig, { REQUIRED_OPERATOR_FIELDS } from './site.config.mjs';
 import { LANGS, LANG_NAMES, PAGES, context, esc, pagePath, translator } from './src/layout.mjs';
-import { RENDER } from './src/pages.mjs';
+import { RENDER, contactResult, contactResultPath } from './src/pages.mjs';
 import { logoMark } from './src/icons.mjs';
 import de from './src/i18n/de.mjs';
 import fr from './src/i18n/fr.mjs';
@@ -83,6 +83,10 @@ export function build({ outDir = join(ROOT, 'dist'), strict = false, config = ba
     for (const page of PAGES) {
       const ctx = context(DICTS, lang, page, config, assets);
       write(join(pagePath(DICTS, lang, page), 'index.html'), RENDER[page](ctx));
+    }
+    // Where the contact form's server sends the visitor back to (not in the sitemap).
+    for (const kind of ['thanks', 'failed']) {
+      write(join(contactResultPath(DICTS, lang, kind), 'index.html'), contactResult(context(DICTS, lang, 'contact', config, assets), kind));
     }
   }
 

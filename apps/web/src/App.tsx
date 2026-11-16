@@ -32,6 +32,7 @@ import NotificationBell from './NotificationBell';
 import { useNotifications, type Notification } from './useNotifications';
 import { formatDurationMinutes } from './localeFormat';
 import { grantedScopes, holdsAny, holdsBeyondOwn, isBasicDataReviewer, seesOthersBasicData } from '@worktime3/shared/permissions';
+import { ApensumMark } from './ApensumMark';
 import {
   AccountBalanceWalletIcon,
   AutoAwesomeIcon,
@@ -795,21 +796,7 @@ export default function App() {
                   sx={{ height: 36, maxWidth: 140, objectFit: 'contain', display: 'block', borderRadius: '6px' }}
                 />
               ) : (
-                <Box
-                  sx={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '8px',
-                    display: { xs: 'none', sm: 'flex' },
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    bgcolor: 'rgba(255,255,255,0.18)',
-                    fontWeight: 700,
-                    fontSize: '0.9rem',
-                  }}
-                >
-                  W
-                </Box>
+                <ApensumMark size={28} variant="onColor" sx={{ display: { xs: 'none', sm: 'block' } }} />
               )}
               <Typography variant="h6" sx={{ fontWeight: 700 }}>{t('appbar.title')}</Typography>
             </Box>

@@ -8,6 +8,7 @@ export type Locale = 'en' | 'de' | 'fr' | 'it';
 // prettier-ignore
 export const DICTIONARIES: Record<Locale, Record<string, string>> = {
   en: {
+    'app.moreInfo': 'More about Apensum',
     'appbar.title': 'Apensum',
 
     'nav.myWork': 'My Work',
@@ -1502,6 +1503,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'users.col.department': "Department / function",
   },
   de: {
+    'app.moreInfo': 'Mehr über Apensum',
     'appbar.title': 'Apensum',
 
     'nav.myWork': 'Meine Arbeit',
@@ -2996,6 +2998,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'users.col.department': "Abteilung / Funktion",
   },
   fr: {
+    'app.moreInfo': 'En savoir plus sur Apensum',
     'appbar.title': 'Apensum',
 
     'nav.myWork': 'Mon travail',
@@ -4490,6 +4493,7 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'users.col.department': "Département / fonction",
   },
   it: {
+    'app.moreInfo': 'Scopri di più su Apensum',
     'appbar.title': 'Apensum',
 
     'nav.myWork': 'Il mio lavoro',

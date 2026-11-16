@@ -419,3 +419,17 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 .rate-popover .price span:first-child { color: var(--muted); }
 .rate-popover p { color: var(--muted); }
 .rate-popover .actions { margin-top: 18px; }
+
+/* Contact form (posted to the Apensum API, see infra/site/Caddyfile form-action). */
+.contact-form { gap: 10px; justify-items: stretch; }
+.contact-form > .feature-icon, .contact-form > .btn { justify-self: start; }
+.field { display: grid; gap: 4px; font-size: 0.92rem; font-weight: 600; color: var(--ink); }
+.field input, .field textarea {
+  font: inherit; font-weight: 400; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%;
+}
+.field textarea { resize: vertical; min-height: 140px; }
+.field input:focus, .field textarea:focus { outline: 2px solid var(--brand); outline-offset: 1px; border-color: var(--brand); }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.contact-form { position: relative; }
+.page-head .actions { margin-top: 28px; }

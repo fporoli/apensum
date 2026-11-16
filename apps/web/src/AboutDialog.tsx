@@ -14,6 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { Session } from './Login';
+import { infoUrl } from './infoUrl';
 import { useI18n } from './i18n';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -166,7 +167,10 @@ export default function AboutDialog({ open, onClose, session, authHeaders, curre
           </section>
         ))}
       </DialogContent>
-      <DialogActions><Button onClick={onClose}>{t('about.close')}</Button></DialogActions>
+      <DialogActions sx={{ justifyContent: 'space-between' }}>
+        <Button component="a" href={infoUrl(locale)} target="_blank" rel="noopener">{t('app.moreInfo')}</Button>
+        <Button onClick={onClose}>{t('about.close')}</Button>
+      </DialogActions>
     </Dialog>
   );
 }

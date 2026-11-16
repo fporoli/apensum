@@ -337,4 +337,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `{{placeholders}}` (`test/site.test.mjs`); German is Swiss (no ß). The holiday card imports
   `packages/shared/src/worktime.ts`. Claims must match what the app does. Deployed only by the
   `site` workflow (`infra/site/`: own Caddy container behind the shared edge, `remote.sh`);
-  `npm run site:dev` previews on :3010.
+  `npm run site:dev` previews on :3010. The contact form (only when `SITE_CONTACT_URL` is set, workflow
+  input `contact_url`) is a plain HTML post to the API's public `public/contact`
+  (`site-contact.controller.ts`): honeypot, per-IP and daily limits, Origin must be in
+  `CONTACT_SITE_ORIGINS`; it mails `CONTACT_EMAIL` (default info@apensum.ch, visitor as Reply-To) through
+  the instance's SMTP and redirects to `/<lang>/<contact>/<thanks|error>/`. `remote.sh` puts the API's
+  origin into the CSP `form-action`. The app links back to the site ("More about Apensum", `infoUrl.ts`).

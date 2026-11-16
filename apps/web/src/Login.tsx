@@ -3,6 +3,8 @@ import { Alert, Box, Button, Container, Divider, IconButton, MenuItem, Paper, Ta
 import { ensureSsoInit, keycloak, startSsoLogin } from './auth';
 import { LOCALES, useI18n } from './i18n';
 import { DarkModeIcon, LightModeIcon } from './icons';
+import { infoUrl } from './infoUrl';
+import { ApensumMark } from './ApensumMark';
 import { useThemeMode } from './theme';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -230,22 +232,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3 }}>
-        <Box
-          sx={{
-            width: 40,
-            height: 40,
-            borderRadius: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'primary.contrastText',
-            backgroundImage: 'linear-gradient(135deg, #1a56db 0%, #0f3fa8 100%)',
-            fontWeight: 700,
-            fontSize: '1.1rem',
-          }}
-        >
-          W
-        </Box>
+        <ApensumMark size={40} sx={{ boxShadow: '0 6px 16px rgba(26,86,219,0.3)', borderRadius: '10px' }} />
         <Typography variant="h5" sx={{ fontWeight: 700 }}>{t('appbar.title')}</Typography>
       </Box>
       <Container maxWidth="xs" disableGutters>
@@ -399,6 +386,11 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
             {themeMode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
+      </Box>
+      <Box sx={{ textAlign: 'center', mt: 1 }}>
+        <Button component="a" href={infoUrl(locale)} size="small" sx={{ textTransform: 'none' }}>
+          {t('app.moreInfo')}
+        </Button>
       </Box>
       </Container>
     </Box>

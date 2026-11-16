@@ -9,7 +9,7 @@ import { preferredLang } from '../serve.mjs';
 import baseConfig from '../site.config.mjs';
 
 const placeholders = (v) => [...JSON.stringify(v).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
-const fullConfig = { ...baseConfig, appUrl: 'https://app.example.ch', operator: { ...baseConfig.operator, name: 'Test Person', street: 'Weg 1', city: '8000 Zürich' } };
+const fullConfig = { ...baseConfig, appUrl: 'https://app.example.ch', contactUrl: 'https://api.example.ch/api/v1/public/contact', operator: { ...baseConfig.operator, name: 'Test Person', street: 'Weg 1', city: '8000 Zürich' } };
 
 test('every language has the same texts as English', () => {
   const ref = DICTS.en;
@@ -85,6 +85,17 @@ test('builds every page; internal links resolve; nothing loads from third partie
     assert.equal([...Buffer.from(encoded, 'base64').toString('utf8')].reverse().join(''), fullConfig.operator.phone);
     assert.match(impressum, /<script src="\/assets\/reveal\.js\?v=[0-9a-f]{10}" defer><\/script>/);
     assert.doesNotMatch(home, /reveal\.js/);
+    // The contact form posts to the API and names the pages it comes back to, which exist.
+    const contact = readFileSync(join(out, 'fr', 'contact', 'index.html'), 'utf8');
+    assert.match(contact, /<form class="card contact-card contact-form" method="post" action="https:\/\/api\.example\.ch\/api\/v1\/public\/contact">/);
+    assert.match(contact, /<input type="hidden" name="ok" value="\/fr\/contact\/merci\/">/);
+    assert.match(contact, /<input type="hidden" name="fail" value="\/fr\/contact\/erreur\/">/);
+    assert.match(contact, /<label class="hp" aria-hidden="true">[^<]*<input name="website" tabindex="-1"/);
+    for (const page of ['de/kontakt/danke', 'de/kontakt/fehler', 'it/contatto/grazie', 'en/contact/error']) {
+      const html = readFileSync(join(out, page, 'index.html'), 'utf8');
+      assert.match(html, /<meta name="robots" content="noindex">/, page);
+    }
+    assert.doesNotMatch(readFileSync(join(out, 'sitemap.xml'), 'utf8'), /danke/);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
@@ -99,6 +110,10 @@ test('a strict build refuses an incomplete legal notice', () => {
     const warnings = [];
     build({ outDir: out, config: empty, log: { warn: (m) => warnings.push(m) } });
     assert.equal(warnings.length, 1);
+    // Without a contact URL there is no form, only the e-mail button.
+    const contact = readFileSync(join(out, 'de', 'kontakt', 'index.html'), 'utf8');
+    assert.doesNotMatch(contact, /<form/);
+    assert.match(contact, /href="mailto:info@apensum\.ch\?subject=/);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

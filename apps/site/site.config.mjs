@@ -8,6 +8,11 @@ export default {
   demoUrl: process.env.SITE_DEMO_URL || 'https://wt.turbotapir.com',
   /** The app's web address for the "Log in" button; empty hides the button. */
   appUrl: process.env.SITE_APP_URL || '',
+  /**
+   * The contact form's target: the Apensum API's `public/contact` (it mails the message to
+   * CONTACT_EMAIL). Empty = no form, only the e-mail link.
+   */
+  contactUrl: process.env.SITE_CONTACT_URL || '',
   /** Where contact mail goes (mailto links). */
   email: process.env.SITE_EMAIL || 'info@apensum.ch',
   /** Who runs the website (legal notice). A person for now: there is no company yet. */

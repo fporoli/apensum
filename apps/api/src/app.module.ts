@@ -37,6 +37,7 @@ import { TimesheetsController } from './timesheets.controller';
 import { ExpensesController } from './expenses.controller';
 import { ReceiptHandoffController } from './receipt-handoff.controller';
 import { ReceiptHandoffService } from './receipt-handoff.service';
+import { SiteContactController } from './site-contact.controller';
 import { ExpenseReportsController } from './expense-reports.controller';
 import { WorkflowsController } from './workflows.controller';
 import { StaticDataController } from './static-data.controller';
@@ -81,6 +82,7 @@ import { DbService } from './db.service';
     ProjectTimesheetsController,
     ExpensesController,
     ReceiptHandoffController,
+    SiteContactController,
     ExpenseReportsController,
     WorkflowsController,
     StaticDataController,

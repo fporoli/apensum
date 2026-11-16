@@ -16,7 +16,9 @@ on:
         options: [deploy, remove]
       environment: { description: 'GitHub Environment = the server to use (its VPS_HOST)', default: 'preprod' }
       domain: { description: 'Website hostname, without www', default: 'apensum.ch' }
-      app_url: { description: 'App address for the "Log in" button (empty = no button)', default: '' }
+      # Production (app/api.apensum.ch); the live demo stays at wt.turbotapir.com (site.config.mjs demoUrl).
+      app_url: { description: 'App address for the "Log in" button (empty = no button)', default: 'https://app.apensum.ch' }
+      contact_url: { description: 'Contact form target: an Apensum API''s public/contact (empty = e-mail link only)', default: 'https://api.apensum.ch/api/v1/public/contact' }
 permissions:
   contents: read
 # Same group as the vps workflow: both reload the shared edge Caddy.
@@ -46,6 +48,7 @@ jobs:
         env:
           SITE_DOMAIN: ${{ inputs.domain }}
           SITE_APP_URL: ${{ inputs.app_url }}
+          SITE_CONTACT_URL: ${{ inputs.contact_url }}
         run: npm test && npm run build:strict
       - name: Package
         run: |
@@ -67,11 +70,12 @@ jobs:
         env:
           ACTION: ${{ inputs.action }}
           SITE_DOMAIN: ${{ inputs.domain }}
+          SITE_CONTACT_URL: ${{ inputs.contact_url }}
         with:
           host: ${{ vars.VPS_HOST }}
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: ACTION,SITE_DOMAIN
+          envs: ACTION,SITE_DOMAIN,SITE_CONTACT_URL
           script: |
             set -eu
             rm -rf /tmp/apensum-site-release/src

@@ -15,7 +15,9 @@
 		Referrer-Policy strict-origin-when-cross-origin
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), interest-cohort=()"
 		# Own scripts only (assets/reveal.js); inline style attributes are used for the mock-up's bar heights.
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'none'"
+		# form-action: the contact form posts to the Apensum API (SITE_FORM_ACTION, its origin, set by
+		# remote.sh in .env; 'none' without a form).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action {$SITE_FORM_ACTION}"
 		Strict-Transport-Security "max-age=31536000"
 		-Server
 	}

@@ -11,3 +11,10 @@ test('the QR link opens the phone page for its token, in the language it was mad
   assert.equal(parseReceiptHash('#/receipt/'), null);
   assert.equal(parseReceiptHash('#/receipt/a/b'), null);
 });
+
+import { infoUrl } from './infoUrl.ts';
+
+test('"More about Apensum" opens the website in the app language', () => {
+  assert.equal(infoUrl('fr'), 'https://www.apensum.ch/fr/');
+  assert.equal(infoUrl('de', 'https://example.ch/'), 'https://example.ch/de/');
+});

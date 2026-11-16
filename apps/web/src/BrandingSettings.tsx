@@ -13,6 +13,7 @@ import {
 } from '@worktime3/shared/branding';
 import { useT } from './i18n';
 import { DEFAULT_BRANDING_COLORS, useBranding } from './theme';
+import { ApensumMark } from './ApensumMark';
 import { CloseIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -258,7 +259,7 @@ export default function BrandingSettings({ orgId, authHeaders }: BrandingSetting
               {draft.logo ? (
                 <Box component="img" src={draft.logo} alt="" sx={{ height: 30, maxWidth: 120, objectFit: 'contain', borderRadius: '4px' }} />
               ) : (
-                <Box sx={{ width: 24, height: 24, borderRadius: '6px', bgcolor: 'rgba(255,255,255,0.18)', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: '0.8rem' }}>W</Box>
+                <ApensumMark size={24} variant="onColor" />
               )}
               <Typography sx={{ fontWeight: 700 }}>{t('appbar.title')}</Typography>
             </Box>
