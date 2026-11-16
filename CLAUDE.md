@@ -319,7 +319,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Azure is `infra/azure/provision.sh` (no compose file). `vps` and `azure`
   deploy only through GitHub Actions, with config in GitHub Environments
   (`azure`, and one per VPS instance: `prod`, `preprod`, `test`, ...). A VPS GitHub Environment is one instance: its name sets
-  the container prefix, `/opt/worktime3-<env>`, its own Postgres, and `DOMAIN` + `WEB_SUB/API_SUB/AUTH_SUB`
+  the container prefix, `/opt/apensum-<env>`, its own Postgres, and `DOMAIN` + `WEB_SUB/API_SUB/AUTH_SUB`
   (optional `MAIL_SUB` for the Mailpit inbox, `PORTAINER_SUB` for Portainer, default `portainer`) set its hostnames. `VPS_HOST/USER` are
   variables, `VPS_SSH_KEY` a secret. Never hand-edit files on the server; change
   `infra/vps/remote.sh` or `infra/caddy/edge/`. `deploy` does not seed: use the

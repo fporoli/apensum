@@ -1,5 +1,5 @@
-# One Compose project per instance, named like its containers: worktime3-prod,
-# worktime3-preprod, worktime3-test, ... The prefix comes
+# One Compose project per instance, named like its containers: apensum-prod,
+# apensum-preprod, apensum-test, ... The prefix comes
 # from the GitHub Environment name via infra/vps/remote.sh (CONTAINER_PREFIX in compose/.env,
 # which also gets passed as `-p`). Without a distinct name per instance, Compose would derive
 # one from this directory ("compose") and instances would clobber each other's containers.

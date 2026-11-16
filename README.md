@@ -367,7 +367,7 @@ best-effort: a missing or misconfigured server never fails a request.
 | --- | --- |
 | `dev` | Own [Mailpit](https://github.com/axllent/mailpit) catcher: SMTP `localhost:1025`, inbox UI `:8025`. The host-run API points at it via `.env.dev`. |
 | `local` | Own Mailpit: SMTP `:1026`, inbox UI `:8026` (offset so both can run at once). The `api` container is wired to it in the compose file. |
-| `vps` | Without `SMTP_HOST`, the instance's own Mailpit (`worktime3-<env>-mailpit`). Set `MAIL_SUB` to publish its inbox at `<MAIL_SUB>.<DOMAIN>` behind basic auth (user `admin`). |
+| `vps` | Without `SMTP_HOST`, the instance's own Mailpit (`apensum-<env>-mailpit`). Set `MAIL_SUB` to publish its inbox at `<MAIL_SUB>.<DOMAIN>` behind basic auth (user `admin`). |
 | `azure` | `SMTP_HOST` is unset by default, so mail silently no-ops. See below to use a real relay. |
 
 Mailpit has no auth and nothing real is sent.
@@ -444,15 +444,15 @@ environment and an `image_tag` (prefer a `sha-` tag over `latest`):
 | `deploy` | Ships the deploy files over SSH and runs `infra/vps/remote.sh`. |
 | `portainer` | (Re)deploys Portainer, the Docker UI for the whole server, at `portainer.<DOMAIN>`. It is its own stack in `/opt/edge/portainer`, so instance deploys never touch it. Run it once per server, with any environment of that server (it uses that environment's `DOMAIN`). |
 | `portainer-remove` | Takes Portainer down and keeps its data volume. |
-| `destroy` | **Destructive.** Removes the instance (containers, its Postgres and volume, `/opt/worktime3-<env>`, its Caddy site, and its database on a leftover `edge-pg` if there is one). A last dump stays in the deploy user's home. The shared edge stack and other instances stay. Confirmation text: `DESTROY <environment>`. |
+| `destroy` | **Destructive.** Removes the instance (containers, its Postgres and volume, `/opt/apensum-<env>`, its Caddy site, and its database on a leftover `edge-pg` if there is one). A last dump stays in the deploy user's home. The shared edge stack and other instances stay. Confirmation text: `DESTROY <environment>`. |
 | `seed` | Loads the demo data into a deployed instance, adding only what is missing: nothing is dropped, and demo data changed since (passwords, reporting lines) is kept. Use it after a release adds demo rows. It creates demo users with known passwords, so not for production. Confirmation text: `SEED <environment>`. |
 | `reset-seed` | **Destructive.** Backs up and recreates the `public` schema, migrates, loads the demo data and checks a demo login. Needs the confirmation text. A new instance has no users until you run it once. |
 
 **What `remote.sh` does.** It derives everything instance-specific from the
 environment name:
 
-- Containers (`worktime3-<env>-api`, ...), Compose project and `/opt/worktime3-<env>`.
-- Its own Postgres (`worktime3-<env>-pg`, role and database `worktime`, volume per
+- Containers (`apensum-<env>-api`, ...), Compose project and `/opt/apensum-<env>`.
+- Its own Postgres (`apensum-<env>-pg`, role and database `worktime`, volume per
   Compose project), bound to `127.0.0.1:PG_PORT` on the server.
 - Its own Caddy site at the three hostnames.
 - Writes `compose/.env` and `/opt/edge/.env`, creates the `edge` network if
@@ -473,8 +473,10 @@ Other things to know:
 
 - Docker with the compose plugin.
 - `VPS_USER` is in the `docker` group and owns `/opt/edge` and each
-  `/opt/worktime3*` directory (one `sudo chown -R "$USER": /opt/edge /opt/worktime3*`
-  after the first manual setup, or after anything root created them).
+  `/opt/apensum-*` directory. `remote.sh` creates a missing one with passwordless
+  `sudo` (as `ubuntu` has on cloud images); without it, run
+  `sudo install -d -o "$USER" /opt/apensum-<env>` once (and
+  `sudo chown -R "$USER": /opt/edge /opt/apensum-*` after anything root created).
 - DNS A records pointing at the server for the three hostnames,
   `<PORTAINER_SUB>.<DOMAIN>` (default `portainer`) and, if set, each `MAIL_SUB`
   hostname.

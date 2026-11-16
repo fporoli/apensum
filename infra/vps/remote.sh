@@ -14,7 +14,7 @@
 # One GitHub Environment = one instance. Everything instance-specific derives from its name
 # (ENVIRONMENT), its hostnames (DOMAIN + WEB_SUB/API_SUB/AUTH_SUB) and its Postgres port
 # (PG_PORT), so several instances (production, preprod, test, ...) can share a server: each
-# gets its own containers (worktime3-<env>-*), Compose project, /opt/worktime3-<env>,
+# gets its own containers (apensum-<env>-*), Compose project, /opt/apensum-<env>,
 # Postgres and Caddy site.
 set -euo pipefail
 
@@ -22,7 +22,7 @@ SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the files just shi
 EDGE=/opt/edge
 
 slug="$(printf '%s' "${ENVIRONMENT:?required}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')"
-PREFIX="worktime3-$slug"
+PREFIX="apensum-$slug"
 LEGACY_DB="worktime_${slug//-/_}"   # only used by `destroy`, for databases on the removed shared edge-pg
 ROOT="/opt/$PREFIX"
 PG="$PREFIX-pg"
@@ -32,8 +32,19 @@ AUTH_HOST="${AUTH_SUB:?required}.$DOMAIN"
 : "${PG_PORT:?required}"
 COMPOSE=(docker compose -p "$PREFIX" -f "$ROOT/compose/docker-compose.vps.yml")
 
+# Creates a directory owned by the deploy user. /opt belongs to root, so a new instance's
+# directory needs sudo once (passwordless, as for `ubuntu` on cloud images); else say what to run.
+own_dir() {
+  [ -d "$1" ] && return 0
+  mkdir -p "$1" 2>/dev/null && return 0
+  if sudo -n install -d -o "$(id -un)" -g "$(id -gn)" "$1" 2>/dev/null; then return 0; fi
+  echo "Cannot create $1: run once on the server: sudo install -d -o $(id -un) $1" >&2
+  exit 1
+}
+
 # Copies the shipped files into this instance's directory. compose/.env is left alone.
 install_files() {
+  own_dir "$ROOT"
   mkdir -p "$ROOT/compose" "$ROOT/rendered"
   rm -rf "$ROOT/infra"
   cp -a "$SRC/infra" "$ROOT/infra"
@@ -63,7 +74,7 @@ write_app_env() {
 
 edge_up() {
   docker network inspect edge >/dev/null 2>&1 || docker network create edge
-  mkdir -p "$EDGE/sites"
+  own_dir "$EDGE"; mkdir -p "$EDGE/sites"
   cp "$ROOT/infra/caddy/edge/docker-compose.yml" "$ROOT/infra/caddy/edge/Caddyfile" "$EDGE/"
   # This instance's site file is rendered from its three hostnames. Only files this run owns
   # are replaced, so other instances' sites (and portainer.caddy) stay.

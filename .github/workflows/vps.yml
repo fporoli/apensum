@@ -86,7 +86,7 @@ jobs:
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: release.tgz
-          target: /tmp/worktime3-release
+          target: /tmp/apensum-release
       - name: Run on VPS
         uses: appleboy/ssh-action@v1
         env:
@@ -128,11 +128,11 @@ jobs:
           script: |
             set -eu
             echo "remote.sh $ACTION, environment $ENVIRONMENT, image tag $IMAGE_TAG"
-            rm -rf /tmp/worktime3-release/src
-            mkdir -p /tmp/worktime3-release/src
-            tar xzf /tmp/worktime3-release/release.tgz -C /tmp/worktime3-release/src
-            bash /tmp/worktime3-release/src/infra/vps/remote.sh "$ACTION"
-            rm -rf /tmp/worktime3-release
+            rm -rf /tmp/apensum-release/src
+            mkdir -p /tmp/apensum-release/src
+            tar xzf /tmp/apensum-release/release.tgz -C /tmp/apensum-release/src
+            bash /tmp/apensum-release/src/infra/vps/remote.sh "$ACTION"
+            rm -rf /tmp/apensum-release
       - name: Verify seeded demo login
         if: inputs.action == 'seed' || inputs.action == 'reset-seed'
         run: |

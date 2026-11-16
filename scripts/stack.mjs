@@ -79,6 +79,8 @@ const requested = new Set(rest.flatMap((s) => (s === 'all' ? ['push', 'build', '
 if (requested.size === 0) usage('Name at least one step.');
 for (const s of requested) if (!ORDER.includes(s)) usage(`Unknown step "${s}".`);
 if (requested.has('stop') && requested.size > 1) usage('"stop" runs on its own.');
+// Production holds real customers: the demo seed (Acme users with known passwords) never goes there.
+if (env === 'prod' && requested.has('reset')) usage('prod is never reset or seeded: use "npm run stack -- prod push build start".');
 
 const remote = !LOCAL.has(env);
 if (remote) {
