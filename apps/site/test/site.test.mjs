@@ -104,7 +104,8 @@ test('builds every page; internal links resolve; nothing loads from third partie
 test('a strict build refuses an incomplete legal notice', () => {
   const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
   try {
-    const empty = { ...baseConfig, operator: { ...baseConfig.operator, name: '', street: '', city: '' } };
+    // contactUrl set explicitly: the deploy runs these tests with SITE_CONTACT_URL in the environment.
+    const empty = { ...baseConfig, contactUrl: '', operator: { ...baseConfig.operator, name: '', street: '', city: '' } };
     assert.deepEqual(missingOperatorFields(empty), ['name', 'street', 'city']);
     assert.throws(() => build({ outDir: out, strict: true, config: empty }), /Impressum/);
     const warnings = [];
