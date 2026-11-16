@@ -384,8 +384,8 @@ changes.
 | --- | --- |
 | `POST /api/v1/auth/register` | Welcome mail |
 | `POST /api/v1/organizations/:id/invite` | Org-invite mail |
-| `POST /api/v1/auth/onboard` | Self-onboarding |
-| `POST /api/v1/auth/reset-password` | Password reset |
+| `POST /api/v1/auth/reset` | Forgot password: mails a 30-minute, one-time link if the address has a password login (always `ok`) |
+| `POST /api/v1/auth/reset/confirm` | Sets the new password from that link's token |
 | `POST /api/v1/auth/azure/link` | Azure link |
 | `DELETE /api/v1/auth/azure/link/:userId` | Azure unlink |
 

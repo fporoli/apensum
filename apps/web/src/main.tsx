@@ -7,10 +7,14 @@ import { BrandingContext, createAppTheme, ThemeModeContext, type ThemeMode } fro
 import type { OrgBranding } from '@worktime3/shared/branding';
 import { DatePickerLocalization } from './ConfigField';
 import { parseReceiptHash } from './receiptHash';
+import { parseResetHash } from './resetHash';
 
 const PhoneUpload = lazy(() => import('./PhoneUpload'));
 // A phone that scanned the expense form's QR code gets the receipt page alone, without signing in.
 const receiptHandoff = parseReceiptHash(window.location.hash);
+const ResetPassword = lazy(() => import('./ResetPassword'));
+// The link in a password-reset e-mail opens the page that sets the new password, without signing in.
+const passwordReset = parseResetHash(window.location.hash);
 
 const THEME_STORAGE_KEY = 'worktime.themeMode';
 
@@ -53,6 +57,10 @@ function Root() {
               {receiptHandoff ? (
                 <Suspense fallback={null}>
                   <PhoneUpload token={receiptHandoff.token} lang={receiptHandoff.lang} />
+                </Suspense>
+              ) : passwordReset ? (
+                <Suspense fallback={null}>
+                  <ResetPassword token={passwordReset.token} lang={passwordReset.lang} />
                 </Suspense>
               ) : (
                 <App />

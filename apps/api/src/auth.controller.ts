@@ -1,18 +1,19 @@
 import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { Public, type AuthenticatedRequest } from './jwt.guard';
-import { mintLocalToken } from './jwt';
+import { mintLocalToken, purposeKey } from './jwt';
 import { sendMail } from './mailer';
 import * as bcrypt from 'bcryptjs';
 import { users, user_identities, organizations, organization_memberships, organization_invitations, roles, membership_roles, static_data } from './db/schema';
 import { pickPrimaryRole } from './access';
 import { VersionsService } from './versions.service';
+import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
 
 /**
  * Auth: Keycloak is the IdP (same Postgres DB, `auth` schema).
- * - Self-onboarding creates the user row + password identity.
- * - Password reset updates the password identity (Keycloak mirrors via user federation/LDAP or API in prod).
+ * - Password reset mails a signed one-time link (password-reset.ts); only the link sets the password.
  * - Azure link/unlink manages an `azure_oidc` user_identity row.
  * - Local login/register/invite-accept below power the web login screen (dev
  *   parity with Keycloak; production should validate Keycloak JWTs instead).
@@ -125,33 +126,13 @@ export async function membershipsOf(db: Db, userId: string): Promise<SessionMemb
 
 @Controller('auth')
 export class AuthController {
+  private readonly resetPerEmail = new HourlyLimiter(RESET_LIMIT_PER_EMAIL);
+  private readonly resetPerIp = new HourlyLimiter(RESET_LIMIT_PER_IP);
+
   constructor(
     private readonly db: DbService,
     private readonly versions: VersionsService,
   ) {}
-
-  @Public()
-  @Post('onboard')
-  async onboard(@Body() body: { email: string; displayName: string; passwordHash: string }) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true };
-    const [user] = await db
-      .insert(users)
-      .values({ email: body.email, display_name: body.displayName })
-      .onConflictDoUpdate({ target: users.email, set: { display_name: body.displayName } })
-      .returning({ id: users.id });
-    await db
-      .insert(user_identities)
-      .values({ user_id: user.id, provider: 'password', provider_user_id: body.email, password_hash: body.passwordHash })
-      .onConflictDoUpdate({
-        target: [user_identities.provider, user_identities.provider_user_id],
-        set: { password_hash: body.passwordHash },
-      });
-    void this.versions
-      .record('users', user.id, 'update_delta', user.id, { email: body.email, display_name: body.displayName })
-      .catch(() => {});
-    return { ok: true, userId: user.id };
-  }
 
   /** Register a new admin user: creates the user, a personal workspace org, and an owner membership. */
   @Public()
@@ -268,21 +249,59 @@ export class AuthController {
     return { ok: true, ...session };
   }
 
-  /** Reset a local password (server-side hashing). Always returns ok to avoid account enumeration. */
+  /**
+   * Forgot password, step 1: mails a reset link to the address if it has a password login. Always
+   * answers ok (no account enumeration) and sends in the background, so the timing tells nothing either.
+   */
   @Public()
   @Post('reset')
-  async resetLocal(@Body() body: { email: string; newPassword: string }) {
+  async requestReset(@Body() body: { email?: string }, @Req() req: Request) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
-    const email = (body.email ?? '').trim().toLowerCase();
-    if (isValidEmail(email) && isValidPassword(body.newPassword)) {
-      const passwordHash = await bcrypt.hash(body.newPassword, 10);
-      await db
-        .update(user_identities)
-        .set({ password_hash: passwordHash })
-        .where(and(eq(user_identities.provider, 'password'), eq(user_identities.provider_user_id, email)));
-    }
+    const email = (body?.email ?? '').trim().toLowerCase();
+    if (!isValidEmail(email)) return { ok: true };
+    const now = Date.now();
+    if (!this.resetPerIp.allow(clientIp(req), now) || !this.resetPerEmail.allow(email, now)) return { ok: true };
+    void this.sendResetLink(db, email, now).catch(() => {});
     return { ok: true };
+  }
+
+  private async sendResetLink(db: Db, email: string, nowMs: number): Promise<void> {
+    const [row] = await db
+      .select({ id: users.id, name: users.display_name, locale: users.locale, hash: user_identities.password_hash })
+      .from(user_identities)
+      .innerJoin(users, eq(users.id, user_identities.user_id))
+      .where(and(eq(user_identities.provider, 'password'), eq(user_identities.provider_user_id, email)));
+    if (!row) return;
+    const token = mintResetToken(purposeKey('password-reset'), row.id, row.hash, Math.floor(nowMs / 1000));
+    const link = resetLink(process.env.APP_BASE_URL ?? 'http://localhost:3001', token, row.locale);
+    await sendMail({ to: email, ...resetMail(row.locale, row.name ?? email, link) }, 10_000);
+  }
+
+  /** Forgot password, step 2: the link's token sets the new password, once. */
+  @Public()
+  @Post('reset/confirm')
+  async confirmReset(@Body() body: { token?: string; newPassword?: string }) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const claim = readResetToken(purposeKey('password-reset'), body?.token, Math.floor(Date.now() / 1000));
+    if (!claim) return { ok: false, error: 'reset-link-invalid' };
+    if (!isValidPassword(body.newPassword)) return { ok: false, error: 'password-too-short' };
+    const [identity] = await db
+      .select({ id: user_identities.id, hash: user_identities.password_hash, email: user_identities.provider_user_id })
+      .from(user_identities)
+      .where(and(eq(user_identities.user_id, claim.userId), eq(user_identities.provider, 'password')));
+    if (!identity || passwordStamp(identity.hash) !== claim.stamp) return { ok: false, error: 'reset-link-invalid' };
+    const passwordHash = await bcrypt.hash(body.newPassword as string, 10);
+    // Only if the hash is still the one the link was issued for: two clicks cannot both succeed.
+    const updated = await db
+      .update(user_identities)
+      .set({ password_hash: passwordHash })
+      .where(and(eq(user_identities.id, identity.id), identity.hash === null ? isNull(user_identities.password_hash) : eq(user_identities.password_hash, identity.hash)))
+      .returning({ id: user_identities.id });
+    if (updated.length === 0) return { ok: false, error: 'reset-link-invalid' };
+    void this.versions.record('users', claim.userId, 'update_delta', claim.userId, { password: 'reset by e-mail link' }).catch(() => {});
+    return { ok: true, email: identity.email };
   }
 
   /**
@@ -423,18 +442,6 @@ export class AuthController {
     return userId;
   }
 
-  @Public()
-  @Post('reset-password')
-  async reset(@Body() body: { email: string; newPasswordHash: string }) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true };
-    await db
-      .update(user_identities)
-      .set({ password_hash: body.newPasswordHash })
-      .where(and(eq(user_identities.provider, 'password'), eq(user_identities.provider_user_id, body.email)));
-    return { ok: true };
-  }
-
   @Post('azure/link')
   linkAzure(@Body() body: { userId: string; azureId: string }) {
     return this.setAzure(body.userId, body.azureId, true);
@@ -466,4 +473,10 @@ export class AuthController {
   providers() {
     return [{ type: 'azure_oidc', tenantHint: process.env.AZURE_TENANT_ID ?? null }];
   }
+}
+
+/** Behind the edge Caddy, which sets X-Forwarded-For to the client it saw. */
+function clientIp(req: Request): string {
+  const forwarded = String(req.headers?.['x-forwarded-for'] ?? '').split(',')[0].trim();
+  return forwarded || req.socket?.remoteAddress || 'unknown';
 }

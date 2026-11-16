@@ -125,6 +125,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   providers there). Global prefix `api/v1`.
 - Auth: global `JwtAuthGuard` (`jwt.guard.ts`) accepts local HS256 tokens
   (`API_JWT_SECRET`) and Keycloak JWKS tokens. Use `@Public()` to opt a route out.
+  Forgot password (`password-reset.ts`): `auth/reset` mails a signed link (30 min, bound to the current
+  password hash, so one use; key from `purposeKey`), `#/reset/<token>` (`ResetPassword.tsx`, no login)
+  sends it to `auth/reset/confirm`. No public endpoint may set a password from an e-mail address alone.
   Handlers take `@Req() req: AuthenticatedRequest`.
 - **Every org-scoped handler authorizes itself**, using helpers from `access.ts`:
   1. `const db = this.db.getDb(); if (!db) return <offline/empty shape>;`

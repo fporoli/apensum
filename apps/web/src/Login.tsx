@@ -116,7 +116,6 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
   const [token, setToken] = useState(() => {
     try {
       return new URLSearchParams(window.location.search).get('invite') ?? DEMO_INVITE_TOKEN;
@@ -361,14 +360,13 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
             onSubmit={(e) => {
               e.preventDefault();
               void run(async () => {
-                await post('/auth/reset', { email, newPassword });
-                setNotice(t('login.resetDone'));
+                await post('/auth/reset', { email });
+                setNotice(t('login.resetSent'));
               });
             }}
             sx={{ display: 'grid', gap: 2 }}
           >
             <TextField label={t('common.email')} value={email} onChange={(e) => setEmail(e.target.value)} size="small" autoComplete="email" />
-            <TextField label={t('login.resetPasswordMin')} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} size="small" autoComplete="new-password" />
             <Button type="submit" variant="contained" disabled={busy}>
               {t('login.resetSubmit')}
             </Button>

@@ -51,6 +51,14 @@ function localSecret(): Buffer {
   return Buffer.from(secret, 'utf8');
 }
 
+/**
+ * A key for one purpose other than session tokens (e.g. password-reset links), derived from
+ * API_JWT_SECRET: a token signed with it can never pass as a session token, nor the other way round.
+ */
+export function purposeKey(purpose: string): Buffer {
+  return createHmac('sha256', localSecret()).update(`purpose:${purpose}`).digest();
+}
+
 function b64urlDecode(input: string): Buffer {
   return Buffer.from(input.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 }
