@@ -16,7 +16,7 @@ on:
         options: [deploy, remove]
       environment: { description: 'GitHub Environment = the server to use (its VPS_HOST)', default: 'preprod' }
       domain: { description: 'Website hostname, without www', default: 'apensum.ch' }
-      # Production (app/api.apensum.ch); the live demo stays at wt.turbotapir.com (site.config.mjs demoUrl).
+      # Production (app/api.apensum.ch); the demo is appdemo.apensum.ch (site.config.mjs demoUrl).
       app_url: { description: 'App address for the "Log in" button (empty = no button)', default: 'https://app.apensum.ch' }
       contact_url: { description: 'Contact form target: an Apensum API''s public/contact (empty = e-mail link only)', default: 'https://api.apensum.ch/api/v1/public/contact' }
 permissions:

@@ -5,7 +5,7 @@ export default {
   /** Public hostname, without www (www redirects here). */
   domain: process.env.SITE_DOMAIN || 'apensum.ch',
   /** The live demo (sample data, demo accounts on its login page): every "Demo" button. */
-  demoUrl: process.env.SITE_DEMO_URL || 'https://wt.turbotapir.com',
+  demoUrl: process.env.SITE_DEMO_URL || 'https://appdemo.apensum.ch',
   /** The app's web address for the "Log in" button; empty hides the button. */
   appUrl: process.env.SITE_APP_URL || '',
   /**

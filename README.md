@@ -244,8 +244,8 @@ never seeded by `deploy`: use the `vps` workflow's `seed` (additive) or `reset-s
 
 Azure uses Container Apps ingress, not host ports. On the VPS the shared edge
 proxy routes each instance's three hostnames (`WEB_SUB`, `API_SUB`, `AUTH_SUB`
-under `DOMAIN`; production uses `wt`, `wtservice`, `wtauth` under
-`turbotapir.com`) to its web, API and Keycloak containers.
+under `DOMAIN`; production uses `app`, `api`, `auth` under
+`apensum.ch`, the demo `appdemo`, `apidemo`, `authdemo`) to its web, API and Keycloak containers.
 
 ## Dev and Local deployment
 
@@ -425,9 +425,9 @@ server or another one: production (`wt`), `preprod` (`wtpp`) and `test`
 | Name | Notes |
 | --- | --- |
 | `VPS_HOST`, `VPS_USER` | Server and deploy user |
-| `PG_PORT` | This instance's Postgres loopback port; unique per server, e.g. 5433/5434/5435 |
-| `DOMAIN` | e.g. `turbotapir.com` |
-| `WEB_SUB`, `API_SUB`, `AUTH_SUB` | e.g. `wtpp`, `wtservicepp`, `wtauthpp` |
+| `PG_PORT` | This instance's Postgres loopback port; unique per server, e.g. 5434/5435/5436 |
+| `DOMAIN` | e.g. `apensum.ch` |
+| `WEB_SUB`, `API_SUB`, `AUTH_SUB` | e.g. `apppp`, `apipp`, `authpp` |
 | `KEYCLOAK_ADMIN` | |
 | `SHOW_DEMO_ACCOUNTS` | Optional, `true`/`false` |
 | `GHCR_USERNAME` | Optional |
