@@ -1,6 +1,7 @@
 {
   "name": "@worktime3/site",
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "description": "Marketing website for Apensum (apensum.ch): static HTML in de/fr/it/en, no dependencies",
   "type": "module",

@@ -57,7 +57,7 @@ test('builds every page; internal links resolve; nothing loads from third partie
       // Only same-site resources: no external src= and no external stylesheet.
       for (const m of html.matchAll(/\s(?:src|href|poster)="([^"]+)"/g)) {
         const url = m[1];
-        if (/^#/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin].includes(url)) continue;
+        if (/^#/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin, fullConfig.sourceUrl].includes(url)) continue;
         if (/^https:\/\//.test(url)) {
           assert.ok(url.startsWith(`https://${fullConfig.domain}/`), `${file}: external link ${url}`);
           continue;

@@ -601,3 +601,10 @@ az postgres flexible-server firewall-rule delete -g <rg> -n <server> -r laptop -
 
 Connect to `<server>.postgres.database.azure.com` as `worktime` with
 `POSTGRES_PASSWORD` and `sslmode=require`.
+
+## License
+
+Apensum is free software under the [GNU Affero General Public License v3.0](LICENSE)
+(`AGPL-3.0-only`). You may use, change and run it, including as a hosted service; if you
+offer a changed version to users over a network, you must make that version's source code
+available to them under the same license.

@@ -71,6 +71,7 @@ const SECURITY = [
   ['hosting', 'cross'],
   ['assistant', 'sparkle'],
   ['website', 'globe'],
+  ['opensource', 'code'],
 ];
 
 /**
@@ -280,6 +281,21 @@ export function home(ctx) {
     </div>
   </div>
 </section>
+${
+  ctx.config.sourceUrl
+    ? `
+<section class="section tight-bottom">
+  <div class="wrap">
+    <div class="card">
+      <p class="eyebrow">${icon('code')}${t('home.oss.eyebrow')}</p>
+      <h2>${t('home.oss.title')}</h2>
+      <p class="lead">${t('home.oss.text')}</p>
+      <a class="link-arrow" href="${esc(ctx.config.sourceUrl)}" rel="noopener">${t('home.oss.link')}${icon('arrow')}</a>
+    </div>
+  </div>
+</section>`
+    : ''
+}
 
 <section class="section">
   <div class="wrap split">
@@ -381,7 +397,7 @@ export function security(ctx) {
 </section>
 <section class="section tight">
   <div class="wrap grid grid-2">
-  ${SECURITY.map(
+  ${SECURITY.filter(([k]) => k !== 'opensource' || ctx.config.sourceUrl).map(
     ([k, ic]) => `<article class="card feature">
       <div class="feature-icon">${icon(ic)}</div>
       <h2 class="h3">${t(`security.${k}.title`)}</h2>

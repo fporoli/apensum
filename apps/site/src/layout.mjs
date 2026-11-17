@@ -111,6 +111,7 @@ function footer(ctx) {
       <a href="${link('security')}">${t('nav.security')}</a>
       <a href="${ctx.demo}">${t('cta.demo')}</a>
       ${config.appUrl ? `<a href="${esc(config.appUrl)}">${t('nav.login')}</a>` : ''}
+      ${config.sourceUrl ? `<a href="${esc(config.sourceUrl)}" rel="noopener">${t('nav.source')}</a>` : ''}
     </nav>
     <nav aria-label="${t('footer.company')}">
       <h2>${t('footer.company')}</h2>
@@ -120,7 +121,7 @@ function footer(ctx) {
       <a href="${link('privacy')}">${t('nav.privacy')}</a>
     </nav>
   </div>
-  <div class="wrap footer-base muted">© ${year} Apensum · ${t('footer.madeIn')}</div>
+  <div class="wrap footer-base muted">© ${year} Apensum · ${t('footer.madeIn')}${config.sourceUrl ? ` · ${t('footer.openSource')}` : ''}</div>
 </footer>`;
 }
 

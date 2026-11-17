@@ -22,11 +22,13 @@ export default {
   'nav.login': 'Log in',
   'nav.impressum': 'Legal notice',
   'nav.privacy': 'Privacy',
+  'nav.source': "Source code",
 
   'footer.tagline': 'Time, absences and expenses for Swiss companies – in four languages.',
   'footer.product': 'Product',
   'footer.company': 'About',
   'footer.madeIn': 'Made in Switzerland',
+  'footer.openSource': "Open source (AGPL-3.0)",
 
   'cta.demo': 'Demo',
   'cta.contact': 'Get in touch',
@@ -133,6 +135,10 @@ export default {
   'home.pricing.title': 'Free while Apensum is being built',
   'home.pricing.text': 'Apensum is still growing. Until further notice the app is free, with every feature – and soon with your own subdomain, yourcompany.apensum.ch.',
   'home.pricing.link': 'See pricing',
+  'home.oss.eyebrow': "Open source",
+  'home.oss.title': "The code is open",
+  'home.oss.text': "Apensum is open source under the GNU AGPL-3.0, and its complete source code is on GitHub. Anyone can read and check it, run it themselves and adapt it – whoever offers a changed version as a service publishes their changes too.",
+  'home.oss.link': "Source code on GitHub",
 
   'features.meta.title': 'Features – Apensum',
   'features.meta.description':
@@ -316,6 +322,8 @@ export default {
     'The assistant is optional. When it is switched on, it answers with exactly the permissions of the person asking and never sees more than they can. Questions are processed by an external AI provider.',
   'security.website.title': 'A website without tracking',
   'security.website.text': 'This website sets no cookies, uses no analytics and loads nothing from third parties.',
+  'security.opensource.title': "Open source code",
+  'security.opensource.text': "The complete source code is public on GitHub under the GNU AGPL-3.0. Anyone can check how Apensum stores and protects your data.",
   'security.note': 'Questions about security or data protection? Get in touch – we are happy to answer them in detail.',
   'pricing.meta.title': 'Pricing – Apensum',
   'pricing.meta.description': 'Apensum is free during its build-up phase. Customization work is billed by the hour.',

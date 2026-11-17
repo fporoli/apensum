@@ -21,11 +21,13 @@ export default {
   'nav.login': 'Anmelden',
   'nav.impressum': 'Impressum',
   'nav.privacy': 'Datenschutz',
+  'nav.source': "Quellcode",
 
   'footer.tagline': 'Zeit, Absenzen und Spesen für Schweizer Unternehmen – in vier Sprachen.',
   'footer.product': 'Produkt',
   'footer.company': 'Über Apensum',
   'footer.madeIn': 'Entwickelt in der Schweiz',
+  'footer.openSource': "Open Source (AGPL-3.0)",
 
   'cta.demo': 'Demo',
   'cta.contact': 'Kontakt aufnehmen',
@@ -132,6 +134,10 @@ export default {
   'home.pricing.title': 'Kostenlos während der Aufbauphase',
   'home.pricing.text': 'Apensum wächst noch. Bis auf Weiteres ist die App kostenlos, mit allen Funktionen – und demnächst mit Ihrer eigenen Subdomain ihrefirma.apensum.ch.',
   'home.pricing.link': 'Zu den Preisen',
+  'home.oss.eyebrow': "Open Source",
+  'home.oss.title': "Der Code ist offen",
+  'home.oss.text': "Apensum ist Open Source unter der GNU AGPL-3.0, der vollständige Quellcode liegt auf GitHub. Alle können ihn lesen und prüfen, selbst betreiben und anpassen – wer eine geänderte Version als Dienst anbietet, legt seine Änderungen ebenfalls offen.",
+  'home.oss.link': "Quellcode auf GitHub",
 
   'features.meta.title': 'Funktionen – Apensum',
   'features.meta.description':
@@ -315,6 +321,8 @@ export default {
     'Der Assistent ist optional. Ist er eingeschaltet, antwortet er mit genau den Berechtigungen der fragenden Person und sieht nie mehr als sie. Die Fragen werden von einem externen KI-Anbieter verarbeitet.',
   'security.website.title': 'Eine Website ohne Tracking',
   'security.website.text': 'Diese Website setzt keine Cookies, nutzt keine Analyse-Tools und lädt nichts von Drittanbietern.',
+  'security.opensource.title': "Offener Quellcode",
+  'security.opensource.text': "Der vollständige Quellcode ist unter der GNU AGPL-3.0 öffentlich auf GitHub. Alle können nachprüfen, wie Apensum Ihre Daten speichert und schützt.",
   'security.note': 'Fragen zu Sicherheit oder Datenschutz? Melden Sie sich – wir beantworten sie gerne im Detail.',
   'pricing.meta.title': 'Preise – Apensum',
   'pricing.meta.description': 'Apensum ist während der Aufbauphase kostenlos. Anpassungen nach Mass verrechnen wir nach Aufwand.',

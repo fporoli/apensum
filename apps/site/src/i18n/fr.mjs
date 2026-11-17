@@ -22,11 +22,13 @@ export default {
   'nav.login': 'Se connecter',
   'nav.impressum': 'Mentions légales',
   'nav.privacy': 'Confidentialité',
+  'nav.source': "Code source",
 
   'footer.tagline': 'Temps, absences et frais pour les entreprises suisses – en quatre langues.',
   'footer.product': 'Produit',
   'footer.company': 'À propos',
   'footer.madeIn': 'Développé en Suisse',
+  'footer.openSource': "Open source (AGPL-3.0)",
 
   'cta.demo': 'Démo',
   'cta.contact': 'Prendre contact',
@@ -133,6 +135,10 @@ export default {
   'home.pricing.title': 'Gratuit pendant la phase de lancement',
   'home.pricing.text': 'Apensum est encore en construction. Jusqu’à nouvel avis, l’application est gratuite, avec toutes les fonctionnalités – et bientôt avec votre propre sous-domaine, votreentreprise.apensum.ch.',
   'home.pricing.link': 'Voir les tarifs',
+  'home.oss.eyebrow': "Open source",
+  'home.oss.title': "Le code est ouvert",
+  'home.oss.text': "Apensum est open source sous licence GNU AGPL-3.0 et son code source complet se trouve sur GitHub. Chacun peut le lire et le vérifier, l’exploiter lui-même et l’adapter – qui propose une version modifiée sous forme de service publie aussi ses modifications.",
+  'home.oss.link': "Code source sur GitHub",
 
   'features.meta.title': 'Fonctionnalités – Apensum',
   'features.meta.description':
@@ -316,6 +322,8 @@ export default {
     'L’assistant est facultatif. Activé, il répond avec exactement les autorisations de la personne qui pose la question et n’en voit jamais plus qu’elle. Les questions sont traitées par un fournisseur d’IA externe.',
   'security.website.title': 'Un site sans pistage',
   'security.website.text': 'Ce site ne dépose aucun cookie, n’utilise aucun outil d’analyse et ne charge rien de tiers.',
+  'security.opensource.title': "Code source ouvert",
+  'security.opensource.text': "Le code source complet est public sur GitHub sous licence GNU AGPL-3.0. Chacun peut vérifier comment Apensum enregistre et protège vos données.",
   'security.note': 'Des questions sur la sécurité ou la protection des données ? Contactez-nous – nous y répondons volontiers en détail.',
   'pricing.meta.title': 'Tarifs – Apensum',
   'pricing.meta.description': 'Apensum est gratuit pendant sa phase de lancement. Les adaptations sur mesure sont facturées selon le temps effectif.',
