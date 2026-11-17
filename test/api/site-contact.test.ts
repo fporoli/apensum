@@ -5,13 +5,13 @@ import type { MailOptions } from '../../apps/api/src/mailer';
 
 const form = { name: 'Anna Muster', email: 'anna@example.ch', organization: 'Muster AG', message: 'Wir haben 40 Mitarbeitende.', lang: 'de', ok: '/de/kontakt/danke/', fail: '/de/kontakt/fehler/' };
 
-function run(controller: SiteContactController, body: object, origin = 'https://apensum.ch', ip = '1.2.3.4') {
+function run(controller: SiteContactController, body: object, origin = 'https://apensum.ch', ip = '1.2.3.4', accept = 'text/html') {
   const out: { status?: number; location?: string; json?: unknown } = {};
   const res = {
     redirect: (status: number, location: string) => { out.status = status; out.location = location; },
     status: (s: number) => ({ json: (j: unknown) => { out.status = s; out.json = j; } }),
   };
-  const req = { headers: { origin, 'x-forwarded-for': `${ip}, 10.0.0.1` }, socket: {} };
+  const req = { headers: { origin, accept, 'x-forwarded-for': `${ip}, 10.0.0.1` }, socket: {} };
   return controller.submit(body as never, req as never, res as never).then(() => out);
 }
 
@@ -90,4 +90,18 @@ test('a bot-like post gets the thank-you page and sends nothing', async () => {
   assert.equal(sent.length, 0);
   await run(c, { ...form, elapsed: '20000', topic: 'demo' });
   assert.equal(sent[0].subject, '[Website] Vorführung: Anna Muster');
+});
+
+test('submit: the page script (Accept: application/json) gets a JSON result instead of a redirect', async () => {
+  const { c, sent } = controller();
+  const json = (body: object, ip = '5.6.7.8') => run(c, body, 'https://apensum.ch', ip, 'application/json');
+  assert.deepEqual(await json({ ...form, elapsed: '12000' }), { status: 200, json: { ok: true } });
+  assert.equal(sent.length, 1);
+  assert.deepEqual((await json({ ...form, email: 'nope' })).json, { ok: false, error: 'invalid' });
+  assert.deepEqual((await json({ ...form, website: 'x' })).json, { ok: true }, 'bots still look successful');
+  for (let i = 1; i < CONTACT_LIMIT_PER_IP; i++) await json(form, '9.9.9.9');
+  assert.deepEqual((await json(form, '9.9.9.9')).json, { ok: true });
+  assert.deepEqual((await json(form, '9.9.9.9')).json, { ok: false, error: 'rate-limited' });
+  c.send = async () => { throw new Error('smtp down'); };
+  assert.deepEqual((await json(form, '1.1.1.1')).json, { ok: false, error: 'mail-failed' });
 });

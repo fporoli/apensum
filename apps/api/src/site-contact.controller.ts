@@ -102,7 +102,9 @@ export function spamReason(form: ContactForm): string | null {
 
 /**
  * The website's contact form (apps/site, a static site without a server of its own): a plain HTML
- * form post, answered with a redirect back to the site's thank-you or error page. The message goes
+ * form post, answered with a redirect back to the site's thank-you or error page. The site's
+ * contact.js sends the same form with fetch and `Accept: application/json` instead (so the page
+ * shows that it is sending), and gets `{ ok }` / `{ ok: false, error }` to pick the page itself. The message goes
  * only to CONTACT_EMAIL (never to an address from the form, so this is no relay), with the visitor
  * as Reply-To, through the API's SMTP setting (on a VPS instance without a relay: its Mailpit).
  */
@@ -123,24 +125,33 @@ export class SiteContactController {
       res.status(403).json({ ok: false, error: 'forbidden' });
       return;
     }
-    const back = (path: unknown) => res.redirect(303, origin + safeBackPath(path));
+    const json = String(req.headers.accept ?? '').includes('application/json');
+    const done = (error?: string) => {
+      if (json) res.status(200).json(error ? { ok: false, error } : { ok: true });
+      else res.redirect(303, origin + safeBackPath(error ? form?.fail : form?.ok));
+    };
     // A bot filled in the hidden field: look successful, send nothing.
-    if (oneLine(form?.website, 200)) return back(form.ok);
+    if (oneLine(form?.website, 200)) return done();
     // The same for the other bot signs; logged (without content) so a lost real message can be explained.
     const spam = spamReason(form ?? {});
     if (spam) {
       // eslint-disable-next-line no-console
       console.log(`contact: message dropped as spam (${spam})`);
-      return back(form.ok);
+      return done();
     }
 
     const mail = contactMail(form ?? {}, process.env.CONTACT_EMAIL || 'info@apensum.ch');
-    if (!mail || !this.allow(clientIp(req))) return back(form?.fail);
+    if (!mail) return done('invalid');
+    if (!this.allow(clientIp(req))) {
+      // eslint-disable-next-line no-console
+      console.log('contact: message refused, sending limit reached');
+      return done('rate-limited');
+    }
     try {
       await this.send(mail);
-      back(form.ok);
+      done();
     } catch {
-      back(form.fail);
+      done('mail-failed');
     }
   }
 

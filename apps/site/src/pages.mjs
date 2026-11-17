@@ -399,8 +399,9 @@ export function contactResultPath(dicts, lang, kind) {
 
 /**
  * A plain HTML form posted to the API, which mails it and redirects back to the thank-you or error
- * page. `website` is a honeypot: hidden from people, filled in by bots. contact.js only adds
- * comfort and a time trap (`elapsed`); without JavaScript the form works the same.
+ * page. `website` is a honeypot: hidden from people, filled in by bots. contact.js sends it in the
+ * background (showing that it is sending) and adds a time trap (`elapsed`); without JavaScript the
+ * form works the same.
  */
 function contactForm(ctx) {
   const { t, config, lang, dicts } = ctx;
@@ -420,7 +421,7 @@ function contactForm(ctx) {
         <input type="hidden" name="elapsed" value="">
         <input type="hidden" name="ok" value="${contactResultPath(dicts, lang, 'thanks')}">
         <input type="hidden" name="fail" value="${contactResultPath(dicts, lang, 'failed')}">
-        <button class="btn btn-primary" type="submit">${t('contact.form.send')}</button>
+        <button class="btn btn-primary" type="submit" data-sending="${esc(t('contact.form.sending'))}">${t('contact.form.send')}</button>
         <p class="muted small">${t('contact.form.note')}</p>
         <p class="muted small">${t('contact.emailLabel')} ${ctx.email}</p>
         ${config.operator.phone ? `<p class="small">${phoneReveal(ctx)}</p>` : ''}

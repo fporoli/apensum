@@ -44,13 +44,16 @@ deploy() {
   cp "$SRC/infra/site/docker-compose.yml" "$SRC/infra/site/Caddyfile" "$DIR/"
   # The contact form's target (SITE_CONTACT_URL, built into the pages) is the only place a form may
   # post to: its origin goes into the CSP form-action, 'none' without a form.
-  local form_action="'none'"
+  local form_action="'none'"  # next to 'self' in the Caddyfile: ignored, leaving only 'self'
   if [ -n "${SITE_CONTACT_URL:-}" ]; then
     form_action="$(printf '%s' "$SITE_CONTACT_URL" | sed -E 's#^(https://[A-Za-z0-9.-]+(:[0-9]+)?).*$#\1#')"
     case "$form_action" in https://*) ;; *) echo "Invalid SITE_CONTACT_URL: $SITE_CONTACT_URL" >&2; exit 1 ;; esac
     case "$form_action" in */*/*/*) echo "Invalid SITE_CONTACT_URL: $SITE_CONTACT_URL" >&2; exit 1 ;; esac
   fi
-  printf 'SITE_FORM_ACTION="%s"\nSITE_NAME="%s"\n' "$form_action" "$SITE_NAME" > "$DIR/.env"
+  # contact.js sends the form with fetch: the same origin is allowed for connections.
+  local connect_src="'self'"
+  [ "$form_action" = "'none'" ] || connect_src="'self' $form_action"
+  printf 'SITE_FORM_ACTION="%s"\nSITE_CONNECT_SRC="%s"\nSITE_NAME="%s"\n' "$form_action" "$connect_src" "$SITE_NAME" > "$DIR/.env"
 
   # New release next to the old ones, then switch the `current` link in one step: requests are
   # served from either the old or the new tree, never from a half-copied one.
