@@ -131,7 +131,19 @@ export function createAppTheme(mode: ThemeMode = 'light', branding: OrgBranding 
           },
         },
       },
+      // Phones: content grids and flex rows default to `min-width: auto`, so one wide table or row of
+      // tabs widens the whole page past the screen. Layout boxes in the content may shrink instead
+      // (tables then scroll inside their TableContainer); classes set via sx still win (higher specificity).
+      MuiCssBaseline: {
+        styleOverrides: {
+          'main :where(.MuiBox-root, .MuiPaper-root, .MuiCard-root, .MuiStack-root, .MuiTableContainer-root, .MuiTabs-root)': {
+            minWidth: 0,
+          },
+        },
+      },
       MuiTabs: {
+        // A row of tabs wider than the screen scrolls (with arrows on touch screens) instead of widening the page.
+        defaultProps: { variant: 'scrollable', scrollButtons: 'auto', allowScrollButtonsMobile: true },
         styleOverrides: {
           indicator: { height: 3, borderRadius: 3 },
         },

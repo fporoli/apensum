@@ -1,9 +1,9 @@
-import React, { lazy, Suspense, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import App from './App';
 import { I18nProvider } from './i18n';
-import { BrandingContext, createAppTheme, ThemeModeContext, type ThemeMode } from './theme';
+import { BrandingContext, createAppTheme, DEFAULT_BRANDING_COLORS, ThemeModeContext, type ThemeMode } from './theme';
 import type { OrgBranding } from '@worktime3/shared/branding';
 import { DatePickerLocalization } from './ConfigField';
 import { parseReceiptHash } from './receiptHash';
@@ -31,6 +31,10 @@ function Root() {
   const [branding, setBranding] = useState<OrgBranding>({});
   const theme = useMemo(() => createAppTheme(mode, branding), [mode, branding]);
   const brandingCtx = useMemo(() => ({ branding, setBranding }), [branding]);
+  // The phone's status bar (installed app, mobile browsers) takes the organization's header color.
+  useEffect(() => {
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', branding.headerColor ?? DEFAULT_BRANDING_COLORS.headerColor);
+  }, [branding.headerColor]);
   const ctx = useMemo(
     () => ({
       mode,
@@ -71,6 +75,14 @@ function Root() {
       </BrandingContext.Provider>
     </ThemeModeContext.Provider>
   );
+}
+
+// Installable app (PWA): public/sw.js caches the app itself for a quick start, never API answers.
+// Not in development, where Vite serves changing modules that a cache would only get in the way of.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('Service worker not registered:', err));
+  });
 }
 
 createRoot(document.getElementById('root')!).render(

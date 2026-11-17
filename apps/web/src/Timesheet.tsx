@@ -361,7 +361,8 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
                 <Typography variant="body2" color="text.secondary">{t('timesheet.carry.start', { date: formatLocaleDate(balanceStart, locale) })}</Typography>
               )}
             </Box>
-            <Table size="small" sx={{ maxWidth: 640 }}>
+            <TableContainer sx={{ maxWidth: 640 }}>
+            <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell />
@@ -413,6 +414,7 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
                 </TableRow>
               </TableBody>
             </Table>
+            </TableContainer>
             {!monthOver && (
               <Typography variant="caption" color="text.secondary">{t('timesheet.carry.note')}</Typography>
             )}

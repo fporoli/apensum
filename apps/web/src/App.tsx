@@ -895,7 +895,9 @@ export default function App() {
 
         <Box component="main" sx={{ flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           <Box sx={{ height: appBarHeight, flexShrink: 0 }} />
-          <Container maxWidth="xl" sx={{ py: 3, display: 'grid', gap: 2 }}>
+          {/* minmax(0, 1fr): without it the grid's one column grows to its widest child (a table, a row
+              of tabs) and pushes the whole page wider than a phone screen. */}
+          <Container maxWidth="xl" sx={{ py: 3, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
             <DesignModeNotice />
             <Suspense fallback={<LinearProgress sx={{ my: 2 }} />}>
               {section === 'home' && orgId && (
