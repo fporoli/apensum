@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REPORTS, groupReport, monthsBetween, parseGroupBy, reportById } from './reports.ts';
-import { NAV_OBJECTS } from './permissions.ts';
+import { REPORTS, groupReport, monthEnd, monthsBetween, parseGroupBy, reportById, sanitizeSavedSettings } from './reports.ts';
+import { PERMISSION_OBJECTS } from './permissions.ts';
 
 test('every report reads through a page that exists, and groups only by its own dimensions', () => {
-  const nav = new Set(NAV_OBJECTS.map((o) => o.id));
+  const nav = new Set(PERMISSION_OBJECTS.map((o) => o.id));
   for (const r of REPORTS) {
     assert.ok(nav.has(r.object), r.id);
     for (const d of r.defaultGroupBy) assert.ok(r.dimensions.includes(d), `${r.id}: ${d}`);
@@ -51,4 +51,45 @@ test("a balance is each person's last month, summed over people, never added up 
   assert.deepEqual(byMonth.rows.map((r) => [r.month, r.overtimeBalance]), [['2026-01', 3], ['2026-02', 6]]);
   assert.equal(byPerson.totals.overtimeBalance, 6);
   assert.equal(byPerson.totals.worked, 340);
+});
+
+test('expenses always keep the currency and never add up amounts in different currencies', () => {
+  const def = reportById('expenses');
+  assert.deepEqual(parseGroupBy(def, 'person'), ['person', 'currency']);
+  const raw = [
+    { person: 'u1', personName: 'Anna', category: 'travel', currency: 'CHF', amount: 10, count: 1 },
+    { person: 'u1', personName: 'Anna', category: 'travel', currency: 'EUR', amount: 5, count: 1 },
+    { person: 'u2', personName: 'Ueli', category: 'meals', currency: 'CHF', amount: 2.5, count: 1 },
+  ];
+  const out = groupReport(def, raw, ['category', 'currency']);
+  assert.deepEqual(out.rows.map((r) => [r.category, r.currency, r.amount, r.count]), [
+    ['meals', 'CHF', 2.5, 1],
+    ['travel', 'CHF', 10, 1],
+    ['travel', 'EUR', 5, 1],
+  ]);
+  assert.deepEqual(out.totals, { count: 3 }, 'no amount total across CHF and EUR');
+  assert.deepEqual(groupReport(def, raw.filter((r) => r.currency === 'CHF'), ['currency']).totals, { amount: 12.5, count: 2 });
+});
+
+test('people rows carry the start date when grouped by person', () => {
+  const def = reportById('people');
+  const raw = [{ person: 'u1', personName: 'Anna', department: 'IT', function: 'Dev', manager: 'Bea', startDate: '2024-03-01', headcount: 1, fte: 0.8 }];
+  assert.deepEqual(groupReport(def, raw, ['department', 'person']).rows, [{ department: 'IT', person: 'u1', personName: 'Anna', startDate: '2024-03-01', headcount: 1, fte: 0.8 }]);
+  assert.deepEqual(groupReport(def, raw, ['department']).rows, [{ department: 'IT', headcount: 1, fte: 0.8 }]);
+});
+
+test('monthEnd knows leap years', () => {
+  assert.equal(monthEnd('2028-02'), '2028-02-29');
+  assert.equal(monthEnd('2026-02'), '2026-02-28');
+  assert.equal(monthEnd('2026-12'), '2026-12-31');
+});
+
+test('sanitizeSavedSettings keeps valid choices only', () => {
+  const def = reportById('projectHours');
+  const id = '0b7c6f0e-1d2a-4c3b-9e8f-112233445566';
+  assert.deepEqual(sanitizeSavedSettings(def, { preset: 'lastMonth', groupBy: ['month', 'x'], projectId: id, extra: 1 }), { preset: 'lastMonth', groupBy: ['month'], projectId: id });
+  assert.deepEqual(sanitizeSavedSettings(def, { preset: 'custom', from: '2026-01', to: '2026-03', groupBy: [] }), { preset: 'custom', from: '2026-01', to: '2026-03', groupBy: ['project', 'person'] });
+  assert.equal(sanitizeSavedSettings(def, { preset: 'custom', from: '2026-05', to: '2026-03' }), null);
+  assert.equal(sanitizeSavedSettings(def, { preset: 'someday' }), null);
+  assert.equal(sanitizeSavedSettings(def, { preset: 'thisYear', userId: 'robert' }), null);
 });

@@ -1,12 +1,14 @@
-import { Controller, Get, Param, Query, Req } from '@nestjs/common';
-import { and, asc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { Body, Controller, Get, Param, Post, Query, Req, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { and, asc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { BalancesService, type MonthBalance } from './balances.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { callerUserId, can, isOrgMember, listableUserIds } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { departments, employee_assignments, organization_memberships, project_times, projects, users } from './db/schema';
-import { groupReport, monthsBetween, parseGroupBy, reportById, type ReportDefinition, type ReportRow } from '@worktime3/shared/reports';
+import { departments, employee_assignments, expenses, organization_memberships, project_times, projects, users } from './db/schema';
+import { groupReport, monthEnd, monthsBetween, parseGroupBy, reportById, type ReportDefinition, type ReportRow } from '@worktime3/shared/reports';
+import { renderReportPdf, sanitizeReportPdf } from './report-pdf';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
 
@@ -86,6 +88,28 @@ export class ReportsController {
     return { callerId, def, people };
   }
 
+  /**
+   * The table on screen as a PDF (A4, landscape when it is wide). The browser sends the rows it
+   * shows, already labelled and formatted in the person's language, so the PDF matches the screen
+   * and the Excel file; the API only lays it out. Nothing is stored.
+   */
+  @Post('pdf')
+  async pdf(@Param('orgId') orgId: string, @Body() body: unknown, @Req() req: AuthenticatedRequest, @Res() res: Response) {
+    const db = this.db.getDb();
+    if (!db) return res.json({ ok: true, offline: true });
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !UUID.test(orgId) || !(await isOrgMember(db, orgId, callerId)) || !(await can(db, orgId, callerId, 'nav.reports', 'see'))) {
+      return res.json({ ok: false, error: 'forbidden' });
+    }
+    const table = sanitizeReportPdf(body);
+    if (!table) return res.json({ ok: false, error: 'invalid-table' });
+    const pdf = await renderReportPdf(table);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="report.pdf"');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end(pdf);
+  }
+
   /** What the filters offer: the people the report may cover, the departments and (project hours) the projects. */
   @Get(':reportId/options')
   async options(@Param('orgId') orgId: string, @Param('reportId') reportId: string, @Req() req: AuthenticatedRequest) {
@@ -98,7 +122,7 @@ export class ReportsController {
       .from(departments)
       .where(and(eq(departments.organization_id, orgId), eq(departments.is_active, true)))
       .orderBy(asc(departments.sort_order), asc(departments.name));
-    const projs = scope.def.id === 'projectHours'
+    const projs = scope.def.id === 'projectHours' || scope.def.id === 'expenses'
       ? await db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.organization_id, orgId)).orderBy(asc(projects.name))
       : [];
     return { ok: true, people: scope.people, departments: depts, projects: projs };
@@ -178,6 +202,11 @@ export class ReportsController {
       for (const r of result) {
         raw.push({ person: r.userId, personName: names.get(r.userId) ?? '', project: r.project, month: r.month, hours: hours(Number(r.minutes)) });
       }
+    } else if (def.id === 'expenses') {
+      if (projectId && !UUID.test(projectId)) return { ok: false, error: 'unknown-project', groupBy, rows: [], totals: {} };
+      raw.push(...(await this.expenseRows(db, orgId, people, first, last, projectId)));
+    } else if (def.id === 'people') {
+      raw.push(...(await this.peopleRows(db, orgId, people, last)));
     } else {
       // Attendance and absences come from the balances, year by year, as the Balances page shows them.
       const settings = await this.workTime.settings(db, orgId);
@@ -195,5 +224,85 @@ export class ReportsController {
 
     const grouped = groupReport(def, raw, groupBy, (d, r) => (d === 'person' ? String(r.personName ?? '') : String(r[d] ?? '')));
     return { ok: true, ...grouped };
+  }
+
+  /**
+   * One row per expense dated in the period: amount in its own currency, and the status of the
+   * expense report it is in (`none` when it is in none yet).
+   */
+  private async expenseRows(db: Db, orgId: string, people: Array<{ id: string; name: string }>, first: string, last: string, projectId?: string): Promise<ReportRow[]> {
+    const names = new Map(people.map((p) => [p.id, p.name]));
+    const conditions = [
+      eq(expenses.organization_id, orgId),
+      inArray(expenses.user_id, people.map((p) => p.id)),
+      gte(expenses.expense_date, `${first}-01`),
+      lte(expenses.expense_date, monthEnd(last)),
+    ];
+    if (projectId) conditions.push(eq(expenses.project_id, projectId));
+    const result = await db
+      .select({
+        userId: expenses.user_id,
+        category: expenses.category,
+        project: sql<string>`coalesce(${projects.name}, '')`,
+        date: expenses.expense_date,
+        currency: expenses.currency,
+        value: expenses.value,
+        status: sql<string | null>`(SELECT er.status FROM expense_report_items i JOIN expense_reports er ON er.id = i.expense_report_id WHERE i.expense_id = ${expenses.id} LIMIT 1)`,
+      })
+      .from(expenses)
+      .leftJoin(projects, eq(projects.id, expenses.project_id))
+      .where(and(...conditions));
+    return result.map((r) => ({
+      person: r.userId,
+      personName: names.get(r.userId) ?? '',
+      category: r.category,
+      project: r.project,
+      month: String(r.date).slice(0, 7),
+      status: r.status ?? 'none',
+      currency: String(r.currency).trim().toUpperCase(),
+      amount: Math.round(Number(r.value) * 100) / 100,
+      count: 1,
+    }));
+  }
+
+  /**
+   * One row per person employed on the last day of the period (today, if that is still ahead):
+   * the assignment and work schedule in force on that day. FTE = workload / 100.
+   */
+  private async peopleRows(db: Db, orgId: string, people: Array<{ id: string; name: string }>, last: string): Promise<ReportRow[]> {
+    const today = new Date().toISOString().slice(0, 10);
+    const at = monthEnd(last) < today ? monthEnd(last) : today;
+    const names = new Map(people.map((p) => [p.id, p.name]));
+    const ids = sql.join(people.map((p) => sql`${p.id}::uuid`), sql`, `);
+    const result = await db.execute(sql`
+      SELECT m.user_id, m.start_date::text AS start_date, coalesce(d.name, '') AS department,
+             coalesce(a.job_function, '') AS job_function,
+             coalesce(nullif(mu.display_name, ''), mu.email::text, '') AS manager,
+             coalesce(ws.workload_percent, 100)::float8 AS workload
+      FROM organization_memberships m
+      LEFT JOIN LATERAL (
+        SELECT ea.department_id, ea.job_function, ea.manager_user_id FROM employee_assignments ea
+        WHERE ea.organization_id = m.organization_id AND ea.user_id = m.user_id AND ea.valid_from <= ${at}::date
+        ORDER BY ea.valid_from DESC LIMIT 1) a ON true
+      LEFT JOIN departments d ON d.id = a.department_id
+      LEFT JOIN users mu ON mu.id = a.manager_user_id
+      LEFT JOIN LATERAL (
+        SELECT w.workload_percent FROM work_schedules w
+        WHERE w.organization_id = m.organization_id AND w.user_id = m.user_id AND w.valid_from <= ${at}::date
+        ORDER BY w.valid_from DESC LIMIT 1) ws ON true
+      WHERE m.organization_id = ${orgId} AND m.user_id IN (${ids})
+        AND (m.start_date IS NULL OR m.start_date <= ${at}::date)
+        AND (m.status = 'active' OR m.exit_at::date > ${at}::date)
+        AND (m.exit_at IS NULL OR m.exit_at::date > ${at}::date)`);
+    return (result.rows as Array<{ user_id: string; start_date: string | null; department: string; job_function: string; manager: string; workload: number }>).map((r) => ({
+      person: r.user_id,
+      personName: names.get(r.user_id) ?? '',
+      department: r.department,
+      function: r.job_function,
+      manager: r.manager,
+      startDate: r.start_date ?? '',
+      headcount: 1,
+      fte: Math.round(Number(r.workload) * 10) / 1000,
+    }));
   }
 }

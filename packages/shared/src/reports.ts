@@ -9,8 +9,9 @@
 //
 // Keep this file erasable TypeScript (no enums, no imports) so Node tests can load it directly.
 
-export type ReportId = 'projectHours' | 'attendance' | 'absences';
-export type MeasureKind = 'hours' | 'days';
+export type ReportId = 'projectHours' | 'attendance' | 'absences' | 'expenses' | 'people';
+/** `money` is in the row's `currency`: amounts in different currencies are never added up. */
+export type MeasureKind = 'hours' | 'days' | 'money' | 'count' | 'fte';
 
 export interface ReportMeasure {
   key: string;
@@ -28,6 +29,12 @@ export interface ReportDefinition {
   measures: readonly ReportMeasure[];
   /** The measure the chart shows, over the first grouping dimension. */
   chart: readonly string[];
+  /** Dimensions every grouping keeps (expenses: the currency, so amounts are never mixed). */
+  alwaysGroupBy?: readonly string[];
+  /** Text facts about a person (people: start date), shown when the rows are per person. */
+  details?: readonly string[];
+  /** The report is a snapshot on the last day of the period instead of a sum over its months. */
+  snapshot?: boolean;
 }
 
 export const REPORTS: readonly ReportDefinition[] = [
@@ -65,6 +72,31 @@ export const REPORTS: readonly ReportDefinition[] = [
     ],
     chart: ['days'],
   },
+  {
+    id: 'expenses',
+    object: 'nav.expenses',
+    dimensions: ['person', 'category', 'project', 'month', 'status', 'currency'],
+    defaultGroupBy: ['category'],
+    alwaysGroupBy: ['currency'],
+    measures: [
+      { key: 'amount', kind: 'money', aggregate: 'sum' },
+      { key: 'count', kind: 'count', aggregate: 'sum' },
+    ],
+    chart: ['amount'],
+  },
+  {
+    id: 'people',
+    object: 'section.people.employment',
+    dimensions: ['department', 'function', 'manager', 'person'],
+    defaultGroupBy: ['department', 'person'],
+    details: ['startDate'],
+    snapshot: true,
+    measures: [
+      { key: 'headcount', kind: 'count', aggregate: 'sum' },
+      { key: 'fte', kind: 'fte', aggregate: 'sum' },
+    ],
+    chart: ['headcount', 'fte'],
+  },
 ];
 
 export function reportById(id: string): ReportDefinition | undefined {
@@ -79,7 +111,9 @@ export function parseGroupBy(def: ReportDefinition, input: unknown): string[] {
   const asked = typeof input === 'string' ? input.split(',') : Array.isArray(input) ? input.map(String) : [];
   const out: string[] = [];
   for (const d of asked.map((s) => s.trim())) if (def.dimensions.includes(d) && !out.includes(d)) out.push(d);
-  return out.length ? out : [...def.defaultGroupBy];
+  const chosen = out.length ? out : [...def.defaultGroupBy];
+  for (const d of def.alwaysGroupBy ?? []) if (!chosen.includes(d)) chosen.push(d);
+  return chosen;
 }
 
 const MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
@@ -103,10 +137,15 @@ export function monthsBetween(from: string, to: string, max = 36): string[] | nu
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
-/** Adds up rows: plain sums, and balances as each person's value in their last month, summed. */
+/**
+ * Adds up rows: plain sums, and balances as each person's value in their last month, summed.
+ * Money in more than one currency has no total (the key is left out).
+ */
 function aggregate(def: ReportDefinition, rows: readonly ReportRow[]): Record<string, number> {
   const out: Record<string, number> = {};
+  const currencies = new Set(rows.map((r) => r.currency));
   for (const m of def.measures) {
+    if (m.kind === 'money' && currencies.size > 1) continue;
     if (m.aggregate === 'sum') {
       out[m.key] = round(rows.reduce((s, r) => s + (Number(r[m.key]) || 0), 0));
     } else {
@@ -147,6 +186,7 @@ export function groupReport(def: ReportDefinition, raw: readonly ReportRow[], gr
     for (const d of groupBy) {
       row[d] = first[d];
       if (d === 'person' && first.personName !== undefined) row.personName = first.personName;
+      if (d === 'person') for (const k of def.details ?? []) if (first[k] !== undefined) row[k] = first[k];
     }
     Object.assign(row, aggregate(def, list));
     rows.push(row);
@@ -159,4 +199,45 @@ export function groupReport(def: ReportDefinition, raw: readonly ReportRow[], gr
     return 0;
   });
   return { groupBy: [...groupBy], rows, totals: aggregate(def, raw) };
+}
+
+/** The last day (yyyy-mm-dd) of a month (yyyy-mm). */
+export function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+}
+
+/** What a saved report remembers: the report, its period (a preset moves with time) and its choices. */
+export interface SavedReportSettings {
+  preset: string;
+  from?: string;
+  to?: string;
+  groupBy: string[];
+  userId?: string;
+  departmentId?: string;
+  projectId?: string;
+}
+
+const PRESET_IDS = ['thisMonth', 'lastMonth', 'thisQuarter', 'lastQuarter', 'thisYear', 'lastYear', 'custom'];
+const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Validated settings for a saved report of `def`, or null. Unknown keys are dropped. */
+export function sanitizeSavedSettings(def: ReportDefinition, input: unknown): SavedReportSettings | null {
+  if (!input || typeof input !== 'object') return null;
+  const i = input as Record<string, unknown>;
+  const preset = typeof i.preset === 'string' && PRESET_IDS.includes(i.preset) ? i.preset : null;
+  if (!preset) return null;
+  const out: SavedReportSettings = { preset, groupBy: parseGroupBy(def, i.groupBy) };
+  if (preset === 'custom') {
+    if (typeof i.from !== 'string' || typeof i.to !== 'string' || !monthsBetween(i.from, i.to)) return null;
+    out.from = i.from;
+    out.to = i.to;
+  }
+  for (const k of ['userId', 'departmentId', 'projectId'] as const) {
+    const v = i[k];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string' || !ID.test(v)) return null;
+    out[k] = v;
+  }
+  return out;
 }

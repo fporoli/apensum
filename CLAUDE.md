@@ -312,8 +312,12 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   totals are `packages/shared/src/reports.ts` (a `balance` measure is each person's last month, summed over people).
   Each report shows `listableUserIds` of its page object (project hours `nav.time`, attendance `nav.workTime`,
   absences `nav.absences`); a filter naming someone outside that is refused. Attendance and absences come from
-  `BalancesService.year`, so they match Time balances. Excel/CSV are built in the browser from the shown rows
-  (`packages/shared/src/xlsx.ts`, no dependency, reusable server-side for scheduled reports).
+  `BalancesService.year`, so they match Time balances. Expenses (`nav.expenses`) always group by currency and never
+  total across currencies; People (`section.people.employment`) is a snapshot on the period's last day. Excel/CSV are
+  built in the browser from the shown rows (`packages/shared/src/xlsx.ts`, no dependency); the PDF is the same table,
+  labelled in the browser and laid out by `POST reports/pdf` (`report-pdf.ts`, pdfkit, nothing stored). Saved reports
+  (`saved_reports` 064, `saved-reports.controller.ts`): the owner edits; sharing with role names needs
+  `nav.reports:edit` (admin, hr, manager); whoever opens one runs it with their own rights.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

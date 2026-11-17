@@ -243,21 +243,22 @@ export interface ProjectReportPdfData {
   }[];
 }
 
-interface Column {
+export interface Column {
   label: string;
   width: number;
   align?: 'left' | 'right';
 }
 
 /** A minimal PDF writer: title block, key/value lines, and a table that continues on new pages. */
-class Sheet {
-  readonly doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
+export class Sheet {
+  readonly doc: PDFKit.PDFDocument;
   private readonly chunks: Buffer[] = [];
   private readonly done: Promise<Buffer>;
   readonly left = 48;
   readonly width: number;
 
-  constructor(title: string, subtitle: string) {
+  constructor(title: string, subtitle: string, layout: 'portrait' | 'landscape' = 'portrait') {
+    this.doc = new PDFDocument({ size: 'A4', layout, margin: 48, bufferPages: true });
     this.doc.on('data', (c: Buffer) => this.chunks.push(c));
     this.done = new Promise((resolve) => this.doc.on('end', () => resolve(Buffer.concat(this.chunks))));
     this.width = this.doc.page.width - 96;

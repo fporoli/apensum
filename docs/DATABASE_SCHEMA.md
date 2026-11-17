@@ -840,6 +840,32 @@ erDiagram
 columns, not DB enums — the former is CHECK-constrained (see Expenses above),
 the latter is free-form.
 
+## Saved reports
+
+`saved_reports` (064) keeps a report of the Reports page under a name: `report_id`
+(`packages/shared/src/reports.ts`), `settings` (period preset or custom months,
+grouping, filters) and `shared_roles`, role **names** whose members see it too
+(names, so an organization's own copy of a role still matches). Only the owner
+changes it; everyone runs it with their own rights.
+
+```mermaid
+erDiagram
+    ORGANIZATIONS ||--o{ SAVED_REPORTS : "organization_id"
+    USERS ||--o{ SAVED_REPORTS : "owner_user_id"
+
+    SAVED_REPORTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid owner_user_id FK
+        text name
+        text report_id
+        jsonb settings
+        text_array shared_roles
+    }
+    ORGANIZATIONS { uuid id PK }
+    USERS { uuid id PK }
+```
+
 ## Not diagrammed
 
 - Liquibase's own bookkeeping tables `databasechangelog` /

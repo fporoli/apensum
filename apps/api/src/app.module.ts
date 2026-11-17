@@ -28,6 +28,7 @@ import { RequestsController } from './requests.controller';
 import { DocumentsController } from './documents.controller';
 import { DirectoryController } from './directory.controller';
 import { ReportsController } from './reports.controller';
+import { SavedReportsController } from './saved-reports.controller';
 import { PersonnelDocumentsController } from './personnel-documents.controller';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { ForwardMailService } from './forward-mail.service';
@@ -79,6 +80,7 @@ import { DbService } from './db.service';
     DocumentsController,
     DirectoryController,
     ReportsController,
+    SavedReportsController,
     PersonnelDocumentsController,
     TimesheetsController,
     ProjectTimesheetsController,

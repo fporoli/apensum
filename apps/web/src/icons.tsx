@@ -17,6 +17,7 @@ export const AddIcon = makeIcon('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z');
 export const EditIcon = makeIcon('M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z');
 export const DeleteIcon = makeIcon('M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z');
 export const DownloadIcon = makeIcon('M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z');
+export const SaveIcon = makeIcon('M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z');
 export const UploadIcon = makeIcon('M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z');
 export const CheckIcon = makeIcon('M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z');
 export const ChevronLeftIcon = makeIcon('M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z');
