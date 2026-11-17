@@ -276,6 +276,9 @@ a:hover { color: var(--brand-strong); }
 .feature-video { margin: 4px 0 24px; }
 .feature-video video { aspect-ratio: 16 / 10; background: #0f3fa8; }
 @media (max-width: 640px) { .shots.two { grid-template-columns: minmax(0, 1fr); } }
+.shots.phones { grid-template-columns: repeat(2, minmax(0, 240px)); justify-content: center; gap: 32px; }
+.shots.phones img { border-radius: 20px; }
+@media (max-width: 640px) { .shots.phones { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } }
 @media (max-width: 900px) {
   .with-toc { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .toc { position: static; display: flex; flex-wrap: wrap; gap: 6px; }

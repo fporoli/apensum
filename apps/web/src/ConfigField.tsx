@@ -36,7 +36,8 @@ export function DatePickerLocalization({ children }: { children: ReactNode }) {
 }
 
 function widthSx(field: FieldDef) {
-  return field.width === 'full' ? { flexBasis: '100%' } : { minWidth: WIDTH_PX[field.width] };
+  // On a phone every field takes its own full row; from `sm` up, fields sit side by side at their width.
+  return field.width === 'full' ? { flexBasis: '100%' } : { minWidth: WIDTH_PX[field.width], flexBasis: { xs: '100%', sm: 'auto' } };
 }
 
 function isEmpty(value: unknown): boolean {

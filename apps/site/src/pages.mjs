@@ -29,6 +29,7 @@ const MORE = [
 ];
 export const FEATURE_GROUPS = [
   ['time', 'clock'],
+  ['mobile', 'phone'],
   ['project', 'briefcase'],
   ['absences', 'calendar'],
   ['balances', 'scale'],
@@ -48,6 +49,7 @@ export const FEATURE_GROUPS = [
  */
 export const FEATURE_SHOTS = {
   time: ['time-1', 'time-2'],
+  mobile: ['mobile-1', 'mobile-2'],
   project: ['project-1'],
   absences: ['absences-1'],
   balances: ['balances-1', 'balances-2'],
@@ -327,7 +329,8 @@ function featureMedia(ctx, group) {
       : (FEATURE_SHOTS[group] ?? []).map((id) => shot(ctx, id, t(`features.shot.${id}`)));
   const shown = figures.filter(Boolean);
   if (!shown.length) return '';
-  return `<div class="shots${shown.length > 1 ? ' two' : ''}">
+  // Phone screenshots are tall: shown side by side at phone size, not across the column.
+  return `<div class="shots${shown.length > 1 ? ' two' : ''}${group === 'mobile' ? ' phones' : ''}">
         ${shown.join('\n        ')}
       </div>`;
 }

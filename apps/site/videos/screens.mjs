@@ -99,12 +99,20 @@ const SHOTS = {
   'tenants-1': { user: 'admin', hash: '#/home', full: true, async go(p) {
     await p.getByRole('combobox').first().click();
   } },
+  // The installed app on a phone: the whole screen, no clipping.
+  'mobile-1': { user: 'ueli', hash: '#/home', phone: true },
+  'mobile-2': { user: 'ueli', hash: '#/expenses', phone: true, async go(p) {
+    // down to the receipt: its drop zone, with the camera button
+    await p.evaluate(() => document.querySelector('main input[type=file]')?.parentElement?.scrollIntoView({ block: 'center' }));
+  } },
   // The login screen itself (nobody signed in): its first tab, then Register.
   'access-1': { signedOut: 0 },
   'access-2': { signedOut: 1 },
 };
 
 const CONTEXT = { viewport: { width: 1320, height: 820 }, deviceScaleFactor: 2, locale: 'de-CH', timezoneId: 'Europe/Zurich' };
+/** An iPhone-sized screen (390 x 844 points) with touch, for the `phone` shots. */
+const PHONE = { ...CONTEXT, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
 /** The login card in `lang` (the app keeps the language in localStorage), on tab `tab`. */
 async function shootSignedOut(browser, lang, tab, file) {
@@ -125,8 +133,8 @@ async function shootSignedOut(browser, lang, tab, file) {
   }
 }
 
-async function login(browser, user, lang) {
-  const context = await browser.newContext(CONTEXT);
+async function login(browser, user, lang, phone = false) {
+  const context = await browser.newContext(phone ? PHONE : CONTEXT);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   // The demo users' saved languages differ: show the app in the page's language.
@@ -143,7 +151,7 @@ async function login(browser, user, lang) {
   await page.getByRole('textbox').first().fill(`${user}@acme.com`);
   await page.locator('input[type=password]').first().fill(user);
   await page.keyboard.press('Enter');
-  await page.locator('.MuiDrawer-root').first().waitFor();
+  await page.locator('header').first().waitFor(); // on a phone the navbar is a hidden drawer
   await sleep(1200);
   return { context, page };
 }
@@ -163,6 +171,7 @@ async function shoot(page, id, shot, file) {
     await page.locator('main').getByRole('tab').nth(shot.tab).click();
     await sleep(1500);
   }
+  await page.evaluate(() => window.scrollTo(0, 0));
   if (shot.go) {
     await shot.go(page);
     await sleep(1500);
@@ -174,6 +183,10 @@ async function shoot(page, id, shot, file) {
   const b = await page.locator('main').first().boundingBox();
   const bar = (await page.locator('header').first().boundingBox())?.height ?? 64;
   const right = Math.min(b.x + b.width, vp.width);
+  if (shot.phone) {
+    await page.screenshot({ path: file, type: 'jpeg', quality: 82 });
+    return;
+  }
   const clip = shot.full
     ? { x: 0, y: 0, width: right, height: vp.height }
     : { x: b.x, y: bar, width: right - b.x, height: (await contentBottom(page, vp.height)) - bar };
@@ -200,8 +213,8 @@ try {
         continue;
       }
       // One fresh login per user and language; shots that open menus get their own.
-      const key = shot.full ? `${shot.user}:${id}` : shot.user;
-      if (!sessions.has(key)) sessions.set(key, await login(browser, shot.user, lang));
+      const key = shot.full ? `${shot.user}:${id}` : shot.phone ? `${shot.user}:phone` : shot.user;
+      if (!sessions.has(key)) sessions.set(key, await login(browser, shot.user, lang, !!shot.phone));
       const { page } = sessions.get(key);
       const file = join(MEDIA, `feature-${id}-${lang}.jpg`);
       try {
