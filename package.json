@@ -38,8 +38,6 @@
     "dev:resetdb": "node scripts/with-env.mjs dev node scripts/reset-db.mjs",
     "dev:introspect": "node scripts/with-env.mjs dev npm run db:introspect",
     "dev:checkschema": "node scripts/with-env.mjs dev npm run db:checkschema",
-    "dev:superset": "node scripts/with-env.mjs dev docker compose -f compose/docker-compose.dev.yml --profile bi up -d --build superset && node scripts/with-env.mjs dev node scripts/superset-setup.mjs",
-    "dev:superset:export": "node scripts/with-env.mjs dev node scripts/superset-export.mjs",
     "dev:psql": "node scripts/with-env.mjs dev docker compose -f compose/docker-compose.dev.yml exec pg psql -U worktime worktime",
     "local:up": "node scripts/with-env.mjs local docker compose -f compose/docker-compose.local.yml up -d --build",
     "local:down": "node scripts/with-env.mjs local docker compose -f compose/docker-compose.local.yml down",

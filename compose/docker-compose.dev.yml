@@ -59,19 +59,3 @@ services:
     depends_on:
       # Needs the `auth` schema, which migrate's first changeset creates.
       migrate: { condition: service_completed_successfully }
-  # Optional (profile `bi`, trial): Superset for embedded dashboards on :8088.
-  #   npm run dev:superset        (start it, create the reporting views and the demo dashboard)
-  # Its own settings live in ../data-dev/superset; it reads Apensum's data only through the
-  # `reporting` views as superset_reader (infra/superset).
-  superset:
-    profiles: ["bi"]
-    build: { context: ../infra/superset }
-    ports: ["8088:8088"]
-    environment:
-      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-dev_only_superset_secret_key_0123456789abcdef}
-      SUPERSET_GUEST_TOKEN_SECRET: ${SUPERSET_GUEST_TOKEN_SECRET:-dev_only_guest_token_secret_0123456789}
-      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin_dev_only}
-    volumes:
-      - ../data-dev/superset:/app/superset_home
-    depends_on:
-      pg: { condition: service_healthy }

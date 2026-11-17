@@ -305,16 +305,6 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone
   opens `#/receipt/<token>` (`PhoneUpload.tsx`, rendered by `main.tsx` without login, token = credential)
   and sends the photo; the PC polls, takes the file into the form and uploads it as usual.
-- Analyses (trial, dev only): an embedded Superset dashboard (`Analytics.tsx`, `analytics.controller.ts`,
-  `infra/superset`, `npm run dev:superset`, profile `bi` on :8088). Superset reads only the `reporting` views
-  (`infra/superset/reporting.sql`, not a changelog yet) as `superset_reader`. The API gets a 5-minute guest
-  token per viewer: one dashboard, row-level security `organization_id` plus, per dataset, `listableUserIds`
-  of the matching page (`ANALYTICS_DATASETS`). Guests may only run each chart's saved `query_context`, which
-  the export carries. The navbar shows it only when `SUPERSET_URL` is set. Dashboards are code: change them in
-  the dev Superset (:8088, admin / admin_dev_only), `npm run dev:superset:export` writes the YAML to
-  `infra/superset/assets` (commit it), `scripts/superset-setup.mjs` imports it with overwrite (same uuids) and
-  fills in each environment's database host and password. A chart without a saved query gets one from a
-  headless admin visit; export again to keep it.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).
