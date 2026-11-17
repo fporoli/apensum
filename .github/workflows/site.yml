@@ -34,14 +34,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with: { node-version: 24 }
-      # Demo videos are not in git: they live in the site-media release (npm run site:videos:publish).
-      # Without them the home page shows the role cards instead.
-      - name: Fetch demo videos
+      # Demo videos and feature screenshots are not in git: they live in the site-media release
+      # (npm run site:videos:publish). Without them the pages show cards and no pictures instead.
+      - name: Fetch demo videos and screenshots
         if: inputs.action == 'deploy'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download site-media --pattern 'demo-*' --dir apps/site/media --clobber || echo "No site-media release, building without videos."
+          gh release download site-media --pattern 'demo-*' --pattern 'feature-*' --dir apps/site/media --clobber || echo "No site-media release, building without videos."
       - name: Test and build
         if: inputs.action == 'deploy'
         working-directory: apps/site
