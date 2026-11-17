@@ -84,6 +84,38 @@ export const user_identities = pgTable("user_identities", {
 	unique("uq_provider_user_id").on(table.provider, table.provider_user_id),
 ]);
 
+export const report_schedules = pgTable("report_schedules", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	saved_report_id: uuid().notNull(),
+	frequency: text().notNull(),
+	weekday: integer(),
+	month_day: integer(),
+	hour: integer().default(6).notNull(),
+	time_zone: text().notNull(),
+	format: text().default('pdf').notNull(),
+	recipient_user_ids: uuid().array().default([""]).notNull(),
+	is_active: boolean().default(true).notNull(),
+	next_run_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+	last_run_at: timestamp({ withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("idx_report_schedules_due").using("btree", table.next_run_at.asc().nullsLast().op("timestamptz_ops")).where(sql`is_active`),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "report_schedules_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.saved_report_id],
+			foreignColumns: [saved_reports.id],
+			name: "report_schedules_saved_report_id_fkey"
+		}).onDelete("cascade"),
+	unique("report_schedules_saved_report_id_key").on(table.saved_report_id),
+	check("chk_report_schedules_frequency", sql`((frequency = 'weekly'::text) AND ((weekday >= 1) AND (weekday <= 7))) OR ((frequency = 'monthly'::text) AND ((month_day >= 1) AND (month_day <= 28)))`),
+	check("chk_report_schedules_hour", sql`(hour >= 0) AND (hour <= 23)`),
+	check("chk_report_schedules_format", sql`format = ANY (ARRAY['pdf'::text, 'xlsx'::text])`),
+]);
+
 export const organization_domains = pgTable("organization_domains", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -137,6 +169,43 @@ export const teams = pgTable("teams", {
 			name: "teams_lead_user_id_fkey"
 		}).onDelete("set null"),
 	unique("uq_org_team_name").on(table.organization_id, table.name),
+]);
+
+export const report_runs = pgTable("report_runs", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	schedule_id: uuid(),
+	user_id: uuid().notNull(),
+	document_id: uuid(),
+	title: text().notNull(),
+	period_from: text().notNull(),
+	period_to: text().notNull(),
+	ran_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	error: text(),
+}, (table) => [
+	index("idx_report_runs_schedule").using("btree", table.schedule_id.asc().nullsLast().op("timestamptz_ops"), table.ran_at.asc().nullsLast().op("uuid_ops")),
+	index("idx_report_runs_user").using("btree", table.organization_id.asc().nullsLast().op("timestamptz_ops"), table.user_id.asc().nullsLast().op("timestamptz_ops"), table.ran_at.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "report_runs_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.schedule_id],
+			foreignColumns: [report_schedules.id],
+			name: "report_runs_schedule_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "report_runs_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.document_id],
+			foreignColumns: [documents.id],
+			name: "report_runs_document_id_fkey"
+		}).onDelete("cascade"),
+	unique("report_runs_document_id_key").on(table.document_id),
 ]);
 
 export const permissions = pgTable("permissions", {

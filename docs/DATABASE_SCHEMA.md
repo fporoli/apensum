@@ -866,6 +866,52 @@ erDiagram
     USERS { uuid id PK }
 ```
 
+`report_schedules` (065) sends a saved report by itself: weekly (`weekday`
+1-7) or monthly (`month_day` 1-28) at `hour` in `time_zone`, as `pdf` or
+`xlsx`, to `recipient_user_ids`; `next_run_at` is when it is due (the job
+runner claims a row by moving it on). Each run writes one `report_runs` row
+per recipient, made with that recipient's rights: the file in `documents`
+(listed on their Documents page), or `error` when they may not see the report.
+
+```mermaid
+erDiagram
+    SAVED_REPORTS ||--o| REPORT_SCHEDULES : "saved_report_id"
+    REPORT_SCHEDULES ||--o{ REPORT_RUNS : "schedule_id"
+    USERS ||--o{ REPORT_RUNS : "user_id (recipient)"
+    DOCUMENTS ||--o| REPORT_RUNS : "document_id"
+
+    REPORT_SCHEDULES {
+        uuid id PK
+        uuid organization_id FK
+        uuid saved_report_id FK "unique"
+        text frequency "weekly, monthly"
+        int weekday "nullable"
+        int month_day "nullable"
+        int hour
+        text time_zone
+        text format "pdf, xlsx"
+        uuid_array recipient_user_ids
+        boolean is_active
+        timestamptz next_run_at
+        timestamptz last_run_at "nullable"
+    }
+    REPORT_RUNS {
+        uuid id PK
+        uuid organization_id FK
+        uuid schedule_id FK "nullable"
+        uuid user_id FK
+        uuid document_id FK "nullable, unique"
+        text title
+        text period_from
+        text period_to
+        timestamptz ran_at
+        text error "nullable"
+    }
+    SAVED_REPORTS { uuid id PK }
+    USERS { uuid id PK }
+    DOCUMENTS { uuid id PK }
+```
+
 ## Not diagrammed
 
 - Liquibase's own bookkeeping tables `databasechangelog` /

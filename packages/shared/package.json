@@ -41,6 +41,16 @@
       "types": "./dist/worktime.d.ts",
       "default": "./dist/worktime.js"
     },
+    "./reportTable": {
+      "source": "./src/reportTable.ts",
+      "types": "./dist/reportTable.d.ts",
+      "default": "./dist/reportTable.js"
+    },
+    "./reportTexts": {
+      "source": "./src/reportTexts.ts",
+      "types": "./dist/reportTexts.d.ts",
+      "default": "./dist/reportTexts.js"
+    },
     "./reports": {
       "source": "./src/reports.ts",
       "types": "./dist/reports.d.ts",

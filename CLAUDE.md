@@ -317,7 +317,14 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   built in the browser from the shown rows (`packages/shared/src/xlsx.ts`, no dependency); the PDF is the same table,
   labelled in the browser and laid out by `POST reports/pdf` (`report-pdf.ts`, pdfkit, nothing stored). Saved reports
   (`saved_reports` 064, `saved-reports.controller.ts`): the owner edits; sharing with role names needs
-  `nav.reports:edit` (admin, hr, manager); whoever opens one runs it with their own rights.
+  `nav.reports:edit` (admin, hr, manager); whoever opens one runs it with their own rights. Report logic is
+  `reports.service.ts`; labels and the table (page, PDF, Excel, scheduled files) are `packages/shared/src/reportTable.ts`
+  with the texts in `reportTexts.ts` (spread into `dictionaries.ts`; the API uses them for scheduled files).
+  Schedules (065 `report_schedules` / `report_runs`, `report-schedules.service.ts`, math in `report-schedule.ts`):
+  weekly or monthly at an hour in the owner's time zone; a job runner in the API (every minute, claims a due row by
+  moving `next_run_at`, `REPORT_SCHEDULER=off` disables it) makes one file per recipient with that recipient's rights
+  and language, stores it in Documents (category `report`) and notifies and mails a link, never the file. Recipients
+  other than oneself need `nav.reports:edit`; a recipient who may not see the report gets a run with the error.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

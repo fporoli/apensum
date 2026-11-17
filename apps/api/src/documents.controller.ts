@@ -7,7 +7,7 @@ import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 
-export type DocumentCategory = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel';
+export type DocumentCategory = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel' | 'report';
 
 export interface PersonalDocument {
   /** The `documents` row. */
@@ -31,8 +31,8 @@ const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', '
 /**
  * Documents (nav.documents): every document that concerns the caller, in one list. The PDFs of
  * their approved timesheets and monthly project reports (timesheet-documents.service.ts), the
- * evidence of their absences and expenses, the attachments of the requests they sent and the
- * personnel-file documents HR shared with them. Strictly
+ * evidence of their absences and expenses, the attachments of the requests they sent, the
+ * personnel-file documents HR shared with them and the scheduled reports sent to them. Strictly
  * the caller's own: no person picker, and a download is checked against the same list. Opening the
  * list first issues the current year's missing PDFs (months approved before PDFs existed).
  */
@@ -97,6 +97,12 @@ export class DocumentsController {
                ${iso('d.created_at')}, false, jsonb_build_object('title', p.title, 'category', p.category)
         FROM personnel_documents p JOIN documents d ON d.id = p.document_id
         WHERE p.organization_id = ${orgId} AND p.user_id = ${userId} AND p.visible_to_employee
+        UNION ALL
+        -- Scheduled reports delivered to the person (report-schedules.service.ts), made with their own rights.
+        SELECT d.id, 'report', rr.id::text, d.file_name, d.mime_type, d.size_bytes, to_char(rr.ran_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
+               ${iso('rr.ran_at')}, false, jsonb_build_object('title', rr.title, 'from', rr.period_from, 'to', rr.period_to)
+        FROM report_runs rr JOIN documents d ON d.id = rr.document_id
+        WHERE rr.organization_id = ${orgId} AND rr.user_id = ${userId}
         UNION ALL
         -- Absence evidence (doctor's notes, ...).
         SELECT d.id, 'absence', a.id::text, d.file_name, d.mime_type, d.size_bytes, to_char(a.date_start, 'YYYY-MM-DD'),

@@ -526,7 +526,7 @@ export default function App() {
       navigate('approvals');
       return;
     }
-    if (n.source_table === 'personnel_documents') {
+    if (n.source_table === 'personnel_documents' || n.source_table === 'report_runs') {
       navigate('documents');
       return;
     }

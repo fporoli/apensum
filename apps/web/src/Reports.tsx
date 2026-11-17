@@ -30,44 +30,34 @@ import {
 } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { REPORTS, reportById, type ReportDefinition, type ReportId, type ReportMeasure, type ReportRow, type SavedReportSettings } from '@worktime3/shared/reports';
-import { buildCsv, buildXlsx, type Cell } from '@worktime3/shared/xlsx';
+import { buildCsv, buildXlsx } from '@worktime3/shared/xlsx';
+import { PRESETS, buildReportTable, detailsShown, formatMeasure, labelFor, periodText, presetRange, sortRows, type Preset } from '@worktime3/shared/reportTable';
 import { useI18n } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { DeleteIcon, DownloadIcon, SaveIcon } from './icons';
+import { DeleteIcon, DownloadIcon, SaveIcon, ScheduleIcon } from './icons';
 import { formatLocaleDate, formatLocaleDateTime, swissLocale } from './localeFormat';
 import { roleLabel, type OrgRole } from './roleLabel';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
-
-type Preset = 'thisMonth' | 'lastMonth' | 'thisQuarter' | 'lastQuarter' | 'thisYear' | 'lastYear' | 'custom';
-const PRESETS: Preset[] = ['thisMonth', 'lastMonth', 'thisQuarter', 'lastQuarter', 'thisYear', 'lastYear', 'custom'];
-
-const ym = (y: number, m: number) => {
-  const d = new Date(y, m, 1); // normalizes m < 0 and m > 11
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-};
-
-/** First and last month (yyyy-mm) of a preset, relative to today. */
-export function presetRange(preset: Exclude<Preset, 'custom'>, today = new Date()): [string, string] {
-  const y = today.getFullYear();
-  const m = today.getMonth();
-  const q = Math.floor(m / 3) * 3;
-  switch (preset) {
-    case 'thisMonth': return [ym(y, m), ym(y, m)];
-    case 'lastMonth': return [ym(y, m - 1), ym(y, m - 1)];
-    case 'thisQuarter': return [ym(y, q), ym(y, q + 2)];
-    case 'lastQuarter': return [ym(y, q - 3), ym(y, q - 1)];
-    case 'thisYear': return [ym(y, 0), ym(y, m)];
-    case 'lastYear': return [ym(y - 1, 0), ym(y - 1, 11)];
-  }
-}
 
 /** The grouping a report starts with: its default plus the dimensions it always keeps. */
 const initialGroupBy = (r: ReportDefinition) => [...r.defaultGroupBy, ...(r.alwaysGroupBy ?? []).filter((d) => !r.defaultGroupBy.includes(d))];
 
 interface Option { id: string; name: string }
 interface Result { ok: boolean; error?: string; groupBy: string[]; rows: ReportRow[]; totals: Record<string, number> }
-interface SavedReport { id: string; name: string; reportId: ReportId; settings: SavedReportSettings; sharedRoles: string[]; mine: boolean }
+interface SavedReport { id: string; name: string; reportId: ReportId; settings: SavedReportSettings; sharedRoles: string[]; mine: boolean; schedule: { nextRunAt: string; active: boolean } | null }
+interface ScheduleForm {
+  exists: boolean;
+  frequency: 'weekly' | 'monthly';
+  weekday: number;
+  monthDay: number;
+  hour: number;
+  format: 'pdf' | 'xlsx';
+  recipientUserIds: string[];
+  active: boolean;
+  nextRunAt?: string;
+  runs: { ranAt: string; person: string; error: string | null; periodFrom: string; periodTo: string }[];
+}
 type Translations = Record<string, Record<string, string>>;
 
 /**
@@ -104,6 +94,9 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [notice, setNotice] = useState<{ severity: 'success' | 'error'; text: string } | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [schedule, setSchedule] = useState<ScheduleForm | null>(null);
+  const [recipients, setRecipients] = useState<Option[]>([]);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
   /** Filters of a saved report being opened, applied once the new report's options are loaded. */
   const pendingFilters = useRef<{ userId?: string; projectId?: string } | null>(null);
 
@@ -202,57 +195,25 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     void run();
   }, [run]);
 
-  const monthLabel = useCallback(
-    (m: string) => new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1).toLocaleDateString(swissLocale(locale), { month: 'short', year: 'numeric' }),
-    [locale],
-  );
-  /** A dimension value as people read it. */
-  const label = useCallback(
-    (dim: string, row: ReportRow): string => {
-      const v = String(row[dim] ?? '');
-      switch (dim) {
-        case 'person': return String(row.personName ?? v);
-        case 'month': return monthLabel(v);
-        case 'project': return v || t('reports.noProject');
-        case 'type': {
-          const fromData = absenceLabels[locale]?.[v] ?? absenceLabels.en?.[v];
-          if (fromData) return fromData;
+  /** A dimension value as people read it (shared with scheduled reports: packages/shared/src/reportTable.ts). */
+  const label = useMemo(
+    () =>
+      labelFor(locale, t, {
+        absenceTypes: { translation: absenceLabels },
+        categories: categoryLabels,
+        fallback: (dim, v) => {
           const key = `absences.type.${v}`;
-          const builtIn = t(key);
-          return builtIn !== key ? builtIn : v;
-        }
-        case 'category': return categoryLabels.translation[locale]?.[v] ?? categoryLabels.values[v] ?? v;
-        case 'status': return v === 'none' ? t('reports.status.none') : t(`expenseReports.status.${v}`);
-        case 'department':
-        case 'function':
-        case 'manager': return v || t('reports.none');
-        default: return v;
-      }
-    },
-    [locale, monthLabel, t, absenceLabels, categoryLabels],
+          return dim === 'type' && t(key) !== key ? t(key) : undefined;
+        },
+      }),
+    [locale, t, absenceLabels, categoryLabels],
   );
-  const number = useCallback(
-    (n: number, m?: Pick<ReportMeasure, 'kind'>) => {
-      const digits = m?.kind === 'count' ? 0 : 2;
-      return new Intl.NumberFormat(swissLocale(locale), { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
-    },
-    [locale],
-  );
+  const number = useCallback((n: number, m?: Pick<ReportMeasure, 'kind'>) => formatMeasure(n, m, locale), [locale]);
 
   const shownDims = result?.groupBy ?? dims;
   // The API sorts by stored values (category and type keys); sort by what people read, months in order.
-  const rows = useMemo(() => {
-    const list = [...(result?.rows ?? [])];
-    const key = (d: string, r: ReportRow) => (d === 'month' ? String(r.month ?? '') : label(d, r));
-    return list.sort((a, b) => {
-      for (const d of result?.groupBy ?? []) {
-        const c = key(d, a).localeCompare(key(d, b), locale);
-        if (c !== 0) return c;
-      }
-      return 0;
-    });
-  }, [result, label, locale]);
-  const details = shownDims.includes('person') ? def.details ?? [] : [];
+  const rows = useMemo(() => sortRows(result?.rows ?? [], result?.groupBy ?? [], label, locale), [result, label, locale]);
+  const details = detailsShown(def, shownDims);
   const detail = (key: string, r: ReportRow) => {
     const v = String(r[key] ?? '');
     return key === 'startDate' && v ? formatLocaleDate(v, locale) : v;
@@ -356,11 +317,99 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     }
   }
 
+  // ---- Schedules (report-schedules.service.ts) ---------------------------------------------
+
+  async function openSchedule() {
+    if (!current?.mine) return;
+    try {
+      const headers = await authHeaders();
+      const [data, people] = await Promise.all([
+        fetch(`${API}/organizations/${orgId}/saved-reports/${current.id}/schedule`, { headers }).then((r) => r.json()),
+        fetch(`${API}/organizations/${orgId}/saved-reports/recipients`, { headers }).then((r) => r.json()),
+      ]);
+      if (!data?.ok) {
+        setNotice({ severity: 'error', text: errorText(data?.error ?? 'failed') });
+        return;
+      }
+      const list: Option[] = people?.people ?? [];
+      setRecipients(list);
+      const s = data.schedule;
+      const me = list.length === 1 ? [list[0].id] : [];
+      setSchedule({
+        exists: !!s,
+        frequency: s?.frequency ?? 'monthly',
+        weekday: s?.weekday ?? 1,
+        monthDay: s?.monthDay ?? 1,
+        hour: s?.hour ?? 6,
+        format: s?.format ?? 'pdf',
+        recipientUserIds: s?.recipientUserIds ?? me,
+        active: s?.active ?? true,
+        nextRunAt: s?.nextRunAt,
+        runs: data.runs ?? [],
+      });
+    } catch {
+      setNotice({ severity: 'error', text: errorText('failed') });
+    }
+  }
+
+  async function scheduleCall(method: 'PUT' | 'DELETE' | 'POST'): Promise<Record<string, unknown> | null> {
+    if (!current?.mine || !schedule) return null;
+    setScheduleBusy(true);
+    try {
+      const path = `${API}/organizations/${orgId}/saved-reports/${current.id}/schedule${method === 'POST' ? '/run' : ''}`;
+      const body = method === 'PUT'
+        ? JSON.stringify({ frequency: schedule.frequency, weekday: schedule.weekday, monthDay: schedule.monthDay, hour: schedule.hour, format: schedule.format, recipientUserIds: schedule.recipientUserIds, active: schedule.active })
+        : undefined;
+      const res = await fetch(path, { method, headers: { ...(await authHeaders()), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body });
+      const data = await res.json();
+      if (!data?.ok) {
+        setNotice({ severity: 'error', text: errorText(data?.error ?? 'failed') });
+        return null;
+      }
+      return data;
+    } catch {
+      setNotice({ severity: 'error', text: errorText('failed') });
+      return null;
+    } finally {
+      setScheduleBusy(false);
+    }
+  }
+
+  async function saveSchedule() {
+    if (await scheduleCall('PUT')) {
+      setSchedule(null);
+      await loadSaved();
+      setNotice({ severity: 'success', text: t('reports.schedule.saved') });
+    }
+  }
+
+  async function removeSchedule() {
+    if (await scheduleCall('DELETE')) {
+      setSchedule(null);
+      await loadSaved();
+    }
+  }
+
+  async function runScheduleNow() {
+    // Save first, so "Send now" sends what the dialog shows.
+    if (!(await scheduleCall('PUT'))) return;
+    const data = await scheduleCall('POST');
+    if (data) {
+      setNotice({ severity: 'success', text: t('reports.schedule.ranNow', { delivered: Number(data.delivered ?? 0), failed: Number(data.failed ?? 0) }) });
+      setSchedule(null);
+      await loadSaved();
+    }
+  }
+
+  const weekdays = useMemo(
+    () => [1, 2, 3, 4, 5, 6, 7].map((d) => ({ value: d, label: new Date(Date.UTC(2024, 0, d)).toLocaleDateString(swissLocale(locale), { weekday: 'long', timeZone: 'UTC' }) })),
+    [locale],
+  );
+
   // ---- Downloads -----------------------------------------------------------------------------
 
-  const periodText = from === to ? monthLabel(from) : `${monthLabel(from)} – ${monthLabel(to)}`;
   const subtitle = () => {
-    const parts = [def.snapshot ? t('reports.asAt', { date: periodEnd(to, locale) }) : periodText];
+    const parts = [periodText(def, from, to, locale, t, new Date().toLocaleDateString('sv'))];
     const person = options.people.find((p) => p.id === userId);
     if (person) parts.push(person.name);
     const dept = options.departments.find((d) => d.id === departmentId);
@@ -369,11 +418,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     if (project && (reportId === 'projectHours' || reportId === 'expenses')) parts.push(project.name);
     return parts.join(' · ');
   };
-  const columns = () => [
-    ...shownDims.map((d) => ({ header: t(`reports.dim.${d}`), align: 'left' as const })),
-    ...details.map((k) => ({ header: t(`reports.detail.${k}`), align: 'left' as const })),
-    ...def.measures.map((m) => ({ header: t(`reports.measure.${m.key}`), align: 'right' as const })),
-  ];
+  const table = () => buildReportTable(def, { groupBy: shownDims, rows, totals: result?.totals ?? {} }, locale, t, label);
   const fileName = (ext: string) => `${`apensum-${current?.name ?? t(`reports.report.${reportId}`)}-${from}${from === to ? '' : `-${to}`}`.replace(/[^\p{L}\p{N}-]+/gu, '-')}.${ext}`;
 
   function save(blob: Blob, name: string) {
@@ -387,19 +432,13 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
 
   function download(kind: 'xlsx' | 'csv') {
     if (!result) return;
-    const cols = columns();
-    const body: Cell[][] = rows.map((r) => [
-      ...shownDims.map((d) => label(d, r)),
-      ...details.map((k) => detail(k, r)),
-      ...def.measures.map((m) => (typeof r[m.key] === 'number' ? (r[m.key] as number) : null)),
-    ]);
-    const totals: Cell[] = [t('reports.total'), ...[...shownDims.slice(1), ...details].map(() => null), ...def.measures.map((m) => result.totals[m.key] ?? null)];
+    const tbl = table();
     const blob =
       kind === 'xlsx'
-        ? new Blob([buildXlsx(current?.name ?? t(`reports.report.${reportId}`), cols.map((c) => ({ header: c.header, kind: c.align === 'right' ? ('number' as const) : ('text' as const) })), body, totals)], {
+        ? new Blob([buildXlsx(current?.name ?? t(`reports.report.${reportId}`), tbl.columns, tbl.cells, tbl.totalCells)], {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           })
-        : new Blob([buildCsv(cols.map((c) => c.header), [...body, totals])], { type: 'text/csv;charset=utf-8' });
+        : new Blob([buildCsv(tbl.columns.map((c) => c.header), [...tbl.cells, tbl.totalCells])], { type: 'text/csv;charset=utf-8' });
     save(blob, fileName(kind));
   }
 
@@ -407,22 +446,19 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     if (!result) return;
     setPdfBusy(true);
     try {
-      const table = {
+      const tbl = table();
+      const body = {
         title: current?.name ?? t(`reports.report.${reportId}`),
         subtitle: subtitle(),
         footer: t('reports.pdf.footer', { date: formatLocaleDateTime(new Date().toISOString(), locale) }),
-        columns: columns(),
-        rows: rows.map((r) => [
-          ...shownDims.map((d) => label(d, r)),
-          ...details.map((k) => detail(k, r)),
-          ...def.measures.map((m) => (typeof r[m.key] === 'number' ? number(r[m.key] as number, m) : '–')),
-        ]),
-        totals: [t('reports.total'), ...[...shownDims.slice(1), ...details].map(() => ''), ...def.measures.map((m) => (result.totals[m.key] === undefined ? '–' : number(result.totals[m.key], m)))],
+        columns: tbl.columns.map((c) => ({ header: c.header, align: c.align })),
+        rows: tbl.text,
+        totals: tbl.totalText,
       };
       const res = await fetch(`${API}/organizations/${orgId}/reports/pdf`, {
         method: 'POST',
         headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify(table),
+        body: JSON.stringify(body),
       });
       if (!res.ok || !(res.headers.get('Content-Type') ?? '').includes('application/pdf')) {
         const data = await res.json().catch(() => null);
@@ -468,6 +504,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
               {s.name}
               {!s.mine && <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>{t('reports.saved.sharedWithYou')}</Typography>}
               {s.mine && s.sharedRoles.length > 0 && <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>{t('reports.saved.shared')}</Typography>}
+              {s.mine && s.schedule?.active && <Typography component="span" variant="caption" color="primary" sx={{ ml: 1 }}>{t('reports.saved.scheduled')}</Typography>}
             </MenuItem>
           ))}
         </TextField>
@@ -477,6 +514,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
         {current?.mine && (
           <>
             <Button size="small" onClick={() => setSaveDialog({ mode: 'new', name: '', sharedRoles: [] })}>{t('reports.saved.saveAs')}</Button>
+            <Button size="small" startIcon={<ScheduleIcon fontSize="small" />} onClick={() => void openSchedule()}>{t('reports.schedule.button')}</Button>
             <Tooltip title={t('common.delete')}>
               <IconButton size="small" onClick={() => setConfirmDelete(true)} aria-label={t('common.delete')}><DeleteIcon fontSize="small" /></IconButton>
             </Tooltip>
@@ -637,6 +675,74 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
         </DialogActions>
       </Dialog>
 
+      <Dialog open={!!schedule} onClose={() => setSchedule(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('reports.schedule.title', { name: current?.name ?? '' })}</DialogTitle>
+        {schedule && (
+          <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
+              <TextField select size="small" label={t('reports.schedule.frequency')} value={schedule.frequency} onChange={(e) => setSchedule({ ...schedule, frequency: e.target.value as ScheduleForm['frequency'] })} sx={{ minWidth: 160 }}>
+                <MenuItem value="weekly">{t('reports.schedule.weekly')}</MenuItem>
+                <MenuItem value="monthly">{t('reports.schedule.monthly')}</MenuItem>
+              </TextField>
+              {schedule.frequency === 'weekly' ? (
+                <TextField select size="small" label={t('reports.schedule.weekday')} value={schedule.weekday} onChange={(e) => setSchedule({ ...schedule, weekday: Number(e.target.value) })} sx={{ minWidth: 150 }}>
+                  {weekdays.map((d) => <MenuItem key={d.value} value={d.value}>{d.label}</MenuItem>)}
+                </TextField>
+              ) : (
+                <TextField select size="small" label={t('reports.schedule.monthDay')} value={schedule.monthDay} onChange={(e) => setSchedule({ ...schedule, monthDay: Number(e.target.value) })} sx={{ minWidth: 130 }}>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <MenuItem key={d} value={d}>{d}.</MenuItem>)}
+                </TextField>
+              )}
+              <TextField select size="small" label={t('reports.schedule.hour')} value={schedule.hour} onChange={(e) => setSchedule({ ...schedule, hour: Number(e.target.value) })} sx={{ minWidth: 100 }}>
+                {Array.from({ length: 24 }, (_, h) => h).map((h) => <MenuItem key={h} value={h}>{`${String(h).padStart(2, '0')}:00`}</MenuItem>)}
+              </TextField>
+              <TextField select size="small" label={t('reports.schedule.format')} value={schedule.format} onChange={(e) => setSchedule({ ...schedule, format: e.target.value as ScheduleForm['format'] })} sx={{ minWidth: 100 }}>
+                <MenuItem value="pdf">{t('reports.exportPdf')}</MenuItem>
+                <MenuItem value="xlsx">{t('reports.exportExcel')}</MenuItem>
+              </TextField>
+            </Box>
+            <Typography variant="body2" color="text.secondary">{t('reports.schedule.periodHint')}</Typography>
+            <TextField
+              select
+              size="small"
+              label={t('reports.schedule.recipients')}
+              value={schedule.recipientUserIds}
+              onChange={(e) => setSchedule({ ...schedule, recipientUserIds: typeof e.target.value === 'string' ? e.target.value.split(',') : (e.target.value as string[]) })}
+              slotProps={{ select: { multiple: true, renderValue: (v) => (v as string[]).map((id) => recipients.find((p) => p.id === id)?.name ?? id).join(', ') } }}
+              helperText={t('reports.schedule.recipientsHint')}
+            >
+              {recipients.map((p) => (
+                <MenuItem key={p.id} value={p.id}>
+                  <Checkbox size="small" checked={schedule.recipientUserIds.includes(p.id)} sx={{ p: 0, mr: 1 }} />
+                  {p.name}
+                </MenuItem>
+              ))}
+            </TextField>
+            <FormControlLabel control={<Checkbox size="small" checked={schedule.active} onChange={(e) => setSchedule({ ...schedule, active: e.target.checked })} />} label={t('reports.schedule.active')} />
+            {schedule.exists && schedule.nextRunAt && (
+              <Typography variant="body2">{schedule.active ? t('reports.schedule.next', { date: formatLocaleDateTime(schedule.nextRunAt, locale) }) : t('reports.schedule.paused')}</Typography>
+            )}
+            {schedule.exists && (
+              <Box>
+                <Typography variant="subtitle2">{t('reports.schedule.lastRuns')}</Typography>
+                {schedule.runs.length === 0 && <Typography variant="body2" color="text.secondary">{t('reports.schedule.noRuns')}</Typography>}
+                {schedule.runs.map((r, i) => (
+                  <Typography key={i} variant="body2" color={r.error ? 'error' : 'text.secondary'}>
+                    {formatLocaleDateTime(r.ranAt, locale)} · {r.person} · {r.error ? errorText(r.error) : t('reports.schedule.delivered')}
+                  </Typography>
+                ))}
+              </Box>
+            )}
+          </DialogContent>
+        )}
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1 }}>
+          {schedule?.exists && <Button color="error" disabled={scheduleBusy} onClick={() => void removeSchedule()} sx={{ mr: 'auto' }}>{t('reports.schedule.remove')}</Button>}
+          <Button onClick={() => setSchedule(null)}>{t('common.cancel')}</Button>
+          <Button disabled={scheduleBusy || !schedule?.recipientUserIds.length} onClick={() => void runScheduleNow()}>{t('reports.schedule.runNow')}</Button>
+          <Button variant="contained" disabled={scheduleBusy || !schedule?.recipientUserIds.length} onClick={() => void saveSchedule()}>{t('common.save')}</Button>
+        </DialogActions>
+      </Dialog>
+
       <ConfirmDialog
         open={confirmDelete}
         title={t('reports.saved.deleteTitle')}
@@ -648,13 +754,4 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
       />
     </Box>
   );
-}
-
-/** The last day of a month, or today if that is still ahead, in the person's format (people report). */
-function periodEnd(month: string, locale: string): string {
-  const [y, m] = month.split('-').map(Number);
-  const last = new Date(y, m, 0);
-  const today = new Date();
-  const d = last > today ? today : last;
-  return formatLocaleDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`, locale);
 }

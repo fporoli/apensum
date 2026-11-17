@@ -80,6 +80,7 @@
     <include file="062-permission-personnel-documents.sql" relativeToChangelogFile="true"/>
     <include file="063-permission-reports.sql" relativeToChangelogFile="true"/>
     <include file="064-saved-reports.sql" relativeToChangelogFile="true"/>
+    <include file="065-report-schedules.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

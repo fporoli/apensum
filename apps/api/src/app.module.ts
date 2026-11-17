@@ -29,6 +29,8 @@ import { DocumentsController } from './documents.controller';
 import { DirectoryController } from './directory.controller';
 import { ReportsController } from './reports.controller';
 import { SavedReportsController } from './saved-reports.controller';
+import { ReportsService } from './reports.service';
+import { ReportSchedulesService } from './report-schedules.service';
 import { PersonnelDocumentsController } from './personnel-documents.controller';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { ForwardMailService } from './forward-mail.service';
@@ -99,6 +101,8 @@ import { DbService } from './db.service';
     ProjectTimeService,
     WorkTimeService,
     BalancesService,
+    ReportsService,
+    ReportSchedulesService,
     WorkTimeModelService,
     DocumentsService,
     ReceiptHandoffService,

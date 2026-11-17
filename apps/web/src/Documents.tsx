@@ -28,8 +28,8 @@ import { formatFileSize, formatLocaleDate, swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-type Category = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel';
-const CATEGORIES: Category[] = ['personnel', 'timesheet', 'project_timesheet', 'absence', 'expense', 'request'];
+type Category = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel' | 'report';
+const CATEGORIES: Category[] = ['personnel', 'timesheet', 'project_timesheet', 'report', 'absence', 'expense', 'request'];
 
 interface PersonalDocument {
   documentId: string;
@@ -51,12 +51,13 @@ const CATEGORY_COLOR: Record<Category, 'primary' | 'secondary' | 'info' | 'succe
   expense: 'success',
   request: 'warning',
   personnel: 'secondary',
+  report: 'primary',
 };
 
 /**
  * Documents: everything that concerns the signed-in person, in one list (API documents.controller.ts):
  * the PDFs of their approved timesheets and monthly project reports, their absences' and expenses'
- * evidence and their requests' attachments. Only their own; there is no person picker.
+ * evidence, their requests' attachments and the scheduled reports sent to them. Only their own; there is no person picker.
  */
 export default function Documents({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const { t, locale } = useI18n();
@@ -155,6 +156,12 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
           return [c.subject, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         case 'personnel':
           return [c.title, c.category ? t(`personnelDocs.category.${c.category}`) : '', formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
+        case 'report': {
+          const from = String(c.from ?? '');
+          const to = String(c.to ?? '');
+          const period = from && to ? (from === to ? monthLabel(`${from}-01`) : `${monthLabel(`${from}-01`)} – ${monthLabel(`${to}-01`)}`) : '';
+          return [c.title, period, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
+        }
       }
     },
     [locale, monthLabel, translated, t, expenseCategories],
