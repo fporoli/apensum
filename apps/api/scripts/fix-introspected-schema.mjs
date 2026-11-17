@@ -7,6 +7,10 @@
 //  - drizzle-kit 0.31 truncates expression index elements at the `'::` of a cast, so
 //    `COALESCE(organization_id, '0000…'::uuid)` (uq_static_data_org_entity_enum,
 //    uq_field_config) comes out as `COALESCE(organization_id, '0000…`.
+//  - drizzle-kit pairs the operator classes of a multi-column index with its columns in the
+//    order the catalog returns them, which varies between databases (a fresh CI database writes
+//    `check_in ... .op("uuid_ops")` for a timestamp column). They are all default classes and
+//    Liquibase owns the indexes, so they are dropped: `.op("uuid_ops")` and the like.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -28,7 +32,11 @@ src = src.replace(
 );
 const patchedCoalesce = src !== afterCitext;
 
-if (!patchedCitext && !patchedCoalesce) {
+const afterCoalesce = src;
+src = src.replace(/\.op\("\w+_ops"\)/g, '');
+const patchedOps = src !== afterCoalesce;
+
+if (!patchedCitext && !patchedCoalesce && !patchedOps) {
   console.log('fix-introspected-schema: nothing to patch.');
   process.exit(0);
 }
@@ -48,3 +56,4 @@ if (patchedCitext) {
 writeFileSync(schemaPath, src);
 if (patchedCitext) console.log('fix-introspected-schema: patched citext columns (users.email, organizations.slug, and others).');
 if (patchedCoalesce) console.log('fix-introspected-schema: repaired truncated COALESCE(organization_id, ...) index expressions.');
+if (patchedOps) console.log('fix-introspected-schema: dropped index operator classes (drizzle-kit pairs them with the wrong columns).');

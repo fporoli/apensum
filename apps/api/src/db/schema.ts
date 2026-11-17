@@ -45,7 +45,7 @@ export const saved_reports = pgTable("saved_reports", {
 	settings: jsonb().default({}).notNull(),
 	shared_roles: text().array().default([""]).notNull(),
 }, (table) => [
-	index("idx_saved_reports_org").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.owner_user_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_saved_reports_org").using("btree", table.organization_id.asc().nullsLast(), table.owner_user_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -75,7 +75,7 @@ export const user_identities = pgTable("user_identities", {
 	metadata: jsonb().default({}).notNull(),
 	last_sign_in_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("idx_user_identities_user_id").using("btree", table.user_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_user_identities_user_id").using("btree", table.user_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.user_id],
 			foreignColumns: [users.id],
@@ -99,7 +99,7 @@ export const report_schedules = pgTable("report_schedules", {
 	next_run_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 	last_run_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("idx_report_schedules_due").using("btree", table.next_run_at.asc().nullsLast().op("timestamptz_ops")).where(sql`is_active`),
+	index("idx_report_schedules_due").using("btree", table.next_run_at.asc().nullsLast()).where(sql`is_active`),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -124,7 +124,7 @@ export const organization_domains = pgTable("organization_domains", {
 	verified_at: timestamp({ withTimezone: true, mode: 'string' }),
 	auto_join_enabled: boolean().default(false).notNull(),
 }, (table) => [
-	index("idx_org_domains_domain").using("btree", table.domain.asc().nullsLast().op("citext_ops")),
+	index("idx_org_domains_domain").using("btree", table.domain.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -183,8 +183,8 @@ export const report_runs = pgTable("report_runs", {
 	ran_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	error: text(),
 }, (table) => [
-	index("idx_report_runs_schedule").using("btree", table.schedule_id.asc().nullsLast().op("timestamptz_ops"), table.ran_at.asc().nullsLast().op("uuid_ops")),
-	index("idx_report_runs_user").using("btree", table.organization_id.asc().nullsLast().op("timestamptz_ops"), table.user_id.asc().nullsLast().op("timestamptz_ops"), table.ran_at.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_report_runs_schedule").using("btree", table.schedule_id.asc().nullsLast(), table.ran_at.asc().nullsLast()),
+	index("idx_report_runs_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.ran_at.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -225,9 +225,9 @@ export const organization_memberships = pgTable("organization_memberships", {
 	exit_at: timestamp({ withTimezone: true, mode: 'string' }),
 	start_date: date(),
 }, (table) => [
-	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast().op("text_ops")),
-	index("idx_memberships_user").using("btree", table.user_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast()),
+	index("idx_memberships_user").using("btree", table.user_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -252,8 +252,8 @@ export const organization_invitations = pgTable("organization_invitations", {
 	status: invitation_status().default('pending').notNull(),
 	expires_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 }, (table) => [
-	index("idx_invitations_email").using("btree", table.email.asc().nullsLast().op("citext_ops")),
-	index("idx_invitations_token").using("btree", table.token.asc().nullsLast().op("text_ops")),
+	index("idx_invitations_email").using("btree", table.email.asc().nullsLast()),
+	index("idx_invitations_token").using("btree", table.token.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -282,8 +282,8 @@ export const audit_logs = pgTable("audit_logs", {
 	metadata: jsonb().default({}).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_audit_logs_actor").using("btree", table.actor_user_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_audit_logs_org_date").using("btree", table.organization_id.asc().nullsLast().op("timestamptz_ops"), table.created_at.desc().nullsFirst().op("timestamptz_ops")),
+	index("idx_audit_logs_actor").using("btree", table.actor_user_id.asc().nullsLast()),
+	index("idx_audit_logs_org_date").using("btree", table.organization_id.asc().nullsLast(), table.created_at.desc().nullsFirst()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -304,7 +304,7 @@ export const projects = pgTable("projects", {
 	cost_item: varchar({ length: 255 }),
 	type: project_type().default('internal').notNull(),
 }, (table) => [
-	index("idx_projects_org").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_projects_org").using("btree", table.organization_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -346,8 +346,8 @@ export const subprojects = pgTable("subprojects", {
 	cost_item: varchar({ length: 255 }),
 	type: subproject_type().default('phase').notNull(),
 }, (table) => [
-	index("idx_subprojects_org").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_subprojects_project").using("btree", table.project_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_subprojects_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_subprojects_project").using("btree", table.project_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.project_id],
 			foreignColumns: [projects.id],
@@ -375,9 +375,9 @@ export const project_times = pgTable("project_times", {
 	end_time: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 	comment: text(),
 }, (table) => [
-	index("idx_project_times_org_start").using("btree", table.organization_id.asc().nullsLast().op("timestamptz_ops"), table.start_time.asc().nullsLast().op("uuid_ops")),
-	index("idx_project_times_project").using("btree", table.project_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_project_times_user_start").using("btree", table.user_id.asc().nullsLast().op("uuid_ops"), table.start_time.asc().nullsLast().op("uuid_ops")),
+	index("idx_project_times_org_start").using("btree", table.organization_id.asc().nullsLast(), table.start_time.asc().nullsLast()),
+	index("idx_project_times_project").using("btree", table.project_id.asc().nullsLast()),
+	index("idx_project_times_user_start").using("btree", table.user_id.asc().nullsLast(), table.start_time.asc().nullsLast()),
 	foreignKey({
 			columns: [table.user_id],
 			foreignColumns: [users.id],
@@ -413,8 +413,8 @@ export const timesheet_periods = pgTable("timesheet_periods", {
 	reviewed_at: timestamp({ withTimezone: true, mode: 'string' }),
 	review_note: text(),
 }, (table) => [
-	index("idx_timesheet_periods_org_status").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("enum_ops")),
-	index("idx_timesheet_periods_user").using("btree", table.user_id.asc().nullsLast().op("uuid_ops"), table.period_start.asc().nullsLast().op("uuid_ops")),
+	index("idx_timesheet_periods_org_status").using("btree", table.organization_id.asc().nullsLast(), table.status.asc().nullsLast()),
+	index("idx_timesheet_periods_user").using("btree", table.user_id.asc().nullsLast(), table.period_start.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -452,7 +452,7 @@ export const organizations = pgTable("organizations", {
 	ip_allowlist: inet().array().default([""]).notNull(),
 	sso_config: jsonb().default({}).notNull(),
 }, (table) => [
-	index("idx_organizations_parent").using("btree", table.parent_organization_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_organizations_parent").using("btree", table.parent_organization_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.parent_organization_id],
 			foreignColumns: [table.id],
@@ -475,8 +475,8 @@ export const static_data = pgTable("static_data", {
 	translation: jsonb().default({}).notNull(),
 	organization_id: uuid(),
 }, (table) => [
-	index("idx_static_data_global_entity").using("btree", table.entity.asc().nullsLast().op("text_ops"), table.enum_name.asc().nullsLast().op("text_ops")).where(sql`(organization_id IS NULL)`),
-	index("idx_static_data_org_entity").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.entity.asc().nullsLast().op("text_ops"), table.enum_name.asc().nullsLast().op("text_ops")),
+	index("idx_static_data_global_entity").using("btree", table.entity.asc().nullsLast(), table.enum_name.asc().nullsLast()).where(sql`(organization_id IS NULL)`),
+	index("idx_static_data_org_entity").using("btree", table.organization_id.asc().nullsLast(), table.entity.asc().nullsLast(), table.enum_name.asc().nullsLast()),
 	uniqueIndex("uq_static_data_org_entity_enum").using("btree", sql`COALESCE(organization_id, '00000000-0000-0000-0000-000000000000'::uuid)`, sql`entity`, sql`enum_name`),
 	foreignKey({
 			columns: [table.organization_id],
@@ -497,7 +497,7 @@ export const versions = pgTable("versions", {
 	lastmodified_by_workflow_id: uuid(),
 	history: jsonb().default([]).notNull(),
 }, (table) => [
-	uniqueIndex("uq_versions_source_table_record").using("btree", table.source_table.asc().nullsLast().op("text_ops"), table.source_table_uuid.asc().nullsLast().op("text_ops")),
+	uniqueIndex("uq_versions_source_table_record").using("btree", table.source_table.asc().nullsLast(), table.source_table_uuid.asc().nullsLast()),
 	foreignKey({
 			columns: [table.created_by_user_id],
 			foreignColumns: [users.id],
@@ -518,7 +518,7 @@ export const workflow_definitions = pgTable("workflow_definitions", {
 	description: text(),
 	steps: jsonb().default([]).notNull(),
 }, (table) => [
-	index("idx_workflow_definitions_org").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_workflow_definitions_org").using("btree", table.organization_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -537,8 +537,8 @@ export const expense_reports = pgTable("expense_reports", {
 	review_note: text(),
 	data: jsonb().default({}).notNull(),
 }, (table) => [
-	index("idx_expense_reports_org_status").using("btree", table.organization_id.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
-	index("idx_expense_reports_user").using("btree", table.user_id.asc().nullsLast().op("timestamptz_ops"), table.date_submitted.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_expense_reports_org_status").using("btree", table.organization_id.asc().nullsLast(), table.status.asc().nullsLast()),
+	index("idx_expense_reports_user").using("btree", table.user_id.asc().nullsLast(), table.date_submitted.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -575,9 +575,9 @@ export const workflows = pgTable("workflows", {
 	assigned_to_team_id: uuid(),
 	notification: jsonb().default({}).notNull(),
 }, (table) => [
-	index("idx_workflows_def").using("btree", table.workflow_def_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_workflows_source").using("btree", table.source_table.asc().nullsLast().op("text_ops"), table.source_table_uuid.asc().nullsLast().op("text_ops")),
-	index("idx_workflows_team").using("btree", table.assigned_to_team_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_workflows_def").using("btree", table.workflow_def_id.asc().nullsLast()),
+	index("idx_workflows_source").using("btree", table.source_table.asc().nullsLast(), table.source_table_uuid.asc().nullsLast()),
+	index("idx_workflows_team").using("btree", table.assigned_to_team_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.workflow_def_id],
 			foreignColumns: [workflow_definitions.workflow_def_id],
@@ -597,8 +597,8 @@ export const expense_report_items = pgTable("expense_report_items", {
 	expense_id: uuid().notNull(),
 	organization_id: uuid().notNull(),
 }, (table) => [
-	index("idx_expense_report_items_org").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_expense_report_items_report").using("btree", table.expense_report_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_expense_report_items_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_expense_report_items_report").using("btree", table.expense_report_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.expense_report_id],
 			foreignColumns: [expense_reports.id],
@@ -631,8 +631,8 @@ export const notifications = pgTable("notifications", {
 	read_at: timestamp({ withTimezone: true, mode: 'string' }),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_notifications_recipient_created").using("btree", table.recipient_user_id.asc().nullsLast().op("timestamptz_ops"), table.created_at.desc().nullsFirst().op("timestamptz_ops")),
-	index("idx_notifications_recipient_unread").using("btree", table.recipient_user_id.asc().nullsLast().op("uuid_ops")).where(sql`(read_at IS NULL)`),
+	index("idx_notifications_recipient_created").using("btree", table.recipient_user_id.asc().nullsLast(), table.created_at.desc().nullsFirst()),
+	index("idx_notifications_recipient_unread").using("btree", table.recipient_user_id.asc().nullsLast()).where(sql`(read_at IS NULL)`),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -669,9 +669,9 @@ export const expenses = pgTable("expenses", {
 	document_id: uuid(),
 	data: jsonb().default({}).notNull(),
 }, (table) => [
-	index("idx_expenses_org_date").using("btree", table.organization_id.asc().nullsLast().op("date_ops"), table.expense_date.asc().nullsLast().op("date_ops")),
-	index("idx_expenses_project").using("btree", table.project_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_expenses_user_date").using("btree", table.user_id.asc().nullsLast().op("date_ops"), table.expense_date.asc().nullsLast().op("date_ops")),
+	index("idx_expenses_org_date").using("btree", table.organization_id.asc().nullsLast(), table.expense_date.asc().nullsLast()),
+	index("idx_expenses_project").using("btree", table.project_id.asc().nullsLast()),
+	index("idx_expenses_user_date").using("btree", table.user_id.asc().nullsLast(), table.expense_date.asc().nullsLast()),
 	foreignKey({
 			columns: [table.user_id],
 			foreignColumns: [users.id],
@@ -711,9 +711,9 @@ export const work_times = pgTable("work_times", {
 	check_out: timestamp({ withTimezone: true, mode: 'string' }),
 	comment: text(),
 }, (table) => [
-	index("idx_work_times_org_check_in").using("btree", table.organization_id.asc().nullsLast().op("timestamptz_ops"), table.check_in.asc().nullsLast().op("timestamptz_ops")),
-	index("idx_work_times_user_check_in").using("btree", table.user_id.asc().nullsLast().op("uuid_ops"), table.check_in.asc().nullsLast().op("timestamptz_ops")),
-	uniqueIndex("uq_work_times_one_open_session").using("btree", table.user_id.asc().nullsLast().op("uuid_ops")).where(sql`(check_out IS NULL)`),
+	index("idx_work_times_org_check_in").using("btree", table.organization_id.asc().nullsLast(), table.check_in.asc().nullsLast()),
+	index("idx_work_times_user_check_in").using("btree", table.user_id.asc().nullsLast(), table.check_in.asc().nullsLast()),
+	uniqueIndex("uq_work_times_one_open_session").using("btree", table.user_id.asc().nullsLast()).where(sql`(check_out IS NULL)`),
 	foreignKey({
 			columns: [table.user_id],
 			foreignColumns: [users.id],
@@ -741,7 +741,7 @@ export const work_time_balance_entries = pgTable("work_time_balance_entries", {
 	created_by_user_id: uuid(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_work_time_balance_entries_org_user").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.user_id.asc().nullsLast().op("timestamptz_ops"), table.created_at.asc().nullsLast().op("uuid_ops")),
+	index("idx_work_time_balance_entries_org_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.created_at.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -774,8 +774,8 @@ export const absences = pgTable("absences", {
 	half_day: boolean().default(false).notNull(),
 	document_id: uuid(),
 }, (table) => [
-	index("idx_absences_org_status").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.status.asc().nullsLast().op("uuid_ops")),
-	index("idx_absences_user").using("btree", table.user_id.asc().nullsLast().op("date_ops"), table.date_start.asc().nullsLast().op("date_ops")),
+	index("idx_absences_org_status").using("btree", table.organization_id.asc().nullsLast(), table.status.asc().nullsLast()),
+	index("idx_absences_user").using("btree", table.user_id.asc().nullsLast(), table.date_start.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -850,7 +850,7 @@ export const balance_adjustments = pgTable("balance_adjustments", {
 	note: text(),
 	created_by_user_id: uuid(),
 }, (table) => [
-	index("idx_balance_adjustments_user").using("btree", table.organization_id.asc().nullsLast().op("date_ops"), table.user_id.asc().nullsLast().op("date_ops"), table.effective_date.asc().nullsLast().op("date_ops")),
+	index("idx_balance_adjustments_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.effective_date.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1009,7 +1009,7 @@ export const project_time_periods = pgTable("project_time_periods", {
 	reviewed_at: timestamp({ withTimezone: true, mode: 'string' }),
 	review_note: text(),
 }, (table) => [
-	index("idx_project_time_periods_project").using("btree", table.project_id.asc().nullsLast().op("date_ops"), table.period_start.asc().nullsLast().op("uuid_ops")),
+	index("idx_project_time_periods_project").using("btree", table.project_id.asc().nullsLast(), table.period_start.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1043,7 +1043,7 @@ export const employee_assignments = pgTable("employee_assignments", {
 	job_function: text(),
 	manager_user_id: uuid(),
 }, (table) => [
-	index("idx_employee_assignments_manager").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.manager_user_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_employee_assignments_manager").using("btree", table.organization_id.asc().nullsLast(), table.manager_user_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1082,8 +1082,8 @@ export const requests = pgTable("requests", {
 	resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
 	archived_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("idx_requests_department").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.target_department_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_requests_requester").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.requester_user_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_requests_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
+	index("idx_requests_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1118,7 +1118,7 @@ export const request_messages = pgTable("request_messages", {
 	data: jsonb().default({}).notNull(),
 	posted_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_request_messages_request").using("btree", table.request_id.asc().nullsLast().op("timestamptz_ops"), table.posted_at.asc().nullsLast().op("timestamptz_ops")),
+	index("idx_request_messages_request").using("btree", table.request_id.asc().nullsLast(), table.posted_at.asc().nullsLast()),
 	foreignKey({
 			columns: [table.request_id],
 			foreignColumns: [requests.id],
@@ -1143,9 +1143,9 @@ export const timesheet_documents = pgTable("timesheet_documents", {
 	superseded_at: timestamp({ withTimezone: true, mode: 'string' }),
 	kind: text().notNull(),
 }, (table) => [
-	index("idx_timesheet_documents_user").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.user_id.asc().nullsLast().op("uuid_ops")),
-	uniqueIndex("uq_timesheet_documents_current_project").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.user_id.asc().nullsLast().op("date_ops"), table.period_start.asc().nullsLast().op("date_ops")).where(sql`((superseded_at IS NULL) AND (kind = 'project_timesheet'::text))`),
-	uniqueIndex("uq_timesheet_documents_current_ts").using("btree", table.timesheet_period_id.asc().nullsLast().op("uuid_ops")).where(sql`((superseded_at IS NULL) AND (timesheet_period_id IS NOT NULL))`),
+	index("idx_timesheet_documents_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast()),
+	uniqueIndex("uq_timesheet_documents_current_project").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.period_start.asc().nullsLast()).where(sql`((superseded_at IS NULL) AND (kind = 'project_timesheet'::text))`),
+	uniqueIndex("uq_timesheet_documents_current_ts").using("btree", table.timesheet_period_id.asc().nullsLast()).where(sql`((superseded_at IS NULL) AND (timesheet_period_id IS NOT NULL))`),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1183,8 +1183,8 @@ export const documents = pgTable("documents", {
 	encrypted_key: text(),
 	key_id: text(),
 }, (table) => [
-	index("idx_documents_organization").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops")),
-	index("idx_documents_source").using("btree", table.source_table.asc().nullsLast().op("text_ops"), table.source_table_id.asc().nullsLast().op("text_ops")),
+	index("idx_documents_organization").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_documents_source").using("btree", table.source_table.asc().nullsLast(), table.source_table_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1209,7 +1209,7 @@ export const personnel_documents = pgTable("personnel_documents", {
 	visible_to_employee: boolean().default(false).notNull(),
 	uploaded_by_user_id: uuid(),
 }, (table) => [
-	index("idx_personnel_documents_user").using("btree", table.organization_id.asc().nullsLast().op("uuid_ops"), table.user_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_personnel_documents_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -1256,7 +1256,7 @@ export const request_message_documents = pgTable("request_message_documents", {
 	message_id: uuid().notNull(),
 	document_id: uuid().notNull(),
 }, (table) => [
-	index("idx_request_message_documents_document").using("btree", table.document_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_request_message_documents_document").using("btree", table.document_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.message_id],
 			foreignColumns: [request_messages.id],
@@ -1299,7 +1299,7 @@ export const membership_roles = pgTable("membership_roles", {
 	granted_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	granted_by_user_id: uuid(),
 }, (table) => [
-	index("idx_membership_roles_role").using("btree", table.role_id.asc().nullsLast().op("uuid_ops")),
+	index("idx_membership_roles_role").using("btree", table.role_id.asc().nullsLast()),
 	foreignKey({
 			columns: [table.membership_id],
 			foreignColumns: [organization_memberships.id],
