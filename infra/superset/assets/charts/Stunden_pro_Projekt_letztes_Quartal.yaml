@@ -1,0 +1,35 @@
+slice_name: Stunden pro Projekt (letztes Quartal)
+description: null
+certified_by: null
+certification_details: null
+viz_type: pie
+params:
+  viz_type: pie
+  groupby:
+  - project
+  metric:
+    expressionType: SIMPLE
+    column:
+      column_name: hours
+    aggregate: SUM
+    label: Stunden
+  adhoc_filters:
+  - expressionType: SIMPLE
+    clause: WHERE
+    subject: day
+    operator: TEMPORAL_RANGE
+    comparator: Last quarter
+  row_limit: 10
+  show_legend: true
+  legendOrientation: bottom
+  label_type: key_percent
+  number_format: ',.1f'
+  donut: true
+  datasource: 1__table
+query_context: '{"datasource":{"id":1,"type":"table"},"force":false,"queries":[{"filters":[{"col":"day","op":"TEMPORAL_RANGE","val":"Last
+  quarter"}],"extras":{"having":"","where":""},"applied_time_extras":{},"columns":["project"],"metrics":[{"aggregate":"SUM","column":{"column_name":"hours"},"expressionType":"SIMPLE","label":"Stunden"}],"orderby":[[{"aggregate":"SUM","column":{"column_name":"hours"},"expressionType":"SIMPLE","label":"Stunden"},false]],"annotation_layers":[],"row_limit":10,"series_limit":0,"group_others_when_limit_reached":false,"order_desc":true,"url_params":{},"custom_params":{},"custom_form_data":{},"post_processing":[{"operation":"contribution","options":{"columns":["Stunden"],"rename_columns":["Stunden__contribution"]}}]}],"form_data":{"datasource":"1__table","viz_type":"pie","slice_id":2,"url_params":{},"matrixify_enable":false,"matrixify_mode_columns":"disabled","matrixify_dimension_selection_mode_columns":"members","matrixify_dimension_columns":{"dimension":"","values":[]},"matrixify_topn_value_columns":10,"matrixify_all_sort_by_columns":"a_to_z","matrixify_topn_order_columns":true,"matrixify_show_column_headers":true,"matrixify_fit_columns_dynamically":true,"matrixify_mode_rows":"disabled","matrixify_dimension_selection_mode_rows":"members","matrixify_dimension_rows":{"dimension":"","values":[]},"matrixify_topn_value_rows":10,"matrixify_all_sort_by_rows":"a_to_z","matrixify_topn_order_rows":true,"matrixify_show_row_labels":true,"matrixify_row_height":300,"matrixify_charts_per_row":4,"matrixify_cell_title_template":"","groupby":["project"],"metric":{"aggregate":"SUM","column":{"column_name":"hours"},"expressionType":"SIMPLE","label":"Stunden"},"adhoc_filters":[{"clause":"WHERE","comparator":"Last
+  quarter","expressionType":"SIMPLE","operator":"TEMPORAL_RANGE","subject":"day"}],"row_limit":10,"sort_by_metric":true,"color_scheme":"supersetColors","show_labels_threshold":5,"threshold_for_other":0,"show_legend":true,"legendType":"scroll","legendOrientation":"bottom","label_type":"key_percent","number_format":",.1f","date_format":"smart_date","show_labels":true,"labels_outside":true,"label_line":false,"show_total":false,"outerRadius":70,"donut":true,"innerRadius":30,"chart_id":2,"label_colors":{},"shared_label_colors":[],"map_label_colors":{},"own_color_scheme":"supersetColors","extra_filters":[],"extra_form_data":{},"dashboardId":1,"force":false,"result_format":"json","result_type":"full"},"result_format":"json","result_type":"full"}'
+cache_timeout: null
+uuid: c985f017-df56-4009-a6c8-1a4b8f610dc9
+version: 1.0.0
+dataset_uuid: b013cf7c-6964-4999-8e63-0b3a687bd250

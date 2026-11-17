@@ -36,6 +36,7 @@ import { ApensumMark } from './ApensumMark';
 import {
   AccountBalanceWalletIcon,
   AutoAwesomeIcon,
+  BarChartIcon,
   BeachAccessIcon,
   CalendarMonthIcon,
   CheckCircleIcon,
@@ -76,6 +77,7 @@ const ExpenseReports = lazy(() => import('./ExpenseReports'));
 const ExpenseProcessing = lazy(() => import('./ExpenseProcessing'));
 const Assistant = lazy(() => import('./Assistant'));
 const TeamHours = lazy(() => import('./TeamHours'));
+const Analytics = lazy(() => import('./Analytics'));
 const ProjectTimesheet = lazy(() => import('./ProjectTimesheet'));
 const TeamView = lazy(() => import('./TeamView'));
 const BalanceReport = lazy(() => import('./BalanceReport'));
@@ -111,7 +113,8 @@ type Section =
   | 'audit'
   | 'admin'
   | 'orgSettings'
-  | 'expenseProcessing';
+  | 'expenseProcessing'
+  | 'analytics';
 
 const SECTION_TO_HASH: Record<Section, string> = {
   home: '#/home',
@@ -137,6 +140,7 @@ const SECTION_TO_HASH: Record<Section, string> = {
   audit: '#/audit',
   expenseProcessing: '#/expense-processing',
   admin: '#/admin',
+  analytics: '#/analytics',
 };
 
 const HASH_TO_SECTION = Object.fromEntries(
@@ -186,7 +190,7 @@ function resolveRoleFlags(session: Session | null, orgId: string | null): RoleFl
 }
 
 /** The permission object (packages/shared/src/permissions.ts) behind each page; `home` is always allowed. */
-const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
+const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home' | 'analytics'>, string> = {
   myData: 'nav.myData',
   time: 'nav.time',
   projectTimesheet: 'nav.projectTimesheet',
@@ -217,7 +221,9 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
  * offline, falls back to the role checks the app used before permissions existed.
  */
 function isSectionAllowed(sec: Section, flags: RoleFlags, permissions: Set<string> | null): boolean {
-  if (sec === 'home') return true;
+  // Analyses (trial, Superset): offered to every member when the API has it configured; the
+  // dashboard itself only shows what the caller may see (analytics.controller.ts).
+  if (sec === 'home' || sec === 'analytics') return true;
   if (permissions) return holdsAny(permissions, SECTION_NAV_OBJECT[sec]);
   return isSectionAllowedByRole(sec, flags);
 }
@@ -225,6 +231,7 @@ function isSectionAllowed(sec: Section, flags: RoleFlags, permissions: Set<strin
 function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
   switch (sec) {
     case 'home':
+    case 'analytics':
     case 'myData':
     case 'time':
     case 'projectTimesheet':
@@ -300,7 +307,13 @@ export default function App() {
   // The caller's permission ids in the current org; null until loaded (or offline). Re-fetched per org.
   const [loadedPermissions, setPermissions] = useState<{ orgId: string; ids: Set<string> } | null>(null);
   const permissions = loadedPermissions && loadedPermissions.orgId === orgId ? loadedPermissions.ids : null;
-  const allowed = useCallback((sec: Section) => isSectionAllowed(sec, flags, permissions), [flags, permissions]);
+  // Whether this installation offers Analyses (Superset configured in the API), per org.
+  const [analytics, setAnalytics] = useState<{ orgId: string; available: boolean } | null>(null);
+  const analyticsAvailable = !!analytics && analytics.orgId === orgId && analytics.available;
+  const allowed = useCallback(
+    (sec: Section) => (sec === 'analytics' ? analyticsAvailable : isSectionAllowed(sec, flags, permissions)),
+    [flags, permissions, analyticsAvailable],
+  );
   // Edits (and reviews change requests for) other people's personal details: HR/admin by default.
   const isReviewer = permissions ? isBasicDataReviewer(permissions) : flags.isAdmin || flags.isHr;
 
@@ -377,6 +390,24 @@ export default function App() {
     // authHeaders changes when the SSO token refreshes; that must not drop and refetch permissions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.userId, orgId, permissionsVersion]);
+
+  useEffect(() => {
+    if (!session || !orgId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/organizations/${orgId}/analytics/status`, { headers: await authHeaders() });
+        const data = await res.json();
+        if (!cancelled) setAnalytics({ orgId, available: data?.ok === true && data.available === true });
+      } catch {
+        if (!cancelled) setAnalytics({ orgId, available: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.userId, orgId]);
 
   // The organization's look and feel (theme colors, app bar logo); the default theme when signed out.
   const { branding, setBranding } = useBranding();
@@ -658,6 +689,7 @@ export default function App() {
         { id: 'directory', section: 'directory', label: t('nav.directory'), icon: <ContactsIcon fontSize="small" />, visible: allowed('directory') },
         { id: 'hours', section: 'hours', label: t('nav.teamHours'), icon: <GroupIcon fontSize="small" />, visible: allowed('hours') },
         { id: 'balances', section: 'balances', label: t('nav.balances'), icon: <AccountBalanceWalletIcon fontSize="small" />, visible: allowed('balances') },
+        { id: 'analytics', section: 'analytics', label: t('nav.analytics'), icon: <BarChartIcon fontSize="small" />, visible: allowed('analytics') },
         {
           id: 'approvals',
           section: 'approvals',
@@ -1003,6 +1035,9 @@ export default function App() {
               )}
               {section === 'hours' && allowed('hours') && orgId && (
                 <TeamHours orgId={orgId} authHeaders={authHeaders} />
+              )}
+              {section === 'analytics' && allowed('analytics') && orgId && (
+                <Analytics orgId={orgId} authHeaders={authHeaders} />
               )}
               {section === 'balances' && allowed('balances') && orgId && (
                 <BalanceReport orgId={orgId} authHeaders={authHeaders} />

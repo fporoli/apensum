@@ -27,6 +27,7 @@ import { EmploymentController } from './employment.controller';
 import { RequestsController } from './requests.controller';
 import { DocumentsController } from './documents.controller';
 import { DirectoryController } from './directory.controller';
+import { AnalyticsController } from './analytics.controller';
 import { PersonnelDocumentsController } from './personnel-documents.controller';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { ForwardMailService } from './forward-mail.service';
@@ -77,6 +78,7 @@ import { DbService } from './db.service';
     RequestsController,
     DocumentsController,
     DirectoryController,
+    AnalyticsController,
     PersonnelDocumentsController,
     TimesheetsController,
     ProjectTimesheetsController,

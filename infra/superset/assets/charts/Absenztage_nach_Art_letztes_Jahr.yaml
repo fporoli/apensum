@@ -1,0 +1,39 @@
+slice_name: Absenztage nach Art (letztes Jahr)
+description: null
+certified_by: null
+certification_details: null
+viz_type: pie
+params:
+  viz_type: pie
+  groupby:
+  - absence_type
+  metric:
+    expressionType: SIMPLE
+    column:
+      column_name: days
+    aggregate: SUM
+    label: Tage
+  adhoc_filters:
+  - expressionType: SIMPLE
+    clause: WHERE
+    subject: date_start
+    operator: TEMPORAL_RANGE
+    comparator: Last year
+  - expressionType: SIMPLE
+    clause: WHERE
+    subject: status
+    operator: ==
+    comparator: approved
+  row_limit: 10
+  show_legend: true
+  legendOrientation: bottom
+  label_type: key_value
+  number_format: ',.1f'
+  datasource: 3__table
+query_context: '{"datasource":{"id":3,"type":"table"},"force":false,"queries":[{"filters":[{"col":"date_start","op":"TEMPORAL_RANGE","val":"Last
+  year"},{"col":"status","op":"==","val":"approved"}],"extras":{"having":"","where":""},"applied_time_extras":{},"columns":["absence_type"],"metrics":[{"aggregate":"SUM","column":{"column_name":"days"},"expressionType":"SIMPLE","label":"Tage"}],"orderby":[[{"aggregate":"SUM","column":{"column_name":"days"},"expressionType":"SIMPLE","label":"Tage"},false]],"annotation_layers":[],"row_limit":10,"series_limit":0,"group_others_when_limit_reached":false,"order_desc":true,"url_params":{},"custom_params":{},"custom_form_data":{},"post_processing":[{"operation":"contribution","options":{"columns":["Tage"],"rename_columns":["Tage__contribution"]}}]}],"form_data":{"datasource":"3__table","viz_type":"pie","slice_id":3,"url_params":{},"matrixify_enable":false,"matrixify_mode_columns":"disabled","matrixify_dimension_selection_mode_columns":"members","matrixify_dimension_columns":{"dimension":"","values":[]},"matrixify_topn_value_columns":10,"matrixify_all_sort_by_columns":"a_to_z","matrixify_topn_order_columns":true,"matrixify_show_column_headers":true,"matrixify_fit_columns_dynamically":true,"matrixify_mode_rows":"disabled","matrixify_dimension_selection_mode_rows":"members","matrixify_dimension_rows":{"dimension":"","values":[]},"matrixify_topn_value_rows":10,"matrixify_all_sort_by_rows":"a_to_z","matrixify_topn_order_rows":true,"matrixify_show_row_labels":true,"matrixify_row_height":300,"matrixify_charts_per_row":4,"matrixify_cell_title_template":"","groupby":["absence_type"],"metric":{"aggregate":"SUM","column":{"column_name":"days"},"expressionType":"SIMPLE","label":"Tage"},"adhoc_filters":[{"clause":"WHERE","comparator":"Last
+  year","expressionType":"SIMPLE","operator":"TEMPORAL_RANGE","subject":"date_start"},{"clause":"WHERE","comparator":"approved","expressionType":"SIMPLE","operator":"==","subject":"status"}],"row_limit":10,"sort_by_metric":true,"color_scheme":"supersetColors","show_labels_threshold":5,"threshold_for_other":0,"show_legend":true,"legendType":"scroll","legendOrientation":"bottom","label_type":"key_value","number_format":",.1f","date_format":"smart_date","show_labels":true,"labels_outside":true,"label_line":false,"show_total":false,"outerRadius":70,"donut":false,"innerRadius":30,"chart_id":3,"label_colors":{},"shared_label_colors":[],"map_label_colors":{},"own_color_scheme":"supersetColors","extra_filters":[],"extra_form_data":{},"dashboardId":1,"force":false,"result_format":"json","result_type":"full"},"result_format":"json","result_type":"full"}'
+cache_timeout: null
+uuid: ec0395d7-69dd-463b-8edf-ae96b69c348c
+version: 1.0.0
+dataset_uuid: 262b9978-5868-4899-aea8-11a143e90dec
