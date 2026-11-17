@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One command line for every environment:
 //
-//   npm run stack -- <env> <steps...> [--yes]
+//   npm run stack -- <env> <steps...> [--reset] [--yes]
 //
 //   env    dev | local            this machine (.env.dev / .env.local, scripts/with-env.mjs)
 //          prod | preprod | test  a VPS instance (any GitHub Environment except azure)
@@ -15,7 +15,8 @@
 //          start  dev: services in Docker + API and web on the host (Ctrl-C stops them).
 //                 local: the whole Docker stack. remote: deploy HEAD's images (migrations run first).
 //          stop   dev / local only: docker compose down
-//          all    push build reset start
+//          all    push build start (add --reset to also reset and seed)
+//   --reset  include the destructive reset when using "all"
 //   --yes  skip the typed confirmation of a remote reset (for scripts; dev/local never ask)
 //
 // Steps always run in the order push, build, reset, start (stop alone), whatever order they are
@@ -23,7 +24,8 @@
 // migrations and seed. Examples:
 //
 //   npm run stack -- dev reset start       fresh demo database, then API + web
-//   npm run stack -- local all             push, rebuild images, reset, bring the stack up
+//   npm run stack -- local all             push, rebuild images, bring the stack up
+//   npm run stack -- local all --reset     also reset and seed the local database
 //   npm run stack -- test push build start deploy HEAD to the `test` VPS instance
 //   npm run stack -- prod start            deploy HEAD's images (already built) to prod
 //
@@ -39,7 +41,7 @@ const LOCAL = new Set(['dev', 'local']);
 
 function usage(message) {
   if (message) console.error(`${message}\n`);
-  console.error('Usage: npm run stack -- <dev|local|prod|preprod|test|azure|...> <push|build|reset|start|stop|all>... [--yes]');
+  console.error('Usage: npm run stack -- <dev|local|prod|preprod|test|azure|...> <push|build|reset|start|stop|all>... [--reset] [--yes]');
   process.exit(1);
 }
 
@@ -73,9 +75,13 @@ async function ask(question) {
 
 const args = process.argv.slice(2);
 const yes = args.includes('--yes');
-const [env, ...rest] = args.filter((a) => a !== '--yes');
+const includeReset = args.includes('--reset');
+const [env, ...rest] = args.filter((a) => a !== '--yes' && a !== '--reset');
 if (!env) usage();
-const requested = new Set(rest.flatMap((s) => (s === 'all' ? ['push', 'build', 'reset', 'start'] : [s])));
+if (includeReset && !rest.includes('all')) usage('"--reset" requires "all"; use "reset" as a step directly.');
+const requested = new Set(rest.flatMap((s) => (
+  s === 'all' ? ['push', 'build', ...(includeReset ? ['reset'] : []), 'start'] : [s]
+)));
 if (requested.size === 0) usage('Name at least one step.');
 for (const s of requested) if (!ORDER.includes(s)) usage(`Unknown step "${s}".`);
 if (requested.has('stop') && requested.size > 1) usage('"stop" runs on its own.');

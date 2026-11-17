@@ -288,13 +288,19 @@ Environment) or `azure`. Steps always run in the same order, whatever order you 
 | `reset` | **Destructive.** `dev:resetdb` / `local:resetdb` | **Destructive**, asks you to type the environment name: VPS `reset-seed`; Azure drops and re-creates the Postgres server (`dropdb` + `initdb` with seed) |
 | `start` | dev: Docker services, then API + web on the host (Ctrl-C stops both); local: `local:up` | deploy HEAD's `sha-xxxxxxx` images (`vps` deploy / `azure-deploy`), before any reset |
 | `stop` | `dev:down` / `local:down` | — |
-| `all` | `push build reset start` | the same |
+| `all` | `push build start` | the same |
+
+`all` does not reset or seed the database. Add `--reset` to explicitly include
+the destructive reset step (`npm run stack -- <env> all --reset`); the `prod`
+environment cannot be reset.
 
 ```sh
 npm run stack -- dev reset start         # fresh demo data, API + web on the host
-npm run stack -- local all               # push, rebuild images, reset, whole stack up
+npm run stack -- local all               # push, rebuild images, whole stack up
+npm run stack -- local all --reset       # also reset and seed the local database
 npm run stack -- test push build start   # deploy HEAD to the test VPS
-npm run stack -- prod all                # the same plus reset-seed (asks first; --yes skips that)
+npm run stack -- prod all                # push, build and deploy; no reset
+npm run stack -- preprod all --reset     # also reset-seed (asks first; --yes skips that)
 ```
 
 The remote steps only trigger and follow the workflows; their config stays in GitHub Environments.

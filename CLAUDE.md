@@ -27,7 +27,7 @@ npm run dev:status         # read-only: does the DB hold exactly this checkout's
 npm run dev:psql           # psql into the dev database; dev:down / dev:logs
 npm run dev:resetdb        # drop + recreate schema public, migrate, seed (also local:resetdb)
 npm run local:up           # whole stack in Docker (.env.local); local:down / local:seed / local:psql
-npm run stack -- <env> <push|build|reset|start|stop|all>   # any env: dev, local, a VPS GitHub Environment, azure
+npm run stack -- <env> <push|build|reset|start|stop|all> [--reset]   # all excludes reset unless opted in
 ```
 
 `scripts/stack.mjs` wraps the scripts above for dev/local and only dispatches/follows the
