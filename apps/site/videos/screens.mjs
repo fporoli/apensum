@@ -99,10 +99,34 @@ const SHOTS = {
   'tenants-1': { user: 'admin', hash: '#/home', full: true, async go(p) {
     await p.getByRole('combobox').first().click();
   } },
+  // The login screen itself (nobody signed in): its first tab, then Register.
+  'access-1': { signedOut: 0 },
+  'access-2': { signedOut: 1 },
 };
 
+const CONTEXT = { viewport: { width: 1320, height: 820 }, deviceScaleFactor: 2, locale: 'de-CH', timezoneId: 'Europe/Zurich' };
+
+/** The login card in `lang` (the app keeps the language in localStorage), on tab `tab`. */
+async function shootSignedOut(browser, lang, tab, file) {
+  const context = await browser.newContext(CONTEXT);
+  try {
+    await context.addInitScript((l) => localStorage.setItem('worktime.locale', l), lang);
+    const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    await page.goto(BASE);
+    await page.getByRole('tab').nth(tab).click();
+    await sleep(1500); // the SSO check settles
+    await page.mouse.move(2, 2);
+    const card = await page.getByRole('tablist').locator('xpath=ancestor::div[contains(@class,"MuiPaper-root")][1]').boundingBox();
+    const m = 24;
+    await page.screenshot({ path: file, type: 'jpeg', quality: 82, clip: { x: card.x - m, y: card.y - m, width: card.width + 2 * m, height: card.height + 2 * m } });
+  } finally {
+    await context.close();
+  }
+}
+
 async function login(browser, user, lang) {
-  const context = await browser.newContext({ viewport: { width: 1320, height: 820 }, deviceScaleFactor: 2, locale: 'de-CH', timezoneId: 'Europe/Zurich' });
+  const context = await browser.newContext(CONTEXT);
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   // The demo users' saved languages differ: show the app in the page's language.
@@ -168,6 +192,13 @@ try {
     const sessions = new Map();
     for (const id of ids) {
       const shot = SHOTS[id];
+      if (shot.signedOut !== undefined) {
+        const file = join(MEDIA, `feature-${id}-${lang}.jpg`);
+        await shootSignedOut(browser, lang, shot.signedOut, file)
+          .then(() => console.log(`screens: ${file}`))
+          .catch((err) => console.error(`screens: ${id} (${lang}) failed: ${err instanceof Error ? err.message.split('\n')[0] : err}`));
+        continue;
+      }
       // One fresh login per user and language; shots that open menus get their own.
       const key = shot.full ? `${shot.user}:${id}` : shot.user;
       if (!sessions.has(key)) sessions.set(key, await login(browser, shot.user, lang));

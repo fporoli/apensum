@@ -38,6 +38,7 @@ export const FEATURE_GROUPS = [
   ['documents', 'doc'],
   ['admin', 'sliders'],
   ['tenants', 'building'],
+  ['access', 'key'],
   ['customize', 'layers'],
   ['languages', 'globe'],
 ];
@@ -56,6 +57,7 @@ export const FEATURE_SHOTS = {
   documents: ['documents-1'],
   admin: ['admin-1', 'admin-2'],
   tenants: ['tenants-1'],
+  access: ['access-1', 'access-2'],
 };
 const OTHER_LANGS = { de: ['fr', 'it'], fr: ['de', 'it'], it: ['de', 'fr'], en: ['de', 'fr'] };
 const SECURITY = [
