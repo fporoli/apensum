@@ -37,8 +37,27 @@ export const FEATURE_GROUPS = [
   ['requests', 'chat'],
   ['documents', 'doc'],
   ['admin', 'sliders'],
+  ['tenants', 'building'],
+  ['customize', 'layers'],
   ['languages', 'globe'],
 ];
+/**
+ * Screenshots per feature group (media/feature-<shot>-<lang>.jpg, taken by videos/screens.mjs).
+ * The languages group shows the dashboard in two other languages; customize has its video.
+ */
+export const FEATURE_SHOTS = {
+  time: ['time-1', 'time-2'],
+  project: ['project-1'],
+  absences: ['absences-1'],
+  balances: ['balances-1', 'balances-2'],
+  timesheets: ['timesheets-1'],
+  expenses: ['expenses-1'],
+  requests: ['requests-1'],
+  documents: ['documents-1'],
+  admin: ['admin-1', 'admin-2'],
+  tenants: ['tenants-1'],
+};
+const OTHER_LANGS = { de: ['fr', 'it'], fr: ['de', 'it'], it: ['de', 'fr'], en: ['de', 'fr'] };
 const SECURITY = [
   ['encryption', 'lock'],
   ['transit', 'key'],
@@ -273,6 +292,44 @@ ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('home.meta.title'), description: t('home.meta.description'), body });
 }
 
+/** A screenshot that opens full size; the page's language, else German. Null when not recorded. */
+function shot(ctx, id, caption, lang = ctx.lang) {
+  const { assets } = ctx;
+  const name = [`feature-${id}-${lang}.jpg`, `feature-${id}-de.jpg`].find((n) => assets.media?.[n]);
+  if (!name) return null;
+  const size = assets.mediaSize?.[name];
+  const dims = size ? ` width="${size.width}" height="${size.height}"` : '';
+  return `<figure class="shot">
+          <a href="${assets.media[name]}" title="${ctx.t('features.shot.enlarge')}"><img src="${assets.media[name]}" alt="${caption}" loading="lazy" decoding="async"${dims}></a>
+          <figcaption>${caption}</figcaption>
+        </figure>`;
+}
+
+/** The pictures (or the video) of one feature group, between its intro and its list. */
+function featureMedia(ctx, group) {
+  const { t, lang, assets } = ctx;
+  if (group === 'customize') {
+    const video = assets.media?.['demo-developer.mp4'];
+    if (!video) return '';
+    const poster = assets.media['demo-developer.jpg'];
+    return `<figure class="shot feature-video">
+          <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('features.customize.video')}">
+            <source src="${video}" type="video/mp4">
+          </video>
+          <figcaption>${t('features.customize.video')}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
+        </figure>`;
+  }
+  const figures =
+    group === 'languages'
+      ? OTHER_LANGS[lang].map((l) => shot(ctx, 'time-1', t('features.shot.languages'), l))
+      : (FEATURE_SHOTS[group] ?? []).map((id) => shot(ctx, id, t(`features.shot.${id}`)));
+  const shown = figures.filter(Boolean);
+  if (!shown.length) return '';
+  return `<div class="shots${shown.length > 1 ? ' two' : ''}">
+        ${shown.join('\n        ')}
+      </div>`;
+}
+
 export function features(ctx) {
   const { t } = ctx;
   const toc = FEATURE_GROUPS.map(([g, ic]) => `<a href="#${g}">${icon(ic)}${t(`features.${g}.title`)}</a>`).join('');
@@ -285,6 +342,7 @@ export function features(ctx) {
           <p class="lead">${t(`features.${g}.lead`)}</p>
         </div>
       </div>
+      ${featureMedia(ctx, g)}
       ${checklist(t.list(`features.${g}.items`))}
     </section>`,
   ).join('\n');

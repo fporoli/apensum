@@ -1,4 +1,4 @@
-// Uploads the recorded demo videos and posters (apps/site/media) to the `site-media` GitHub release,
+// Uploads the recorded demo videos, posters and feature screenshots (apps/site/media) to the `site-media` GitHub release,
 // replacing older ones. The `site` workflow downloads them from there before it builds, so they
 // reach the website with the next deploy without being committed. Needs the GitHub CLI (`gh`),
 // logged in with push access. The release is a pre-release, so it never shows as the latest one.
@@ -13,7 +13,7 @@ const TAG = 'site-media';
 const gh = (args, opts = {}) => spawnSync('gh', args, { encoding: 'utf8', ...opts });
 
 const files = readdirSync(MEDIA)
-  .filter((f) => /^demo-[\w-]+\.(mp4|jpg)$/.test(f))
+  .filter((f) => /^(demo|feature)-[\w-]+\.(mp4|jpg)$/.test(f))
   .map((f) => join(MEDIA, f));
 if (files.length === 0) {
   console.error('site:videos:publish: nothing in apps/site/media, record first (npm run site:videos)');

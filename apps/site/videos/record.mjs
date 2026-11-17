@@ -1,4 +1,4 @@
-// Records the four role demo videos for the website (German), from the dev stack with demo data.
+// Records the role demo videos for the website (German), from the dev stack with demo data.
 //
 //   npm run dev:resetdb                      # fresh demo data: the scenes build on each other
 //   npm run site:videos [-- employee manager hr admin]   # installs Playwright + ffmpeg here first
@@ -10,7 +10,8 @@
 // website build shows them on the home page; `npm run site:videos:publish` uploads them to the
 // `site-media` GitHub release, from which the `site` workflow takes them when it deploys.
 // The scenes run in order: Ueli requests vacation, Marco approves it, Ulla files a review, the
-// admin shows roles, modules and branding. Run them all after a reset, or single ones to retake.
+// admin shows roles, modules and branding; Uma (developer) customizes the basic-data form (her
+// changes are undone before each take). Run them all after a reset, or single ones to retake.
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -385,6 +386,68 @@ const SCENES = {
       await s.caption('');
       await s.wait(600);
     },
+  },
+};
+
+/** Off camera: the basic-data fields the developer scene changes go back to the registry's. */
+async function resetDeveloperFields() {
+  const api = process.env.RECORD_API || 'http://localhost:8001/api/v1';
+  const login = await (await fetch(`${api}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'uma@acme.com', password: 'uma' }) })).json();
+  const orgId = login.memberships?.[0]?.organizationId;
+  for (const key of ['middleName', 'personnelNumber']) {
+    await fetch(`${api}/organizations/${orgId}/forms/basicdata/fields/${key}`, { method: 'DELETE', headers: { Authorization: `Bearer ${login.token}` } });
+  }
+  // A saved custom field is only retired through the API (its values are kept): the dev database
+  // forgets it, so the scene can add it again.
+  const sql = "DELETE FROM field_config WHERE form_id = 'basicdata' AND field_key = 'badgeNumber'";
+  const r = spawnSync('npm', ['run', '-s', 'dev:psql', '--', '-c', sql], { cwd: join(ROOT, '..', '..', '..'), encoding: 'utf8' });
+  if (r.status !== 0) throw new Error(`developer scene: could not reset badgeNumber (${r.stderr || r.stdout})`);
+}
+
+SCENES.developer = {
+  user: 'uma',
+  async prepare(page) {
+    await resetDeveloperFields();
+    await page.evaluate(() => { window.location.hash = '#/my-data'; });
+    await page.reload();
+    await page.locator('.MuiDrawer-root').first().waitFor();
+    await sleep(1800);
+  },
+  async run(s) {
+    const p = s.page;
+    await s.title('Anpassen', 'Uma gestaltet Formulare – ohne Programmierung');
+    await s.caption('Mit der Rolle «Developer» lässt sich jedes Formular direkt in der App anpassen');
+    await s.click(p.locator('header').getByRole('button').last(), 600);
+    await s.click(p.getByRole('menuitem', { name: 'Designmodus' }), 1600);
+    const panel = p.locator('.MuiDrawer-paper').filter({ hasText: 'Formulargestaltung' });
+
+    await s.caption('Felder ausblenden oder zu Pflichtfeldern machen – die Vorschau zeigt es sofort');
+    await s.click(p.getByText('Zweiter Vorname', { exact: true }).first(), 900);
+    await s.click(panel.getByRole('checkbox').nth(1), 1600);
+
+    await s.caption('Die Reihenfolge per Pfeil oder Drag-and-drop ändern');
+    const row = panel.locator('div').filter({ has: p.getByText('Personal-Nr.', { exact: true }) }).filter({ has: p.getByRole('button') }).last();
+    await s.click(row.getByRole('button').first(), 900);
+    await s.click(row.getByRole('button').first(), 1400);
+
+    await s.caption('Eigene Felder hinzufügen: Text, Zahl, Datum, Auswahlliste oder Kontrollkästchen');
+    await s.click(panel.getByRole('button', { name: /Feld hinzufügen/ }), 700);
+    await s.type(panel.getByLabel('Beschriftung EN', { exact: true }), 'Badge number', 200);
+    await s.type(panel.getByLabel('Schlüssel'), 'badgeNumber', 400);
+    await s.click(panel.getByRole('button', { name: 'Hinzufügen' }), 1400);
+
+    await s.caption('Beschriftungen in allen vier Sprachen');
+    for (const [lang, text] of [['de', 'Badge-Nummer'], ['fr', 'Numéro de badge'], ['it', 'Numero di badge']]) {
+      await s.type(panel.getByLabel(`Beschriftung ${lang}`, { exact: true }), text, 250);
+    }
+    await s.wait(900);
+    await s.caption('Speichern – die Änderung gilt sofort für alle in dieser Organisation');
+    await s.click(panel.getByRole('button', { name: 'Speichern' }), 1800);
+    await s.click(panel.getByRole('button', { name: 'Schliessen' }).first().or(panel.locator('button[aria-label]').first()), 1200);
+    await s.moveTo(p.getByText('Badge-Nummer', { exact: true }).first());
+    await s.caption('Ab sofort im Formular – für Personaldaten, Spesen und mehr', 2600);
+    await s.caption('');
+    await s.wait(600);
   },
 };
 

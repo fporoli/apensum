@@ -262,6 +262,19 @@ a:hover { color: var(--brand-strong); }
 .feature-group-head .feature-icon { margin: 0; }
 .feature-group-head .lead { font-size: 1.02rem; margin: 0; }
 .feature-group h2 { font-size: 1.4rem; margin-bottom: 6px; }
+/* Screenshots of the app (videos/screens.mjs) between a group's intro and its list. */
+.shots { display: grid; gap: 16px; margin: 4px 0 24px; }
+.shots.two { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.shot { margin: 0; }
+.shot img, .shot video {
+  display: block; width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg); background: var(--bg-alt);
+}
+.shot a { display: block; cursor: zoom-in; }
+.shot figcaption { margin-top: 8px; font-size: 0.86rem; color: var(--muted); }
+.feature-video { margin: 4px 0 24px; }
+.feature-video video { aspect-ratio: 16 / 10; background: #0f3fa8; }
+@media (max-width: 640px) { .shots.two { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 900px) {
   .with-toc { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .toc { position: static; display: flex; flex-wrap: wrap; gap: 6px; }

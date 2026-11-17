@@ -19,6 +19,21 @@ import en from './src/i18n/en.mjs';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 export const DICTS = { de, fr, it, en };
 
+/** Width and height of a JPEG (its first SOF marker), for <img> sizes; null when unreadable. */
+export function jpegSize(data) {
+  let i = 2;
+  while (i + 9 < data.length) {
+    if (data[i] !== 0xff) return null;
+    const marker = data[i + 1];
+    const length = data.readUInt16BE(i + 2);
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+      return { height: data.readUInt16BE(i + 5), width: data.readUInt16BE(i + 7) };
+    }
+    i += 2 + length;
+  }
+  return null;
+}
+
 export function missingOperatorFields(config) {
   return REQUIRED_OPERATOR_FIELDS.filter((f) => !String(config.operator?.[f] ?? '').trim());
 }
@@ -59,7 +74,7 @@ export function build({ outDir = join(ROOT, 'dist'), strict = false, config = ba
   cpSync(join(ROOT, 'static'), outDir, { recursive: true });
   // Assets are cached for a year (infra/site/Caddyfile): the ?v= content hash makes a change visible.
   const versioned = (name) => `/assets/${name}?v=${createHash('sha256').update(readFileSync(join(ROOT, 'static', 'assets', name))).digest('hex').slice(0, 10)}`;
-  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), contact: versioned('contact.js'), media: {} };
+  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), contact: versioned('contact.js'), media: {}, mediaSize: {} };
   // Demo videos and posters (apps/site/media, not in git: recorded by videos/record.mjs, deployed
   // from the site-media release). Pages show only what is there.
   if (existsSync(mediaDir)) {
@@ -68,6 +83,7 @@ export function build({ outDir = join(ROOT, 'dist'), strict = false, config = ba
       const data = readFileSync(join(mediaDir, name));
       writeFileSync(join(outDir, 'media', name), data);
       assets.media[name] = `/media/${name}?v=${createHash('sha256').update(data).digest('hex').slice(0, 10)}`;
+      if (name.endsWith('.jpg')) assets.mediaSize[name] = jpegSize(data);
     }
   }
 

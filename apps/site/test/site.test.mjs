@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DICTS, build, missingOperatorFields } from '../build.mjs';
+import { DICTS, build, jpegSize, missingOperatorFields } from '../build.mjs';
 import { LANGS, PAGES, pagePath } from '../src/layout.mjs';
 import { preferredLang } from '../serve.mjs';
 import baseConfig from '../site.config.mjs';
@@ -161,6 +161,38 @@ test('the home page shows the role videos when all four are there, cards otherwi
     assert.ok(existsSync(join(out, 'b', 'media', 'demo-admin.mp4')));
     assert.doesNotMatch(html, /Video auf Deutsch/);
     assert.match(readFileSync(join(out, 'b', 'fr', 'index.html'), 'utf8'), /Vidéo en allemand/);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+/** The smallest JPEG header jpegSize reads: SOI, then a SOF0 segment with height and width. */
+const fakeJpeg = (width, height) =>
+  Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+test('feature screenshots: sized, in the page language or German, the developer video', () => {
+  assert.deepEqual(jpegSize(fakeJpeg(2080, 1512)), { width: 2080, height: 1512 });
+  assert.equal(jpegSize(Buffer.from('not a jpeg')), null);
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  const media = join(out, 'media-src');
+  try {
+    mkdirSync(media);
+    writeFileSync(join(media, 'feature-time-1-de.jpg'), fakeJpeg(400, 300));
+    writeFileSync(join(media, 'feature-time-1-fr.jpg'), fakeJpeg(400, 300));
+    writeFileSync(join(media, 'feature-admin-1-de.jpg'), fakeJpeg(800, 500));
+    writeFileSync(join(media, 'demo-developer.mp4'), 'video');
+    build({ outDir: join(out, 'a'), config: fullConfig, log: { warn() {} }, mediaDir: media });
+    const de = readFileSync(join(out, 'a', 'de', 'funktionen', 'index.html'), 'utf8');
+    assert.match(de, /<img src="\/media\/feature-time-1-de\.jpg\?v=[0-9a-f]{10}" alt="[^"]+" loading="lazy" decoding="async" width="400" height="300">/);
+    // The languages group shows the dashboard in the other languages that exist (fr; it is missing: de).
+    assert.match(de, /<section class="feature-group" id="languages">[\s\S]*feature-time-1-fr\.jpg[\s\S]*<\/section>/);
+    assert.match(de, /<section class="feature-group" id="customize">[\s\S]*<video[^>]*>\s*<source src="\/media\/demo-developer\.mp4/);
+    // No French admin shot: the German one.
+    const fr = readFileSync(join(out, 'a', 'fr', 'fonctionnalites', 'index.html'), 'utf8');
+    assert.match(fr, /feature-admin-1-de\.jpg/);
+    assert.match(fr, /feature-time-1-fr\.jpg/);
+    // Groups without pictures have none.
+    assert.doesNotMatch(de, /<section class="feature-group" id="project">[\s\S]*?<img[\s\S]*?<\/section>\s*<section class="feature-group" id="absences">/);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }
