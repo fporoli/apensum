@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONTACT_LIMIT_PER_IP, SiteContactController, allowedOrigins, contactMail, safeBackPath } from '../../apps/api/src/site-contact.controller';
+import { CONTACT_LIMIT_PER_IP, SiteContactController, allowedOrigins, contactMail, safeBackPath, spamReason } from '../../apps/api/src/site-contact.controller';
 import type { MailOptions } from '../../apps/api/src/mailer';
 
 const form = { name: 'Anna Muster', email: 'anna@example.ch', organization: 'Muster AG', message: 'Wir haben 40 Mitarbeitende.', lang: 'de', ok: '/de/kontakt/danke/', fail: '/de/kontakt/fehler/' };
@@ -26,7 +26,8 @@ test('the mail goes to the fixed address, the visitor is only the Reply-To', () 
   const mail = contactMail({ ...form, name: 'Anna\r\nBcc: x@evil.ch' }, 'info@apensum.ch')!;
   assert.equal(mail.to, 'info@apensum.ch');
   assert.equal(mail.replyTo, 'anna@example.ch');
-  assert.equal(mail.subject, 'Apensum-Website: Anfrage von Anna Bcc: x@evil.ch');
+  assert.equal(mail.subject, '[Website] Allgemeine Frage: Anna Bcc: x@evil.ch');
+  assert.match(mail.text, /^Thema: Allgemeine Frage\n/);
   assert.match(mail.text, /Organisation: Muster AG\n/);
   assert.match(mail.text, /Wir haben 40 Mitarbeitende\./);
   assert.equal(contactMail({ ...form, email: 'nope' }, 'x@y.ch'), null);
@@ -64,4 +65,29 @@ test('a mail failure sends the visitor to the error page', async () => {
   const { c } = controller();
   c.send = async () => { throw new Error('smtp down'); };
   assert.equal((await run(c, form)).location, 'https://apensum.ch/de/kontakt/fehler/');
+});
+
+test('the topic from the form names the subject; unknown topics count as general', () => {
+  assert.equal(contactMail({ ...form, topic: 'pricing' }, 'x@y.ch')!.subject, '[Website] Anpassung / Offerte: Anna Muster');
+  assert.equal(contactMail({ ...form, topic: 'invest' }, 'x@y.ch')!.subject, '[Website] Investition / Partnerschaft: Anna Muster');
+  assert.equal(contactMail({ ...form, topic: 'constructor' }, 'x@y.ch')!.subject, '[Website] Allgemeine Frage: Anna Muster');
+});
+
+test('bot signs: sent within seconds, links in the name, a message full of links', () => {
+  assert.equal(spamReason(form), null);
+  assert.equal(spamReason({ ...form, elapsed: '' }), null, 'no JavaScript: no time, still accepted');
+  assert.equal(spamReason({ ...form, elapsed: '45000' }), null);
+  assert.equal(spamReason({ ...form, elapsed: '800' }), 'too-fast');
+  assert.equal(spamReason({ ...form, name: 'Cheap pills www.spam.example' }), 'link-in-name');
+  assert.equal(spamReason({ ...form, organization: 'https://seo.example' }), 'link-in-name');
+  assert.equal(spamReason({ ...form, message: 'See https://a.ch, https://b.ch and www.c.ch' }), null);
+  assert.equal(spamReason({ ...form, message: 'http://1 http://2 https://3 www.4' }), 'too-many-links');
+});
+
+test('a bot-like post gets the thank-you page and sends nothing', async () => {
+  const { c, sent } = controller();
+  assert.equal((await run(c, { ...form, elapsed: '500' })).location, 'https://apensum.ch/de/kontakt/danke/');
+  assert.equal(sent.length, 0);
+  await run(c, { ...form, elapsed: '20000', topic: 'demo' });
+  assert.equal(sent[0].subject, '[Website] Vorführung: Anna Muster');
 });

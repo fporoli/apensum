@@ -61,6 +61,9 @@ export function phoneReveal(ctx) {
   return `<span data-nosnippet><button type="button" class="reveal" data-v="${v}">${icon('phone')}${ctx.t('contact.showPhone')}</button></span>`;
 }
 
+/** What a contact message is about: the form's dropdown, preselected by `?topic=` (contact.js). */
+export const CONTACT_TOPICS = ['general', 'demo', 'pricing', 'invest'];
+
 const checklist = (items) => `<ul class="checklist">${items.map((i) => `<li>${icon('check')}<span>${i}</span></li>`).join('')}</ul>`;
 
 function ctaBand(ctx) {
@@ -74,7 +77,7 @@ function ctaBand(ctx) {
       </div>
       <div class="actions">
         <a class="btn btn-light" href="${ctx.demo}">${t('cta.demo')}${icon('arrow')}</a>
-        <a class="btn btn-outline-light" href="${ctx.mailto('contact.mailSubject')}">${icon('mail')}${esc(ctx.config.email)}</a>
+        <a class="btn btn-outline-light" href="${ctx.contactLink()}">${icon('mail')}${t('cta.contact')}</a>
       </div>
     </div>
   </div>
@@ -335,27 +338,31 @@ export function contactResultPath(dicts, lang, kind) {
 }
 
 /**
- * A plain HTML form (no script) posted to the API, which mails it and redirects back to the
- * thank-you or error page. `website` is a honeypot: hidden from people, filled in by bots.
+ * A plain HTML form posted to the API, which mails it and redirects back to the thank-you or error
+ * page. `website` is a honeypot: hidden from people, filled in by bots. contact.js only adds
+ * comfort and a time trap (`elapsed`); without JavaScript the form works the same.
  */
 function contactForm(ctx) {
   const { t, config, lang, dicts } = ctx;
   const field = (name, label, attrs) => `<label class="field"><span>${t(label)}</span>${attrs}</label>`;
-  return `<form class="card contact-card contact-form" method="post" action="${esc(config.contactUrl)}">
+  const topics = CONTACT_TOPICS.map((k) => `<option value="${k}">${t(`contact.topic.${k}`)}</option>`).join('');
+  return `<form id="contact-form" class="card contact-card contact-form" method="post" action="${esc(config.contactUrl)}">
         <div class="feature-icon">${icon('mail')}</div>
         <h2 class="h3">${t('contact.form.title')}</h2>
         <p>${t('contact.form.text')}</p>
+        ${field('topic', 'contact.form.topic', `<select name="topic">${topics}</select>`)}
         ${field('name', 'contact.form.name', '<input name="name" required maxlength="120" autocomplete="name">')}
         ${field('email', 'contact.form.email', '<input name="email" type="email" required maxlength="200" autocomplete="email">')}
         ${field('organization', 'contact.form.organization', '<input name="organization" maxlength="200" autocomplete="organization">')}
         ${field('message', 'contact.form.message', '<textarea name="message" required minlength="2" maxlength="5000" rows="6"></textarea>')}
         <label class="hp" aria-hidden="true">${t('contact.form.honeypot')}<input name="website" tabindex="-1" autocomplete="off"></label>
         <input type="hidden" name="lang" value="${lang}">
+        <input type="hidden" name="elapsed" value="">
         <input type="hidden" name="ok" value="${contactResultPath(dicts, lang, 'thanks')}">
         <input type="hidden" name="fail" value="${contactResultPath(dicts, lang, 'failed')}">
         <button class="btn btn-primary" type="submit">${t('contact.form.send')}</button>
         <p class="muted small">${t('contact.form.note')}</p>
-        <p class="muted small">${t('contact.emailLabel')} <a href="mailto:${esc(config.email)}">${esc(config.email)}</a></p>
+        <p class="muted small">${t('contact.emailLabel')} ${ctx.email}</p>
         ${config.operator.phone ? `<p class="small">${phoneReveal(ctx)}</p>` : ''}
       </form>`;
 }
@@ -369,7 +376,7 @@ export function contactResult(ctx, kind) {
   <div class="wrap narrow">
     <p class="eyebrow">${t('nav.contact')}</p>
     <h1>${t(ok ? 'contact.thanks.title' : 'contact.failed.title')}</h1>
-    <p class="lead">${ok ? t('contact.thanks.text') : t('contact.failed.text', { email: `<a href="mailto:${esc(config.email)}">${esc(config.email)}</a>` })}</p>
+    <p class="lead">${ok ? t('contact.thanks.text') : t('contact.failed.text', { email: ctx.email })}</p>
     <p class="actions">${ok ? '' : `<a class="btn btn-primary" href="${ctx.link('contact')}">${t('contact.retry')}</a>`}<a class="btn btn-ghost" href="${ctx.link('home')}">${t('contact.back')}</a></p>
   </div>
 </section>`;
@@ -393,8 +400,7 @@ export function contact(ctx) {
         <div class="feature-icon">${icon('mail')}</div>
         <h2 class="h3">${t('contact.mailTitle')}</h2>
         <p>${t('contact.mailText')}</p>
-        <a class="btn btn-primary" href="${ctx.mailto('contact.mailSubject')}">${t('contact.mailButton')}</a>
-        <p class="muted small">${t('contact.emailLabel')} <a href="mailto:${esc(config.email)}">${esc(config.email)}</a></p>
+        <p class="contact-address">${icon('mail')}${ctx.email}</p>
         ${config.operator.phone ? `<p class="small">${phoneReveal(ctx)}</p>` : ''}
       </div>`}
       <div class="card contact-card">
@@ -415,7 +421,7 @@ export function contact(ctx) {
     </div>
   </div>
 </section>`;
-  return layout(ctx, { title: t('contact.meta.title'), description: t('contact.meta.description'), body, reveal: true });
+  return layout(ctx, { title: t('contact.meta.title'), description: t('contact.meta.description'), body, reveal: true, form: !!config.contactUrl });
 }
 
 export function impressum(ctx) {
@@ -436,7 +442,7 @@ export function impressum(ctx) {
       ${row(t('impressum.company'), v(c.name))}
       ${row(t('impressum.address'), `${v(c.street)}<br>${v(c.city)}<br>${esc(c.country)}`)}
       ${c.responsible ? row(t('impressum.responsible'), esc(c.responsible)) : ''}
-      ${row(t('impressum.email'), `<a href="mailto:${esc(config.email)}">${esc(config.email)}</a>`)}
+      ${row(t('impressum.email'), ctx.email)}
       ${c.phone ? row(t('impressum.phone'), phoneReveal(ctx)) : ''}
       ${c.uid ? row(t('impressum.uid'), esc(c.uid)) : ''}
     </dl>
@@ -454,7 +460,7 @@ export function privacy(ctx) {
   const updated = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 10, 15)));
   const sections = PRIVACY_SECTIONS.map(
     (s) => `<h2>${t(`privacy.${s}.title`)}</h2>
-    ${t.list(`privacy.${s}.text`).map((p) => `<p>${p.replace('{{email}}', `<a href="mailto:${esc(config.email)}">${esc(config.email)}</a>`)}</p>`).join('\n    ')}`,
+    ${t.list(`privacy.${s}.text`).map((p) => `<p>${p.replace('{{email}}', ctx.email)}</p>`).join('\n    ')}`,
   ).join('\n    ');
   const body = `
 <section class="page-head">
@@ -500,12 +506,12 @@ export function pricing(ctx) {
         <p class="price"><span>${t('pricing.custom.rateFrom')}</span><strong>CHF&nbsp;120.–</strong><span>${t('pricing.custom.period')}</span></p>
         <p>${t('pricing.custom.rateText')}</p>
         <div class="actions">
-          <a class="btn btn-primary" href="${ctx.mailto('pricing.custom.mailSubject')}">${icon('mail')}${t('pricing.custom.cta')}</a>
+          <a class="btn btn-primary" href="${ctx.contactLink('pricing')}">${icon('mail')}${t('pricing.custom.cta')}</a>
           <button type="button" class="btn btn-ghost" popovertarget="rate" popovertargetaction="hide">${t('pricing.custom.close')}</button>
         </div>
       </div>
       ${checklist(t.list('pricing.custom.items'))}
-      <a class="btn btn-ghost" href="${ctx.mailto('pricing.custom.mailSubject')}">${icon('mail')}${t('pricing.custom.cta')}</a>
+      <a class="btn btn-ghost" href="${ctx.contactLink('pricing')}">${icon('mail')}${t('pricing.custom.cta')}</a>
     </article>
   </div>
   <div class="wrap"><p class="muted small note-block">${t('pricing.note')}</p></div>
@@ -542,7 +548,7 @@ export function about(ctx) {
       <p class="muted">${t('about.role')}</p>
       <p class="muted small">${t('about.degree')}</p>
       <div class="profile-links">
-        <a href="mailto:${esc(config.email)}">${icon('mail')}${esc(config.email)}</a>
+        <a href="${ctx.contactLink()}">${icon('mail')}${t('cta.contact')}</a>
         ${phoneReveal(ctx)}
         ${config.about?.linkedin ? `<a href="${esc(config.about.linkedin)}" rel="me noopener">${icon('linkedin')}${t('about.linkedin')}</a>` : ''}
       </div>
@@ -561,7 +567,7 @@ export function about(ctx) {
       <div>
         <h2>${t('about.invest.title')}</h2>
         <p>${t('about.invest.text')}</p>
-        <a class="btn btn-primary" href="${ctx.mailto('about.invest.mailSubject')}">${icon('mail')}${t('about.invest.cta')}</a>
+        <a class="btn btn-primary" href="${ctx.contactLink('invest')}">${icon('mail')}${t('about.invest.cta')}</a>
       </div>
     </div>
   </div>

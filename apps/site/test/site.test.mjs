@@ -49,13 +49,15 @@ test('builds every page; internal links resolve; nothing loads from third partie
       const html = readFileSync(join(out, file), 'utf8');
       assert.doesNotMatch(html, /\{\{\w+\}\}/, `${file}: unfilled placeholder`);
       assert.doesNotMatch(html, /undefined|\[object Object\]/, `${file}: rendering bug`);
+      // No mailto: links (they do nothing without a mail program): buttons lead to the contact form.
+      assert.doesNotMatch(html, /mailto:/, `${file}: mailto link`);
       // The phone number is only behind the reveal button, never readable in the HTML.
       const digits = fullConfig.operator.phone.replace(/\D/g, '');
       assert.ok(!html.replace(/\D/g, ' ').includes(digits.slice(-7)) && !html.includes(fullConfig.operator.phone), `${file}: phone in plain text`);
       // Only same-site resources: no external src= and no external stylesheet.
       for (const m of html.matchAll(/\s(?:src|href|poster)="([^"]+)"/g)) {
         const url = m[1];
-        if (/^(mailto:|#)/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin].includes(url)) continue;
+        if (/^#/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin].includes(url)) continue;
         if (/^https:\/\//.test(url)) {
           assert.ok(url.startsWith(`https://${fullConfig.domain}/`), `${file}: external link ${url}`);
           continue;
@@ -87,10 +89,18 @@ test('builds every page; internal links resolve; nothing loads from third partie
     assert.doesNotMatch(home, /reveal\.js/);
     // The contact form posts to the API and names the pages it comes back to, which exist.
     const contact = readFileSync(join(out, 'fr', 'contact', 'index.html'), 'utf8');
-    assert.match(contact, /<form class="card contact-card contact-form" method="post" action="https:\/\/api\.example\.ch\/api\/v1\/public\/contact">/);
+    assert.match(contact, /<form id="contact-form" class="card contact-card contact-form" method="post" action="https:\/\/api\.example\.ch\/api\/v1\/public\/contact">/);
     assert.match(contact, /<input type="hidden" name="ok" value="\/fr\/contact\/merci\/">/);
     assert.match(contact, /<input type="hidden" name="fail" value="\/fr\/contact\/erreur\/">/);
     assert.match(contact, /<label class="hp" aria-hidden="true">[^<]*<input name="website" tabindex="-1"/);
+    assert.match(contact, /<select name="topic"><option value="general">[^<]+<\/option><option value="demo">/);
+    assert.match(contact, /<input type="hidden" name="elapsed" value="">/);
+    assert.match(contact, /<script src="\/assets\/contact\.js\?v=[0-9a-f]{10}" defer><\/script>/);
+    assert.doesNotMatch(home, /contact\.js/);
+    // The buttons that used to open the mail program now open the form with their topic.
+    assert.match(pricing, /href="\/de\/kontakt\/\?topic=pricing#contact-form"/);
+    assert.match(readFileSync(join(out, 'de', 'ueber-uns', 'index.html'), 'utf8'), /href="\/de\/kontakt\/\?topic=invest#contact-form"/);
+    assert.match(impressum, /<span class="email">info@apensum\.ch<\/span>/);
     for (const page of ['de/kontakt/danke', 'de/kontakt/fehler', 'it/contatto/grazie', 'en/contact/error']) {
       const html = readFileSync(join(out, page, 'index.html'), 'utf8');
       assert.match(html, /<meta name="robots" content="noindex">/, page);
@@ -111,10 +121,10 @@ test('a strict build refuses an incomplete legal notice', () => {
     const warnings = [];
     build({ outDir: out, config: empty, log: { warn: (m) => warnings.push(m) } });
     assert.equal(warnings.length, 1);
-    // Without a contact URL there is no form, only the e-mail button.
+    // Without a contact URL there is no form, only the address to copy.
     const contact = readFileSync(join(out, 'de', 'kontakt', 'index.html'), 'utf8');
-    assert.doesNotMatch(contact, /<form/);
-    assert.match(contact, /href="mailto:info@apensum\.ch\?subject=/);
+    assert.doesNotMatch(contact, /<form|contact\.js/);
+    assert.match(contact, /<span class="email">info@apensum\.ch<\/span>/);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

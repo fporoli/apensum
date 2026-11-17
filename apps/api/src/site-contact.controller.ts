@@ -8,6 +8,17 @@ import { isValidEmail } from './auth.controller';
 export const CONTACT_LIMIT_PER_IP = 5;
 /** All senders together, per day: a flood never turns into a flood of mails. */
 export const CONTACT_LIMIT_PER_DAY = 100;
+/** Faster than this from opening the page to sending is a bot (the site's contact.js measures it). */
+export const CONTACT_MIN_FILL_MS = 3000;
+/** More links than this in a message is link spam. */
+export const CONTACT_MAX_LINKS = 3;
+/** The website form's topics (apps/site CONTACT_TOPICS), named in the subject for mail filters. */
+export const CONTACT_TOPICS: Record<string, string> = {
+  general: 'Allgemeine Frage',
+  demo: 'Vorführung',
+  pricing: 'Anpassung / Offerte',
+  invest: 'Investition / Partnerschaft',
+};
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
@@ -17,6 +28,10 @@ export interface ContactForm {
   organization?: string;
   message?: string;
   lang?: string;
+  /** One of CONTACT_TOPICS; anything else counts as general. */
+  topic?: string;
+  /** Milliseconds the page was open before sending (empty without JavaScript). */
+  elapsed?: string;
   /** Honeypot: hidden on the page, so only bots fill it in. */
   website?: string;
   /** Where to send the visitor afterwards: paths on the website (validated). */
@@ -45,13 +60,16 @@ export function contactMail(form: ContactForm, to: string): MailOptions | null {
   const email = oneLine(form.email, 200);
   const organization = oneLine(form.organization, 200);
   const lang = oneLine(form.lang, 5);
+  const topicKey = oneLine(form.topic, 20);
+  const topic = Object.hasOwn(CONTACT_TOPICS, topicKey) ? CONTACT_TOPICS[topicKey] : CONTACT_TOPICS.general;
   const message = typeof form.message === 'string' ? form.message.trim().slice(0, 5000) : '';
   if (!name || !isValidEmail(email) || message.length < 2) return null;
   return {
     to,
     replyTo: email,
-    subject: `Apensum-Website: Anfrage von ${name}`,
+    subject: `[Website] ${topic}: ${name}`,
     text: [
+      `Thema: ${topic}`,
       `Name: ${name}`,
       `E-Mail: ${email}`,
       organization ? `Organisation: ${organization}` : null,
@@ -65,6 +83,21 @@ export function contactMail(form: ContactForm, to: string): MailOptions | null {
       .filter((l) => l !== null)
       .join('\n'),
   };
+}
+
+const LINK = /https?:\/\/|www\./i;
+
+/**
+ * Why a form that got past the honeypot is still a bot, or null: sent too fast after opening the
+ * page, links in the name or organization, or more than CONTACT_MAX_LINKS links in the message.
+ */
+export function spamReason(form: ContactForm): string | null {
+  const elapsed = Number(oneLine(form.elapsed, 20) || NaN);
+  if (Number.isFinite(elapsed) && elapsed < CONTACT_MIN_FILL_MS) return 'too-fast';
+  if ([form.name, form.organization].some((v) => typeof v === 'string' && LINK.test(v))) return 'link-in-name';
+  const links = typeof form.message === 'string' ? form.message.split(LINK).length - 1 : 0;
+  if (links > CONTACT_MAX_LINKS) return 'too-many-links';
+  return null;
 }
 
 /**
@@ -93,6 +126,13 @@ export class SiteContactController {
     const back = (path: unknown) => res.redirect(303, origin + safeBackPath(path));
     // A bot filled in the hidden field: look successful, send nothing.
     if (oneLine(form?.website, 200)) return back(form.ok);
+    // The same for the other bot signs; logged (without content) so a lost real message can be explained.
+    const spam = spamReason(form ?? {});
+    if (spam) {
+      // eslint-disable-next-line no-console
+      console.log(`contact: message dropped as spam (${spam})`);
+      return back(form.ok);
+    }
 
     const mail = contactMail(form ?? {}, process.env.CONTACT_EMAIL || 'info@apensum.ch');
     if (!mail || !this.allow(clientIp(req))) return back(form?.fail);

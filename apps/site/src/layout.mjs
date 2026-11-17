@@ -57,7 +57,10 @@ export function context(dicts, lang, page, config, assets) {
     link: (p) => pagePath(dicts, lang, p),
     demo: esc(config.demoUrl),
     number: (n, opts) => new Intl.NumberFormat(locale, opts).format(n),
-    mailto: (subjectKey) => `mailto:${esc(config.email)}?subject=${encodeURIComponent(dicts[lang][subjectKey])}`,
+    /** The contact page's form with a topic preselected (CONTACT_TOPICS); no mailto: links anywhere. */
+    contactLink: (topic = 'general') => `${pagePath(dicts, lang, 'contact')}?topic=${topic}#contact-form`,
+    /** The address as plain text: one click selects it for copying. */
+    email: `<span class="email">${esc(config.email)}</span>`,
     dicts,
   };
 }
@@ -122,7 +125,7 @@ function footer(ctx) {
 }
 
 /** A full HTML document. `alternates` maps language -> path of this page. */
-export function layout(ctx, { title, description, body, noindex = false, reveal = false }) {
+export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false }) {
   const { lang, page, dicts, config, assets, t } = ctx;
   const origin = `https://${config.domain}`;
   const alternates = page
@@ -149,6 +152,7 @@ export function layout(ctx, { title, description, body, noindex = false, reveal 
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="${assets.css}">
   ${reveal && config.operator.phone ? `<script src="${assets.reveal}" defer></script>` : ''}
+  ${form ? `<script src="${assets.contact}" defer></script>` : ''}
 </head>
 <body>
   <a class="skip" href="#main">${t('nav.skip')}</a>
