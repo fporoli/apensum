@@ -30,6 +30,10 @@ import { formatDurationMinutes, formatSignedMinutes, swissLocale } from './local
 import { ConfirmDialog, PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { BalancesPanel, formatDays } from './BalancesPanel';
 import { AddIcon, DeleteIcon, EditIcon, PlayArrowIcon, StopIcon, TimerIcon } from './icons';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs, { type Dayjs } from 'dayjs';
+import { ClockTimeField, DurationField } from './TimeFields';
+import { sessionFromParts } from './timeInput';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -81,14 +85,54 @@ function formatDateTime(iso: string | null, locale: string): string {
   return new Date(iso).toLocaleString(swissLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
 }
 
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+/** A session as the dialog edits it: a day, a start, and an end time and duration kept in step. */
+interface SessionDraft {
+  id: string;
+  date: string;
+  start: string | null;
+  end: string | null;
+  duration: number | null;
+  /** Which of end and duration the user set last; it stays fixed when the start or day changes. */
+  source: 'end' | 'duration';
+  /** The stored session is still running (no check-out yet). */
+  open: boolean;
+  comment: string;
 }
 
-function fromLocalInput(value: string): string {
-  return new Date(value).toISOString();
+function draftFromSession(s: Pick<Session, 'id' | 'check_in' | 'check_out' | 'comment'>): SessionDraft {
+  const start = dayjs(s.check_in);
+  const end = s.check_out ? dayjs(s.check_out) : null;
+  const duration = end ? Math.round(end.diff(start, 'minute')) : null;
+  return {
+    id: s.id,
+    date: start.format('YYYY-MM-DD'),
+    start: start.format('HH:mm'),
+    end: end ? end.format('HH:mm') : null,
+    duration,
+    // A session longer than a day can only be expressed as a duration.
+    source: duration !== null && duration >= 24 * 60 ? 'duration' : 'end',
+    open: !s.check_out,
+    comment: s.comment ?? '',
+  };
+}
+
+/** The draft as check-in/check-out, computed from its start and the value the user set last. */
+function draftSessionOf(d: SessionDraft) {
+  if (!d.start) return null;
+  return sessionFromParts(d.date, d.start, d.source === 'end' ? { kind: 'end', time: d.end } : { kind: 'duration', minutes: d.duration });
+}
+
+/** Applies a change and recomputes the value the user did not set (end from duration or the other way). */
+function updateDraft(d: SessionDraft, patch: Partial<SessionDraft>): SessionDraft {
+  const next = { ...d, ...patch };
+  const session = draftSessionOf(next);
+  if (!session) return next;
+  if (next.source === 'end') {
+    next.duration = session.checkOut ? Math.round((Date.parse(session.checkOut) - Date.parse(session.checkIn)) / 60000) : null;
+  } else {
+    next.end = session.checkOut ? dayjs(session.checkOut).format('HH:mm') : null;
+  }
+  return next;
 }
 
 interface WorkTimeProps {
@@ -110,7 +154,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [draft, setDraft] = useState<Session | null>(null);
+  const [draft, setDraft] = useState<SessionDraft | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
   // Whose sessions are shown: one's own, or (manager/HR) someone whose work time one may correct.
@@ -233,20 +277,21 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
   }
 
   async function saveDraft() {
-    if (!draft) return;
+    if (!draft || !draftSession) return;
     setError(null);
+    const body = JSON.stringify({ checkIn: draftSession.checkIn, checkOut: draftSession.checkOut, comment: draft.comment });
     try {
       // A new entry (no id) is added by hand for the person shown; an existing one is patched.
       const res = draft.id
         ? await fetch(`${API}/work-time/${draft.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-            body: JSON.stringify({ checkIn: draft.check_in, checkOut: draft.check_out, comment: draft.comment ?? undefined }),
+            body,
           })
         : await fetch(`${API}/organizations/${orgId}/users/${personId}/work-time`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-            body: JSON.stringify({ checkIn: draft.check_in, checkOut: draft.check_out, comment: draft.comment ?? undefined }),
+            body,
           });
       const data = await res.json();
       if (!data.ok) {
@@ -260,6 +305,10 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
       setError(t('workTime.saveFailed', { error: 'offline' }));
     }
   }
+
+  // The draft as check-in/check-out; a running session may keep its end empty, a new one may not.
+  const draftSession = draft ? draftSessionOf(draft) : null;
+  const draftValid = !!draftSession && (!!draftSession.checkOut || draft!.open);
 
   const checkedIn = !!status && !status.check_out;
   const elapsed = checkedIn ? Math.max(0, Math.round((now - new Date(status!.check_in).getTime()) / 60000)) : 0;
@@ -340,9 +389,8 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
                 size="small"
                 startIcon={<AddIcon fontSize="small" />}
                 onClick={() => {
-                  const start = new Date();
-                  start.setHours(8, 0, 0, 0);
-                  setDraft({ id: '', check_in: start.toISOString(), check_out: new Date(start.getTime() + 8 * 3600000).toISOString(), comment: null });
+                  const start = dayjs().hour(8).minute(0).second(0).millisecond(0);
+                  setDraft(draftFromSession({ id: '', check_in: start.toISOString(), check_out: start.add(8, 'hour').toISOString(), comment: null }));
                 }}
               >
                 {t('workTime.addEntry')}
@@ -383,7 +431,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
                       <TableCell>{e.comment || '—'}</TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <Tooltip title={t('time.edit')}>
-                          <IconButton size="small" aria-label={t('time.edit')} onClick={() => setDraft(e)}>
+                          <IconButton size="small" aria-label={t('time.edit')} onClick={() => setDraft(draftFromSession(e))}>
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -425,33 +473,48 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
         >
           <DialogTitle>{draft?.id ? t('workTime.editSession') : t('workTime.addEntry')}</DialogTitle>
           {draft && (
-            <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
-              <TextField
-                label={t('workTime.checkIn')}
-                type="datetime-local"
-                size="small"
-                sx={{ mt: 1 }}
-                value={toLocalInput(draft.check_in)}
-                onChange={(e) => e.target.value && setDraft({ ...draft, check_in: fromLocalInput(e.target.value) })}
-              />
-              <TextField
-                label={t('workTime.checkOut')}
-                type="datetime-local"
-                size="small"
-                value={draft.check_out ? toLocalInput(draft.check_out) : ''}
-                onChange={(e) => setDraft({ ...draft, check_out: e.target.value ? fromLocalInput(e.target.value) : null })}
-              />
+            <DialogContent sx={{ display: 'grid', gap: 1.5, pt: 1 }}>
+              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 1 }}>
+                <DatePicker
+                  label={t('time.date')}
+                  value={dayjs(draft.date)}
+                  onChange={(d: Dayjs | null) => d && d.isValid() && setDraft(updateDraft(draft, { date: d.format('YYYY-MM-DD') }))}
+                  slotProps={{ textField: { size: 'small', required: true, helperText: ' ', sx: { flex: '1 1 100%' } } }}
+                />
+                <ClockTimeField
+                  label={t('time.start')}
+                  value={draft.start}
+                  onChange={(v) => setDraft(updateDraft(draft, { start: v }))}
+                  required
+                  sx={{ flex: '1 1 110px' }}
+                />
+                <ClockTimeField
+                  label={t('workTime.endTime')}
+                  value={draft.end}
+                  onChange={(v) => setDraft(updateDraft(draft, { end: v, source: 'end' }))}
+                  required={!draft.open}
+                  helperText={draftSession?.nextDay ? t('workTime.nextDay') : draft.open && !draft.end ? t('workTime.leaveOpen') : undefined}
+                  sx={{ flex: '1 1 110px' }}
+                />
+                <DurationField
+                  label={t('workTime.duration')}
+                  value={draft.duration}
+                  onChange={(v) => setDraft(updateDraft(draft, { duration: v, source: 'duration' }))}
+                  required={!draft.open}
+                  sx={{ flex: '1 1 110px' }}
+                />
+              </Box>
               <TextField
                 label={t('time.comment')}
                 size="small"
-                value={draft.comment ?? ''}
+                value={draft.comment}
                 onChange={(e) => setDraft({ ...draft, comment: e.target.value })}
               />
             </DialogContent>
           )}
           <DialogActions>
             <Button onClick={() => setDraft(null)}>{t('usermenu.cancel')}</Button>
-            <Button type="submit" variant="contained">{t('usermenu.save')}</Button>
+            <Button type="submit" variant="contained" disabled={!draftValid}>{t('usermenu.save')}</Button>
           </DialogActions>
         </Box>
       </Dialog>

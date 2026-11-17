@@ -18,7 +18,8 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useT } from './i18n';
+import { useI18n } from './i18n';
+import { currencyOptions, type CurrencyOption } from './currencyOptions';
 import { PageHeader, TableEmptyRow } from './components';
 import { SettingsIcon } from './icons';
 import BrandingSettings from './BrandingSettings';
@@ -58,7 +59,7 @@ interface OrganizationSettingsProps {
 }
 
 export default function OrganizationSettings({ orgId, authHeaders, onModulesChanged }: OrganizationSettingsProps) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,9 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
   const [org, setOrg] = useState<OrgDetails | null>(null);
   const [orgName, setOrgName] = useState('');
   const [defaultCurrency, setDefaultCurrency] = useState('');
+  // The org's currency list (static_data expenses/currency), edited in Admin settings.
+  const [currencyRow, setCurrencyRow] = useState<{ values: Record<string, string>; translation: Record<string, Record<string, string>> } | null>(null);
+  const [savedCurrency, setSavedCurrency] = useState('');
   const [domains, setDomains] = useState<DomainItem[]>([]);
   const [newDomain, setNewDomain] = useState('');
   const [newDomainAutoJoin, setNewDomainAutoJoin] = useState(false);
@@ -82,7 +86,17 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
         setOrg(data);
         setOrgName(data.name ?? '');
         setDefaultCurrency(data.default_currency ?? '');
+        setSavedCurrency(data.default_currency ?? '');
       }
+    } catch { /* offline fallback */ }
+  }
+
+  async function reloadCurrencies() {
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/static-data/expenses`, { headers: await authHeaders() });
+      const data = await res.json();
+      const row = Array.isArray(data) ? data.find((r: { enum_name?: string }) => r.enum_name === 'currency') : null;
+      setCurrencyRow(row ? { values: row.values ?? {}, translation: row.translation ?? {} } : null);
     } catch { /* offline fallback */ }
   }
 
@@ -109,7 +123,7 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([reloadOrg(), reloadDomains(), reloadSso()]).finally(() => setLoading(false));
+    Promise.all([reloadOrg(), reloadDomains(), reloadSso(), reloadCurrencies()]).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
@@ -210,14 +224,18 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <TextField label={t('orgSettings.name')} value={orgName} onChange={(e) => setOrgName(e.target.value)} size="small" sx={{ minWidth: 220 }} />
           <TextField
+            select
             label={t('orgSettings.defaultCurrency')}
             value={defaultCurrency}
-            onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
+            onChange={(e) => setDefaultCurrency(e.target.value)}
             size="small"
-            slotProps={{ htmlInput: { maxLength: 3 } }}
-            sx={{ maxWidth: 160 }}
+            sx={{ minWidth: 220 }}
             helperText={t('orgSettings.defaultCurrencyHelper')}
-          />
+          >
+            {currencyOptions(currencyRow?.values ?? {}, currencyRow?.translation ?? {}, locale, savedCurrency).map((o: CurrencyOption) => (
+              <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+            ))}
+          </TextField>
           <Button type="submit" variant="contained" sx={{ height: 40 }} disabled={!orgName.trim() || !/^[A-Za-z]{3}$/.test(defaultCurrency)}>
             {t('common.save')}
           </Button>

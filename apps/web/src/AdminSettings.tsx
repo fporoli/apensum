@@ -25,8 +25,6 @@ import {
   TableRow,
   Tabs,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -38,7 +36,6 @@ import { AddIcon, BusinessIcon, ContentCopyIcon, DeleteIcon, EditIcon, PublicIco
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const MAX_PREVIEW_VALUES = 15;
 
-type StaticDataScope = 'org' | 'global';
 
 interface StaticDataRow {
   id: string;
@@ -118,13 +115,11 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
   const [success, setSuccess] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [canEditGlobal, setCanEditGlobal] = useState(false);
   const nextRowId = useRef(1);
 
   const [enums, setEnums] = useState<StaticDataRow[]>([]);
   const [enumDialogOpen, setEnumDialogOpen] = useState(false);
   const [editingEnum, setEditingEnum] = useState<StaticDataRow | null>(null);
-  const [dialogScope, setDialogScope] = useState<StaticDataScope>('org');
   const [enumEntity, setEnumEntity] = useState('');
   const [enumName, setEnumName] = useState('');
   const [deletingEnum, setDeletingEnum] = useState<StaticDataRow | null>(null);
@@ -144,16 +139,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
   async function reloadEnums() {
     try {
       const headers = await authHeaders();
-      const [rowsRes, accessRes] = await Promise.all([
-        fetch(`${API}/organizations/${orgId}/static-data`, { headers }),
-        fetch(`${API}/organizations/${orgId}/static-data/global-access`, { headers }),
-      ]);
-      const data = await rowsRes.json();
+      const data = await (await fetch(`${API}/organizations/${orgId}/static-data`, { headers })).json();
       if (Array.isArray(data)) setEnums(data);
-      const accessData = await accessRes.json();
-      if (accessData && typeof accessData.canEditGlobal === 'boolean') {
-        setCanEditGlobal(accessData.canEditGlobal);
-      }
     } catch { /* offline fallback */ }
   }
 
@@ -163,9 +150,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  function openCreateEnum(scope: StaticDataScope = 'org') {
+  function openCreateEnum() {
     setEditingEnum(null);
-    setDialogScope(scope);
     setEnumEntity('');
     setEnumName('');
     setEnumKvList([makeKv()]);
@@ -177,7 +163,6 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
 
   function openEditEnum(row: StaticDataRow) {
     setEditingEnum(row);
-    setDialogScope(row.organization_id === null ? 'global' : 'org');
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
     const attributeRow = isAbsenceTypes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
@@ -191,7 +176,6 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
 
   function openOverrideEnum(row: StaticDataRow) {
     setEditingEnum(null);
-    setDialogScope('org');
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
     const attributeRow = isAbsenceTypes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
@@ -268,7 +252,6 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
           body: JSON.stringify({
-            scope: dialogScope,
             entity: enumEntity.trim(),
             enumName: enumName.trim(),
             values,
@@ -327,8 +310,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
     : enumKvList;
   const visibleTranslationKvList = visibleKvList.filter((kv) => kv.key.trim());
 
-  const isGlobalDialog = dialogScope === 'global';
-  const isOverridingGlobal = !isGlobalDialog && globalKeys.has(rowKey(enumEntity.trim(), enumName.trim()));
+  const isOverridingGlobal = globalKeys.has(rowKey(enumEntity.trim(), enumName.trim()));
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -338,7 +320,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
         end={
           <>
             <Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />
-            <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => openCreateEnum('org')}>
+            <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => openCreateEnum()}>
               {t('staticdata.newEnum').replace('+ ', '')}
             </Button>
           </>
@@ -367,7 +349,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
                 const key = rowKey(row.entity, row.enum_name);
                 const hasOrgOverride = isGlobal && orgKeys.has(key);
                 const overridesGlobal = !isGlobal && globalKeys.has(key);
-                const canMutateRow = !isGlobal || canEditGlobal;
+                // Rows for all organizations are read-only; an org copies one and edits its copy.
+                const canMutateRow = !isGlobal;
                 const translatedLocales = LOCALES.filter((l) => Object.keys(row.translation?.[l.code] ?? {}).length > 0);
                 const entries = Object.entries(row.values);
                 const visibleEntries = entries.slice(0, MAX_PREVIEW_VALUES);
@@ -441,20 +424,20 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
                           </IconButton>
                         </Tooltip>
                       )}
-                      <Tooltip title={canMutateRow ? t('staticdata.edit') : t('staticdata.globalReadOnly')}>
-                        <span>
-                          <IconButton size="small" aria-label={t('staticdata.edit')} disabled={!canMutateRow} onClick={() => openEditEnum(row)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                      <Tooltip title={canMutateRow ? t('staticdata.delete') : t('staticdata.globalReadOnly')}>
-                        <span>
-                          <IconButton size="small" color="error" aria-label={t('staticdata.delete')} disabled={!canMutateRow} onClick={() => setDeletingEnum(row)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
+                      {canMutateRow && (
+                        <>
+                          <Tooltip title={t('staticdata.edit')}>
+                            <IconButton size="small" aria-label={t('staticdata.edit')} onClick={() => openEditEnum(row)}>
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title={t('staticdata.delete')}>
+                            <IconButton size="small" color="error" aria-label={t('staticdata.delete')} onClick={() => setDeletingEnum(row)}>
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -472,11 +455,6 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
         onClose={() => setEnumDialogOpen(false)}
         fullWidth
         maxWidth="sm"
-        slotProps={
-          isGlobalDialog
-            ? { paper: { sx: { borderTop: 4, borderColor: 'secondary.main' } } }
-            : undefined
-        }
       >
         <Box
           component="form"
@@ -487,44 +465,9 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
         >
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
             <span>{editingEnum ? t('staticdata.editEnum') : t('staticdata.newEnumTitle')}</span>
-            <Chip
-              size="small"
-              icon={isGlobalDialog ? <PublicIcon fontSize="small" /> : <BusinessIcon fontSize="small" />}
-              label={t(isGlobalDialog ? 'staticdata.scope.global' : 'staticdata.scope.org')}
-              color={isGlobalDialog ? 'secondary' : 'primary'}
-              variant={isGlobalDialog ? 'filled' : 'outlined'}
-            />
+            <Chip size="small" icon={<BusinessIcon fontSize="small" />} label={t('staticdata.scope.org')} color="primary" variant="outlined" />
           </DialogTitle>
           <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
-            {!editingEnum && canEditGlobal && (
-              <Box>
-                <ToggleButtonGroup
-                  size="small"
-                  exclusive
-                  value={dialogScope}
-                  onChange={(_e, next: StaticDataScope | null) => {
-                    if (next) setDialogScope(next);
-                  }}
-                >
-                  <ToggleButton value="org" sx={{ gap: 0.75 }}>
-                    <BusinessIcon fontSize="small" />
-                    {t('staticdata.scope.org')}
-                  </ToggleButton>
-                  <ToggleButton value="global" color="secondary" sx={{ gap: 0.75 }}>
-                    <PublicIcon fontSize="small" />
-                    {t('staticdata.scope.global')}
-                  </ToggleButton>
-                </ToggleButtonGroup>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  {t('staticdata.scopeHelp')}
-                </Typography>
-              </Box>
-            )}
-            {isGlobalDialog && (
-              <Alert severity="warning" icon={<PublicIcon fontSize="small" />} variant="outlined">
-                {t('staticdata.globalWarning')}
-              </Alert>
-            )}
             {isOverridingGlobal && (
               <Alert severity="info" variant="outlined">
                 {t('staticdata.orgOverrideInfo')}
@@ -634,10 +577,9 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
             <Button
               type="submit"
               variant="contained"
-              color={isGlobalDialog ? 'secondary' : 'primary'}
               disabled={!enumEntity.trim() || !enumName.trim()}
             >
-              {isGlobalDialog ? t('staticdata.saveGlobal') : t('staticdata.save')}
+              {t('staticdata.save')}
             </Button>
           </DialogActions>
         </Box>
@@ -648,7 +590,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ca
         title={t('staticdata.deleteTitle')}
         message={
           deletingEnum
-            ? t(deletingEnum.organization_id === null ? 'staticdata.deleteGlobalConfirm' : 'staticdata.deleteConfirm', {
+            ? t('staticdata.deleteConfirm', {
                 name: deletingEnum.enum_name,
                 entity: deletingEnum.entity,
               })

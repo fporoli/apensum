@@ -55,16 +55,6 @@ export class StaticDataController {
       .orderBy(asc(static_data.entity), asc(static_data.enum_name), asc(static_data.organization_id));
   }
 
-  /** Whether the caller may create/edit/delete global (`organization_id = null`) static data rows. */
-  @Get('global-access')
-  async globalAccess(@Param('orgId') _orgId: string, @Req() req: AuthenticatedRequest) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, canEditGlobal: false };
-    const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId) return { ok: true, canEditGlobal: false };
-    return { ok: true, canEditGlobal: await isSuperDeveloper(db, callerId) };
-  }
-
   /** Effective enums for a given entity category, resolving org overrides over global rows. */
   @Get(':category')
   async get(@Param('orgId') orgId: string, @Param('category') category: string, @Req() req: AuthenticatedRequest) {
@@ -90,7 +80,6 @@ export class StaticDataController {
     @Param('orgId') orgId: string,
     @Body()
     body: {
-      scope?: 'org' | 'global';
       entity: string;
       entityUuid?: string;
       enumName: string;
@@ -104,13 +93,12 @@ export class StaticDataController {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
 
-    const isGlobal = body.scope === 'global';
-    const allowed = isGlobal ? await isSuperDeveloper(db, callerId) : await can(db, orgId, callerId, 'nav.admin', 'edit');
-    if (!allowed) return { ok: false, error: 'forbidden' };
+    // Always the org's own row: rows for all organizations come only from migrations.
+    if (!(await can(db, orgId, callerId, 'nav.admin', 'edit'))) return { ok: false, error: 'forbidden' };
 
     if (!body.entity?.trim() || !body.enumName?.trim()) return { ok: false, error: 'entity-and-enum-name-required' };
     const values = {
-      organization_id: isGlobal ? null : orgId,
+      organization_id: orgId,
       entity: body.entity.trim(),
       entity_uuid: body.entityUuid ?? null,
       enum_name: body.enumName.trim(),
@@ -145,11 +133,9 @@ export class StaticDataController {
       .where(eq(static_data.id, id));
     if (!existing) return { ok: false, error: 'not-found' };
 
-    const isGlobal = existing.organization_id === null;
-    const allowed = isGlobal
-      ? await isSuperDeveloper(db, callerId)
-      : existing.organization_id === orgId && (await can(db, orgId, callerId, 'nav.admin', 'edit'));
-    if (!allowed) return { ok: false, error: 'forbidden' };
+    // Rows for all organizations are read-only: an org copies one (create) and edits its copy.
+    if (existing.organization_id === null) return { ok: false, error: 'global-read-only' };
+    if (existing.organization_id !== orgId || !(await can(db, orgId, callerId, 'nav.admin', 'edit'))) return { ok: false, error: 'forbidden' };
 
     const patch: Partial<typeof static_data.$inferInsert> = {};
     if (body.enumName !== undefined) patch.enum_name = body.enumName.trim();
@@ -157,9 +143,8 @@ export class StaticDataController {
     if (body.translation !== undefined) patch.translation = body.translation;
 
     if (Object.keys(patch).length > 0) {
-      const scopeCond = isGlobal ? isNull(static_data.organization_id) : eq(static_data.organization_id, orgId);
       try {
-        await db.update(static_data).set(patch).where(and(eq(static_data.id, id), scopeCond));
+        await db.update(static_data).set(patch).where(and(eq(static_data.id, id), eq(static_data.organization_id, orgId)));
         void this.versions.record('static_data', id, 'update_delta', callerId, patch).catch(() => {});
       } catch (err) {
         if (isUniqueViolation(err)) return { ok: false, error: 'duplicate-enum' };
@@ -182,14 +167,11 @@ export class StaticDataController {
       .where(eq(static_data.id, id));
     if (!existing) return { ok: false, error: 'not-found' };
 
-    const isGlobal = existing.organization_id === null;
-    const allowed = isGlobal
-      ? await isSuperDeveloper(db, callerId)
-      : existing.organization_id === orgId && (await can(db, orgId, callerId, 'nav.admin', 'edit'));
-    if (!allowed) return { ok: false, error: 'forbidden' };
+    // Rows for all organizations are read-only: an org copies one (create) and edits its copy.
+    if (existing.organization_id === null) return { ok: false, error: 'global-read-only' };
+    if (existing.organization_id !== orgId || !(await can(db, orgId, callerId, 'nav.admin', 'edit'))) return { ok: false, error: 'forbidden' };
 
-    const scopeCond = isGlobal ? isNull(static_data.organization_id) : eq(static_data.organization_id, orgId);
-    await db.delete(static_data).where(and(eq(static_data.id, id), scopeCond));
+    await db.delete(static_data).where(and(eq(static_data.id, id), eq(static_data.organization_id, orgId)));
     void this.versions.record('static_data', id, 'delete', callerId, null).catch(() => {});
     return { ok: true };
   }

@@ -578,7 +578,6 @@ erDiagram
         date expense_date
         varchar category "static_data-backed picklist"
         varchar sub_category "nullable, static_data-backed picklist"
-        varchar billing_type "nullable, static_data-backed picklist"
         numeric original_value "nullable, must be > 0"
         char original_currency "nullable, ISO 4217"
         char currency "ISO 4217"
@@ -612,8 +611,8 @@ erDiagram
 > `original_value`/`original_currency` capture exactly what the receipt says
 > and are both optional; `value` is the hand-entered amount in the org's
 > reporting currency (`currency`), defaulting to 0 until filled in.
-> `category`/`sub_category`/`billing_type` are free-text picklists backed by
-> `static_data`, not DB enums or FKs — same pattern as `project_times`.
+> `category`/`sub_category` are free-text picklists backed by `static_data`
+> (entity `expenses`), not DB enums or FKs; so are the currencies (enum `currency`).
 
 ## Workflows & Notifications (3 tables)
 

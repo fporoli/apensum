@@ -183,7 +183,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   through `workflows.service.ts` and create notifications
   (`notifications.service.ts`, which persists rows and pushes over the WS
   gateway at `/ws/notifications`). Admin-editable dropdown vocabularies live
-  in `static_data`. Absence types (`absences`/`absence_type`) map each key to
+  in `static_data`. Rows for all organizations (`organization_id` NULL) are read-only for
+  everyone, superdevelopers included, and come only from migrations: an org copies one
+  (Admin settings, the copy icon) and edits its copy, which then replaces it for that org. Absence types (`absences`/`absence_type`) map each key to
   attributes instead of a label (labels are in `translation`): `{"approval": false}`
   (set for sickness and accident in the global row, 047) records the absence as
   approved and notifies the manager instead of asking. The code keeps no list of

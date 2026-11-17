@@ -167,15 +167,11 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO static_data (organization_id, entity, enum_name, "values", translation)
 VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'projects', 'project_type', '{"internal":"Internal","customer":"Customer","research":"Research"}', '{"de":{"internal":"Intern"}}'),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'organization_memberships', 'membership_status', '{"active":"Active","invited":"Invited","suspended":"Suspended"}', '{}'),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'project_times', 'billability', '{"billable":"Billable","non_billable":"Non billable"}', '{}'),
   ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'expenses', 'expense_category', '{"travel":"Travel","meals":"Meals & Entertainment","supplies":"Office Supplies","software":"Software & Subscriptions","other":"Other"}', '{}'),
   -- Sub-category keys are prefixed "<parent category key>$<sub-category key>" so the UI can filter
   -- this one enum down to just the options under whichever category is currently selected, without
   -- a separate static_data row (or table) per parent category.
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'expenses', 'expense_subcategory', '{"travel$flight":"Flight","travel$hotel":"Hotel","travel$taxi":"Taxi/Rideshare","meals$client_lunch":"Client Lunch","meals$team_lunch":"Team Lunch"}', '{}'),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'expenses', 'billing_type', '{"billable":"Billable to client","non_billable":"Non-billable","internal":"Internal / overhead"}', '{}')
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'expenses', 'expense_subcategory', '{"travel$flight":"Flight","travel$hotel":"Hotel","travel$taxi":"Taxi/Rideshare","meals$client_lunch":"Client Lunch","meals$team_lunch":"Team Lunch"}', '{}')
 ON CONFLICT DO NOTHING;
 
 -- Global (organization_id = NULL) countries, for nationality and address. Migrations already insert
@@ -202,23 +198,7 @@ FROM (VALUES
   ('expenses', 'expense_subcategory', '{
     "de": {"travel$flight": "Flug", "travel$hotel": "Hotel", "travel$taxi": "Taxi/Fahrdienst", "meals$client_lunch": "Kundenessen", "meals$team_lunch": "Teamessen"},
     "fr": {"travel$flight": "Vol", "travel$hotel": "Hôtel", "travel$taxi": "Taxi/VTC", "meals$client_lunch": "Repas client", "meals$team_lunch": "Repas d''équipe"},
-    "it": {"travel$flight": "Volo", "travel$hotel": "Albergo", "travel$taxi": "Taxi/NCC", "meals$client_lunch": "Pranzo con clienti", "meals$team_lunch": "Pranzo di team"}}'::jsonb),
-  ('expenses', 'billing_type', '{
-    "de": {"billable": "Dem Kunden verrechenbar", "non_billable": "Nicht verrechenbar", "internal": "Intern / Gemeinkosten"},
-    "fr": {"billable": "Facturable au client", "non_billable": "Non facturable", "internal": "Interne / frais généraux"},
-    "it": {"billable": "Fatturabile al cliente", "non_billable": "Non fatturabile", "internal": "Interno / costi generali"}}'::jsonb),
-  ('projects', 'project_type', '{
-    "de": {"internal": "Intern", "customer": "Kunde", "research": "Forschung"},
-    "fr": {"internal": "Interne", "customer": "Client", "research": "Recherche"},
-    "it": {"internal": "Interno", "customer": "Cliente", "research": "Ricerca"}}'::jsonb),
-  ('project_times', 'billability', '{
-    "de": {"billable": "Verrechenbar", "non_billable": "Nicht verrechenbar"},
-    "fr": {"billable": "Facturable", "non_billable": "Non facturable"},
-    "it": {"billable": "Fatturabile", "non_billable": "Non fatturabile"}}'::jsonb),
-  ('organization_memberships', 'membership_status', '{
-    "de": {"active": "Aktiv", "invited": "Eingeladen", "suspended": "Gesperrt"},
-    "fr": {"active": "Actif", "invited": "Invité", "suspended": "Suspendu"},
-    "it": {"active": "Attivo", "invited": "Invitato", "suspended": "Sospeso"}}'::jsonb)
+    "it": {"travel$flight": "Volo", "travel$hotel": "Albergo", "travel$taxi": "Taxi/NCC", "meals$client_lunch": "Pranzo con clienti", "meals$team_lunch": "Pranzo di team"}}'::jsonb)
 ) AS v(entity, enum_name, t)
 WHERE s.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND s.entity = v.entity AND s.enum_name = v.enum_name;
 
@@ -261,11 +241,11 @@ ON CONFLICT DO NOTHING;
 
 -- Demo expenses for the `user` demo account. The third one is left unmapped to any
 -- report, to exercise the "nothing attached yet" empty state in the report builder.
-INSERT INTO expenses (id, user_id, organization_id, project_id, subproject_id, expense_date, category, sub_category, billing_type, original_value, original_currency, currency, quantity, comment)
+INSERT INTO expenses (id, user_id, organization_id, project_id, subproject_id, expense_date, category, sub_category, original_value, original_currency, currency, quantity, comment)
 VALUES
-  ('eeeeeeee-eeee-eeee-eeee-111111111111', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', NULL, (NOW() - INTERVAL '5 days')::date, 'travel', 'taxi', 'billable', 45.00, 'EUR', 'CHF', NULL, 'Taxi to client site'),
-  ('eeeeeeee-eeee-eeee-eeee-222222222222', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', NULL, (NOW() - INTERVAL '5 days')::date, 'meals', 'client_lunch', 'billable', 60.00, 'EUR', 'CHF', NULL, 'Lunch with client'),
-  ('eeeeeeee-eeee-eeee-eeee-333333333333', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, NULL, (NOW() - INTERVAL '1 day')::date, 'supplies', NULL, 'non_billable', 25.50, 'CHF', 'CHF', 1, 'USB-C cable')
+  ('eeeeeeee-eeee-eeee-eeee-111111111111', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', NULL, (NOW() - INTERVAL '5 days')::date, 'travel', 'taxi', 45.00, 'EUR', 'CHF', NULL, 'Taxi to client site'),
+  ('eeeeeeee-eeee-eeee-eeee-222222222222', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', NULL, (NOW() - INTERVAL '5 days')::date, 'meals', 'client_lunch', 60.00, 'EUR', 'CHF', NULL, 'Lunch with client'),
+  ('eeeeeeee-eeee-eeee-eeee-333333333333', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', NULL, NULL, (NOW() - INTERVAL '1 day')::date, 'supplies', NULL, 25.50, 'CHF', 'CHF', 1, 'USB-C cable')
 ON CONFLICT (id) DO NOTHING;
 
 -- Demo report bundling the first two expenses above, already submitted for manager approval.
@@ -612,7 +592,7 @@ JOIN projects pr ON pr.id = t.project_id
 ON CONFLICT (organization_id, user_id, project_id, period_start) DO NOTHING;
 
 -- Expenses: 0-3 a month per person, on a weekday of that month before today, from a small
--- catalogue (category, sub-category, amount range, currency, billing).
+-- catalogue (category, sub-category, amount range, currency, billing; billing only picks the project).
 CREATE TEMP TABLE seed_expenses ON COMMIT DROP AS
 WITH kinds(n, category, sub_category, low, high, currency, billing_type, comment) AS (
   VALUES
@@ -658,9 +638,9 @@ WHERE expense_date >= (now() AT TIME ZONE 'Europe/Zurich')::date
                       WHERE m.organization_id = seed_expenses.organization_id AND m.user_id = seed_expenses.user_id)
    OR date_trunc('month', expense_date) <> month;
 
-INSERT INTO expenses (id, user_id, organization_id, project_id, expense_date, category, sub_category, billing_type,
+INSERT INTO expenses (id, user_id, organization_id, project_id, expense_date, category, sub_category,
                       original_value, original_currency, currency, quantity, value, comment)
-SELECT id, user_id, organization_id, project_id, expense_date, category, sub_category, billing_type,
+SELECT id, user_id, organization_id, project_id, expense_date, category, sub_category,
        original_value, original_currency, 'CHF', CASE WHEN category = 'supplies' THEN 1 END,
        CASE WHEN original_currency = 'EUR' THEN round(original_value * 0.94, 2) ELSE original_value END, comment
 FROM seed_expenses

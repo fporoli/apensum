@@ -81,7 +81,6 @@ export class ExpensesController {
       expenseDate: string;
       category: string;
       subCategory?: string;
-      billingType?: string;
       originalValue?: number;
       originalCurrency?: string;
       currency: string;
@@ -106,7 +105,6 @@ export class ExpensesController {
       data: checked.data,
       user_id: userId,
       organization_id: orgId,
-      billing_type: body.billingType ?? null,
     } as typeof expenses.$inferInsert;
     const [row] = await db.insert(expenses).values(values).returning({ id: expenses.id });
     void this.versions.record('expenses', row.id, 'insert', userId, { id: row.id, ...values }).catch(() => {});
@@ -172,7 +170,6 @@ export class ExpensesController {
       expenseDate?: string;
       category?: string;
       subCategory?: string | null;
-      billingType?: string | null;
       originalValue?: number | null;
       originalCurrency?: string | null;
       currency?: string;
@@ -190,7 +187,6 @@ export class ExpensesController {
     const checked = await this.validate(owned.entry.organization_id as string, body ?? {}, false);
     if (!checked.ok) return checked;
     const delta: Record<string, unknown> = { ...checked.columns };
-    if (body.billingType !== undefined) delta.billing_type = body.billingType;
     const hasData = Object.keys(checked.data).length > 0;
     if (Object.keys(delta).length === 0 && !hasData) return { ok: true };
     // Custom values merge into `data` key by key; the history records only what changed.

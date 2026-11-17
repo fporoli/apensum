@@ -87,34 +87,26 @@ test('resolveEffectiveStaticData inherits global rows and overrides them with or
   }
 });
 
-test('StaticDataController.globalAccess reflects superdeveloper status', async () => {
-  const admin = setupStaticData({ roles: ['admin'], superdeveloper: false });
-  assert.deepEqual(await admin.controller.globalAccess('org-1', admin.req), { ok: true, canEditGlobal: false });
-
-  const superDev = setupStaticData({ roles: ['admin'], superdeveloper: true });
-  assert.deepEqual(await superDev.controller.globalAccess('org-1', superDev.req), { ok: true, canEditGlobal: true });
-});
-
-test('StaticDataController.create gates global writes to superdevelopers and handles duplicates', async () => {
+test('StaticDataController.create always makes an org row and handles duplicates', async () => {
   const orgAdmin = setupStaticData({ roles: ['admin'], superdeveloper: false });
-  assert.deepEqual(
-    await orgAdmin.controller.create('org-1', { scope: 'global', entity: 'users', enumName: 'locales', values: {} }, orgAdmin.req),
-    { ok: false, error: 'forbidden' },
-  );
-  assert.equal(orgAdmin.inserted.length, 0);
-
   assert.deepEqual(
     await orgAdmin.controller.create('org-1', { entity: 'projects', enumName: 'project_type', values: { a: 'A' } }, orgAdmin.req),
     { ok: true, id: 'sd-new' },
   );
   assert.equal(orgAdmin.inserted[0].organization_id, 'org-1');
 
+  // A scope in the body is ignored: no one creates rows for all organizations through the API.
+  const superDevAdmin = setupStaticData({ roles: ['admin'], superdeveloper: true });
+  await superDevAdmin.controller.create('org-1', { scope: 'global', entity: 'users', enumName: 'locales', values: {} } as never, superDevAdmin.req);
+  assert.equal(superDevAdmin.inserted[0].organization_id, 'org-1');
+
+  // A superdeveloper without org admin rights may not create org rows either.
   const superDev = setupStaticData({ roles: [], superdeveloper: true });
   assert.deepEqual(
-    await superDev.controller.create('org-1', { scope: 'global', entity: 'users', enumName: 'locales', values: { de: 'Deutsch' } }, superDev.req),
-    { ok: true, id: 'sd-new' },
+    await superDev.controller.create('org-1', { entity: 'users', enumName: 'locales', values: {} }, superDev.req),
+    { ok: false, error: 'forbidden' },
   );
-  assert.equal(superDev.inserted[0].organization_id, null);
+  assert.equal(superDev.inserted.length, 0);
 
   const dup = setupStaticData({ roles: ['admin'], insertError: { code: '23505' } });
   assert.deepEqual(
@@ -124,13 +116,21 @@ test('StaticDataController.create gates global writes to superdevelopers and han
 });
 
 test('StaticDataController.update and remove enforce org vs global ownership', async () => {
-  // Org admin cannot edit or delete global rows or another org's rows
-  const adminGlobal = setupStaticData({ roles: ['admin'], superdeveloper: false, existingRow: { id: 'g1', organization_id: null } });
-  assert.deepEqual(await adminGlobal.controller.update('org-1', 'g1', { values: { en: 'English' } }, adminGlobal.req), {
-    ok: false,
-    error: 'forbidden',
-  });
-  assert.deepEqual(await adminGlobal.controller.remove('org-1', 'g1', adminGlobal.req), { ok: false, error: 'forbidden' });
+  // No one edits or deletes rows for all organizations, superdevelopers included
+  for (const superdeveloper of [false, true]) {
+    const global = setupStaticData({ roles: ['admin'], superdeveloper, existingRow: { id: 'g1', organization_id: null } });
+    assert.deepEqual(await global.controller.update('org-1', 'g1', { values: { en: 'English' } }, global.req), {
+      ok: false,
+      error: 'global-read-only',
+    });
+    assert.deepEqual(await global.controller.remove('org-1', 'g1', global.req), { ok: false, error: 'global-read-only' });
+    assert.equal(global.updated.length + global.deleted.length, 0);
+  }
+
+  // An org admin edits and deletes the org's own rows, not another org's
+  const own = setupStaticData({ roles: ['admin'], existingRow: { id: 'o1', organization_id: 'org-1' } });
+  assert.deepEqual(await own.controller.update('org-1', 'o1', { values: { a: 'A' } }, own.req), { ok: true });
+  assert.deepEqual(await own.controller.remove('org-1', 'o1', own.req), { ok: true });
 
   const adminOtherOrg = setupStaticData({ roles: ['admin'], superdeveloper: false, existingRow: { id: 'o9', organization_id: 'org-9' } });
   assert.deepEqual(await adminOtherOrg.controller.update('org-1', 'o9', { values: {} }, adminOtherOrg.req), {
@@ -145,11 +145,4 @@ test('StaticDataController.update and remove enforce org vs global ownership', a
     ok: false,
     error: 'not-found',
   });
-
-  // Superdeveloper can edit and delete global rows
-  const superDevGlobal = setupStaticData({ roles: [], superdeveloper: true, existingRow: { id: 'g1', organization_id: null } });
-  assert.deepEqual(await superDevGlobal.controller.update('org-1', 'g1', { values: { ch: 'CH' } }, superDevGlobal.req), { ok: true });
-  assert.equal(superDevGlobal.updated.length, 1);
-  assert.deepEqual(await superDevGlobal.controller.remove('org-1', 'g1', superDevGlobal.req), { ok: true });
-  assert.equal(superDevGlobal.deleted.length, 1);
 });

@@ -659,7 +659,6 @@ export const expenses = pgTable("expenses", {
 	expense_date: date().notNull(),
 	category: varchar({ length: 128 }).notNull(),
 	sub_category: varchar({ length: 128 }),
-	billing_type: varchar({ length: 128 }),
 	original_value: numeric({ precision: 12, scale:  2 }),
 	original_currency: char({ length: 3 }),
 	currency: char({ length: 3 }).notNull(),

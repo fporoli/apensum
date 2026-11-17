@@ -31,6 +31,9 @@ import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { ChevronLeftIcon, ChevronRightIcon, ContentCopyIcon, DeleteIcon, EditIcon, ScheduleIcon } from './icons';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import dayjs, { type Dayjs } from 'dayjs';
+import { ClockTimeField, DurationField } from './TimeFields';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DEFAULT_PROJECT_TIME_START = '08:00';
@@ -45,8 +48,8 @@ interface Option {
 interface Draft {
   id: string;
   date: string;
-  startTime: string;
-  durationMinutes: number;
+  startTime: string | null;
+  durationMinutes: number | null;
   projectId: string;
   subprojectId: string;
   comment: string;
@@ -92,6 +95,13 @@ function toIso(date: string, time: string): string {
   return new Date(`${date}T${time}`).toISOString();
 }
 
+/** "HH:mm" plus minutes, as "HH:mm" (wrapping past midnight). */
+function endClock(start: string, mins: number): string {
+  const [h, m] = start.split(':').map(Number);
+  const total = (h * 60 + m + mins) % (24 * 60);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
 function addMinutesIso(startIso: string, mins: number): string {
   return new Date(new Date(startIso).getTime() + mins * 60000).toISOString();
 }
@@ -114,8 +124,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [entryDate, setEntryDate] = useState(() => todayDate());
-  const [entryStartTime, setEntryStartTime] = useState(DEFAULT_PROJECT_TIME_START);
-  const [entryDurationMinutes, setEntryDurationMinutes] = useState(60);
+  const [entryStartTime, setEntryStartTime] = useState<string | null>(DEFAULT_PROJECT_TIME_START);
+  const [entryDurationMinutes, setEntryDurationMinutes] = useState<number | null>(60);
   const [comment, setComment] = useState('');
   const [projects, setProjects] = useState<Option[]>([]);
   const [subprojectsByProject, setSubprojectsByProject] = useState<Record<string, Option[]>>({});
@@ -212,8 +222,9 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
   async function addEntry(acknowledgeOverlap = false, acknowledgeAttendance = false) {
     setError(null);
     setSuccess(null);
-    const startTime = toIso(entryDate, useProjectTimeRanges ? entryStartTime : DEFAULT_PROJECT_TIME_START);
-    const endTime = addMinutesIso(startTime, entryDurationMinutes);
+    if (addDurationInvalid) return;
+    const startTime = toIso(entryDate, useProjectTimeRanges ? entryStartTime! : DEFAULT_PROJECT_TIME_START);
+    const endTime = addMinutesIso(startTime, entryDurationMinutes!);
     try {
       const res = await fetch(`${API}/organizations/${orgId}/project-time`, {
         method: 'POST',
@@ -269,7 +280,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
     if (!draft) return;
     setError(null);
     setSuccess(null);
-    const draftStartTime = toIso(draft.date, useProjectTimeRanges ? draft.startTime : DEFAULT_PROJECT_TIME_START);
+    if (draftDurationInvalid || draft.durationMinutes === null) return;
+    const draftStartTime = toIso(draft.date, useProjectTimeRanges ? draft.startTime! : DEFAULT_PROJECT_TIME_START);
     const patch = {
       startTime: draftStartTime,
       endTime: addMinutesIso(draftStartTime, draft.durationMinutes),
@@ -339,8 +351,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
     if (e.project_id) void loadSubprojects(e.project_id);
   }
 
-  const addDurationInvalid = !(entryDurationMinutes > 0);
-  const draftDurationInvalid = !!draft && !(draft.durationMinutes > 0);
+  const addDurationInvalid = !(entryDurationMinutes && entryDurationMinutes > 0) || (useProjectTimeRanges && !entryStartTime);
+  const draftDurationInvalid = !!draft && (!(draft.durationMinutes && draft.durationMinutes > 0) || (useProjectTimeRanges && !draft.startTime));
   const sortedEntries = useMemo(
     () => [...entries].sort((a, b) => (a.start_time < b.start_time ? 1 : -1)),
     [entries],
@@ -382,26 +394,21 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
       >
         <Typography variant="h6" sx={{ mb: 1 }}>{t('time.logProjectTime')}</Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          <TextField label={t('time.date')} type="date" value={entryDate} onChange={(e) => e.target.value && setEntryDate(e.target.value)} size="small" />
+          <DatePicker
+            label={t('time.date')}
+            value={dayjs(entryDate)}
+            onChange={(d: Dayjs | null) => d && d.isValid() && setEntryDate(d.format('YYYY-MM-DD'))}
+            slotProps={{ textField: { size: 'small', helperText: ' ', sx: { maxWidth: 180 } } }}
+          />
           {useProjectTimeRanges && (
-            <TextField
-              label={t('time.start')}
-              type="time"
-              value={entryStartTime}
-              onChange={(e) => e.target.value && setEntryStartTime(e.target.value)}
-              size="small"
-              slotProps={{ htmlInput: { step: 300 } }}
-            />
+            <ClockTimeField label={t('time.start')} value={entryStartTime} onChange={setEntryStartTime} required sx={{ maxWidth: 130 }} />
           )}
-          <TextField
-            label={t('time.durationMinutes')}
-            type="number"
+          <DurationField
+            label={t('workTime.duration')}
             value={entryDurationMinutes}
-            onChange={(e) => setEntryDurationMinutes(Number(e.target.value))}
-            size="small"
-            slotProps={{ htmlInput: { step: 5, min: 5 } }}
-            error={addDurationInvalid}
-            helperText={addDurationInvalid ? t('time.durationMustBePositive') : formatDurationMinutes(entryDurationMinutes)}
+            onChange={setEntryDurationMinutes}
+            required
+            helperText={useProjectTimeRanges && entryStartTime && entryDurationMinutes ? t('workTime.endsAt', { time: endClock(entryStartTime, entryDurationMinutes) }) : undefined}
             sx={{ maxWidth: 160 }}
           />
           <TextField
@@ -632,27 +639,25 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           {draft && (
             <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
               {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-              <TextField label={t('time.date')} type="date" value={draft.date} onChange={(e) => e.target.value && setDraft({ ...draft, date: e.target.value })} size="small" sx={{ mt: 1 }} />
-              {useProjectTimeRanges && (
-                <TextField
-                  label={t('time.start')}
-                  type="time"
-                  value={draft.startTime}
-                  onChange={(e) => e.target.value && setDraft({ ...draft, startTime: e.target.value })}
-                  size="small"
-                  slotProps={{ htmlInput: { step: 300 } }}
+              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 1 }}>
+                <DatePicker
+                  label={t('time.date')}
+                  value={dayjs(draft.date)}
+                  onChange={(d: Dayjs | null) => d && d.isValid() && setDraft({ ...draft, date: d.format('YYYY-MM-DD') })}
+                  slotProps={{ textField: { size: 'small', helperText: ' ', sx: { flex: '1 1 170px' } } }}
                 />
-              )}
-              <TextField
-                label={t('time.durationMinutes')}
-                type="number"
-                value={draft.durationMinutes}
-                onChange={(e) => setDraft({ ...draft, durationMinutes: Number(e.target.value) })}
-                size="small"
-                slotProps={{ htmlInput: { step: 5, min: 5 } }}
-                error={draftDurationInvalid}
-                helperText={draftDurationInvalid ? t('time.durationMustBePositive') : formatDurationMinutes(draft.durationMinutes)}
-              />
+                {useProjectTimeRanges && (
+                  <ClockTimeField label={t('time.start')} value={draft.startTime} onChange={(v) => setDraft({ ...draft, startTime: v })} required sx={{ flex: '1 1 110px' }} />
+                )}
+                <DurationField
+                  label={t('workTime.duration')}
+                  value={draft.durationMinutes}
+                  onChange={(v) => setDraft({ ...draft, durationMinutes: v })}
+                  required
+                  helperText={useProjectTimeRanges && draft.startTime && draft.durationMinutes ? t('workTime.endsAt', { time: endClock(draft.startTime, draft.durationMinutes) }) : undefined}
+                  sx={{ flex: '1 1 130px' }}
+                />
+              </Box>
               <TextField
                 select
                 label={t('time.project')}

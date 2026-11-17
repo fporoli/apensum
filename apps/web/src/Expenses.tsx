@@ -28,6 +28,7 @@ import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon } from './icons';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
 import { ReceiptCaptureButtons } from './receiptCapture';
+import { currencyOptions } from './currencyOptions';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -140,6 +141,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const [subCategories, setSubCategories] = useState<Record<string, string>>({});
   const [categoryTranslations, setCategoryTranslations] = useState<Record<string, Record<string, string>>>({});
   const [subCategoryTranslations, setSubCategoryTranslations] = useState<Record<string, Record<string, string>>>({});
+  const [currencies, setCurrencies] = useState<Record<string, string>>({});
+  const [currencyTranslations, setCurrencyTranslations] = useState<Record<string, Record<string, string>>>({});
+  const [defaultCurrency, setDefaultCurrency] = useState('');
   const [values, setValues] = useState<ExpenseValues>(emptyForm(''));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -181,6 +185,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       setCategoryTranslations(categoryRow?.translation ?? {});
       setSubCategories(subCategoryRow?.values ?? {});
       setSubCategoryTranslations(subCategoryRow?.translation ?? {});
+      const currencyRow = data.find((r) => r.enum_name === 'currency');
+      setCurrencies(currencyRow?.values ?? {});
+      setCurrencyTranslations(currencyRow?.translation ?? {});
     } catch { /* offline fallback */ }
   }
 
@@ -199,6 +206,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       const res = await fetch(`${API}/organizations/${orgId}`, { headers: await authHeaders() });
       const data = await res.json();
       const currency = typeof data?.default_currency === 'string' ? data.default_currency : '';
+      setDefaultCurrency(currency);
       if (currency) setValues((prev) => (prev.originalCurrency ? prev : { ...prev, originalCurrency: currency, currency }));
     } catch { /* offline fallback */ }
   }
@@ -233,7 +241,6 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       const next = { ...prev, [key]: value };
       if (key === 'category') next.subCategory = '';
       if (key === 'projectId') next.subprojectId = '';
-      if (key === 'originalCurrency' && prev.currency === prev.originalCurrency) next.currency = value;
       return next;
     });
     setFieldErrors((prev) => {
@@ -405,9 +412,10 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       subCategories: subCategoryOptions(subCategories, category).map(({ key }) => ({ value: key, label: translatedSubCategoryLabel(category, key) ?? key })),
       projects: projects.map((p) => ({ value: p.id, label: p.name })),
       subprojects: subprojects.map((sp) => ({ value: sp.id, label: sp.name })),
+      currencies: currencyOptions(currencies, currencyTranslations, locale, defaultCurrency, [String(values.currency ?? ''), String(values.originalCurrency ?? '')]),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categories, subCategories, categoryTranslations, subCategoryTranslations, projects, subprojects, category, locale],
+    [categories, subCategories, categoryTranslations, subCategoryTranslations, projects, subprojects, category, locale, currencies, currencyTranslations, defaultCurrency, values.currency, values.originalCurrency],
   );
   const disabledKeys = [...(category ? [] : ['subCategory']), ...(projectId && subprojects.length > 0 ? [] : ['subprojectId'])];
   const groupProps = { form, values, editing: true, onChange: updateField, options, errors: fieldErrors, disabledKeys };
