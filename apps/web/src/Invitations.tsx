@@ -20,6 +20,7 @@ import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { ContentCopyIcon, MailIcon } from './icons';
+import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -227,7 +228,7 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
                     <Chip label={t(`invitations.status.${inv.status}`)} size="small" color={STATUS_COLOR[inv.status]} />
                   </TableCell>
                   <TableCell>{inv.invited_by}</TableCell>
-                  <TableCell>{new Date(inv.expires_at).toLocaleDateString(locale)}</TableCell>
+                  <TableCell>{new Date(inv.expires_at).toLocaleDateString(swissLocale(locale))}</TableCell>
                   <TableCell align="right">
                     <Button
                       size="small"

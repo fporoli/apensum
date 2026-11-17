@@ -78,6 +78,7 @@
     <include file="060-document-encryption.sql" relativeToChangelogFile="true"/>
     <include file="061-personnel-documents.sql" relativeToChangelogFile="true"/>
     <include file="062-permission-personnel-documents.sql" relativeToChangelogFile="true"/>
+    <include file="063-permission-reports.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

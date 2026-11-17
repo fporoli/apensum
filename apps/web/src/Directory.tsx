@@ -3,6 +3,7 @@ import { Alert, Avatar, Badge, Box, Card, CardContent, Chip, CircularProgress, I
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { ContactsIcon, MailIcon, PhoneIcon, SearchIcon } from './icons';
+import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -79,7 +80,7 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
   }, [people, query, department, onlyPresent]);
 
   const present = (people ?? []).filter((p) => p.checkedInSince).length;
-  const time = (iso: string) => new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  const time = (iso: string) => new Intl.DateTimeFormat(swissLocale(locale), { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>

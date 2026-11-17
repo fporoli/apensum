@@ -5,6 +5,7 @@ import { useI18n } from './i18n';
 import { CropIcon, PhotoCameraIcon, QrCodeIcon } from './icons';
 import { MAX_ATTACHMENT_BYTES } from './attachments';
 import { handoffLink } from './receiptHash';
+import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -380,7 +381,7 @@ function PhoneHandoffDialog({ orgId, authHeaders, onClose, onFile }: Omit<Captur
             <Box component="img" src={state.qr} alt={t('receipt.phone.qrAlt')} sx={{ width: 240, height: 240, bgcolor: '#fff', p: 1, borderRadius: 1 }} />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <CircularProgress size={16} />
-              <Typography variant="body2" color="text.secondary">{t('receipt.phone.waiting', { time: new Date(state.expiresAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }) })}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('receipt.phone.waiting', { time: new Date(state.expiresAt).toLocaleTimeString(swissLocale(locale), { hour: '2-digit', minute: '2-digit' }) })}</Typography>
             </Box>
             {local && <Alert severity="info" sx={{ textAlign: 'left' }}>{t('receipt.phone.localhost')}</Alert>}
           </>

@@ -21,7 +21,7 @@ import {
 } from '@mui/material';
 import { CANTONS, holidayName, type Holiday, type OrgHolidayRow } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber } from './localeFormat';
+import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber, swissLocale } from './localeFormat';
 import { formatHm } from './WorkSchedulePanel';
 import { ChevronLeftIcon, ChevronRightIcon, DeleteIcon } from './icons';
 import { TableEmptyRow } from './components';
@@ -346,7 +346,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
               return (
                 <TableRow key={h.date}>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {new Date(`${h.date}T00:00:00Z`).toLocaleDateString(locale, { weekday: 'short', timeZone: 'UTC' })} {formatLocaleDate(h.date, locale)}
+                    {new Date(`${h.date}T00:00:00Z`).toLocaleDateString(swissLocale(locale), { weekday: 'short', timeZone: 'UTC' })} {formatLocaleDate(h.date, locale)}
                   </TableCell>
                   <TableCell>{holidayName(h, locale)}</TableCell>
                   <TableCell>{h.fraction < 1 ? t('workTimeSettings.halfDay') : t('workTimeSettings.fullDay')}</TableCell>

@@ -24,7 +24,7 @@ import {
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { DescriptionIcon, DownloadIcon, SearchIcon, VisibilityIcon } from './icons';
-import { formatFileSize, formatLocaleDate } from './localeFormat';
+import { formatFileSize, formatLocaleDate, swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -115,7 +115,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
   const keyOf = (d: PersonalDocument) => d.documentId;
 
   const monthLabel = useCallback(
-    (date: string) => new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`)),
+    (date: string) => new Intl.DateTimeFormat(swissLocale(locale), { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`)),
     [locale],
   );
 
@@ -145,7 +145,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
         case 'expense': {
           const amount =
             c.value != null && c.value !== ''
-              ? `${new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.value))} ${c.currency ?? ''}`.trim()
+              ? `${new Intl.NumberFormat(swissLocale(locale), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.value))} ${c.currency ?? ''}`.trim()
               : '';
           const key = String(c.category ?? '');
           const label = key ? (expenseCategories.translation[locale]?.[key] ?? expenseCategories.values[key] ?? key) : '';

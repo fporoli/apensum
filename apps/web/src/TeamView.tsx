@@ -24,7 +24,7 @@ import {
 } from '@mui/material';
 import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatSignedMinutes } from './localeFormat';
+import { formatDurationMinutes, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatSignedMinutes, swissLocale } from './localeFormat';
 import { TableEmptyRow } from './components';
 import { ChevronLeftIcon, ChevronRightIcon, ExpandLessIcon, ExpandMoreIcon } from './icons';
 import {
@@ -220,7 +220,7 @@ function TeamOverview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, kind, month]);
 
-  const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleDateString(swissLocale(locale), { month: 'long', year: 'numeric' });
   const people = data?.people ?? [];
 
   return (
@@ -522,7 +522,7 @@ function AbsenceCalendar({ month, people, absences, holidays }: { month: string;
     const others = types.filter((k) => k !== 'sickness' && k !== 'accident');
     return palette[Math.max(0, others.indexOf(key)) % palette.length];
   };
-  const weekdayShort = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(locale, { weekday: 'narrow' });
+  const weekdayShort = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(swissLocale(locale), { weekday: 'narrow' });
   const offBg = alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.12 : 0.06);
   const holidayBg = alpha(theme.palette.warning.main, 0.22);
   const cell = { p: 0, width: 26, minWidth: 26, height: 30, textAlign: 'center' as const, borderLeft: `1px solid ${theme.palette.divider}` };

@@ -6,9 +6,10 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { deDE, enUS, frFR, itIT } from '@mui/x-date-pickers/locales';
 import dayjs, { type Dayjs } from 'dayjs';
-import 'dayjs/locale/de';
-import 'dayjs/locale/fr';
-import 'dayjs/locale/it';
+import 'dayjs/locale/de-ch';
+import 'dayjs/locale/fr-ch';
+import 'dayjs/locale/it-ch';
+import enGb from 'dayjs/locale/en-gb';
 import { WIDTH_PX, formFields, resolveText, type FieldDef, type ResolvedField, type ResolvedForm } from '@worktime3/shared/fields';
 import { useI18n, type Locale, type TFunction } from './i18n';
 import { useFieldDesign } from './designMode';
@@ -21,13 +22,22 @@ export interface FieldOption {
 
 const PICKER_TEXTS: Record<Locale, typeof enUS> = { en: enUS, de: deDE, fr: frFR, it: itIT };
 
+// Dates in pickers follow the Swiss conventions of the language, like localeFormat.ts swissLocale.
+// dayjs has no Swiss English: British English with Swiss date and time formats (17.11.2026, 14:05).
+dayjs.locale(
+  { ...enGb, name: 'en-ch', formats: { LT: 'HH:mm', LTS: 'HH:mm:ss', L: 'DD.MM.YYYY', LL: 'D MMMM YYYY', LLL: 'D MMMM YYYY HH:mm', LLLL: 'dddd, D MMMM YYYY HH:mm' } },
+  undefined,
+  true,
+);
+const PICKER_LOCALE: Record<Locale, string> = { de: 'de-ch', fr: 'fr-ch', it: 'it-ch', en: 'en-ch' };
+
 /** Date pickers in the app's language (date order, month names, button texts). Wrap the app once. */
 export function DatePickerLocalization({ children }: { children: ReactNode }) {
   const { locale } = useI18n();
   return (
     <LocalizationProvider
       dateAdapter={AdapterDayjs}
-      adapterLocale={locale}
+      adapterLocale={PICKER_LOCALE[locale]}
       localeText={PICKER_TEXTS[locale].components.MuiLocalizationProvider.defaultProps.localeText}
     >
       {children}

@@ -23,7 +23,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useI18n } from './i18n';
-import { formatLocaleDate, formatSignedMinutes, formatDurationMinutes, parseLocaleNumber } from './localeFormat';
+import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes, parseLocaleNumber, swissLocale } from './localeFormat';
 import { TableEmptyRow } from './components';
 import { AccountBalanceWalletIcon, AddIcon, ChevronLeftIcon, ChevronRightIcon, DeleteIcon, EditIcon } from './icons';
 
@@ -91,12 +91,12 @@ const STATUS_COLOR: Record<MonthStatus, 'success' | 'info' | 'error' | 'warning'
 };
 
 export function formatDays(days: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(days);
+  return new Intl.NumberFormat(swissLocale(locale), { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(days);
 }
 
 export function monthName(month: string, locale: string, style: 'long' | 'short' = 'long'): string {
   const [y, m] = month.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString(locale, { month: style, year: style === 'short' ? undefined : 'numeric' });
+  return new Date(y, m - 1, 1).toLocaleDateString(swissLocale(locale), { month: style, year: style === 'short' ? undefined : 'numeric' });
 }
 
 /** "-1:30", "+2:15", "-1.5" or "1,5" hours as signed minutes; null when not readable. */

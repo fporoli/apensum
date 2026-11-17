@@ -233,7 +233,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   add a key, add it to all four dictionaries in `dictionaries.ts` (en/de/fr/it);
   `dictionaries.test.mjs` fails on missing keys or mismatched `{{placeholders}}`.
 - Format dates, times and numbers with the app's `locale` from `useI18n()`,
-  never the browser default (`toLocaleDateString()` with no argument).
+  never the browser default (`toLocaleDateString()` with no argument), and in its Swiss variant:
+  the `localeFormat.ts` helpers do it, direct `Intl`/`toLocale*` calls pass `swissLocale(locale)`
+  (`de` -> `de-CH`: 2'848.77, 17.11.2026). `locale` itself stays the language key (texts, labels).
+  Date pickers use dayjs `de-ch`/`fr-ch`/`it-ch` and a Swiss English `en-ch` (`ConfigField.tsx`).
 - Configurable form fields (docs/FIELD_CONFIG.md): field definitions live in
   `packages/shared/src/fields.ts` (imported as `@worktime3/shared/fields`) and
   are rendered by `ConfigField` / `ConfigFieldGroup` (`ConfigField.tsx`). Number
@@ -305,6 +308,12 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone
   opens `#/receipt/<token>` (`PhoneUpload.tsx`, rendered by `main.tsx` without login, token = credential)
   and sends the photo; the PC polls, takes the file into the form and uploads it as usual.
+- Reports (module `reports`, `nav.reports`, 063; `reports.controller.ts`, `Reports.tsx`): the catalogue, grouping and
+  totals are `packages/shared/src/reports.ts` (a `balance` measure is each person's last month, summed over people).
+  Each report shows `listableUserIds` of its page object (project hours `nav.time`, attendance `nav.workTime`,
+  absences `nav.absences`); a filter naming someone outside that is refused. Attendance and absences come from
+  `BalancesService.year`, so they match Time balances. Excel/CSV are built in the browser from the shown rows
+  (`packages/shared/src/xlsx.ts`, no dependency, reusable server-side for scheduled reports).
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

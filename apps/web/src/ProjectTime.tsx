@@ -28,7 +28,7 @@ import {
 import { BarChart } from '@mui/x-charts/BarChart';
 import { bucket, minutes, periodLabel, periodRange, shiftPeriod, todayDate, type Entry, type PeriodType } from './aggregate';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatLocaleDate } from './localeFormat';
+import { formatDurationMinutes, formatLocaleDate, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { ChevronLeftIcon, ChevronRightIcon, ContentCopyIcon, DeleteIcon, EditIcon, ScheduleIcon } from './icons';
 
@@ -81,7 +81,7 @@ function splitLocal(iso: string): { date: string; time: string } {
 }
 
 function timeOf(iso: string, locale: string): string {
-  return new Date(iso).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString(swissLocale(locale), { hour: '2-digit', minute: '2-digit' });
 }
 
 function minutesBetween(startIso: string, endIso: string): number {
@@ -559,7 +559,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                 const entryLocked = lockOf(e.project_id, splitLocal(e.start_time).date) !== null;
                 return (
                   <TableRow key={e.id} hover>
-                    <TableCell>{new Date(e.start_time).toLocaleDateString(locale)}</TableCell>
+                    <TableCell>{new Date(e.start_time).toLocaleDateString(swissLocale(locale))}</TableCell>
                     <TableCell>{timeOf(e.start_time, locale)} – {timeOf(e.end_time, locale)}</TableCell>
                     <TableCell align="right">{formatDurationMinutes(minutes(e))}</TableCell>
                     <TableCell>{e.project_name ?? '—'}</TableCell>

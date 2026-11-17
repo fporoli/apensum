@@ -16,6 +16,7 @@ import {
 import type { Session } from './Login';
 import { infoUrl } from './infoUrl';
 import { useI18n } from './i18n';
+import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -83,7 +84,7 @@ export default function AboutDialog({ open, onClose, session, authHeaders, curre
     // arriving must not blank a dialog someone is reading.
   }, [open]);
 
-  const formatDate = (value: string | null | undefined) => (value ? new Date(value).toLocaleString(locale) : '—');
+  const formatDate = (value: string | null | undefined) => (value ? new Date(value).toLocaleString(swissLocale(locale)) : '—');
   const releaseLabel = (build: Build) => build.release ?? t(build.commit ? 'about.untagged' : 'about.localBuild');
   const shortCommit = (build: Build) => build.commit?.slice(0, 7) ?? '—';
 

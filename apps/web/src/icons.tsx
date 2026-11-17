@@ -10,6 +10,7 @@ function makeIcon(d: string) {
   };
 }
 
+export const BarChartIcon = makeIcon('M4 9h4v11H4zm12 4h4v7h-4zm-6-9h4v16h-4z');
 export const MenuIcon = makeIcon('M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z');
 export const CloseIcon = makeIcon('M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z');
 export const AddIcon = makeIcon('M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z');

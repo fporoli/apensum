@@ -30,13 +30,14 @@ test('a single separator with 1 or 2 decimals is the decimal separator in every 
   }
 });
 
-test("three digits after the locale's grouping separator mean thousands", () => {
-  assert.equal(parseLocaleNumber('1.234', 'de'), 1234);
-  assert.equal(parseLocaleNumber('1.234', 'it'), 1234);
-  assert.equal(parseLocaleNumber('1,234', 'en'), 1234);
-  // ...but not when it is the locale's decimal separator
-  assert.equal(parseLocaleNumber('1,234', 'de'), 1.234);
-  assert.equal(parseLocaleNumber('1.234', 'en'), 1.234);
+test("Swiss formats group with apostrophes, so a lone point or comma is the decimal separator", () => {
+  for (const locale of ['de', 'fr', 'it', 'en']) {
+    assert.equal(parseLocaleNumber('1.234', locale), 1.234, `${locale} 1.234`);
+    assert.equal(parseLocaleNumber('1,234', locale), 1.234, `${locale} 1,234`);
+  }
+  // A full tag keeps its own conventions: in Germany the point groups thousands.
+  assert.equal(parseLocaleNumber('1.234', 'de-DE'), 1234);
+  assert.equal(parseLocaleNumber('1,234', 'en-US'), 1234);
 });
 
 test('both separators: the last one is decimal', () => {
@@ -60,11 +61,17 @@ test('formatting round-trips through parsing', () => {
   }
 });
 
-test('dates are shown in the language, without shifting the day', () => {
+test('dates are shown the Swiss way of the language, without shifting the day', () => {
   assert.equal(formatLocaleDate('2026-03-01', 'de'), '1.3.2026');
-  assert.equal(formatLocaleDate('2026-03-01', 'en'), '3/1/2026');
-  assert.equal(formatLocaleDate('2026-03-01', 'fr'), '01/03/2026');
+  assert.equal(formatLocaleDate('2026-03-01', 'en'), '01.03.2026');
+  assert.equal(formatLocaleDate('2026-03-01', 'fr'), '01.03.2026');
   assert.equal(formatLocaleDate('not a date', 'de'), 'not a date');
+});
+
+test('numbers are written the Swiss way: apostrophe thousands, point decimals', () => {
+  // French is left out: its Swiss grouping differs between ICU versions (browsers: a narrow space).
+  assert.equal(formatLocaleNumber(1234.56, 'de'), "1'234.56");
+  assert.equal(formatLocaleNumber(1234.56, 'en'), "1'234.56");
 });
 
 test('duration and file size formatting helpers', () => {

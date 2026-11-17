@@ -8,9 +8,9 @@ test('every module object is in the permission catalogue', () => {
 });
 
 test('modules take their default unless the organization chose', () => {
-  assert.deepEqual(resolveModules(undefined), { requests: true });
-  assert.deepEqual(resolveModules({ requests: false, gone: true }), { requests: false });
-  assert.deepEqual(resolveModules({ requests: 'no' }), { requests: true });
+  assert.deepEqual(resolveModules(undefined), { requests: true, reports: true });
+  assert.deepEqual(resolveModules({ requests: false, gone: true }), { requests: false, reports: true });
+  assert.deepEqual(resolveModules({ requests: 'no', reports: false }), { requests: true, reports: false });
 });
 
 test('a modules patch takes known ids with boolean values only', () => {

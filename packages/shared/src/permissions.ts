@@ -63,6 +63,9 @@ export const NAV_OBJECTS: readonly PermissionObject[] = [
   { id: 'nav.requests', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.requests' },
   { id: 'nav.documents', kind: 'nav', scopes: ['own'], caption: 'nav.documents' },
   { id: 'nav.directory', kind: 'nav', scopes: ['all'], caption: 'nav.directory' },
+  // Reports module (modules.ts, reports.ts): the Reports page. Whose rows a report shows is not this
+  // grant's scope but the matching page's (project hours -> nav.time, attendance -> nav.workTime, ...).
+  { id: 'nav.reports', kind: 'nav', scopes: ['own'], caption: 'nav.reports' },
   { id: 'nav.users', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.users' },
   { id: 'nav.invitations', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.invitations' },
   // Scope here is ownership: `own` = teams you lead and projects/subprojects you own, `all` = every one.

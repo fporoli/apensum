@@ -21,6 +21,8 @@ export interface ModuleDefinition {
 export const MODULES: readonly ModuleDefinition[] = [
   // Requests: tickets to one's line manager or a department (HR, ...), with a message thread.
   { id: 'requests', caption: 'modules.requests', defaultEnabled: true, objects: ['nav.requests'] },
+  // Reports: project hours, attendance and overtime, absences, with filters, chart and export.
+  { id: 'reports', caption: 'modules.reports', defaultEnabled: true, objects: ['nav.reports'] },
 ];
 
 export type ModuleSettings = Record<string, boolean>;

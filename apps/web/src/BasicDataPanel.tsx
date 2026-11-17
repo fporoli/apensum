@@ -30,7 +30,7 @@ import { FieldDesignScope, useFormTemplate } from './designMode';
 import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
 import { useI18n } from './i18n';
 import { ConfigFieldGroup, useGroupTitle } from './ConfigField';
-import { formatLocaleDate } from './localeFormat';
+import { formatLocaleDate, swissLocale } from './localeFormat';
 import { AddIcon, CloseIcon, DeleteIcon, EditIcon, HistoryIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -398,7 +398,7 @@ export function BasicDataPanel({ orgId, userId, isSelf, embedded = false, authHe
           <Alert severity="warning" sx={{ my: 1.5 }}>
             <Typography variant="subtitle2">{t('home.pendingReviewTitle')}</Typography>
             <Typography variant="body2" sx={{ mb: 1 }}>
-              {t('home.pendingReviewFrom', { name: pendingIsMine ? '—' : pending.requested_by_user_id, date: new Date(pending.requested_at).toLocaleString(locale) })}
+              {t('home.pendingReviewFrom', { name: pendingIsMine ? '—' : pending.requested_by_user_id, date: new Date(pending.requested_at).toLocaleString(swissLocale(locale)) })}
             </Typography>
             <Typography variant="body2" sx={{ mb: 1 }}>{t('home.reviewQueue.viewedFields', { fields: Object.keys(pending.data).join(', ') })}</Typography>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -486,7 +486,7 @@ export function BasicDataPanel({ orgId, userId, isSelf, embedded = false, authHe
                       <TableCell>
                         <Chip label={t(`home.historyStatus.${h.status}`)} size="small" color={HISTORY_STATUS_COLOR[h.status]} />
                       </TableCell>
-                      <TableCell>{new Date(h.requested_at).toLocaleString(locale)}</TableCell>
+                      <TableCell>{new Date(h.requested_at).toLocaleString(swissLocale(locale))}</TableCell>
                       <TableCell>{Object.keys(h.data ?? {}).join(', ') || '—'}</TableCell>
                       <TableCell>{h.note ?? '—'}</TableCell>
                     </TableRow>
@@ -847,7 +847,7 @@ export function ReviewQueue({ orgId, authHeaders, onResolved }: { orgId: string;
                 <TableCell>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.display_name}</Typography>
                   <Typography variant="caption" color="text.secondary" display="block">
-                    {new Date(row.entry.requested_at).toLocaleString(locale)}
+                    {new Date(row.entry.requested_at).toLocaleString(swissLocale(locale))}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" display="block">
                     {t('home.reviewQueue.viewedFields', { fields: Object.keys(row.entry.data).join(', ') })}

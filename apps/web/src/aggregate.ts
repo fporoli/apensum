@@ -79,7 +79,9 @@ export function periodRange(type: PeriodType, anchor: string): { from: string; t
 }
 
 /** A human-readable label for the period of `type` containing `anchor`, formatted in `locale` (defaults to the browser's). */
-export function periodLabel(type: PeriodType, anchor: string, locale?: string): string {
+export function periodLabel(type: PeriodType, anchor: string, language?: string): string {
+  // The Swiss variant of the language, like localeFormat.ts swissLocale (this file stays import-free for Node tests).
+  const locale = language && /^[a-z]{2}$/.test(language) ? `${language}-CH` : language;
   const [y, m, d] = anchor.split('-').map(Number);
   if (type === 'month') {
     return new Date(y, m - 1, 1).toLocaleDateString(locale, { month: 'long', year: 'numeric' });

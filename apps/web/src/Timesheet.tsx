@@ -17,7 +17,7 @@ import {
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes } from './localeFormat';
+import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes, swissLocale } from './localeFormat';
 import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 import { formatDays, monthName, type MonthBalance } from './BalancesPanel';
 import { PageHeader, PersonPicker } from './components';
@@ -444,7 +444,7 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
                 const [y, m, dd] = d.date.split('-').map(Number);
                 return (
                   <TableRow key={d.date} sx={{ opacity: free && d.attended === 0 ? 0.5 : 1, bgcolor: d.date === today ? 'action.selected' : undefined }}>
-                    <TableCell>{new Date(y, m - 1, dd).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })}</TableCell>
+                    <TableCell>{new Date(y, m - 1, dd).toLocaleDateString(swissLocale(locale), { weekday: 'short', day: 'numeric', month: 'short' })}</TableCell>
                     <TableCell align="right">{d.target ? formatDurationMinutes(d.target) : '—'}</TableCell>
                     <TableCell align="right">{d.attended ? formatDurationMinutes(d.attended) : past && d.target ? formatDurationMinutes(0) : '—'}</TableCell>
                     <TableCell align="right" sx={{ color: past && diff < 0 ? 'error.main' : undefined }}>

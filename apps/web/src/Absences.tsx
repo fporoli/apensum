@@ -27,7 +27,7 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useI18n } from './i18n';
-import { formatFileSize, formatLocaleDate } from './localeFormat';
+import { formatFileSize, formatLocaleDate, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { BeachAccessIcon, DeleteIcon, DownloadIcon, UploadIcon, VisibilityIcon } from './icons';
 
@@ -410,7 +410,7 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
                 <Box>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>{viewingDocument.file_name}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {t('absences.fileSize', { size: formatFileSize(viewingDocument.size_bytes, locale) })} · {new Date(viewingDocument.created_at).toLocaleString(locale)}
+                    {t('absences.fileSize', { size: formatFileSize(viewingDocument.size_bytes, locale) })} · {new Date(viewingDocument.created_at).toLocaleString(swissLocale(locale))}
                   </Typography>
                 </Box>
                 <Button

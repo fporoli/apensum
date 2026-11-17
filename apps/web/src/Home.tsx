@@ -19,7 +19,7 @@ import { BarChart } from '@mui/x-charts/BarChart';
 import { bucket, minutes, periodRange, shiftPeriod, startOfWeek, todayDate, type Entry } from './aggregate';
 import BalanceOverview from './BalanceOverview';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatSignedMinutes } from './localeFormat';
+import { formatDurationMinutes, formatSignedMinutes, swissLocale } from './localeFormat';
 import { formatDays } from './BalancesPanel';
 import { PageHeader, TableEmptyRow } from './components';
 import { ReviewQueue } from './BasicDataPanel';
@@ -194,7 +194,7 @@ export default function Home({
     for (let i = 0; i < 7; i += 1) {
       const dStr = shiftPeriod('day', weekStart, i);
       const [y, m, d] = dStr.split('-').map(Number);
-      const label = new Date(y, m - 1, d).toLocaleDateString(locale, { weekday: 'short' });
+      const label = new Date(y, m - 1, d).toLocaleDateString(swissLocale(locale), { weekday: 'short' });
       const mins = byDay.get(dStr) ?? 0;
       days.push({ day: label, hours: Math.round((mins / 60) * 100) / 100 });
     }
@@ -329,7 +329,7 @@ export default function Home({
                 <TableBody>
                   {recentEntries.map((e) => (
                     <TableRow key={e.id} hover>
-                      <TableCell>{new Date(e.start_time).toLocaleDateString(locale)}</TableCell>
+                      <TableCell>{new Date(e.start_time).toLocaleDateString(swissLocale(locale))}</TableCell>
                       <TableCell>{e.project_name ?? '—'}</TableCell>
                       <TableCell>{e.comment || '—'}</TableCell>
                       <TableCell align="right">{formatDurationMinutes(minutes(e))}</TableCell>

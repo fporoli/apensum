@@ -36,6 +36,7 @@ import { ApensumMark } from './ApensumMark';
 import {
   AccountBalanceWalletIcon,
   AutoAwesomeIcon,
+  BarChartIcon,
   BeachAccessIcon,
   CalendarMonthIcon,
   CheckCircleIcon,
@@ -76,6 +77,7 @@ const ExpenseReports = lazy(() => import('./ExpenseReports'));
 const ExpenseProcessing = lazy(() => import('./ExpenseProcessing'));
 const Assistant = lazy(() => import('./Assistant'));
 const TeamHours = lazy(() => import('./TeamHours'));
+const Reports = lazy(() => import('./Reports'));
 const ProjectTimesheet = lazy(() => import('./ProjectTimesheet'));
 const TeamView = lazy(() => import('./TeamView'));
 const BalanceReport = lazy(() => import('./BalanceReport'));
@@ -111,7 +113,8 @@ type Section =
   | 'audit'
   | 'admin'
   | 'orgSettings'
-  | 'expenseProcessing';
+  | 'expenseProcessing'
+  | 'reports';
 
 const SECTION_TO_HASH: Record<Section, string> = {
   home: '#/home',
@@ -137,6 +140,7 @@ const SECTION_TO_HASH: Record<Section, string> = {
   audit: '#/audit',
   expenseProcessing: '#/expense-processing',
   admin: '#/admin',
+  reports: '#/reports',
 };
 
 const HASH_TO_SECTION = Object.fromEntries(
@@ -209,6 +213,7 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   admin: 'nav.admin',
   orgSettings: 'nav.orgSettings',
   expenseProcessing: 'nav.expenseProcessing',
+  reports: 'nav.reports',
 };
 
 /**
@@ -236,6 +241,7 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'requests':
     case 'documents':
     case 'directory':
+    case 'reports':
       return true;
     case 'users':
       return flags.canSeeUsers;
@@ -658,6 +664,7 @@ export default function App() {
         { id: 'directory', section: 'directory', label: t('nav.directory'), icon: <ContactsIcon fontSize="small" />, visible: allowed('directory') },
         { id: 'hours', section: 'hours', label: t('nav.teamHours'), icon: <GroupIcon fontSize="small" />, visible: allowed('hours') },
         { id: 'balances', section: 'balances', label: t('nav.balances'), icon: <AccountBalanceWalletIcon fontSize="small" />, visible: allowed('balances') },
+        { id: 'reports', section: 'reports', label: t('nav.reports'), icon: <BarChartIcon fontSize="small" />, visible: allowed('reports') },
         {
           id: 'approvals',
           section: 'approvals',
@@ -1003,6 +1010,9 @@ export default function App() {
               )}
               {section === 'hours' && allowed('hours') && orgId && (
                 <TeamHours orgId={orgId} authHeaders={authHeaders} />
+              )}
+              {section === 'reports' && allowed('reports') && orgId && (
+                <Reports orgId={orgId} authHeaders={authHeaders} />
               )}
               {section === 'balances' && allowed('balances') && orgId && (
                 <BalanceReport orgId={orgId} authHeaders={authHeaders} />

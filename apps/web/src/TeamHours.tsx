@@ -22,7 +22,7 @@ import {
 import { BarChart } from '@mui/x-charts/BarChart';
 import { bucket, minutes, periodLabel, periodRange, shiftPeriod, todayDate, type Entry, type PeriodType, type View } from './aggregate';
 import { useI18n } from './i18n';
-import { formatDurationMinutes } from './localeFormat';
+import { formatDurationMinutes, swissLocale } from './localeFormat';
 import { PageHeader, TableEmptyRow } from './components';
 import { ChevronLeftIcon, ChevronRightIcon, GroupIcon } from './icons';
 
@@ -269,7 +269,7 @@ export default function TeamHours({ orgId, authHeaders }: TeamHoursProps) {
                                 <TableBody>
                                   {memberEntries.map((e) => (
                                     <TableRow key={e.id}>
-                                      <TableCell>{new Date(e.start_time).toLocaleDateString(locale)}</TableCell>
+                                      <TableCell>{new Date(e.start_time).toLocaleDateString(swissLocale(locale))}</TableCell>
                                       <TableCell align="right">{formatDurationMinutes(minutes(e))}</TableCell>
                                       <TableCell>{e.project_name ?? '—'}</TableCell>
                                       <TableCell>{e.subproject_name ?? '—'}</TableCell>

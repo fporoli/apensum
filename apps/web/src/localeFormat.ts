@@ -2,11 +2,19 @@
  * Formatting and parsing of numbers and dates in the app's language. Values are always stored
  * in one canonical form: numbers as JS numbers, dates as 'YYYY-MM-DD', date-times as ISO UTC.
  * Kept free of JSX so Node can import it in tests.
+ *
+ * The app's language (`de`, `fr`, `it`, `en`) picks the texts; numbers and dates follow the Swiss
+ * conventions of that language (`swissLocale`): 2'848.77, 17.11.2026, 24-hour times.
  */
+
+/** The formatting locale for a language: its Swiss variant (`de` -> `de-CH`); a full tag stays as is. */
+export function swissLocale(locale: string): string {
+  return /^[a-z]{2}$/.test(locale) ? `${locale}-CH` : locale;
+}
 
 /** The decimal and grouping separators `Intl` uses for a locale. */
 export function numberSeparators(locale: string): { decimal: string; group: string } {
-  const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
+  const parts = new Intl.NumberFormat(swissLocale(locale)).formatToParts(12345.6);
   return {
     decimal: parts.find((p) => p.type === 'decimal')?.value ?? '.',
     group: parts.find((p) => p.type === 'group')?.value ?? ',',
@@ -47,23 +55,23 @@ export function parseLocaleNumber(text: string, locale: string): number | null |
   return Number(s);
 }
 
-/** A number as the user's language writes it, e.g. 1234.5 -> "1.234,5" in German. */
+/** A number as the user's language writes it in Switzerland, e.g. 1234.5 -> "1'234.5" in German. */
 export function formatLocaleNumber(value: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: 10 }).format(value);
+  return new Intl.NumberFormat(swissLocale(locale), { maximumFractionDigits: 10 }).format(value);
 }
 
 /** A 'YYYY-MM-DD' date in the user's language; anything else is returned unchanged. */
 export function formatLocaleDate(isoDate: string, locale: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
   if (!m) return isoDate;
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(locale);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(swissLocale(locale));
 }
 
 /** An ISO date-time in the user's language and time zone; an invalid value is returned unchanged. */
 export function formatLocaleDateTime(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' });
+  return d.toLocaleString(swissLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
 }
 
 /** Formats non-negative minutes as "Xh YYm", e.g. 95 -> "1h 35m", 60 -> "1h 00m". */
@@ -84,8 +92,8 @@ export function formatSignedMinutes(minutes: number): string {
 export function formatFileSize(bytes: number, locale = 'en'): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';
   if (bytes < 1024) return `${Math.round(bytes)} B`;
-  if (bytes < 1024 * 1024) return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / 1024)} KB`;
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
+  if (bytes < 1024 * 1024) return `${new Intl.NumberFormat(swissLocale(locale), { maximumFractionDigits: 1 }).format(bytes / 1024)} KB`;
+  return `${new Intl.NumberFormat(swissLocale(locale), { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
 }
 
 /** Relative timestamp for notifications (falls back to localized date beyond 7 days). */
@@ -102,5 +110,5 @@ export function formatRelativeTime(iso: string, locale: string, nowMs = Date.now
   if (Math.abs(diffHours) < 24) return rtf.format(diffHours, 'hour');
   const diffDays = Math.round(diffHours / 24);
   if (Math.abs(diffDays) <= 7) return rtf.format(diffDays, 'day');
-  return d.toLocaleDateString(locale);
+  return d.toLocaleDateString(swissLocale(locale));
 }

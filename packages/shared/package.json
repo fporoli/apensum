@@ -40,6 +40,16 @@
       "source": "./src/worktime.ts",
       "types": "./dist/worktime.d.ts",
       "default": "./dist/worktime.js"
+    },
+    "./reports": {
+      "source": "./src/reports.ts",
+      "types": "./dist/reports.d.ts",
+      "default": "./dist/reports.js"
+    },
+    "./xlsx": {
+      "source": "./src/xlsx.ts",
+      "types": "./dist/xlsx.d.ts",
+      "default": "./dist/xlsx.js"
     }
   }
 }

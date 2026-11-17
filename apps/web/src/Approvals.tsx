@@ -24,7 +24,7 @@ import {
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
-import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleNumber, formatSignedMinutes } from './localeFormat';
+import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleNumber, formatSignedMinutes, swissLocale } from './localeFormat';
 import { getSourceTitle } from './Timesheet';
 import { getExpenseReportTitle } from './ExpenseReports';
 import { getAbsenceTitle } from './Absences';
@@ -657,7 +657,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                   const note = [d.holidayInfo?.name ?? '', d.absence > 0 && d.absenceType ? formatAbsenceType(d.absenceType, t) : ''].filter(Boolean).join(' · ');
                   return (
                     <TableRow key={d.date} sx={{ opacity: d.target === 0 && d.attended === 0 ? 0.5 : 1 }}>
-                      <TableCell>{new Date(y, m - 1, dd).toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })}</TableCell>
+                      <TableCell>{new Date(y, m - 1, dd).toLocaleDateString(swissLocale(locale), { weekday: 'short', day: 'numeric', month: 'short' })}</TableCell>
                       <TableCell align="right">{d.target ? formatDurationMinutes(d.target) : '—'}</TableCell>
                       <TableCell align="right">{d.attended ? formatDurationMinutes(d.attended) : '—'}</TableCell>
                       <TableCell align="right" sx={{ color: d.attended - d.target < 0 ? 'error.main' : undefined }}>
@@ -742,11 +742,11 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                 </TableHead>
                 <TableBody>
                   {inspectingEntries.map((e) => {
-                    const startTime = new Date(e.start_time).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
-                    const endTime = new Date(e.end_time).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+                    const startTime = new Date(e.start_time).toLocaleTimeString(swissLocale(locale), { hour: '2-digit', minute: '2-digit' });
+                    const endTime = new Date(e.end_time).toLocaleTimeString(swissLocale(locale), { hour: '2-digit', minute: '2-digit' });
                     return (
                       <TableRow key={e.id}>
-                        <TableCell>{new Date(e.start_time).toLocaleDateString(locale)}</TableCell>
+                        <TableCell>{new Date(e.start_time).toLocaleDateString(swissLocale(locale))}</TableCell>
                         <TableCell>{`${startTime} – ${endTime}`}</TableCell>
                         <TableCell align="right">{formatDurationMinutes(minutes(e))}</TableCell>
                         <TableCell>{e.project_name ?? '—'}</TableCell>
@@ -879,7 +879,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                 <Box>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>{absenceDocument.file_name}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {t('absences.fileSize', { size: formatFileSize(absenceDocument.size_bytes, locale) })} · {new Date(absenceDocument.created_at).toLocaleString(locale)}
+                    {t('absences.fileSize', { size: formatFileSize(absenceDocument.size_bytes, locale) })} · {new Date(absenceDocument.created_at).toLocaleString(swissLocale(locale))}
                   </Typography>
                 </Box>
                 <Button

@@ -17,6 +17,7 @@ import {
 import { useI18n } from './i18n';
 import { PageHeader, TableEmptyRow } from './components';
 import { HistoryIcon, RefreshIcon, SearchIcon } from './icons';
+import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -131,7 +132,7 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
             <TableBody>
               {filtered.map((entry) => (
                 <TableRow key={entry.id} hover>
-                  <TableCell>{new Date(entry.created_at).toLocaleString(locale)}</TableCell>
+                  <TableCell>{new Date(entry.created_at).toLocaleString(swissLocale(locale))}</TableCell>
                   <TableCell>{entry.actor_display_name ?? entry.actor_email ?? t('common.unknown')}</TableCell>
                   <TableCell>{entry.action}</TableCell>
                   <TableCell>{entry.target_type}{entry.target_id ? ` (${entry.target_id.slice(0, 8)}…)` : ''}</TableCell>

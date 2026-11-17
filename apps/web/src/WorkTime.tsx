@@ -26,7 +26,7 @@ import {
 } from '@mui/material';
 import BalanceOverview from './BalanceOverview';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatSignedMinutes } from './localeFormat';
+import { formatDurationMinutes, formatSignedMinutes, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { BalancesPanel, formatDays } from './BalancesPanel';
 import { AddIcon, DeleteIcon, EditIcon, PlayArrowIcon, StopIcon, TimerIcon } from './icons';
@@ -78,7 +78,7 @@ function formatDuration(startIso: string, endIso: string | null): string {
 
 function formatDateTime(iso: string | null, locale: string): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' });
+  return new Date(iso).toLocaleString(swissLocale(locale), { dateStyle: 'short', timeStyle: 'short' });
 }
 
 function toLocalInput(iso: string): string {

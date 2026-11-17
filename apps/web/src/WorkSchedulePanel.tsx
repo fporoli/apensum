@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import { dayMinutesFor, weeklyMinutes, type WorkSchedule } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
-import { formatLocaleDate } from './localeFormat';
+import { formatLocaleDate, swissLocale } from './localeFormat';
 import { DeleteIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -43,7 +43,7 @@ export function parseHm(text: string): number | null {
 /** Short weekday names, Monday first, in the app's language. */
 function weekdayNames(locale: string): string[] {
   // 2024-01-01 was a Monday.
-  return Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(locale, { weekday: 'short', timeZone: 'UTC' }));
+  return Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(2024, 0, 1 + i)).toLocaleDateString(swissLocale(locale), { weekday: 'short', timeZone: 'UTC' }));
 }
 
 function firstOfNextMonth(): string {
