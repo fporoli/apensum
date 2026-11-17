@@ -509,6 +509,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
               height={190}
               dataset={chartData}
               xAxis={[{ scaleType: 'band', dataKey: 'day' }]}
+              yAxis={[{ min: 0, max: chartData.some((d) => d.hours > 0) ? undefined : 8 }]}
               series={[{ dataKey: 'hours', color: theme.palette.primary.main, valueFormatter: (v) => (v == null ? '' : `${v}h`) }]}
               margin={{ top: 12, right: 16, bottom: 28, left: 40 }}
             />

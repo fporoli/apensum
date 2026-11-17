@@ -305,6 +305,7 @@ export default function Home({
               height={220}
               dataset={weekChartData}
               xAxis={[{ scaleType: 'band', dataKey: 'day' }]}
+              yAxis={[{ min: 0, max: weekChartData.some((d) => d.hours > 0) ? undefined : 8 }]}
               series={[{ dataKey: 'hours', color: theme.palette.primary.main, valueFormatter: (v) => (v == null ? '' : `${v}h`) }]}
               margin={{ top: 16, right: 16, bottom: 28, left: 40 }}
             />

@@ -33,3 +33,16 @@ test('no text is empty', () => {
   );
   assert.deepEqual(empty, []);
 });
+
+test('standard role descriptions: the English text is what the migrations insert', async () => {
+  // roleDescription (roleLabel.ts) translates a standard role's description only while it equals
+  // this English default, so a changed changelog text would silently stop the translation.
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const dir = new URL('../../../infra/liquibase/changelog/', import.meta.url);
+  const sql = readdirSync(dir).filter((f) => f.endsWith('.sql')).map((f) => readFileSync(new URL(f, dir), 'utf8')).join('\n');
+  const keys = Object.keys(reference).filter((k) => k.startsWith('roles.builtinDescription.'));
+  assert.ok(keys.length > 0);
+  for (const key of keys) {
+    assert.ok(sql.includes(reference[key].replace(/'/g, "''")), `${key} not found in the changelogs`);
+  }
+});

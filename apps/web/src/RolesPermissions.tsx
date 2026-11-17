@@ -40,7 +40,7 @@ import {
 import { LOCALES, useI18n } from './i18n';
 import { ConfirmDialog, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, DeleteIcon, EditIcon, PublicIcon, RestartAltIcon } from './icons';
-import { roleLabel, type OrgRole } from './roleLabel';
+import { roleDescription, roleLabel, type OrgRole } from './roleLabel';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -291,7 +291,7 @@ export default function RolesPermissions({
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>{roleLabel(role, locale)}</Typography>
                     <Typography variant="caption" color="text.secondary">
                       {role.name}
-                      {role.description ? ` · ${role.description}` : ''}
+                      {role.description ? ` · ${roleDescription(role, locale)}` : ''}
                     </Typography>
                   </TableCell>
                   <TableCell>
