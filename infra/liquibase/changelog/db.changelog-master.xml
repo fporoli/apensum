@@ -83,6 +83,7 @@
     <include file="065-report-schedules.sql" relativeToChangelogFile="true"/>
     <include file="066-expense-currencies.sql" relativeToChangelogFile="true"/>
     <include file="067-drop-unused-static-data.sql" relativeToChangelogFile="true"/>
+    <include file="068-permission-import-export.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

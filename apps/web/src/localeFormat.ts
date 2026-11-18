@@ -76,6 +76,7 @@ export function formatLocaleDateTime(iso: string, locale: string): string {
 
 /** Formats non-negative minutes as "Xh YYm", e.g. 95 -> "1h 35m", 60 -> "1h 00m". */
 export function formatDurationMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes)) return '0h 00m';
   const rounded = Math.max(0, Math.round(minutes));
   const h = Math.floor(rounded / 60);
   const m = rounded % 60;
@@ -84,6 +85,7 @@ export function formatDurationMinutes(minutes: number): string {
 
 /** Formats signed minutes with explicit +/- prefix, e.g. -65 -> "-1h 05m", 90 -> "+1h 30m". */
 export function formatSignedMinutes(minutes: number): string {
+  if (!Number.isFinite(minutes)) return '+0h 00m';
   const sign = minutes < 0 ? '-' : '+';
   return `${sign}${formatDurationMinutes(Math.abs(minutes))}`;
 }

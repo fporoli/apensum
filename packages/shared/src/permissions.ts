@@ -74,6 +74,7 @@ export const NAV_OBJECTS: readonly PermissionObject[] = [
   { id: 'nav.audit', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.auditLog' },
   { id: 'nav.expenseProcessing', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.expenseProcessing' },
   { id: 'nav.admin', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.adminSettings' },
+  { id: 'nav.importExport', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.importExport' },
 ];
 
 /** Personal-details sections live on My data (own) and on the Users page (everyone else). */

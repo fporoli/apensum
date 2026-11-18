@@ -56,6 +56,8 @@ import { BasicDataService } from './basicdata.service';
 import { FieldsController } from './fields.controller';
 import { FieldsService } from './fields.service';
 import { DbService } from './db.service';
+import { ImportExportController } from './import-export.controller';
+import { ImportExportService } from './import-export.service';
 
 @Module({
   controllers: [
@@ -95,9 +97,11 @@ import { DbService } from './db.service';
     AuditController,
     AssistantController,
     NotificationsController,
+    ImportExportController,
   ],
   providers: [
     DbService,
+    ImportExportService,
     ProjectTimeService,
     WorkTimeService,
     BalancesService,

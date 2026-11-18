@@ -59,6 +59,7 @@ import {
   ForumIcon,
   DescriptionIcon,
   ContactsIcon,
+  ImportExportIcon,
 } from './icons';
 
 const Home = lazy(() => import('./Home'));
@@ -86,6 +87,7 @@ const Users = lazy(() => import('./Users'));
 const Requests = lazy(() => import('./Requests'));
 const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
+const ImportExport = lazy(() => import('./ImportExport'));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DRAWER_WIDTH = 240;
@@ -114,7 +116,8 @@ type Section =
   | 'admin'
   | 'orgSettings'
   | 'expenseProcessing'
-  | 'reports';
+  | 'reports'
+  | 'importExport';
 
 const SECTION_TO_HASH: Record<Section, string> = {
   home: '#/home',
@@ -141,6 +144,7 @@ const SECTION_TO_HASH: Record<Section, string> = {
   expenseProcessing: '#/expense-processing',
   admin: '#/admin',
   reports: '#/reports',
+  importExport: '#/import-export',
 };
 
 const HASH_TO_SECTION = Object.fromEntries(
@@ -214,6 +218,7 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   orgSettings: 'nav.orgSettings',
   expenseProcessing: 'nav.expenseProcessing',
   reports: 'nav.reports',
+  importExport: 'nav.importExport',
 };
 
 /**
@@ -251,6 +256,8 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'audit':
     case 'orgSettings':
       return flags.isAdmin;
+    case 'importExport':
+      return flags.isAdmin || flags.isHr;
     case 'management':
     case 'managementProjects':
     case 'hours':
@@ -683,6 +690,7 @@ export default function App() {
       header: t('nav.administration'),
       items: [
         { id: 'orgSettings', section: 'orgSettings', label: t('nav.organizationSettings'), icon: <SettingsIcon fontSize="small" />, visible: allowed('orgSettings') },
+        { id: 'importExport', section: 'importExport', label: t('nav.importExport'), icon: <ImportExportIcon fontSize="small" />, visible: allowed('importExport') },
         { id: 'audit', section: 'audit', label: t('nav.auditLog'), icon: <HistoryIcon fontSize="small" />, visible: allowed('audit') },
         { id: 'expenseProcessing', section: 'expenseProcessing', label: t('nav.expenseProcessing'), icon: <PaymentsIcon fontSize="small" />, visible: allowed('expenseProcessing') },
         { id: 'admin', section: 'admin', label: t('nav.adminSettings'), icon: <TuneIcon fontSize="small" />, visible: allowed('admin') },
@@ -1073,6 +1081,9 @@ export default function App() {
               )}
               {section === 'expenseProcessing' && allowed('expenseProcessing') && orgId && (
                 <ExpenseProcessing orgId={orgId} authHeaders={authHeaders} />
+              )}
+              {section === 'importExport' && allowed('importExport') && orgId && (
+                <ImportExport orgId={orgId} isAdmin={flags.isAdmin} isHr={flags.isHr} authHeaders={authHeaders} />
               )}
             </Suspense>
           </Container>
