@@ -165,7 +165,9 @@ export default {
     "Request absences, enter expenses and take a photo of the receipt with the camera",
     "Managers approve absences, timesheets and expenses on the go",
     "Only the app is stored on the device; your data stays on the server",
+    "Live demo at appdemo.apensum.ch: open on your phone and tap “Add to Home Screen” to try it as an app",
   ],
+  'features.mobile.demoCta': "Open mobile PWA demo",
   'features.project.title': 'Project time',
   'features.project.lead': 'Book hours on projects independently of attendance – and still notice when they don’t add up.',
   'features.project.items': [

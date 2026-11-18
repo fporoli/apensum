@@ -164,7 +164,9 @@ export default {
     "Richiedere assenze, registrare spese e fotografare la ricevuta con la fotocamera",
     "I responsabili approvano assenze, fogli ore e spese anche in viaggio",
     "Sul dispositivo viene salvata solo l’app, i vostri dati restano sul server",
+    "Demo dal vivo su appdemo.apensum.ch: aprila sullo smartphone e aggiungila alla schermata Home",
   ],
+  'features.mobile.demoCta': "Apri la demo PWA mobile",
   'features.project.title': 'Tempo di progetto',
   'features.project.lead': 'Registrare ore sui progetti indipendentemente dalle presenze – accorgendosi comunque quando i conti non tornano.',
   'features.project.items': [

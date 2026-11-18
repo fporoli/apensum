@@ -13,6 +13,16 @@ Built specifically for Swiss labor law (ArG) and enterprise requirements:
 - **Data Sovereignty & Portability**: Full organization backup into self-contained ZIP archives (relational data JSON + AES-256 encrypted documents) with transactional disaster-recovery restore.
 - **Bulk Employee Onboarding**: CSV employee import with live validation dry-run preview and reporting line resolution.
 
+## Live PWA Demo (Installable on Mobile)
+
+Experience APensum as a native-like Progressive Web App (PWA) on your smartphone or desktop:
+👉 **[https://appdemo.apensum.ch](https://appdemo.apensum.ch)**
+
+- **Install on iOS (iPhone / iPad)**: Open [https://appdemo.apensum.ch](https://appdemo.apensum.ch) in Safari, tap the **Share** button (box with upward arrow), and select **"Add to Home Screen"**.
+- **Install on Android**: Open [https://appdemo.apensum.ch](https://appdemo.apensum.ch) in Chrome, tap the menu (three dots) or install prompt, and select **"Install app"** / **"Add to Home screen"**.
+- **Desktop (Chrome / Edge / macOS)**: Click the install icon in the URL address bar to run APensum in its own dedicated, native-feeling window.
+- **Instant Demo Logins**: The login page provides 1-click logins for **Admin**, **Manager (Marta)**, and **Employee (Ulla)** with pre-seeded demo hours, absences, and expenses.
+
 ## Architecture
 
 ```
@@ -361,9 +371,8 @@ npm run local:seed
 
 ### Demo accounts
 
-Each seeded `<name>@acme.com` user's password is `<name>` (e.g.
-`admin@acme.com` / `admin`). Local dev builds show a demo-account dropdown on the
-login screen with Admin, Manager (Marta) and User (Ulla); picking one signs in.
+The live demo at [https://appdemo.apensum.ch](https://appdemo.apensum.ch) as well as local dev builds show a demo-account dropdown on the login screen with Admin, Manager (Marta) and User (Ulla); picking one signs in.
+Each seeded `<name>@acme.com` user's password is `<name>` (e.g. `admin@acme.com` / `admin`).
 Its entries are global static data (entity `login`, enum `demo_accounts`; each
 value a JSON string `{"name","user","password"}`), served by the public
 `GET /api/v1/auth/demo-accounts`.

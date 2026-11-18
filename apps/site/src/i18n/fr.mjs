@@ -165,7 +165,9 @@ export default {
     "Demander des absences, saisir des frais et photographier le justificatif avec l’appareil photo",
     "Les responsables approuvent absences, feuilles de temps et frais en déplacement",
     "Seule l’app est enregistrée sur l’appareil, vos données restent sur le serveur",
+    "Démo en direct sur appdemo.apensum.ch : ouvrez-la sur smartphone et ajoutez-la à l’écran d’accueil",
   ],
+  'features.mobile.demoCta': "Ouvrir la démo PWA mobile",
   'features.project.title': 'Temps de projet',
   'features.project.lead': 'Imputer des heures aux projets indépendamment de la présence – tout en remarquant quand les comptes ne tombent pas juste.',
   'features.project.items': [

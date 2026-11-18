@@ -164,7 +164,9 @@ export default {
     "Absenzen beantragen, Spesen erfassen und den Beleg mit der Kamera fotografieren",
     "Vorgesetzte geben Absenzen, Zeitblätter und Spesen unterwegs frei",
     "Auf dem Gerät wird nur die App gespeichert, Ihre Daten bleiben auf dem Server",
+    "Live-Demo unter appdemo.apensum.ch: Auf dem Smartphone öffnen und «Zum Home-Bildschirm» hinzufügen",
   ],
+  'features.mobile.demoCta': "Mobile PWA-Demo öffnen",
   'features.project.title': 'Projektzeit',
   'features.project.lead': 'Stunden auf Projekte buchen, unabhängig von der Präsenz – und trotzdem merken, wenn es nicht aufgeht.',
   'features.project.items': [

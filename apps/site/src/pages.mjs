@@ -366,6 +366,7 @@ export function features(ctx) {
       </div>
       ${featureMedia(ctx, g)}
       ${checklist(t.list(`features.${g}.items`))}
+      ${g === 'mobile' ? `<div class="feature-action" style="margin-top: 18px;"><a class="btn btn-primary btn-sm" href="${ctx.demo}">${icon('phone')}${t('features.mobile.demoCta')}</a></div>` : ''}
     </section>`,
   ).join('\n');
   const body = `
