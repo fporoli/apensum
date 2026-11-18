@@ -31,6 +31,7 @@ const P = {
   tag: '<path d="M3 12.5V4a1 1 0 0 1 1-1h8.5L21 11.5 12.5 20z"/><circle cx="8" cy="8" r="1.6"/>',
   handshake: '<path d="M2 11l4-4 4 2 3-2 4 1 5 3"/><path d="M6 7v6l5 5 2-2M10 9l4 4M22 10l-4 4-3-3M13 16l2 2"/>',
   pin: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  sync: '<path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>',
 };
 
 export function icon(name, cls = 'icon') {

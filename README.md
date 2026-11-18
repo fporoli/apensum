@@ -6,6 +6,13 @@ where the deployment uses it.
 Schema is versioned with Liquibase; the API talks to Postgres through
 Drizzle ORM, typed against that schema.
 
+Built specifically for Swiss labor law (ArG) and enterprise requirements:
+- **Swiss Compliance**: Public holidays for all 26 cantons, Pensum-prorated vacation, and ArG Überzeit (hours beyond 45/50 h/week) tracked separately from flextime/overtime.
+- **Swiss Payroll Interfaces**: 1-click monthly payroll export for Abacus (AbaSalary wage types / Lohnarten CSV), Bexio, and formatted Excel (XLSX) / CSV.
+- **Absence Calendar Feeds**: RFC 5545 iCalendar / WebCal live subscriptions for Apple Calendar, Microsoft Outlook, and Google Calendar with capability tokens and scope filtering (`personal`, `team`, `all`).
+- **Data Sovereignty & Portability**: Full organization backup into self-contained ZIP archives (relational data JSON + AES-256 encrypted documents) with transactional disaster-recovery restore.
+- **Bulk Employee Onboarding**: CSV employee import with live validation dry-run preview and reporting line resolution.
+
 ## Architecture
 
 ```
@@ -50,10 +57,10 @@ host-run API and web app directly.
 | Area | Files |
 | --- | --- |
 | Session and shell | `App.tsx` (nav groups, session, org switcher, branding), `Login.tsx` (local + Keycloak SSO + invite-accept), `Home`, `NotificationBell`, `UserMenu` |
-| My work | `WorkTime` (check-in/out), `Absences`, `Timesheet` (monthly working-time timesheet for the line manager), `MyData` (`BasicDataPanel`), `BalancesPanel` (overtime/vacation by month) |
+| My work | `WorkTime` (check-in/out), `Absences` (requests, approvals, calendar, RFC 5545 iCal/WebCal subscriptions), `Timesheet` (monthly working-time timesheet for the line manager), `MyData` (`BasicDataPanel`), `BalancesPanel` (overtime/vacation by month) |
 | Projects | `ProjectTime` (hours per project), `ProjectTimesheet` (monthly submission to each project's owner) |
 | Expenses | `Expenses`, `ExpenseReports`, `ExpenseProcessing` |
-| Organization | `Approvals`, `TeamHours`, `BalanceReport` (Time balances with alerts), `Management` (teams/projects/subprojects), `Invitations`, `Users` (`WorkSchedulePanel`), `OrganizationSettings` (`WorkTimeSettings`, `BrandingSettings`) |
+| Organization | `Approvals`, `TeamHours`, `BalanceReport` (Time balances with alerts), `Management` (teams/projects/subprojects), `Users` (`WorkSchedulePanel`, `Invitations` nested in submenu), `ImportExport` (Payroll exports, employee CSV onboarding, full org backup & restore), `OrganizationSettings` (`WorkTimeSettings`, `BrandingSettings`) |
 | Admin | `AdminSettings` (static-data enums), `RolesPermissions`, `FormDesigner`, `AuditLog` |
 | Form fields | `ConfigField`, `designMode.tsx` (configurable forms, see `docs/FIELD_CONFIG.md`) |
 | AI | `Assistant` (chat) |
@@ -65,9 +72,9 @@ host-run API and web app directly.
 | --- | --- |
 | Identity | `auth`, `users`, `basicdata`, `orgs`, `roles`, `permissions`, `fields` |
 | Organization | `teams`, `projects` (+ subprojects) |
-| Time | `work-time`, `absences`, `work-schedules`, `timesheets`, `balances`, `project-time`, `project-timesheets` |
+| Time | `work-time`, `absences`, `calendar-feed`, `work-schedules`, `timesheets`, `balances`, `project-time`, `project-timesheets` |
 | Expenses | `expenses`, `expense-reports` |
-| Cross-cutting | `workflows`, `static-data`, `audit`, `assistant`, `notifications` (+ WebSocket gateway) |
+| Cross-cutting | `workflows`, `import-export`, `static-data`, `audit`, `assistant`, `notifications` (+ WebSocket gateway) |
 
 | Module | Role |
 | --- | --- |
@@ -140,9 +147,11 @@ and tables:
 | Work-time model | Daily targets: work schedules, canton and org holidays, approved absences | `work-time-model.service.ts`, `work-schedules.controller.ts`, `packages/shared/src/worktime.ts` |
 | Working-time timesheet | Monthly attendance and absences, approved by the line manager; approval closes the month's balance | `timesheets.controller.ts` |
 | Balances | Overtime (minutes) and vacation (days), by month and year, with carry-over, adjustments and a monthly alert report | `balances.*` |
+| Calendar feeds | RFC 5545 iCalendar / WebCal live subscriptions (Apple, Outlook, Google) with capability tokens, scope filtering (`personal`, `team`, `all`) and cantonal holidays | `calendar-feed.*` |
 | Project time | Hours booked against projects and subprojects, independent of attendance | `project-time.*`, `projects.controller.ts` |
 | Project timesheet | Each person's monthly hours per project, approved by the project's owner (for billing) | `project-timesheets.controller.ts` |
 | Expenses | Expense items and expense reports | `expenses.controller.ts`, `expense-reports.controller.ts` |
+| Import & Export / Backups | Swiss payroll exports (Abacus AbaSalary Lohnarten CSV, Bexio, Generic XLSX), dry-run bulk employee CSV import, and full organization backup ZIP + disaster-recovery restore | `import-export.*` |
 | Basic data | Personal data with an HR change-request/approval history | `basicdata.*` |
 | Static data | Admin-editable dropdown vocabularies | `static-data.controller.ts` |
 | Audit | Version history of changed rows | `versions.service.ts`, `audit.*` |
@@ -156,6 +165,24 @@ right away when the person owns the project or it has none). Each state change c
 `notifications.service.ts`. That service persists the row and pushes it to
 connected clients over the WebSocket gateway at `/ws/notifications`, which the
 web app consumes via `useNotifications.ts` and `NotificationBell`.
+
+### Calendar feeds and integrations
+
+- **Absence Calendar Feeds (RFC 5545 / WebCal)**:
+  - Subscribable feed endpoint: `GET /api/v1/calendar/absences/:token.ics` (accessible via capability tokens, no session cookie needed by calendar daemons).
+  - Scope options: `personal` (own absences), `team` (direct reports for managers), `all` (entire organization, permission-gated).
+  - Integrates Swiss cantonal public holidays and organization-specific holidays directly into external calendar apps.
+  - Native 1-click WebCal subscription or copyable URL directly in the Absences view.
+- **Swiss Payroll Export**:
+  - **Abacus (AbaSalary)**: Semicolon-delimited CSV mapped to Swiss standard wage types (Lohnarten: 1000 standard hours, 1010/1020 overtime & Überzeit, 1200 vacation days, 1210/1220 sick leave/unpaid leave, approved expenses).
+  - **Bexio**: Compatible CSV export format for Swiss SME accounting.
+  - **Generic Excel (XLSX) & CSV**: Full monthly payroll summaries with totals.
+- **Data Sovereignty & Backups**:
+  - Full organization export (`GET /api/v1/organizations/:id/export/backup`) packages all relational database tables into clean JSON snapshots and physical attachments into a standard uncompressed ZIP archive.
+  - Disaster recovery restore (`POST /api/v1/organizations/:id/import/backup/restore`) inspects and restores backups inside an atomic transaction.
+- **Bulk Employee Onboarding**:
+  - CSV import with automatic column alias detection (English, German, French, Italian).
+  - Interactive dry-run validation preview highlighting errors (malformed dates, unknown managers, invalid workloads) before database commit.
 
 ### AI assistant
 

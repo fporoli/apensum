@@ -35,6 +35,7 @@ export const FEATURE_GROUPS = [
   ['balances', 'scale'],
   ['timesheets', 'check'],
   ['expenses', 'receipt'],
+  ['importexport', 'sync'],
   ['requests', 'chat'],
   ['documents', 'doc'],
   ['admin', 'sliders'],
