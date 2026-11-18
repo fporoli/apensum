@@ -48,7 +48,7 @@ try {
     '--set=ON_ERROR_STOP=1',
     databaseUrl,
     '-c',
-    `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public AUTHORIZATION "${owner.replace(/"/g, '""')}";`,
+    `DROP SCHEMA IF EXISTS cases CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public AUTHORIZATION "${owner.replace(/"/g, '""')}";`,
   ]);
 
   console.log('\n== Migrating (Liquibase)');
