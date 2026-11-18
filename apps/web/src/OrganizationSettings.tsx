@@ -21,6 +21,7 @@ import {
 import { useI18n } from './i18n';
 import { currencyOptions, type CurrencyOption } from './currencyOptions';
 import { PageHeader, TableEmptyRow } from './components';
+import { setSetupDismissed, useSetupStatus } from './SetupChecklist';
 import { SettingsIcon } from './icons';
 import BrandingSettings from './BrandingSettings';
 import WorkTimeSettings from './WorkTimeSettings';
@@ -65,6 +66,8 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
   const [loading, setLoading] = useState(true);
 
   const [org, setOrg] = useState<OrgDetails | null>(null);
+  // The setup checklist on Home, once hidden, can be brought back from here.
+  const [setup, setSetup] = useSetupStatus(orgId, authHeaders);
   const [orgName, setOrgName] = useState('');
   const [defaultCurrency, setDefaultCurrency] = useState('');
   // The org's currency list (static_data expenses/currency), edited in Admin settings.
@@ -202,7 +205,24 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
       <PageHeader
         title={t('orgSettings.title')}
         subtitle={t('orgSettings.subtitle')}
-        end={<Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />}
+        end={
+          <>
+            {setup?.dismissed && !setup.complete && (
+              <Button
+                size="small"
+                onClick={async () => {
+                  if (await setSetupDismissed(orgId, authHeaders, false)) {
+                    setSetup((s) => (s ? { ...s, dismissed: false } : s));
+                    setSuccess(t('setup.shownAgain'));
+                  } else setError(t('setup.hideFailed'));
+                }}
+              >
+                {t('setup.showAgain')}
+              </Button>
+            )}
+            <Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />
+          </>
+        }
       />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}

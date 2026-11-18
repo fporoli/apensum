@@ -345,6 +345,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   moving `next_run_at`, `REPORT_SCHEDULER=off` disables it) makes one file per recipient with that recipient's rights
   and language, stores it in Documents (category `report`) and notifies and mails a link, never the file. Recipients
   other than oneself need `nav.reports:edit`; a recipient who may not see the report gets a run with the error.
+- Setup checklist (`setup.controller.ts`, `SetupChecklist.tsx` on Home, `nav.orgSettings:edit` only): the steps of
+  setting up a new organization (name, canton, work-time rules, departments with leaders, people, everyone's
+  assignment with a manager; optional: schedules, projects, look), worked out from the data on every call
+  (`setupSteps`, pure). Only `organizations.settings.setupDismissed` is stored; Organization Settings shows it again.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in
   `organizations.settings.branding`, validated by `packages/shared/src/branding.ts`
   (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).

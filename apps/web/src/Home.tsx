@@ -23,6 +23,7 @@ import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
 import { formatDays } from './BalancesPanel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
+import SetupChecklist from './SetupChecklist';
 import { ReviewQueue } from './BasicDataPanel';
 import {
   AccountBalanceWalletIcon,
@@ -233,6 +234,8 @@ export default function Home({
           </Button>
         }
       />
+
+      <SetupChecklist orgId={orgId} authHeaders={authHeaders} />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {loading && <LinearProgress />}

@@ -28,6 +28,7 @@ import { RequestsController } from './requests.controller';
 import { DocumentsController } from './documents.controller';
 import { DirectoryController } from './directory.controller';
 import { ReportsController } from './reports.controller';
+import { SetupController } from './setup.controller';
 import { SavedReportsController } from './saved-reports.controller';
 import { ReportsService } from './reports.service';
 import { ReportSchedulesService } from './report-schedules.service';
@@ -86,6 +87,7 @@ import { CalendarFeedService } from './calendar-feed.service';
     DocumentsController,
     DirectoryController,
     ReportsController,
+    SetupController,
     SavedReportsController,
     PersonnelDocumentsController,
     TimesheetsController,
