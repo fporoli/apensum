@@ -1,7 +1,6 @@
-# Shared definition for the opt-in local-only Whisper sidecar.
+# Definition of the Whisper sidecar, used by the one shared stack per machine (docker-compose.whisper.yml).
 services:
   whisper:
-    profiles: [whisper]
     build: { context: ../infra/whisper }
     image: apensum-whisper:local
     init: true

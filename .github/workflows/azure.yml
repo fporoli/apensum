@@ -90,6 +90,15 @@ jobs:
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+          AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT: ${{ vars.AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT }}
+          AI_MONTHLY_BUDGET_CHF: ${{ vars.AI_MONTHLY_BUDGET_CHF }}
+          AI_AZURE_ENABLED: ${{ vars.AI_AZURE_ENABLED }}
+          AZURE_TRANSCRIBE_CHF_PER_HOUR: ${{ vars.AZURE_TRANSCRIBE_CHF_PER_HOUR }}
+          AZURE_OPENAI_CHF_PER_1M_INPUT: ${{ vars.AZURE_OPENAI_CHF_PER_1M_INPUT }}
+          AZURE_OPENAI_CHF_PER_1M_OUTPUT: ${{ vars.AZURE_OPENAI_CHF_PER_1M_OUTPUT }}
         run: |
           for phase in $PHASES; do
             echo "::group::provision.sh $phase"

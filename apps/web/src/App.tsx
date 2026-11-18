@@ -64,6 +64,7 @@ import {
   ContactsIcon,
   ImportExportIcon,
   FolderSharedIcon,
+  ArticleIcon,
 } from './icons';
 
 const Home = lazy(() => import('./Home'));
@@ -93,6 +94,7 @@ const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
 const ImportExport = lazy(() => import('./ImportExport'));
 const Cases = lazy(() => import('./Cases'));
+const AssessmentTemplates = lazy(() => import('./Cases').then((m) => ({ default: m.AssessmentTemplates })));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DRAWER_WIDTH = 240;
@@ -124,7 +126,8 @@ type Section =
   | 'expenseProcessing'
   | 'reports'
   | 'importExport'
-  | 'cases';
+  | 'cases'
+  | 'assessmentTemplates';
 
 const SECTION_TO_HASH: Record<Section, string> = {
   home: '#/home',
@@ -154,6 +157,7 @@ const SECTION_TO_HASH: Record<Section, string> = {
   reports: '#/reports',
   importExport: '#/import-export',
   cases: '#/cases',
+  assessmentTemplates: '#/assessment-templates',
 };
 
 const HASH_TO_SECTION = Object.fromEntries(
@@ -230,6 +234,8 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   reports: 'nav.reports',
   importExport: 'nav.importExport',
   cases: 'nav.cases',
+  // Templates belong to Cases: whoever may open Cases sees them (editing is checked by the API).
+  assessmentTemplates: 'nav.cases',
 };
 
 /**
@@ -271,6 +277,7 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'importExport':
       return flags.isAdmin || flags.isHr;
     case 'cases':
+    case 'assessmentTemplates':
       return flags.isAdmin || flags.isManager;
     case 'management':
     case 'managementProjects':
@@ -692,6 +699,20 @@ export default function App() {
       ],
     },
     {
+      id: 'cases',
+      header: t('nav.casesGroup'),
+      items: [
+        { id: 'cases', section: 'cases', label: t('nav.cases'), icon: <FolderSharedIcon fontSize="small" />, visible: allowed('cases') },
+        {
+          id: 'assessmentTemplates',
+          section: 'assessmentTemplates',
+          label: t('nav.assessmentTemplates'),
+          icon: <ArticleIcon fontSize="small" />,
+          visible: allowed('assessmentTemplates'),
+        },
+      ],
+    },
+    {
       id: 'organization',
       header: t('nav.organization'),
       items: [
@@ -699,7 +720,6 @@ export default function App() {
         { id: 'hours', section: 'hours', label: t('nav.teamHours'), icon: <GroupIcon fontSize="small" />, visible: allowed('hours') },
         { id: 'balances', section: 'balances', label: t('nav.balances'), icon: <AccountBalanceWalletIcon fontSize="small" />, visible: allowed('balances') },
         { id: 'reports', section: 'reports', label: t('nav.reports'), icon: <BarChartIcon fontSize="small" />, visible: allowed('reports') },
-        { id: 'cases', section: 'cases', label: t('nav.cases'), icon: <FolderSharedIcon fontSize="small" />, visible: allowed('cases') },
         {
           id: 'approvals',
           section: 'approvals',
@@ -1253,6 +1273,13 @@ export default function App() {
               )}
               {section === 'cases' && allowed('cases') && orgId && (
                 <Cases
+                  orgId={orgId}
+                  authHeaders={authHeaders}
+                  canEdit={flags.isAdmin || flags.isManager || (permissions ? holdsAny(permissions, 'nav.cases') : true)}
+                />
+              )}
+              {section === 'assessmentTemplates' && allowed('assessmentTemplates') && orgId && (
+                <AssessmentTemplates
                   orgId={orgId}
                   authHeaders={authHeaders}
                   canEdit={flags.isAdmin || flags.isManager || (permissions ? holdsAny(permissions, 'nav.cases') : true)}

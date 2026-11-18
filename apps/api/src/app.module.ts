@@ -63,6 +63,8 @@ import { CalendarFeedController } from './calendar-feed.controller';
 import { CalendarFeedService } from './calendar-feed.service';
 import { CasesController } from './cases.controller';
 import { CasesService } from './cases.service';
+import { CaseAiService } from './case-ai.service';
+import { AiBudgetService } from './ai-budget.service';
 
 @Module({
   controllers: [
@@ -110,6 +112,8 @@ import { CasesService } from './cases.service';
   providers: [
     DbService,
     CasesService,
+    CaseAiService,
+    AiBudgetService,
     ImportExportService,
     CalendarFeedService,
     ProjectTimeService,

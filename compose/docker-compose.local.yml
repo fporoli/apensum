@@ -79,6 +79,16 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
+      # Cases on Azure (optional, paid; see env.example.*.cfg). Off unless keys, budget and prices are set.
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}
+      AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT: ${AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT:-}
+      AI_MONTHLY_BUDGET_CHF: ${AI_MONTHLY_BUDGET_CHF:-5}
+      AI_AZURE_ENABLED: ${AI_AZURE_ENABLED:-}
+      AZURE_TRANSCRIBE_CHF_PER_HOUR: ${AZURE_TRANSCRIBE_CHF_PER_HOUR:-}
+      AZURE_OPENAI_CHF_PER_1M_INPUT: ${AZURE_OPENAI_CHF_PER_1M_INPUT:-}
+      AZURE_OPENAI_CHF_PER_1M_OUTPUT: ${AZURE_OPENAI_CHF_PER_1M_OUTPUT:-}
       # Local catcher by default (same as the `local` profile's Mailpit) — override
       # SMTP_HOST/PORT/USER/PASSWORD/SECURE/FROM to point at a real relay instead.
       SMTP_HOST: ${SMTP_HOST:-mailpit}
@@ -89,7 +99,8 @@ services:
       SMTP_SECURE: ${SMTP_SECURE:-false}
     volumes:
       - api-documents:/app/apps/api/data/documents
-    networks: [default, interview-processing]
+    # whisper: the shared sidecar (compose/docker-compose.whisper.yml), reached as http://whisper:8080.
+    networks: [default, whisper]
     depends_on:
       migrate: { condition: service_completed_successfully }
       mailpit: { condition: service_started }
@@ -110,13 +121,11 @@ services:
     volumes:
       - ../infra/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
     depends_on: [api, web, keycloak]
-  whisper:
-    extends: { file: whisper.service.yml, service: whisper }
-    networks: [interview-processing]
-
 networks:
-  interview-processing:
-    internal: true
+  # Created by scripts/whisper.mjs (`npm run local:up` makes sure it exists), shared with dev's sidecar.
+  whisper:
+    name: apensum-whisper
+    external: true
 
 volumes:
   api-documents:

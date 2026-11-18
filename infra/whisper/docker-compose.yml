@@ -1,0 +1,38 @@
+# The one Whisper sidecar per VPS, shared by every instance on the server (prod, preprod, test,
+# demo, ...). Its own stack in /opt/edge/whisper, deployed by the vps workflow's `whisper` action
+# (whisper-remove takes it down), so no instance deploy rebuilds or restarts it. Built on the
+# server from this folder (Dockerfile + worker.mjs). Each instance's API joins the internal
+# network `apensum-whisper` (compose/docker-compose.vps.yml) and calls http://whisper:8080 when
+# its GitHub Environment sets CASES_WHISPER_URL to that. No host port, no internet access.
+# One transcription at a time for the whole server: the worker answers 429 (busy) to the rest.
+name: apensum-whisper
+services:
+  whisper:
+    build: { context: . }
+    image: apensum-whisper:local
+    container_name: apensum-whisper
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 128
+    environment:
+      WHISPER_MODEL: /models/${WHISPER_MODEL_FILE:?required}
+    volumes:
+      # Downloaded once by remote.sh (whisper action); kept when the stack is removed.
+      - ./models:/models:ro
+    networks:
+      whisper: { aliases: [whisper] }
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+networks:
+  whisper:
+    name: apensum-whisper
+    external: true

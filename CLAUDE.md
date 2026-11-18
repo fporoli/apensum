@@ -181,6 +181,17 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
 - AI assistant (`assistant.service.ts`): OpenAI SDK pointed at Gemini's or
   OpenAI's compatible endpoint, with tool-calling. Each tool must run the same
   authorization as its REST equivalent, using the caller's real identity.
+- Cases AI per organization (`organizations.settings.cases.ai`, `packages/shared/src/cases.ts`, set only by a
+  superdeveloper under Cases -> Assessment templates, `CaseAiSettingsPanel.tsx`, `GET/PUT case-ai-settings`):
+  transcription Whisper on the server or Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland), summary key sentences / instance provider / Azure OpenAI, AI draft
+  instance provider or Azure OpenAI. Default: nothing goes to Azure. `case-ai.service.ts` picks the provider
+  (a chosen but unconfigured one is an error, never a silent fallback); every Azure call goes through
+  `AiBudgetService` (`cases.ai_usage` 076): it reserves the estimated CHF under an advisory lock and refuses
+  beyond `AI_MONTHLY_BUDGET_CHF` (instance, unset = Azure off), the org's `monthlyLimitChf` (default 10), one
+  running call per user and 20 per hour; prices come from env (`AZURE_*_CHF_*`), `AI_AZURE_ENABLED=false` is
+  the kill switch, no retries against Azure. Azure resources (shared by all environments, Switzerland North,
+  "Standard" deployments only, resource group `apensum-ai`) are `infra/azure/ai-provision.sh`
+  (`resources|github|local|rotate`); budgets per environment are GitHub Environment variables, keys repo-level.
 - Domain terms: **project time** (`project_times`, hours booked against
   projects) is separate from **work time** (`work_times`, check-in/check-out
   attendance) and from **balances** (vacation/overtime, `balances.service.ts`).
@@ -377,7 +388,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `seed.sql` must stay re-runnable: fixed keys on every row, `ON CONFLICT DO NOTHING`,
   and UPDATEs that only fill in unset values. Each VPS instance has its own Postgres
   container (`PG_PORT`, role/db `worktime`) and Mailpit; only Caddy is shared (`infra/caddy/edge`).
-  Portainer is its own per-server stack (`infra/portainer`, `vps` workflow action `portainer`). Ports follow `8090+N` (Keycloak), `5430+N`
+  Portainer is its own per-server stack (`infra/portainer`, `vps` workflow action `portainer`). So is Whisper (Cases
+  transcription): one sidecar per machine, never per stack. On a VPS `infra/whisper/docker-compose.yml`
+  (action `whisper`, model `WHISPER_MODEL_FILE`), joined by every instance's API over the internal network
+  `apensum-whisper`, enabled per instance by `CASES_WHISPER_URL=http://whisper:8080`; locally
+  `compose/docker-compose.whisper.yml` (`npm run whisper:up`), used by dev (`127.0.0.1:8081`) and local (`whisper:8080`). Ports follow `8090+N` (Keycloak), `5430+N`
   (pg), `3000+N` (web), `8000+N` (API). Each compose file has a one-shot
   `migrate` service that runs before the API and Keycloak start.
 - Keycloak realm config: `infra/keycloak/realm-worktime.json`.

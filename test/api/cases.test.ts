@@ -133,7 +133,10 @@ test('cases service: synthesizeDraft weaves case details, evidence documents and
   assert.ok(result.sections_content.dossier_analysis.includes('Urteilsfähigkeit eingeschränkt'));
   assert.ok(result.sections_content.interviews_summary.includes('Anna Muster (relative)'));
   assert.ok(result.sections_content.interviews_summary.includes('öffnet seit Wochen keine Rechnungen mehr'));
-  assert.ok(result.sections_content.recommendation.includes('Art. 388 ff. ZGB'));
+  // The motion is named but left to the expert: the draft states no findings of its own.
+  assert.ok(result.sections_content.recommendation.includes('Antrag an die Kindes- und Erwachsenenschutzbehörde (KESB)'));
+  assert.ok(result.sections_content.recommendation.includes('[Offen: Beurteilung durch die Fachperson]'));
+  assert.ok(!result.sections_content.recommendation.includes('Art. 388 ff. ZGB'));
 });
 
 test('cases service: generateAssessmentPdf renders valid PDF buffer with Swiss confidentiality notice and sections', async () => {

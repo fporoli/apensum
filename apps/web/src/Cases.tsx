@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   CardContent,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -12,11 +13,13 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   Grid,
   IconButton,
   InputAdornment,
   MenuItem,
   Stack,
+  Switch,
   Tab,
   Tabs,
   TextField,
@@ -25,7 +28,8 @@ import {
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
-import { CaseInterviewEditor, interviewError, interviewResponse } from './CaseInterviewEditor';
+import { CaseAiSettingsPanel } from './CaseAiSettingsPanel';
+import { CaseInterviewEditor, caseErrorText, interviewError, interviewResponse, type InterviewAiProviders } from './CaseInterviewEditor';
 import { PageHeader, EmptyState } from './components';
 import {
   AddIcon,
@@ -530,7 +534,6 @@ function CaseDossierWorkspace({
         <Tab label={`${t('cases.tab.documents')} (${caseItem.document_count ?? 0})`} />
         <Tab label={`${t('cases.tab.interviews')} (${caseItem.interview_count ?? 0})`} />
         <Tab label={`${t('cases.tab.assessments')} (${caseItem.assessment_count ?? 0})`} />
-        <Tab label={t('cases.tab.templates')} />
       </Tabs>
 
       {/* Tab Panels */}
@@ -572,13 +575,20 @@ function CaseDossierWorkspace({
           onRefreshCase={onRefreshCase}
         />
       )}
-      {activeTab === 4 && (
-        <CaseTemplatesTab
-          orgId={orgId}
-          authHeaders={authHeaders}
-          canEdit={canEdit}
-        />
-      )}
+    </Box>
+  );
+}
+
+/** Assessment templates as their own page (navbar Cases -> Assessment Templates), not per case. */
+export function AssessmentTemplates({ orgId, authHeaders, canEdit }: {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  canEdit: boolean;
+}) {
+  return (
+    <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <CaseAiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
+      <CaseTemplatesTab orgId={orgId} authHeaders={authHeaders} canEdit={canEdit} />
     </Box>
   );
 }
@@ -772,6 +782,8 @@ function CaseDocumentsTab({
   const [docs, setDocs] = useState<CaseDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // After an upload: a PDF without a text layer (a scan) gave no text for the drafts.
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Upload modal
   const [openUpload, setOpenUpload] = useState(false);
@@ -825,6 +837,7 @@ function CaseDocumentsTab({
       });
       const data = await res.json();
       if (data?.ok) {
+        setNotice(data.extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
         setOpenUpload(false);
         setTitle('');
         setCategory('evidence');
@@ -876,6 +889,11 @@ function CaseDocumentsTab({
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
+        </Alert>
+      )}
+      {notice && (
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setNotice(null)}>
+          {notice}
         </Alert>
       )}
 
@@ -1050,6 +1068,7 @@ function CaseInterviewsTab({
   const [editable, setEditable] = useState(false);
   const mayEdit = canEdit && editable;
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(false);
+  const [aiProviders, setAiProviders] = useState<InterviewAiProviders>({ transcription: null, transcriptionSetting: 'whisper', summary: 'local' });
   const endpoint = `${API}/organizations/${orgId}/cases/${caseId}/interviews`;
 
   // Transcript inspect modal
@@ -1065,6 +1084,11 @@ function CaseInterviewsTab({
       setInterviews(data.interviews ?? []);
       setEditable(data.editable === true);
       setTranscriptionEnabled(data.transcriptionEnabled === true);
+      setAiProviders({
+        transcription: data.transcriptionProvider ?? null,
+        transcriptionSetting: data.transcriptionSetting === 'azure' ? 'azure' : 'whisper',
+        summary: data.summaryProvider === undefined ? 'local' : data.summaryProvider,
+      });
     } catch (error) {
       setEditable(false);
       setInterviews([]);
@@ -1296,6 +1320,7 @@ function CaseInterviewsTab({
         authHeaders={authHeaders}
         canEdit={mayEdit}
         transcriptionEnabled={transcriptionEnabled}
+        providers={aiProviders}
         onChange={(next) => {
           setSelectedInterview(next);
           setInterviews((current) => current.map((item) => item.id === next.id ? next : item));
@@ -1345,8 +1370,13 @@ function CaseAssessmentsTab({
   const [openCreate, setOpenCreate] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [newTitle, setNewTitle] = useState('');
-  const [autoSynthesize, setAutoSynthesize] = useState(true);
-  const [creating, setCreating] = useState(false);
+  // Which draft is being made: the rule-based one or the AI one (null = none running).
+  const [creating, setCreating] = useState<'rules' | 'ai' | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  // AI drafts: the provider the data goes to (null = none configured) and the user's go-ahead.
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai' | 'azure' | null>(null);
+  const [aiConsent, setAiConsent] = useState(false);
+  const selectedTemplate = templates.find((tpl) => tpl.id === selectedTemplateId);
 
   // Load assessments & templates
   const loadData = useCallback(async () => {
@@ -1369,6 +1399,7 @@ function CaseAssessmentsTab({
       if (assData?.ok) setAssessments(assData.assessments ?? []);
       if (tplData?.ok) {
         setTemplates(tplData.templates ?? []);
+        setAiProvider(tplData.aiProvider ?? null);
         if (tplData.templates?.length > 0 && !selectedTemplateId) {
           const match = tplData.templates.find((t: AssessmentTemplate) => t.domain === caseItem.domain) || tplData.templates[0];
           setSelectedTemplateId(match.id);
@@ -1405,22 +1436,21 @@ function CaseAssessmentsTab({
     }
   };
 
-  const handleCreateAssessment = async () => {
+  /** Creates the assessment, pre-filled by the rule-based draft or by the AI (which the template must allow). */
+  const handleCreateAssessment = async (mode: 'rules' | 'ai') => {
     if (!selectedTemplateId || !newTitle.trim()) return;
     try {
-      setCreating(true);
-      let initialSections: Record<string, string> = {};
-
-      if (autoSynthesize) {
-        const synRes = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}/assessments/synthesize`, {
-          method: 'POST',
-          headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ template_id: selectedTemplateId }),
-        });
-        const synData = await synRes.json();
-        if (synData?.ok && synData.draft?.sections_content) {
-          initialSections = synData.draft.sections_content;
-        }
+      setCreating(mode);
+      setCreateError(null);
+      const synRes = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}/assessments/${mode === 'ai' ? 'ai-draft' : 'synthesize'}`, {
+        method: 'POST',
+        headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_id: selectedTemplateId }),
+      });
+      const synData = await synRes.json().catch(() => null);
+      if (!synRes.ok || !synData?.ok || !synData.draft?.sections_content) {
+        setCreateError(draftError(synData?.message ?? synData?.error));
+        return;
       }
 
       const res = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}/assessments`, {
@@ -1429,25 +1459,29 @@ function CaseAssessmentsTab({
         body: JSON.stringify({
           template_id: selectedTemplateId,
           title: newTitle.trim(),
-          sections_content: initialSections,
+          sections_content: synData.draft.sections_content,
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (data?.ok && data.assessment) {
         setOpenCreate(false);
+        setAiConsent(false);
         await loadData();
         await onRefreshCase();
         await openEditor(data.assessment);
       } else {
-        setError(data?.error ?? 'failed-to-create-assessment');
+        setCreateError(draftError(data?.message ?? data?.error));
       }
     } catch {
-      setError(t('common.cannotReachApi'));
+      setCreateError(t('common.cannotReachApi'));
     } finally {
-      setCreating(false);
+      setCreating(null);
     }
   };
+
+  const draftError = (code: unknown) =>
+    caseErrorText(typeof code === 'string' ? code : '', t, 'cases.assessments.error.') ?? t('cases.interviews.operationFailed');
 
   const handleSaveAssessment = async () => {
     if (!activeAssessment) return;
@@ -1590,7 +1624,7 @@ function CaseAssessmentsTab({
           )}
 
           {/* New Assessment Modal */}
-          <Dialog open={openCreate} onClose={() => setOpenCreate(false)} maxWidth="sm" fullWidth>
+          <Dialog open={openCreate} onClose={() => { if (creating === null) setOpenCreate(false); }} maxWidth="sm" fullWidth>
             <DialogTitle>{t('cases.assessments.createModalTitle')}</DialogTitle>
             <DialogContent dividers>
               <Stack spacing={2} sx={{ mt: 1 }}>
@@ -1601,6 +1635,7 @@ function CaseAssessmentsTab({
                   value={selectedTemplateId}
                   onChange={(e) => {
                     setSelectedTemplateId(e.target.value);
+                    setAiConsent(false);
                     const tpl = templates.find((t) => t.id === e.target.value);
                     if (tpl) setNewTitle(`${tpl.name} — ${caseItem.subject_name}`);
                   }}
@@ -1630,17 +1665,45 @@ function CaseAssessmentsTab({
                     })}
                   </Typography>
                 </Box>
+
+                {selectedTemplate?.ai_allowed && (aiProvider ? (
+                  <Alert severity="warning">
+                    <Typography variant="body2" sx={{ mb: 1 }}>
+                      {t('cases.assessments.aiNotice', { provider: t(`cases.assessments.aiProvider.${aiProvider}`) })}
+                    </Typography>
+                    <FormControlLabel
+                      control={<Checkbox size="small" checked={aiConsent} onChange={(e) => setAiConsent(e.target.checked)} />}
+                      label={t('cases.assessments.aiConsent')}
+                    />
+                  </Alert>
+                ) : (
+                  <Alert severity="info">{t('cases.assessments.error.ai-not-configured')}</Alert>
+                ))}
+                {creating === 'ai' && (
+                  <Alert severity="info" icon={<CircularProgress size={20} />}>{t('cases.assessments.aiWorking')}</Alert>
+                )}
+                {createError && <Alert severity="error">{createError}</Alert>}
               </Stack>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setOpenCreate(false)}>{t('common.cancel')}</Button>
+              <Button onClick={() => setOpenCreate(false)} disabled={creating !== null}>{t('common.cancel')}</Button>
               <Button
-                variant="contained"
-                onClick={handleCreateAssessment}
-                disabled={creating || !selectedTemplateId || !newTitle.trim()}
+                variant="outlined"
+                onClick={() => void handleCreateAssessment('rules')}
+                disabled={creating !== null || !selectedTemplateId || !newTitle.trim()}
               >
-                {creating ? <CircularProgress size={20} /> : t('cases.assessments.startDraft')}
+                {creating === 'rules' ? <CircularProgress size={20} /> : t('cases.assessments.startDraft')}
               </Button>
+              {selectedTemplate?.ai_allowed && (
+                <Button
+                  variant="contained"
+                  color="warning"
+                  onClick={() => void handleCreateAssessment('ai')}
+                  disabled={creating !== null || !aiProvider || !aiConsent || !selectedTemplateId || !newTitle.trim()}
+                >
+                  {creating === 'ai' ? <CircularProgress size={20} /> : t('cases.assessments.startAiDraft')}
+                </Button>
+              )}
             </DialogActions>
           </Dialog>
         </Box>
@@ -1851,6 +1914,7 @@ function CaseTemplatesTab({
   const [selectedTemplate, setSelectedTemplate] = useState<AssessmentTemplate | null>(null);
   const [templateName, setTemplateName] = useState('');
   const [templateDesc, setTemplateDesc] = useState('');
+  const [templateAi, setTemplateAi] = useState(false);
   const [sections, setSections] = useState<AssessmentTemplateSection[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -1877,6 +1941,7 @@ function CaseTemplatesTab({
     setSelectedTemplate(tpl);
     setTemplateName(tpl.organization_id ? tpl.name : `${tpl.name} (${t('cases.templates.orgCustom')})`);
     setTemplateDesc(tpl.description ?? '');
+    setTemplateAi(tpl.organization_id ? tpl.ai_allowed === true : false);
     setSections([...(tpl.sections as AssessmentTemplateSection[])]);
   };
 
@@ -1884,29 +1949,35 @@ function CaseTemplatesTab({
     if (!selectedTemplate) return;
     try {
       setSaving(true);
-      if (selectedTemplate.organization_id) {
-        // Update existing org template
-        await fetch(`${API}/organizations/${orgId}/assessment-templates/${selectedTemplate.id}`, {
-          method: 'PATCH',
-          headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: templateName,
-            description: templateDesc,
-            sections,
-          }),
-        });
-      } else {
-        // Create org copy from global default template
-        await fetch(`${API}/organizations/${orgId}/assessment-templates`, {
-          method: 'POST',
-          headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: templateName,
-            domain: selectedTemplate.domain,
-            description: templateDesc,
-            sections,
-          }),
-        });
+      setError(null);
+      const res = selectedTemplate.organization_id
+        ? // Update existing org template
+          await fetch(`${API}/organizations/${orgId}/assessment-templates/${selectedTemplate.id}`, {
+            method: 'PATCH',
+            headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: templateName,
+              description: templateDesc,
+              sections,
+              ai_allowed: templateAi,
+            }),
+          })
+        : // Create org copy from global default template
+          await fetch(`${API}/organizations/${orgId}/assessment-templates`, {
+            method: 'POST',
+            headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: templateName,
+              domain: selectedTemplate.domain,
+              description: templateDesc,
+              sections,
+              ai_allowed: templateAi,
+            }),
+          });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        setError(data?.message ?? data?.error ?? t('cases.interviews.operationFailed'));
+        return;
       }
       setSelectedTemplate(null);
       await loadTemplates();
@@ -1969,11 +2040,16 @@ function CaseTemplatesTab({
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Chip size="small" label={t(`cases.domain.${tpl.domain}`)} />
-                    {tpl.organization_id ? (
-                      <Chip size="small" label={t('cases.templates.orgSpecific')} color="primary" variant="outlined" />
-                    ) : (
-                      <Chip size="small" label={t('cases.templates.swissStandard')} variant="outlined" />
-                    )}
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      {tpl.ai_allowed && (
+                        <Chip size="small" label={t('cases.templates.aiAllowedChip')} color="warning" variant="outlined" />
+                      )}
+                      {tpl.organization_id ? (
+                        <Chip size="small" label={t('cases.templates.orgSpecific')} color="primary" variant="outlined" />
+                      ) : (
+                        <Chip size="small" label={t('cases.templates.swissStandard')} variant="outlined" />
+                      )}
+                    </Box>
                   </Box>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
                     {tpl.name}
@@ -2022,6 +2098,15 @@ function CaseTemplatesTab({
               value={templateDesc}
               onChange={(e) => setTemplateDesc(e.target.value)}
             />
+            <Box>
+              <FormControlLabel
+                control={<Switch checked={templateAi} onChange={(e) => setTemplateAi(e.target.checked)} />}
+                label={t('cases.templates.aiAllowed')}
+              />
+              <Typography variant="caption" color="text.secondary" component="div">
+                {t('cases.templates.aiAllowedHelp')}
+              </Typography>
+            </Box>
 
             <Divider sx={{ my: 1 }} />
 

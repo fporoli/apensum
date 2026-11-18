@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Stack, TextField } from '@mui/material';
+import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Stack, TextField, Typography } from '@mui/material';
 import type { CaseInterview } from '@worktime3/shared/cases';
 import { useT } from './i18n';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
@@ -10,18 +10,32 @@ export async function interviewResponse(res: Response) {
   return data;
 }
 
-export function interviewError(error: unknown, t: ReturnType<typeof useT>) {
-  const message = error instanceof Error ? error.message : '';
-  const key = `cases.interviews.${message}`;
-  return t(key) === key ? t('cases.interviews.operationFailed') : t(key);
+/** Text for an API error code: the shared AI codes (cases.ai.error.*) first, then the interview ones. */
+export function caseErrorText(code: string, t: ReturnType<typeof useT>, prefix: string): string | null {
+  for (const key of [`cases.ai.error.${code}`, `${prefix}${code}`]) if (code && t(key) !== key) return t(key);
+  return null;
 }
 
-export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, onChange, onClose }: {
+export function interviewError(error: unknown, t: ReturnType<typeof useT>) {
+  const message = error instanceof Error ? error.message : '';
+  return caseErrorText(message, t, 'cases.interviews.') ?? t('cases.interviews.operationFailed');
+}
+
+/** Who handles transcription / summaries for this organization (GET interviews); null = chosen but not set up. */
+export interface InterviewAiProviders {
+  transcription: 'whisper' | 'azure' | null;
+  /** What the organization chose, to say which provider is missing. */
+  transcriptionSetting: 'whisper' | 'azure';
+  summary: 'local' | 'gemini' | 'openai' | 'azure' | null;
+}
+
+export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, onChange, onClose }: {
   interview: CaseInterview;
   url: string;
   authHeaders: () => Promise<Record<string, string>>;
   canEdit: boolean;
   transcriptionEnabled: boolean;
+  providers: InterviewAiProviders;
   onChange: (interview: CaseInterview) => void;
   onClose: () => void;
 }) {
@@ -40,6 +54,17 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
   const [reviewedSummary, setReviewedSummary] = useState(false);
   const summaryDirty = reviewedSummary || summary !== (interview.summary ?? '');
   const locked = busy || recording;
+  const providerName = (p: string) => t(`cases.ai.provider.${p}`);
+  // When a transcription started (ms), so the dialog can show how long the provider has been working.
+  const [transcribingSince, setTranscribingSince] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (transcribingSince === null) return;
+    setElapsed(0);
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - transcribingSince) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [transcribingSince]);
 
   useEffect(() => {
     const objectUrl = audio ? URL.createObjectURL(audio) : '';
@@ -64,6 +89,30 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
   const generate = (target: 'transcript' | 'summary') => run(async () => {
     const data = await request(target === 'transcript' ? '/transcribe' : '/summarize', 'POST', { revision: interview.revision });
     setDraft({ target, text: data.draft });
+  });
+
+  const uploadAudio = async (chosen: File): Promise<CaseInterview> => {
+    const form = new FormData();
+    form.append('revision', interview.revision);
+    form.append('file', chosen);
+    const { interview: next } = await request('/audio', 'PUT', form);
+    setAudio(null);
+    setAudioUrl('');
+    onChange(next);
+    setFile(null);
+    return next;
+  };
+
+  /** Attaches a chosen file first if there is one, then waits for Whisper's draft. */
+  const transcribe = () => run(async () => {
+    const revision = file ? (await uploadAudio(file)).revision : interview.revision;
+    setTranscribingSince(Date.now());
+    try {
+      const data = await request('/transcribe', 'POST', { revision });
+      setDraft({ target: 'transcript', text: data.draft });
+    } finally {
+      setTranscribingSince(null);
+    }
   });
 
   const save = () => run(async () => {
@@ -98,32 +147,45 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
           })}>{t('cases.interviews.playAudio')}</Button>)}
           {canEdit && <>
             <CaseInterviewAudioInput file={file} setFile={setFile} disabled={busy} setRecording={setRecording} />
-            {file && <Button disabled={locked || transcriptDirty || summaryDirty || !!draft} onClick={() => void run(async () => {
-              const form = new FormData();
-              form.append('revision', interview.revision);
-              form.append('file', file);
-              const { interview: next } = await request('/audio', 'PUT', form);
-              setAudio(null);
-              setAudioUrl('');
-              onChange(next);
-              setFile(null);
-            })}>{t(interview.has_audio ? 'cases.interviews.replaceAudio' : 'cases.interviews.attachAudio')}</Button>}
+            {file && <Button disabled={locked || transcriptDirty || summaryDirty || !!draft} onClick={() => void run(async () => { await uploadAudio(file); })}>
+              {t(interview.has_audio ? 'cases.interviews.replaceAudio' : 'cases.interviews.attachAudio')}
+            </Button>}
+            {(interview.has_audio || file) && <Stack spacing={1}>
+              <Stack direction="row" spacing={1}>
+                <Button variant="contained"
+                  disabled={locked || !!draft || !transcriptionEnabled || (!!file && (transcriptDirty || summaryDirty))}
+                  onClick={() => void transcribe()}>
+                  {t(file ? 'cases.interviews.attachAndTranscribe' : 'cases.interviews.generateTranscript')}
+                </Button>
+                {interview.transcript_stale && !reviewedTranscript && <Button disabled={locked} onClick={() => setReviewedTranscript(true)}>{t('cases.interviews.reviewTranscript')}</Button>}
+              </Stack>
+              {providers.transcription && <Typography variant="caption" color="text.secondary">
+                {t('cases.ai.sendsTo', { provider: providerName(providers.transcription) })}
+              </Typography>}
+              {!transcriptionEnabled && <Alert severity="info">
+                {t(providers.transcriptionSetting === 'azure' ? 'cases.ai.error.ai-provider-not-configured' : 'cases.interviews.interview-transcription-disabled')}
+              </Alert>}
+              {transcribingSince !== null && <Alert severity="info" icon={<CircularProgress size={20} />}>
+                {t('cases.interviews.transcribing', { seconds: String(elapsed), provider: providerName(providers.transcription ?? 'whisper') })}
+              </Alert>}
+            </Stack>}
           </>}
           {interview.transcript_stale && <Alert severity="warning">{t('cases.interviews.transcriptStale')}</Alert>}
           <TextField label={t('cases.interviews.transcriptText')} value={transcript} multiline minRows={4} maxRows={14}
             onChange={(e) => setTranscript(e.target.value)} disabled={busy}
             InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
-          {canEdit && interview.has_audio && <Stack direction="row" spacing={1}>
-            {transcriptionEnabled && <Button disabled={locked || !!draft} onClick={() => void generate('transcript')}>{t('cases.interviews.generateTranscript')}</Button>}
-            {interview.transcript_stale && !reviewedTranscript && <Button disabled={locked} onClick={() => setReviewedTranscript(true)}>{t('cases.interviews.reviewTranscript')}</Button>}
-          </Stack>}
           {interview.summary_stale && <Alert severity="warning">{t('cases.interviews.summaryStale')}</Alert>}
           <TextField label={t('cases.interviews.summary')} value={summary} multiline minRows={3} maxRows={9}
             onChange={(e) => setSummary(e.target.value)} disabled={busy}
             InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
-          {canEdit && <Stack direction="row" spacing={1}>
-            <Button disabled={locked || !!draft || transcriptDirty || interview.transcript_stale || !transcript.trim()}
+          {canEdit && <Stack direction="row" spacing={1} alignItems="center">
+            <Button disabled={locked || !!draft || transcriptDirty || interview.transcript_stale || !transcript.trim() || !providers.summary}
               onClick={() => void generate('summary')}>{t('cases.interviews.generateSummary')}</Button>
+            <Typography variant="caption" color="text.secondary">
+              {providers.summary
+                ? t('cases.ai.sendsTo', { provider: providerName(providers.summary) })
+                : t('cases.ai.error.ai-provider-not-configured')}
+            </Typography>
             {interview.summary_stale && !interview.transcript_stale && !reviewedSummary &&
               <Button disabled={locked} onClick={() => setReviewedSummary(true)}>{t('cases.interviews.reviewSummary')}</Button>}
           </Stack>}

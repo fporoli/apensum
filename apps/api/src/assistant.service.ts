@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import OpenAI from 'openai';
+import { aiClient, aiModel, aiProvider } from './ai-client';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 import { and, asc, eq, ilike, inArray } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
@@ -88,29 +89,16 @@ export class AssistantService {
     private readonly workTime: WorkTimeModelService,
   ) {}
 
-  /**
-   * Provider is swappable without touching any call site below: Gemini
-   * exposes an OpenAI-compatible endpoint (https://ai.google.dev/gemini-api/docs/openai),
-   * so pointing the same `openai` SDK at it — different baseURL, key, and
-   * model — is enough. GEMINI_API_KEY wins if both happen to be set.
-   */
   private client(): OpenAI | null {
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
-      return new OpenAI({ apiKey: geminiKey, baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/' });
-    }
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (openaiKey) return new OpenAI({ apiKey: openaiKey });
-    return null;
+    return aiClient();
   }
 
   private model(): string {
-    if (process.env.GEMINI_API_KEY) return process.env.GEMINI_MODEL || 'gemini-3.6-flash';
-    return process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    return aiModel();
   }
 
   isConfigured(): boolean {
-    return !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY);
+    return aiProvider() !== null;
   }
 
   async chat(

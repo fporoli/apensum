@@ -23,11 +23,15 @@ import { FileInterceptor, NoFilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
-import { callerUserId, can, permissionIdsOf } from './access';
+import { callerUserId, can, isSuperDeveloper, permissionIdsOf } from './access';
 import { grantedScopes } from '@worktime3/shared/permissions';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { CasesService } from './cases.service';
-import { interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from './case-interview-processing';
+import { extractPdfText, isPdf, tidyExtractedText } from './case-document-text';
+import { CaseAiService, caseAiAvailability } from './case-ai.service';
+import { AiBudgetService, instanceBudgetChf } from './ai-budget.service';
+import { VersionsService } from './versions.service';
+import { validateCaseAiSettings } from '@worktime3/shared/cases';
 import type {
   CreateCaseDto,
   UpdateCaseDto,
@@ -65,6 +69,9 @@ export class CasesController {
     private readonly dbService: DbService,
     private readonly casesService: CasesService,
     private readonly documentsService: DocumentsService,
+    private readonly caseAi: CaseAiService,
+    private readonly aiBudget: AiBudgetService,
+    private readonly versions: VersionsService,
   ) {}
 
   private get db(): Db {
@@ -219,6 +226,7 @@ export class CasesController {
 
     let documentId = body.document_id ?? null;
     let extractedText = body.extracted_text ?? null;
+    let extraction: 'pdf' | 'pdf-no-text' | null = null;
     const title = body.title || file?.originalname || 'Evidence Document';
     const category = body.category || 'evidence';
 
@@ -228,13 +236,13 @@ export class CasesController {
         id: caseId,
       });
 
-      // If text/plain or markdown file, parse directly into extracted_text if not provided
+      // Text the user typed wins; otherwise take it from the file: plain text as is, a PDF's text layer.
       if (!extractedText && (file.mimetype.startsWith('text/') || file.originalname.endsWith('.txt'))) {
-        try {
-          extractedText = file.buffer.toString('utf8');
-        } catch {
-          // ignore
-        }
+        extractedText = tidyExtractedText(file.buffer.toString('utf8'));
+      } else if (!extractedText && isPdf(file.buffer)) {
+        extractedText = await extractPdfText(file.buffer);
+        // Tells the page to say so: a PDF without a text layer (a scan) gives nothing.
+        extraction = extractedText ? 'pdf' : 'pdf-no-text';
       }
     }
 
@@ -246,7 +254,7 @@ export class CasesController {
       metadata: body.metadata ? (typeof body.metadata === 'string' ? JSON.parse(body.metadata) : body.metadata) : {},
     });
 
-    return { ok: true, document: doc };
+    return { ok: true, document: doc, extraction };
   }
 
   @Delete('cases/:caseId/documents/:docId')
@@ -283,7 +291,15 @@ export class CasesController {
     const interviews = await this.casesService.listInterviews(caseId);
     const editScopes = grantedScopes(await permissionIdsOf(this.db, orgId, callerId), 'nav.cases', 'edit');
     const editable = editScopes.has('all') || (editScopes.size > 0 && caseItem.lead_user_id === callerId);
-    return { ok: true, interviews, editable, transcriptionEnabled: interviewTranscriptionEnabled() };
+    // Where transcription and summaries go for this organization (null = chosen but not configured), shown before sending.
+    const providers = await this.caseAi.providers(orgId);
+    return {
+      ok: true, interviews, editable,
+      transcriptionEnabled: providers.transcription !== null,
+      transcriptionProvider: providers.transcription,
+      transcriptionSetting: providers.settings.transcription,
+      summaryProvider: providers.summary,
+    };
   }
 
   @Post('cases/:caseId/interviews')
@@ -364,9 +380,8 @@ export class CasesController {
   ) {
     const callerId = await this.requireCallerId(req);
     await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
-    if (!interviewTranscriptionEnabled()) throw new ServiceUnavailableException('interview-transcription-disabled');
     const { content } = await this.casesService.readInterviewAudio(orgId, caseId, interviewId, interviewRevision(revision));
-    const draft = await transcribeInterviewAudio(content);
+    const draft = await this.caseAi.transcribe(orgId, callerId, caseId, content);
     await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
     if ((await this.casesService.getInterview(caseId, interviewId)).revision !== revision) throw new ConflictException('interview-changed');
     return { ok: true, draft };
@@ -386,7 +401,10 @@ export class CasesController {
     const interview = await this.casesService.getInterview(caseId, interviewId);
     if (interview.revision !== interviewRevision(revision)) throw new ConflictException('interview-changed');
     if (!interview.transcript_text.trim() || interview.transcript_stale) throw new BadRequestException('interview-current-transcript-required');
-    return { ok: true, draft: summarizeInterview(interview.transcript_text) };
+    const draft = await this.caseAi.summarize(orgId, callerId, caseId, {
+      name: interview.interviewee_name, role: interview.interviewee_role, date: interview.interview_date, transcript: interview.transcript_text,
+    });
+    return { ok: true, draft };
   }
 
   @Delete('cases/:caseId/interviews/:interviewId')
@@ -451,6 +469,21 @@ export class CasesController {
     return { ok: true, draft };
   }
 
+  /** Same as synthesize, written by the AI provider; the template must allow it (see CasesService.aiDraft). */
+  @Post('cases/:caseId/assessments/ai-draft')
+  async aiAssessmentDraft(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() body: { template_id: string },
+  ) {
+    const callerId = await this.requireCallerId(req);
+    const caseItem = await this.casesService.getCase(orgId, caseId);
+    await this.checkEditAccess(orgId, callerId, caseItem);
+    const draft = await this.casesService.aiDraft(orgId, caseId, body.template_id, callerId);
+    return { ok: true, draft };
+  }
+
   @Get('cases/:caseId/assessments/:assessmentId')
   async getAssessment(
     @Param('orgId') orgId: string,
@@ -509,6 +542,52 @@ export class CasesController {
   }
 
   // ---------------------------------------------------------------------------
+  // AI providers and cost limits (organizations.settings.cases.ai)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The organization's AI choices, what this instance offers and this month's Azure spend.
+   * Everyone who sees Cases sees it; only a superdeveloper may change it (canConfigure) and sees
+   * the whole instance's spend, since the instance owner pays the Azure bill.
+   */
+  @Get('case-ai-settings')
+  @Header('Cache-Control', privateCache)
+  async getAiSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
+    const callerId = await this.requireCallerId(req);
+    await this.checkSeeAccess(orgId, callerId);
+    const superdeveloper = await isSuperDeveloper(this.db, callerId);
+    const [providers, totals] = await Promise.all([this.caseAi.providers(orgId), this.aiBudget.totals(orgId)]);
+    return {
+      ok: true,
+      settings: providers.settings,
+      providers: { transcription: providers.transcription, summary: providers.summary, draft: providers.draft },
+      available: caseAiAvailability(),
+      canConfigure: superdeveloper,
+      usage: {
+        orgSpentChf: totals.orgSpentChf,
+        orgCalls: totals.orgCalls,
+        ...(superdeveloper ? { instanceSpentChf: totals.instanceSpentChf, instanceBudgetChf: instanceBudgetChf() } : {}),
+      },
+    };
+  }
+
+  @Put('case-ai-settings')
+  async putAiSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Body() body: unknown) {
+    const callerId = await this.requireCallerId(req);
+    if (!(await isSuperDeveloper(this.db, callerId))) throw new ForbiddenException('forbidden');
+    const checked = validateCaseAiSettings(body);
+    if (!checked.ok) throw new BadRequestException(checked.error);
+    const available = caseAiAvailability();
+    if ((checked.value.transcription === 'azure' && !available.azureTranscription)
+      || ((checked.value.summary === 'azure' || checked.value.draft === 'azure') && !available.azureOpenai)) {
+      throw new BadRequestException('ai-provider-not-configured');
+    }
+    await this.caseAi.saveSettings(orgId, checked.value);
+    void this.versions.record('organizations', orgId, 'update_delta', callerId, { settings: { cases: { ai: checked.value } } }).catch(() => {});
+    return { ok: true, settings: checked.value };
+  }
+
+  // ---------------------------------------------------------------------------
   // Assessment Templates (Client-Changeable)
   // ---------------------------------------------------------------------------
 
@@ -520,7 +599,8 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     await this.checkSeeAccess(orgId, callerId);
     const templates = await this.casesService.listTemplates(orgId);
-    return { ok: true, templates };
+    // Which provider an AI draft goes to (null = none configured), shown before anything is sent.
+    return { ok: true, templates, aiProvider: (await this.caseAi.providers(orgId)).draft };
   }
 
   @Get('assessment-templates/:templateId')

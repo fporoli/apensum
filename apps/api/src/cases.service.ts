@@ -1,10 +1,12 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException, ForbiddenException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
 import { DbService, type Db } from './db.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
+import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
+import { CaseAiService } from './case-ai.service';
 import {
   casesInCases,
   case_documentsInCases,
@@ -31,11 +33,17 @@ import type {
   UpdateAssessmentTemplateDto,
 } from '@worktime3/shared/cases';
 
+/** Placeholder for every judgement in a rule-based draft: the draft never states findings itself. */
+const OPEN_ASSESSMENT = '[Offen: Beurteilung durch die Fachperson]';
+
 @Injectable()
 export class CasesService {
+  private readonly logger = new Logger(CasesService.name);
+
   constructor(
     private readonly dbService: DbService,
     private readonly documentsService: DocumentsService,
+    private readonly caseAi: CaseAiService,
   ) {}
 
   private get db(): Db {
@@ -449,6 +457,7 @@ export class CasesService {
         sections,
         letterhead_config,
         is_default,
+        ai_allowed,
         created_at::text AS created_at,
         updated_at::text AS updated_at
       FROM cases.assessment_templates
@@ -469,6 +478,7 @@ export class CasesService {
         sections,
         letterhead_config,
         is_default,
+        ai_allowed,
         created_at::text AS created_at,
         updated_at::text AS updated_at
       FROM cases.assessment_templates
@@ -490,6 +500,7 @@ export class CasesService {
         sections: dto.sections ?? [],
         letterhead_config: dto.letterhead_config ?? {},
         is_default: false,
+        ai_allowed: dto.ai_allowed === true,
       })
       .returning();
 
@@ -502,14 +513,16 @@ export class CasesService {
       throw new BadRequestException('global-templates-read-only');
     }
 
+    // Unset fields must still be bound (as NULL): drizzle drops an `undefined` parameter from the SQL.
     await this.db.execute(sql`
       UPDATE cases.assessment_templates
       SET
         name = COALESCE(${dto.name?.trim() ?? null}, name),
         domain = COALESCE(${dto.domain ?? null}, domain),
-        description = CASE WHEN ${dto.description !== undefined} THEN ${dto.description} ELSE description END,
-        sections = CASE WHEN ${dto.sections !== undefined} THEN ${JSON.stringify(dto.sections)}::jsonb ELSE sections END,
-        letterhead_config = CASE WHEN ${dto.letterhead_config !== undefined} THEN ${JSON.stringify(dto.letterhead_config)}::jsonb ELSE letterhead_config END,
+        description = CASE WHEN ${dto.description !== undefined} THEN ${dto.description ?? null} ELSE description END,
+        sections = CASE WHEN ${dto.sections !== undefined} THEN ${dto.sections !== undefined ? JSON.stringify(dto.sections) : null}::jsonb ELSE sections END,
+        letterhead_config = CASE WHEN ${dto.letterhead_config !== undefined} THEN ${dto.letterhead_config !== undefined ? JSON.stringify(dto.letterhead_config) : null}::jsonb ELSE letterhead_config END,
+        ai_allowed = CASE WHEN ${dto.ai_allowed !== undefined} THEN ${dto.ai_allowed === true} ELSE ai_allowed END,
         updated_at = now()
       WHERE id = ${templateId}::uuid AND organization_id = ${orgId}::uuid
     `);
@@ -706,35 +719,21 @@ export class CasesService {
             }
           }
         } else {
-          draftText += `Aktenkundige Exploration: Psychopathologischer Status und somatische Verfassung wurden erhoben. Zur Zeit liegen keine anderweitigen Arztberichte vor.`;
+          draftText += `Zurzeit liegen keine Arztberichte im Dossier vor.\n\n${OPEN_ASSESSMENT}`;
         }
       } else if (key.includes('schuld') || key.includes('delict') || key.includes('tat') || key.includes('deduction') || key.includes('rekonstruktion')) {
         draftText =
           `Analyse des Sachverhalts und Handlungsdynamik:\n` +
-          `Gestützt auf die vorliegenden Aussagen und Ermittlungsakten zeigt sich der Handlungsablauf wie folgt rekonstruierbar. ` +
-          `Die Einvernahmen von ${interviews.map((i) => i.interviewee_name).join(', ') || 'den Beteiligten'} stützen die Feststellung eines konsistenten Geschehensablaufs.`;
+          `Grundlagen: ${documents.length} Dokument(e); Befragungen von ${interviews.map((i) => i.interviewee_name).join(', ') || '-'}.\n\n` +
+          OPEN_ASSESSMENT;
       } else if (key.includes('empfehl') || key.includes('recommendation') || key.includes('antrag') || key.includes('referral') || key.includes('schluss')) {
-        if (template.domain === 'kesb') {
-          draftText =
-            `Antrag an die Kindes- und Erwachsenenschutzbehörde (KESB):\n\n` +
-            `1. Es wird festgestellt, dass für ${c.subject_name} eine Schutzbedürftigkeit im Sinne von Art. 388 ff. ZGB vorliegt.\n` +
-            `2. Gestützt auf das Subsidiaritäts- und Verhältnismässigkeitsprinzip wird die Errichtung einer Beistandschaft nach Art. 391 ff. ZGB beantragt.\n` +
-            `3. Aufgabenbereich: Personen- und Vermögenssorge, Vertretung vor Behörden und Rechtsverkehr.\n` +
-            `4. Die periodische Berichterstattung wird im ordentlichen Turnus festgelegt.`;
-        } else if (template.domain === 'forensic_psychiatry') {
-          draftText =
-            `Beantwortung der richterlichen Fragestellungen:\n\n` +
-            `1. Diagnose: Es liegt eine aktenkundig nachweisbare psychische Störung gemäss ICD vor.\n` +
-            `2. Schuldfähigkeit: Die Einsichts- und Steuerungsfähigkeit zum Deliktzeitpunkt wird als erhalten/vermindert beurteilt.\n` +
-            `3. Rückfallrisiko & Massnahme: Zur Senkung des Rückfallrisikos wird eine therapeutische Massnahme gemäss Art. 56 ff. StGB befürwortet.`;
-        } else if (template.domain === 'police') {
-          draftText =
-            `Schlussantrag an die Staatsanwaltschaft:\n\n` +
-            `Die polizeilichen Ermittlungen in der Untersuchung ${c.reference_number} sind abgeschlossen. ` +
-            `Die Akten sowie die sichergestellten Beweismittel und Einvernahmeprotokolle werden der zuständigen Staatsanwaltschaft zur weiteren Verfügung übermittelt.`;
-        } else {
-          draftText = `Zusammenfassende Beurteilung und Empfehlung der zuständigen Stelle.`;
-        }
+        // Conclusions, findings and motions are the expert's: the draft names what to decide, never decides it.
+        const motions: Record<string, string> = {
+          kesb: 'Antrag an die Kindes- und Erwachsenenschutzbehörde (KESB)',
+          forensic_psychiatry: 'Beantwortung der richterlichen Fragestellungen',
+          police: 'Schlussantrag an die Staatsanwaltschaft',
+        };
+        draftText = `${motions[template.domain] ?? 'Zusammenfassende Beurteilung und Empfehlung'}:\n\n${OPEN_ASSESSMENT}`;
       } else {
         draftText = sec.promptGuidance
           ? `${sec.promptGuidance}\n\n[Befund für ${c.subject_name} (${c.reference_number}) basierend auf ${documents.length} Dokumenten und ${interviews.length} Befragungen]`
@@ -745,6 +744,45 @@ export class CasesService {
     }
 
     return { title, sections_content };
+  }
+
+  /**
+   * AI draft of an assessment: sends the case's names, document texts and current transcripts to
+   * the organization's AI provider (case-ai.service.ts). Only with a template that allows it (`ai_allowed`).
+   * Logged without content, so who sent which case to which provider can be traced.
+   */
+  async aiDraft(
+    orgId: string,
+    caseId: string,
+    templateId: string,
+    callerId: string,
+  ): Promise<{ title: string; sections_content: Record<string, string> }> {
+    const template = await this.getTemplate(orgId, templateId);
+    if (!template.ai_allowed) throw new ForbiddenException('template-ai-not-allowed');
+    const c = await this.getCase(orgId, caseId);
+    const [documents, interviews] = await Promise.all([this.listDocuments(caseId), this.listInterviews(caseId)]);
+    const sections = template.sections as AssessmentTemplateSection[];
+    const messages = buildAiDraftMessages({
+      caseInfo: { reference: c.reference_number, title: c.title, subjectName: c.subject_name, subjectDob: c.subject_dob ?? null, domain: c.domain, lead: c.lead_user_name ?? null },
+      template: { name: template.name, description: template.description, sections },
+      documents: documents.map((d) => ({ title: d.title, category: d.category, fileName: d.file_name ?? null, text: d.extracted_text ?? null })),
+      // Stale texts no longer match their audio/transcript, so they are not sent (as in synthesizeDraft).
+      interviews: interviews.map((i) => ({
+        name: i.interviewee_name,
+        role: i.interviewee_role,
+        date: i.interview_date,
+        summary: i.summary && !i.summary_stale ? i.summary : null,
+        transcript: i.transcript_text && !i.transcript_stale ? i.transcript_text : null,
+      })),
+    });
+    this.logger.log(`AI draft: case ${caseId}, template ${templateId}, user ${callerId}, ${documents.length} document(s), ${interviews.length} interview(s)`);
+    // The organization's provider (instance or Azure), bounded in time; Azure goes through the budget.
+    const answer = await this.caseAi.draft(orgId, callerId, caseId, messages, AI_DRAFT_MAX_TOKENS);
+    try {
+      return { title: `${template.name} — ${c.subject_name} (${c.reference_number})`, sections_content: parseAiDraft(answer, sections) };
+    } catch {
+      throw new UnprocessableEntityException('ai-draft-invalid');
+    }
   }
 
   /**
