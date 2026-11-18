@@ -86,6 +86,8 @@ export function labelFor(locale: string, t: Texts, sources: LabelSources): (dim:
       case 'type': return fromStatic(sources.absenceTypes, v) ?? sources.fallback?.(dim, v) ?? v;
       case 'category': return fromStatic(sources.categories, v) ?? sources.fallback?.(dim, v) ?? v;
       case 'status': return t(`reports.status.${v}`);
+      case 'check': return t(`reports.check.${v}`);
+      case 'date': return dateLabel(v, locale);
       case 'department':
       case 'function':
       case 'manager': return v || t('reports.none');
@@ -102,7 +104,7 @@ export function formatMeasure(n: number, measure: Pick<ReportMeasure, 'kind'> | 
 
 /** Rows sorted by what people read (category and type labels, names), months in calendar order. */
 export function sortRows(rows: readonly ReportRow[], groupBy: readonly string[], label: (dim: string, row: ReportRow) => string, locale: string): ReportRow[] {
-  const key = (d: string, r: ReportRow) => (d === 'month' ? String(r.month ?? '') : label(d, r));
+  const key = (d: string, r: ReportRow) => (d === 'month' || d === 'date' ? String(r[d] ?? '') : label(d, r));
   return [...rows].sort((a, b) => {
     for (const d of groupBy) {
       const c = key(d, a).localeCompare(key(d, b), locale);

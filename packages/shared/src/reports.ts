@@ -9,7 +9,7 @@
 //
 // Keep this file erasable TypeScript (no enums, no imports) so Node tests can load it directly.
 
-export type ReportId = 'projectHours' | 'attendance' | 'absences' | 'expenses' | 'people';
+export type ReportId = 'projectHours' | 'attendance' | 'absences' | 'expenses' | 'people' | 'workingTimeAct';
 /** `money` is in the row's `currency`: amounts in different currencies are never added up. */
 export type MeasureKind = 'hours' | 'days' | 'money' | 'count' | 'fte';
 
@@ -96,6 +96,19 @@ export const REPORTS: readonly ReportDefinition[] = [
       { key: 'fte', kind: 'fte', aggregate: 'sum' },
     ],
     chart: ['headcount', 'fte'],
+  },
+  {
+    // Recorded attendance checked against the Working Hours Act (apps/api/src/working-time-act.ts):
+    // one raw row per finding, `check` naming the rule, `date` the day concerned.
+    id: 'workingTimeAct',
+    object: 'nav.workTime',
+    dimensions: ['person', 'check', 'month', 'date'],
+    defaultGroupBy: ['person', 'check'],
+    measures: [
+      { key: 'occurrences', kind: 'count', aggregate: 'sum' },
+      { key: 'hours', kind: 'hours', aggregate: 'sum' },
+    ],
+    chart: ['occurrences'],
   },
 ];
 

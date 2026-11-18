@@ -15,6 +15,8 @@ export default {
   contactUrl: process.env.SITE_CONTACT_URL || '',
   /** The public source code (AGPL-3.0): footer, home page and security page. Empty = not mentioned. */
   sourceUrl: process.env.SITE_SOURCE_URL ?? 'https://github.com/fporoli/apensum',
+  /** SECO's page on working-time recording, the source the Working Hours Act page cites. */
+  lawSourceUrl: 'https://www.seco.admin.ch/de/arbeitszeiterfassung',
   /** Where contact mail goes (mailto links). */
   email: process.env.SITE_EMAIL || 'info@apensum.ch',
   /** Who runs the website (legal notice). A person for now: there is no company yet. */

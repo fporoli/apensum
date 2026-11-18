@@ -172,6 +172,19 @@ function normalizeRawEmployeeRow(r: RawEmployeeImportRow): RawEmployeeImportRow 
   };
 }
 
+/**
+ * Each person's latest assignment (greatest `validFrom`, 'YYYY-MM-DD'), whatever order the rows come
+ * in: the one in force on the last day the rows were selected up to.
+ */
+export function latestAssignmentPerUser<T extends { userId: string; validFrom: string }>(rows: readonly T[]): Map<string, T> {
+  const out = new Map<string, T>();
+  for (const row of rows) {
+    const current = out.get(row.userId);
+    if (!current || row.validFrom > current.validFrom) out.set(row.userId, row);
+  }
+  return out;
+}
+
 @Injectable()
 export class ImportExportService {
   constructor(
@@ -220,16 +233,13 @@ export class ImportExportService {
       .from(employee_assignments)
       .where(and(eq(employee_assignments.organization_id, orgId), lte(employee_assignments.valid_from, periodEnd)));
 
-    // Latest assignment per user
+    // The assignment in force at the end of the month: the latest valid_from per person.
     const assignmentMap = new Map<string, { department: string; jobFunction: string }>();
-    for (const a of assignments) {
-      const existing = assignmentMap.get(a.userId);
-      if (!existing) {
-        assignmentMap.set(a.userId, {
-          department: a.departmentId ? deptMap.get(a.departmentId) ?? '' : '',
-          jobFunction: a.jobFunction ?? '',
-        });
-      }
+    for (const [userId, a] of latestAssignmentPerUser(assignments)) {
+      assignmentMap.set(userId, {
+        department: a.departmentId ? deptMap.get(a.departmentId) ?? '' : '',
+        jobFunction: a.jobFunction ?? '',
+      });
     }
 
     // 4. Fetch approved expenses in this month

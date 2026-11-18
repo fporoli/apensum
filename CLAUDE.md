@@ -337,6 +337,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `nav.reports:edit` (admin, hr, manager); whoever opens one runs it with their own rights. Report logic is
   `reports.service.ts`; labels and the table (page, PDF, Excel, scheduled files) are `packages/shared/src/reportTable.ts`
   with the texts in `reportTexts.ts` (spread into `dictionaries.ts`; the API uses them for scheduled files).
+  The `workingTimeAct` report checks recorded attendance against the Working Hours Act (`working-time-act.ts`, pure:
+  daily rest, breaks, 14-hour day, weekly maximum, yearly Überzeit, night and Sunday work; rules as SECO's 710.224.d
+  summary states them; it lists findings, it does not judge permits or exceptions).
   Schedules (065 `report_schedules` / `report_runs`, `report-schedules.service.ts`, math in `report-schedule.ts`):
   weekly or monthly at an hour in the owner's time zone; a job runner in the API (every minute, claims a due row by
   moving `next_run_at`, `REPORT_SCHEDULER=off` disables it) makes one file per recipient with that recipient's rights
@@ -380,7 +383,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   contact page: topic from `?topic=`, time trap). No `mailto:` links (they do nothing without a mail program): buttons
   open the contact form with a topic (`ctx.contactLink`), the address is plain text (`ctx.email`). Texts are in `src/i18n/<lang>.mjs`, all four with the same keys, list lengths and
   `{{placeholders}}` (`test/site.test.mjs`); German is Swiss (no ß). The holiday card imports
-  `packages/shared/src/worktime.ts`. Claims must match what the app does. Deployed only by the
+  `packages/shared/src/worktime.ts`. The Working Hours Act page (`law`) cites SECO (`lawSourceUrl`); its cards must
+  stay true to the app (report, Überzeit account, midnight split, retention via versions). Claims must match what the app does. Deployed only by the
   `site` workflow (`infra/site/`: own Caddy container behind the shared edge, `remote.sh`; a host other than
   the main domain, e.g. `wwwpp.apensum.ch`, is a noindex preview in its own container);
   `npm run site:dev` previews on :3010. Media (not in git, `apps/site/media`, shipped from the `site-media`

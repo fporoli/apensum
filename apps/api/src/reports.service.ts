@@ -3,8 +3,10 @@ import { and, asc, eq, gte, inArray, lt, lte, sql } from 'drizzle-orm';
 import type { DbService } from './db.service';
 import { BalancesService, type MonthBalance } from './balances.service';
 import { WorkTimeModelService } from './work-time-model.service';
+import { checkWorkingTimeAct } from './working-time-act';
+import { weekStart } from '@worktime3/shared/worktime';
 import { can, isOrgMember, listableUserIds } from './access';
-import { employee_assignments, expenses, organization_memberships, project_times, projects, users } from './db/schema';
+import { employee_assignments, expenses, organization_memberships, project_times, projects, users, work_times } from './db/schema';
 import { groupReport, monthEnd, monthsBetween, parseGroupBy, reportById, type ReportDefinition, type ReportRow } from '@worktime3/shared/reports';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
@@ -171,6 +173,8 @@ export class ReportsService {
       raw.push(...(await this.expenseRows(db, orgId, people, first, last, projectId)));
     } else if (def.id === 'people') {
       raw.push(...(await this.peopleRows(db, orgId, people, last)));
+    } else if (def.id === 'workingTimeAct') {
+      raw.push(...(await this.workingTimeActRows(db, orgId, people, first, last)));
     } else {
       // Attendance and absences come from the balances, year by year, as the Balances page shows them.
       const settings = await this.workTime.settings(db, orgId);
@@ -188,6 +192,47 @@ export class ReportsService {
 
     const grouped = groupReport(def, raw, groupBy, (d, r) => (d === 'person' ? String(r.personName ?? '') : String(r[d] ?? '')));
     return { ok: true, ...grouped };
+  }
+
+  /**
+   * Working Hours Act findings (working-time-act.ts), one row per finding: each person's closed
+   * sessions in their own time zone, read from the Monday of the first year's first week so the
+   * yearly Überzeit and the first day's rest have their context.
+   */
+  private async workingTimeActRows(db: Db, orgId: string, people: Array<{ id: string; name: string }>, first: string, last: string): Promise<ReportRow[]> {
+    const settings = await this.workTime.settings(db, orgId);
+    const from = `${first}-01`;
+    const [ly, lm] = last.split('-').map(Number);
+    const toExclusive = lm === 12 ? `${ly + 1}-01-01` : `${ly}-${String(lm + 1).padStart(2, '0')}-01`;
+    const contextFrom = weekStart(`${first.slice(0, 4)}-01-01`);
+    const out: ReportRow[] = [];
+    for (const p of people) {
+      const timeZone = await this.workTime.timeZone(db, p.id);
+      // A day of margin each side: the period is in the person's zone, the bounds here in UTC.
+      const sessions = await db
+        .select({ start: work_times.check_in, end: work_times.check_out })
+        .from(work_times)
+        .where(
+          and(
+            eq(work_times.organization_id, orgId),
+            eq(work_times.user_id, p.id),
+            sql`${work_times.check_out} IS NOT NULL`,
+            gte(work_times.check_in, sql`${contextFrom}::date - interval '1 day'`),
+            lt(work_times.check_in, sql`${toExclusive}::date + interval '1 day'`),
+          ),
+        );
+      const findings = checkWorkingTimeAct(sessions as { start: string; end: string }[], {
+        timeZone,
+        from,
+        toExclusive,
+        maxWeeklyMinutes: settings.legalMaxWeeklyMinutes,
+        yearLimitMinutes: settings.legalOvertimeYearLimitMinutes,
+      });
+      for (const f of findings) {
+        out.push({ person: p.id, personName: p.name, check: f.check, month: f.date.slice(0, 7), date: f.date, occurrences: 1, hours: hours(f.minutes) });
+      }
+    }
+    return out;
   }
 
   /**

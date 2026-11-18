@@ -387,6 +387,55 @@ ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('features.meta.title'), description: t('features.meta.description'), body });
 }
 
+/** What Apensum does for the Working Hours Act (page `law`): each card a claim the app keeps. */
+const LAW = [
+  ['recording', 'clock'],
+  ['mobile', 'phone'],
+  ['retention', 'history'],
+  ['checks', 'scale'],
+  ['overtime', 'sliders'],
+  ['night', 'calendar'],
+  ['timesheets', 'check'],
+  ['simplified', 'doc'],
+];
+
+export function law(ctx) {
+  const { t } = ctx;
+  const source = ctx.config.lawSourceUrl;
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${icon('scale')}${t('nav.law')}</p>
+    <h1>${t('law.title')}</h1>
+    <p class="lead">${t('law.lead')}</p>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap">
+    <h2>${t('law.rules.title')}</h2>
+    <div class="card">${checklist(t.list('law.rules.items'))}</div>
+    <p class="muted small">${t('law.rules.source')}${source ? ` <a href="${esc(source)}" rel="noopener">${t('law.rules.sourceLink')}</a>` : ''}</p>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap">
+    <h2>${t('law.app.title')}</h2>
+  </div>
+  <div class="wrap grid grid-2">
+  ${LAW.map(
+    ([k, ic]) => `<article class="card feature">
+      <div class="feature-icon">${icon(ic)}</div>
+      <h3 class="h3">${t(`law.${k}.title`)}</h3>
+      <p>${t(`law.${k}.text`)}</p>
+    </article>`,
+  ).join('\n  ')}
+  </div>
+  <div class="wrap"><p class="muted small note-block">${t('law.note')}</p></div>
+</section>
+${ctaBand(ctx)}`;
+  return layout(ctx, { title: t('law.meta.title'), description: t('law.meta.description'), body });
+}
+
 export function security(ctx) {
   const { t } = ctx;
   const body = `
@@ -657,4 +706,4 @@ export function about(ctx) {
   return layout(ctx, { title: t('about.meta.title'), description: t('about.meta.description'), body, reveal: true });
 }
 
-export const RENDER = { home, features, pricing, security, about, contact, impressum, privacy };
+export const RENDER = { home, features, pricing, security, law, about, contact, impressum, privacy };

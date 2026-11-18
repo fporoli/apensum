@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'pricing', 'security', 'about', 'contact', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'pricing', 'security', 'law', 'about', 'contact', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -109,6 +109,7 @@ function footer(ctx) {
       <a href="${link('features')}">${t('nav.features')}</a>
       <a href="${link('pricing')}">${t('nav.pricing')}</a>
       <a href="${link('security')}">${t('nav.security')}</a>
+      <a href="${link('law')}">${t('nav.law')}</a>
       <a href="${ctx.demo}">${t('cta.demo')}</a>
       ${config.appUrl ? `<a href="${esc(config.appUrl)}">${t('nav.login')}</a>` : ''}
       ${config.sourceUrl ? `<a href="${esc(config.sourceUrl)}" rel="noopener">${t('nav.source')}</a>` : ''}

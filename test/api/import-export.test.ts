@@ -258,3 +258,17 @@ test('restoreOrganizationBackup processes zip entries and restores database reco
   assert.equal(auditLogs.length, 1);
   assert.equal(auditLogs[0][2], 'organization.backup_restored');
 });
+
+test('payroll: the latest assignment per person wins, whatever order the rows come in', async () => {
+  const { latestAssignmentPerUser } = await import('../../apps/api/src/import-export.service');
+  const rows = [
+    { userId: 'u1', validFrom: '2026-01-01', departmentId: 'old' },
+    { userId: 'u2', validFrom: '2025-05-01', departmentId: 'only' },
+    { userId: 'u1', validFrom: '2026-09-01', departmentId: 'new' },
+    { userId: 'u1', validFrom: '2025-03-01', departmentId: 'older' },
+  ];
+  const latest = latestAssignmentPerUser(rows);
+  assert.equal(latest.get('u1')?.departmentId, 'new');
+  assert.equal(latest.get('u2')?.departmentId, 'only');
+  assert.equal(latestAssignmentPerUser([...rows].reverse()).get('u1')?.departmentId, 'new');
+});
