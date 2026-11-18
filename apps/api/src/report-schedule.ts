@@ -4,6 +4,8 @@
  * so 06:00 stays 06:00 across daylight saving time. Pure, so it is tested without a database.
  */
 
+import { zoneFormatter } from './zone-format';
+
 export interface ScheduleRule {
   frequency: 'weekly' | 'monthly';
   weekday?: number | null;
@@ -15,7 +17,7 @@ export interface ScheduleRule {
 /** Minutes the zone is ahead of UTC at `instant` (e.g. 60 for Zurich in winter). */
 export function zoneOffsetMinutes(instant: Date, timeZone: string): number {
   const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    zoneFormatter('parts', timeZone)
       .formatToParts(instant)
       .map((p) => [p.type, p.value]),
   );
@@ -34,7 +36,7 @@ export function zonedTime(date: string, hour: number, timeZone: string): Date {
 
 /** The calendar date (yyyy-mm-dd) of an instant in a zone. */
 export function zonedDate(instant: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
+  return zoneFormatter('date', timeZone).format(instant);
 }
 
 const addDays = (date: string, days: number) => new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)) + days)).toISOString().slice(0, 10);

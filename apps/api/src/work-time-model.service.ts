@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Db } from './db.service';
 import { zonedDate, zonedTime } from './report-schedule';
+import { zoneFormatter } from './zone-format';
 import { absences, org_holidays, organizations, users, work_schedules } from './db/schema';
 import {
   DEFAULT_FULL_TIME_WEEKLY_MINUTES,
@@ -73,7 +74,7 @@ export function parseWorkTimeSettings(settings: unknown): WorkTimeSettings {
 export function localDate(instant: Date | string, timeZone: string): string {
   const d = typeof instant === 'string' ? new Date(instant) : instant;
   try {
-    return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    return zoneFormatter('date', timeZone).format(d);
   } catch {
     return d.toISOString().slice(0, 10);
   }
@@ -82,7 +83,7 @@ export function localDate(instant: Date | string, timeZone: string): string {
 /** The zone itself when Intl knows it, else UTC (as `localDate` falls back). */
 function validZone(timeZone: string): string {
   try {
-    new Intl.DateTimeFormat('en', { timeZone });
+    zoneFormatter('date', timeZone);
     return timeZone;
   } catch {
     return 'UTC';
