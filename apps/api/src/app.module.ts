@@ -58,6 +58,8 @@ import { FieldsService } from './fields.service';
 import { DbService } from './db.service';
 import { ImportExportController } from './import-export.controller';
 import { ImportExportService } from './import-export.service';
+import { CalendarFeedController } from './calendar-feed.controller';
+import { CalendarFeedService } from './calendar-feed.service';
 
 @Module({
   controllers: [
@@ -98,10 +100,12 @@ import { ImportExportService } from './import-export.service';
     AssistantController,
     NotificationsController,
     ImportExportController,
+    CalendarFeedController,
   ],
   providers: [
     DbService,
     ImportExportService,
+    CalendarFeedService,
     ProjectTimeService,
     WorkTimeService,
     BalancesService,

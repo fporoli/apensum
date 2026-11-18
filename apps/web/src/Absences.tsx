@@ -4,14 +4,23 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  FormLabel,
   IconButton,
+  InputAdornment,
   LinearProgress,
   MenuItem,
   Paper,
+  Radio,
+  RadioGroup,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -27,9 +36,18 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useI18n } from './i18n';
-import { formatFileSize, formatLocaleDate, swissLocale } from './localeFormat';
+import { formatFileSize, formatLocaleDate, formatRelativeTime, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { BeachAccessIcon, DeleteIcon, DownloadIcon, UploadIcon, VisibilityIcon } from './icons';
+import {
+  BeachAccessIcon,
+  CalendarMonthIcon,
+  CloseIcon,
+  ContentCopyIcon,
+  DeleteIcon,
+  DownloadIcon,
+  UploadIcon,
+  VisibilityIcon,
+} from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -100,6 +118,116 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<string | null>(null);
+
+  interface CalendarFeedData {
+    token: string;
+    enabled: boolean;
+    scope: 'personal' | 'team' | 'all';
+    includeHolidays: boolean;
+    createdAt: string;
+    lastAccessedAt: string | null;
+    feedUrl: string;
+    webcalUrl: string;
+  }
+
+  const [calendarDialogOpen, setCalendarDialogOpen] = useState(false);
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [feedData, setFeedData] = useState<CalendarFeedData | null>(null);
+  const [feedAllowedScopes, setFeedAllowedScopes] = useState<Array<'personal' | 'team' | 'all'>>(['personal']);
+  const [feedCopied, setFeedCopied] = useState(false);
+  const [feedConfirmRegenerate, setFeedConfirmRegenerate] = useState(false);
+  const [feedConfirmDisable, setFeedConfirmDisable] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [feedSuccess, setFeedSuccess] = useState<string | null>(null);
+
+  async function openCalendarDialog() {
+    setCalendarDialogOpen(true);
+    setFeedLoading(true);
+    setFeedError(null);
+    setFeedSuccess(null);
+    setFeedCopied(false);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/calendar-feed`, {
+        headers: await authHeaders(),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setFeedData(data.feed);
+        if (Array.isArray(data.allowedScopes)) {
+          setFeedAllowedScopes(data.allowedScopes);
+        }
+      } else {
+        setFeedError(data.error ?? t('common.unknownError'));
+      }
+    } catch {
+      setFeedError(t('common.cannotReachApi'));
+    } finally {
+      setFeedLoading(false);
+    }
+  }
+
+  async function handleUpdateFeed(options: {
+    enabled?: boolean;
+    scope?: 'personal' | 'team' | 'all';
+    includeHolidays?: boolean;
+    regenerate?: boolean;
+  }) {
+    setFeedLoading(true);
+    setFeedError(null);
+    setFeedSuccess(null);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/calendar-feed`, {
+        method: 'POST',
+        headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify(options),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setFeedData(data.feed);
+        if (options.regenerate) {
+          setFeedSuccess(t('absences.calendarFeed.copied'));
+        }
+      } else {
+        setFeedError(data.error ?? t('common.unknownError'));
+      }
+    } catch {
+      setFeedError(t('common.cannotReachApi'));
+    } finally {
+      setFeedLoading(false);
+      setFeedConfirmRegenerate(false);
+    }
+  }
+
+  async function handleDisableFeed() {
+    setFeedLoading(true);
+    setFeedError(null);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/calendar-feed`, {
+        method: 'DELETE',
+        headers: await authHeaders(),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setFeedData(null);
+      }
+    } catch {
+      setFeedError(t('common.cannotReachApi'));
+    } finally {
+      setFeedLoading(false);
+      setFeedConfirmDisable(false);
+    }
+  }
+
+  async function copyFeedUrl() {
+    if (!feedData?.feedUrl) return;
+    try {
+      await navigator.clipboard.writeText(feedData.feedUrl);
+      setFeedCopied(true);
+      setTimeout(() => setFeedCopied(false), 3000);
+    } catch {
+      /* clipboard fallback */
+    }
+  }
 
   const isSingleDay = !!dateStart && dateStart === dateEnd;
 
@@ -282,7 +410,19 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader title={t('absences.title')} />
+      <PageHeader
+        title={t('absences.title')}
+        end={
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<CalendarMonthIcon fontSize="small" />}
+            onClick={() => void openCalendarDialog()}
+          >
+            {t('absences.calendarFeed.button')}
+          </Button>
+        }
+      />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
@@ -465,6 +605,226 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
         onConfirm={() => {
           if (confirmDeleteDocId) return deleteDocument(confirmDeleteDocId);
         }}
+      />
+
+      {/* Calendar Feed Subscription Dialog */}
+      <Dialog
+        open={calendarDialogOpen}
+        onClose={() => setCalendarDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CalendarMonthIcon color="primary" />
+            <Typography variant="h6" component="span" sx={{ fontSize: '1.15rem', fontWeight: 600 }}>
+              {t('absences.calendarFeed.dialogTitle')}
+            </Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setCalendarDialogOpen(false)} aria-label="close">
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {feedError && <Alert severity="error" onClose={() => setFeedError(null)}>{feedError}</Alert>}
+          {feedSuccess && <Alert severity="success" onClose={() => setFeedSuccess(null)}>{feedSuccess}</Alert>}
+
+          {feedLoading && !feedData ? (
+            <Box sx={{ py: 6, display: 'flex', justifyContent: 'center' }}>
+              <CircularProgress size={36} />
+            </Box>
+          ) : !feedData ? (
+            <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', bgcolor: 'background.default', borderRadius: 2 }}>
+              <CalendarMonthIcon sx={{ fontSize: 44, color: 'primary.main', mb: 1 }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 0.5 }}>
+                {t('absences.calendarFeed.dialogTitle')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 460, mx: 'auto', mb: 2.5 }}>
+                {t('absences.calendarFeed.intro')}
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => void handleUpdateFeed({ enabled: true, scope: 'personal', includeHolidays: true })}
+                disabled={feedLoading}
+                startIcon={<CalendarMonthIcon fontSize="small" />}
+              >
+                {t('absences.calendarFeed.enable')}
+              </Button>
+            </Paper>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip
+                    label={feedData.enabled ? t('absences.calendarFeed.active') : t('absences.calendarFeed.disabled')}
+                    color={feedData.enabled ? 'success' : 'default'}
+                    size="small"
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    {feedData.lastAccessedAt
+                      ? t('absences.calendarFeed.lastSynced', { time: formatRelativeTime(feedData.lastAccessedAt, locale) })
+                      : t('absences.calendarFeed.neverSynced')}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                <FormControl component="fieldset" fullWidth>
+                  <FormLabel component="legend" sx={{ fontSize: '0.8rem', fontWeight: 600, mb: 0.5 }}>
+                    {t('absences.calendarFeed.scope')}
+                  </FormLabel>
+                  <RadioGroup
+                    value={feedData.scope}
+                    onChange={(e) => void handleUpdateFeed({ scope: e.target.value as 'personal' | 'team' | 'all' })}
+                  >
+                    <FormControlLabel
+                      value="personal"
+                      control={<Radio size="small" />}
+                      label={<Typography variant="body2">{t('absences.calendarFeed.scopePersonal')}</Typography>}
+                    />
+                    {feedAllowedScopes.includes('team') && (
+                      <FormControlLabel
+                        value="team"
+                        control={<Radio size="small" />}
+                        label={<Typography variant="body2">{t('absences.calendarFeed.scopeTeam')}</Typography>}
+                      />
+                    )}
+                    {feedAllowedScopes.includes('all') && (
+                      <FormControlLabel
+                        value="all"
+                        control={<Radio size="small" />}
+                        label={<Typography variant="body2">{t('absences.calendarFeed.scopeAll')}</Typography>}
+                      />
+                    )}
+                  </RadioGroup>
+                </FormControl>
+
+                <Divider sx={{ my: 1.5 }} />
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={feedData.includeHolidays}
+                      onChange={(e) => void handleUpdateFeed({ includeHolidays: e.target.checked })}
+                    />
+                  }
+                  label={<Typography variant="body2">{t('absences.calendarFeed.includeHolidays')}</Typography>}
+                />
+              </Paper>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Button
+                  variant="contained"
+                  component="a"
+                  href={feedData.webcalUrl}
+                  startIcon={<CalendarMonthIcon fontSize="small" />}
+                  fullWidth
+                  sx={{ py: 1 }}
+                >
+                  {t('absences.calendarFeed.subscribeOneClick')}
+                </Button>
+
+                <TextField
+                  size="small"
+                  label={t('absences.calendarFeed.feedUrlLabel')}
+                  value={feedData.feedUrl}
+                  fullWidth
+                  slotProps={{
+                    input: {
+                      readOnly: true,
+                      sx: { fontFamily: 'monospace', fontSize: '0.82rem' },
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => void copyFeedUrl()}
+                            startIcon={<ContentCopyIcon fontSize="small" />}
+                          >
+                            {feedCopied ? t('absences.calendarFeed.copied') : t('absences.calendarFeed.copy')}
+                          </Button>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+
+                {feedData.feedUrl.startsWith('http://') && (
+                  <Alert severity="info" sx={{ fontSize: '0.8rem', py: 0.5 }}>
+                    {t('absences.calendarFeed.localhostHint')}
+                  </Alert>
+                )}
+              </Box>
+
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'background.default', borderRadius: 2 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, fontSize: '0.82rem' }}>
+                  {t('absences.calendarFeed.howToSubscribe')}
+                </Typography>
+                <Box
+                  component="ul"
+                  sx={{
+                    pl: 2.5,
+                    m: 0,
+                    fontSize: '0.8rem',
+                    color: 'text.secondary',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 0.75,
+                  }}
+                >
+                  <li>{t('absences.calendarFeed.guideOutlook')}</li>
+                  <li>{t('absences.calendarFeed.guideGoogle')}</li>
+                  <li>{t('absences.calendarFeed.guideApple')}</li>
+                </Box>
+              </Paper>
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 1 }}>
+                <Button
+                  size="small"
+                  color="warning"
+                  onClick={() => setFeedConfirmRegenerate(true)}
+                  disabled={feedLoading}
+                >
+                  {t('absences.calendarFeed.regenerate')}
+                </Button>
+                <Button
+                  size="small"
+                  color="error"
+                  onClick={() => setFeedConfirmDisable(true)}
+                  disabled={feedLoading}
+                >
+                  {t('absences.calendarFeed.disable')}
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+          <Button onClick={() => setCalendarDialogOpen(false)}>{t('common.close')}</Button>
+        </DialogActions>
+      </Dialog>
+
+      <ConfirmDialog
+        open={feedConfirmRegenerate}
+        title={t('absences.calendarFeed.regenerate')}
+        message={t('absences.calendarFeed.regenerateConfirm')}
+        confirmLabel={t('absences.calendarFeed.regenerate')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => void handleUpdateFeed({ regenerate: true })}
+        onClose={() => setFeedConfirmRegenerate(false)}
+      />
+
+      <ConfirmDialog
+        open={feedConfirmDisable}
+        title={t('absences.calendarFeed.disable')}
+        message={t('absences.calendarFeed.disableConfirm')}
+        confirmLabel={t('absences.calendarFeed.disable')}
+        cancelLabel={t('common.cancel')}
+        onConfirm={() => void handleDisableFeed()}
+        onClose={() => setFeedConfirmDisable(false)}
       />
     </Box>
   );
