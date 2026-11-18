@@ -1,0 +1,22 @@
+# Shared definition for the opt-in local-only Whisper sidecar.
+services:
+  whisper:
+    profiles: [whisper]
+    build: { context: ../infra/whisper }
+    image: apensum-whisper:local
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 128
+    environment:
+      WHISPER_MODEL: /models/${CASES_WHISPER_MODEL_FILE:-ggml-medium.bin}
+    volumes:
+      - ${CASES_WHISPER_MODELS_DIR:-../data-dev/whisper-models}:/models:ro
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3

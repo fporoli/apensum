@@ -89,6 +89,7 @@
     <include file="071-cases-schema.sql" relativeToChangelogFile="true"/>
     <include file="072-permission-cases.sql" relativeToChangelogFile="true"/>
     <include file="073-cases-role-permissions.sql" relativeToChangelogFile="true"/>
+    <include file="074-case-interview-revisions.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

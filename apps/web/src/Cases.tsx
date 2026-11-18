@@ -24,6 +24,8 @@ import {
   Typography,
 } from '@mui/material';
 import { useI18n } from './i18n';
+import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
+import { CaseInterviewEditor, interviewError, interviewResponse } from './CaseInterviewEditor';
 import { PageHeader, EmptyState } from './components';
 import {
   AddIcon,
@@ -79,6 +81,8 @@ export default function Cases({
 
   // Modals state
   const [createCaseOpen, setCreateCaseOpen] = useState(false);
+  const [createCaseError, setCreateCaseError] = useState<string | null>(null);
+  const [creatingCase, setCreatingCase] = useState(false);
   const [newCaseData, setNewCaseData] = useState({
     reference_number: '',
     title: '',
@@ -118,8 +122,16 @@ export default function Cases({
     void loadCases();
   }, [loadCases]);
 
+  const closeCreateCase = () => {
+    if (creatingCase) return;
+    setCreateCaseError(null);
+    setCreateCaseOpen(false);
+  };
+
   const handleCreateCase = async () => {
-    if (!newCaseData.reference_number.trim() || !newCaseData.title.trim() || !newCaseData.subject_name.trim()) return;
+    if (creatingCase || !newCaseData.reference_number.trim() || !newCaseData.title.trim() || !newCaseData.subject_name.trim()) return;
+    setCreateCaseError(null);
+    setCreatingCase(true);
     try {
       const res = await fetch(`${API}/organizations/${orgId}/cases`, {
         method: 'POST',
@@ -143,10 +155,12 @@ export default function Cases({
         await loadCases();
         if (data.case?.id) setSelectedCaseId(data.case.id);
       } else {
-        setError(data?.error ?? 'failed-to-create-case');
+        setCreateCaseError(data?.message ?? t('cases.modal.createError'));
       }
     } catch {
-      setError(t('common.cannotReachApi'));
+      setCreateCaseError(t('common.cannotReachApi'));
+    } finally {
+      setCreatingCase(false);
     }
   };
 
@@ -343,10 +357,11 @@ export default function Cases({
           )}
 
           {/* Create Case Modal */}
-          <Dialog open={createCaseOpen} onClose={() => setCreateCaseOpen(false)} maxWidth="sm" fullWidth>
+          <Dialog open={createCaseOpen} onClose={closeCreateCase} maxWidth="sm" fullWidth>
             <DialogTitle>{t('cases.modal.createTitle')}</DialogTitle>
             <DialogContent dividers>
               <Stack spacing={2} sx={{ mt: 1 }}>
+                {createCaseError && <Alert severity="error">{createCaseError}</Alert>}
                 <TextField
                   label={t('cases.reference_number')}
                   required
@@ -404,11 +419,12 @@ export default function Cases({
               </Stack>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setCreateCaseOpen(false)}>{t('common.cancel')}</Button>
+              <Button onClick={closeCreateCase} disabled={creatingCase}>{t('common.cancel')}</Button>
               <Button
                 variant="contained"
                 onClick={handleCreateCase}
                 disabled={
+                  creatingCase ||
                   !newCaseData.reference_number.trim() ||
                   !newCaseData.title.trim() ||
                   !newCaseData.subject_name.trim()
@@ -539,6 +555,7 @@ function CaseDossierWorkspace({
       )}
       {activeTab === 2 && (
         <CaseInterviewsTab
+          key={`${orgId}:${caseItem.id}`}
           orgId={orgId}
           caseId={caseItem.id}
           authHeaders={authHeaders}
@@ -1027,6 +1044,13 @@ function CaseInterviewsTab({
   const [summary, setSummary] = useState('');
   const [transcript, setTranscript] = useState('');
   const [saving, setSaving] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [createError, setCreateError] = useState('');
+  const [editable, setEditable] = useState(false);
+  const mayEdit = canEdit && editable;
+  const [transcriptionEnabled, setTranscriptionEnabled] = useState(false);
+  const endpoint = `${API}/organizations/${orgId}/cases/${caseId}/interviews`;
 
   // Transcript inspect modal
   const [selectedInterview, setSelectedInterview] = useState<CaseInterview | null>(null);
@@ -1034,51 +1058,59 @@ function CaseInterviewsTab({
   const loadInterviews = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API}/organizations/${orgId}/cases/${caseId}/interviews`, {
+      const res = await fetch(endpoint, {
         headers: await authHeaders(),
       });
-      const data = await res.json();
-      if (data?.ok) setInterviews(data.interviews ?? []);
-    } catch {
-      setError(t('common.cannotReachApi'));
+      const data = await interviewResponse(res);
+      setInterviews(data.interviews ?? []);
+      setEditable(data.editable === true);
+      setTranscriptionEnabled(data.transcriptionEnabled === true);
+    } catch (error) {
+      setEditable(false);
+      setInterviews([]);
+      setError(interviewError(error, t));
     } finally {
       setLoading(false);
     }
-  }, [orgId, caseId, authHeaders, t]);
+  }, [endpoint, authHeaders, t]);
 
   useEffect(() => {
     void loadInterviews();
   }, [loadInterviews]);
 
+  const closeCreate = () => {
+    if (saving || recording) return;
+    setCreateError('');
+    setAudioFile(null);
+    setOpenModal(false);
+  };
+
   const handleCreate = async () => {
-    if (!intervieweeName.trim() || !transcript.trim()) return;
+    if (!intervieweeName.trim() || saving || recording) return;
     try {
       setSaving(true);
-      const res = await fetch(`${API}/organizations/${orgId}/cases/${caseId}/interviews`, {
-        method: 'POST',
-        headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interviewee_name: intervieweeName.trim(),
-          interviewee_role: role,
-          interview_date: date,
-          duration_minutes: duration,
-          summary: summary.trim() || null,
-          transcript_text: transcript.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (data?.ok) {
-        setOpenModal(false);
-        setIntervieweeName('');
-        setSummary('');
-        setTranscript('');
-        await loadInterviews();
-        await onRefreshCase();
-      } else {
-        setError(data?.error ?? 'failed-to-create-interview');
-      }
-    } catch {
-      setError(t('common.cannotReachApi'));
+      setCreateError('');
+      const form = new FormData();
+      form.append('data', JSON.stringify({
+        interviewee_name: intervieweeName.trim(),
+        interviewee_role: role,
+        interview_date: date || undefined,
+        duration_minutes: duration,
+        summary: summary.trim() || null,
+        transcript_text: transcript.trim(),
+      }));
+      if (audioFile) form.append('file', audioFile);
+      const { interview } = await interviewResponse(await fetch(endpoint, { method: 'POST', headers: await authHeaders(), body: form }));
+      setOpenModal(false);
+      setIntervieweeName('');
+      setSummary('');
+      setTranscript('');
+      setAudioFile(null);
+      setSelectedInterview(interview);
+      await loadInterviews();
+      await onRefreshCase();
+    } catch (error) {
+      setCreateError(interviewError(error, t));
     } finally {
       setSaving(false);
     }
@@ -1087,14 +1119,11 @@ function CaseInterviewsTab({
   const handleDelete = async (id: string) => {
     if (!confirm(t('common.confirmDelete'))) return;
     try {
-      await fetch(`${API}/organizations/${orgId}/cases/${caseId}/interviews/${id}`, {
-        method: 'DELETE',
-        headers: await authHeaders(),
-      });
+      await interviewResponse(await fetch(`${endpoint}/${id}`, { method: 'DELETE', headers: await authHeaders() }));
       await loadInterviews();
       await onRefreshCase();
-    } catch {
-      setError(t('common.cannotReachApi'));
+    } catch (error) {
+      setError(interviewError(error, t));
     }
   };
 
@@ -1104,7 +1133,7 @@ function CaseInterviewsTab({
         <Typography variant="h6" sx={{ fontWeight: 600 }}>
           {t('cases.interviews.title')}
         </Typography>
-        {canEdit && (
+        {mayEdit && (
           <Button
             variant="contained"
             startIcon={<AddIcon fontSize="small" />}
@@ -1150,9 +1179,9 @@ function CaseInterviewsTab({
 
                   <Stack direction="row" spacing={1}>
                     <Button size="small" variant="outlined" onClick={() => setSelectedInterview(inv)}>
-                      {t('cases.interviews.readTranscript')}
+                      {t('cases.interviews.openInterview')}
                     </Button>
-                    {canEdit && (
+                    {mayEdit && (
                       <IconButton size="small" color="error" onClick={() => handleDelete(inv.id)}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
@@ -1160,6 +1189,9 @@ function CaseInterviewsTab({
                   </Stack>
                 </Box>
 
+                {(inv.transcript_stale || inv.summary_stale) && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>{t('cases.interviews.outputsStale')}</Alert>
+                )}
                 {inv.summary && (
                   <Typography variant="body2" sx={{ mt: 1, color: 'text.secondary' }}>
                     <strong>{t('cases.interviews.summary')}:</strong> {inv.summary}
@@ -1172,10 +1204,11 @@ function CaseInterviewsTab({
       )}
 
       {/* Add Interview Modal */}
-      <Dialog open={openModal} onClose={() => setOpenModal(false)} maxWidth="md" fullWidth>
+      <Dialog open={openModal} onClose={closeCreate} maxWidth="md" fullWidth>
         <DialogTitle>{t('cases.interviews.modalTitle')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {createError && <Alert severity="error">{createError}</Alert>}
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
                 <TextField
@@ -1230,49 +1263,45 @@ function CaseInterviewsTab({
               multiline
               rows={2}
               value={summary}
+              inputProps={{ maxLength: 100_000 }}
               onChange={(e) => setSummary(e.target.value)}
               placeholder="e.g. Explorand schildert akute finanzielle Engpässe..."
             />
 
             <TextField
               label={t('cases.interviews.transcriptText')}
-              required
               multiline
               rows={8}
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
               placeholder="[00:00:15] Gutachter: Guten Tag Herr Muster...\n[00:00:25] Herr Muster: Guten Tag..."
+              inputProps={{ maxLength: 100_000 }}
               helperText={t('cases.interviews.transcriptHelp')}
             />
+            {openModal && <CaseInterviewAudioInput file={audioFile} setFile={setAudioFile} disabled={saving} setRecording={setRecording} />}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenModal(false)}>{t('common.cancel')}</Button>
-          <Button variant="contained" onClick={handleCreate} disabled={saving || !intervieweeName || !transcript}>
+          <Button onClick={closeCreate} disabled={saving || recording}>{t('common.cancel')}</Button>
+          <Button variant="contained" onClick={handleCreate} disabled={saving || recording || !intervieweeName.trim()}>
             {saving ? <CircularProgress size={20} /> : t('common.save')}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Transcript Read Modal */}
-      <Dialog open={!!selectedInterview} onClose={() => setSelectedInterview(null)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          {t('cases.interviews.transcript')}: {selectedInterview?.interviewee_name} ({selectedInterview?.interview_date})
-        </DialogTitle>
-        <DialogContent dividers>
-          {selectedInterview?.summary && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              <strong>{t('cases.interviews.summary')}:</strong> {selectedInterview.summary}
-            </Alert>
-          )}
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', lineHeight: 1.6 }}>
-            {selectedInterview?.transcript_text}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSelectedInterview(null)}>{t('common.close')}</Button>
-        </DialogActions>
-      </Dialog>
+      {selectedInterview && <CaseInterviewEditor
+        key={selectedInterview.id}
+        interview={selectedInterview}
+        url={`${endpoint}/${selectedInterview.id}`}
+        authHeaders={authHeaders}
+        canEdit={mayEdit}
+        transcriptionEnabled={transcriptionEnabled}
+        onChange={(next) => {
+          setSelectedInterview(next);
+          setInterviews((current) => current.map((item) => item.id === next.id ? next : item));
+        }}
+        onClose={() => { setSelectedInterview(null); void loadInterviews(); }}
+      />}
     </Box>
   );
 }
@@ -1774,6 +1803,9 @@ function CaseAssessmentsTab({
                                 {i.interview_date}
                               </Typography>
                             </Box>
+                            {(i.transcript_stale || i.summary_stale) && (
+                              <Typography variant="caption" display="block" color="warning.main">{t('cases.interviews.outputsStale')}</Typography>
+                            )}
                             {i.summary && (
                               <Typography variant="caption" sx={{ display: 'block', mb: 0.5 }}>
                                 <strong>Fazit:</strong> {i.summary}

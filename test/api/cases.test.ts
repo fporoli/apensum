@@ -1,8 +1,30 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { Module } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
 import { permissionIdsOf } from '../../apps/api/src/access';
+import { CasesController } from '../../apps/api/src/cases.controller';
 import { CasesService } from '../../apps/api/src/cases.service';
 import type { AssessmentTemplate } from '@worktime3/shared/cases';
+
+test('cases routes reach the controller under the global API prefix', async () => {
+  @Module({ controllers: [CasesController] })
+  class TestModule {}
+
+  const app = await NestFactory.create(TestModule, { logger: false });
+  try {
+    app.setGlobalPrefix('api/v1');
+    await app.listen(0, '127.0.0.1');
+    const url = `${await app.getUrl()}/api/v1/organizations/org1/cases`;
+    for (const method of ['GET', 'POST']) {
+      const res = await fetch(url, { method });
+      assert.equal(res.status, 401, `${method} should reach the authentication check, not return 404`);
+      assert.equal((await res.json()).message, 'unauthenticated');
+    }
+  } finally {
+    await app.close();
+  }
+});
 
 test('cases module: permissionIdsOf drops nav.cases permissions when cases module is switched off', async () => {
   const rows = (modules: unknown) => [

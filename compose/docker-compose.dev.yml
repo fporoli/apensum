@@ -59,3 +59,10 @@ services:
     depends_on:
       # Needs the `auth` schema, which migrate's first changeset creates.
       migrate: { condition: service_completed_successfully }
+  whisper:
+    extends: { file: whisper.service.yml, service: whisper }
+    ports: ['127.0.0.1:${CASES_WHISPER_PORT:-8081}:8080']
+    networks: [interview-processing]
+
+networks:
+  interview-processing: {}

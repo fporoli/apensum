@@ -90,6 +90,9 @@ export const case_interviewsInCases = cases.table("case_interviews", {
 	summary: text(),
 	tags: text().array().default([""]).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	revision: uuid().default(sql`uuid_generate_v4()`).notNull(),
+	transcript_stale: boolean().default(false).notNull(),
+	summary_stale: boolean().default(false).notNull(),
 }, (table) => [
 	index("idx_case_interviews_case").using("btree", table.case_id.asc().nullsLast()),
 	foreignKey({

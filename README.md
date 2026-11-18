@@ -644,3 +644,39 @@ Apensum is free software under the [GNU Affero General Public License v3.0](LICE
 (`AGPL-3.0-only`). You may use, change and run it, including as a hosted service; if you
 offer a changed version to users over a network, you must make that version's source code
 available to them under the same license.
+
+### Cases interviews (local MVP)
+
+Enable **Cases** for the organization and use an account with case access. An
+interview can be saved without audio or a transcript. Attach or record up to
+10 MiB of WAV, MP3, M4A, WebM or Ogg audio (recording needs microphone permission
+and HTTPS or localhost). Only users who can see that case can play its audio;
+only editors can replace it. Audio uses the local DocumentsService store; set
+`DOCUMENTS_KEY` for encryption at rest. Transcript and summary are stored in
+Postgres, not in the encrypted file store. Back up the database and local audio
+store together. With `local` Compose, audio persists in the `api-documents`
+volume; `docker compose down -v` removes it.
+
+Transcription is **off by default**. To opt in, place the default multilingual Whisper Medium model
+(`ggml-medium.bin`, not `ggml-medium.en.bin`) from the [official model repository](https://huggingface.co/ggerganov/whisper.cpp)
+in `data-dev/whisper-models/` and make it readable by the container. The same
+persistent, read-only model directory is shared by both setups. You can override
+it using `CASES_WHISPER_MODELS_DIR` (absolute or relative to `compose/`) and select
+another filename using `CASES_WHISPER_MODEL_FILE`. The sidecar is capped at
+3 GiB; allow additional Docker memory for the rest of the stack. The running
+service does not fetch models or call cloud APIs.
+
+- **Host dev:** add `CASES_WHISPER_URL=http://127.0.0.1:8081` to `.env.dev`, then
+  run `node scripts/with-env.mjs dev docker compose -f compose/docker-compose.dev.yml up -d --build whisper`
+  and restart the host API. If changing `CASES_WHISPER_PORT` from 8081, update the URL too.
+- **Containerized local:** add `CASES_WHISPER_URL=http://whisper:8080` to `.env.local`, then
+  run `node scripts/with-env.mjs local docker compose -f compose/docker-compose.local.yml --profile whisper up -d --build`.
+  Whisper is on an internal network with the API and publishes no host port.
+
+Transcription runs only when an editor requests a draft. Confirm or edit the draft
+before saving. The independent summary action extracts passages from a saved,
+current transcript; it does not invent conclusions or use an LLM. Review drafts
+for accuracy and context. Replacing audio preserves existing text but flags it
+for review; changing the transcript flags its saved summary. Stale text is not
+reused in new assessment drafts. Existing assessments are not rewritten. Email
+links to interviews are not part of this MVP.

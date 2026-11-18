@@ -101,7 +101,10 @@ export interface CaseInterview {
   duration_minutes: number;
   interviewer_user_id: string | null;
   interviewer_name?: string | null;
-  audio_document_id: string | null;
+  has_audio: boolean;
+  revision: string;
+  transcript_stale: boolean;
+  summary_stale: boolean;
   transcript_text: string;
   summary: string | null;
   tags: string[];
@@ -162,8 +165,7 @@ export interface CreateCaseInterviewDto {
   interview_date?: string;
   duration_minutes?: number;
   interviewer_user_id?: string | null;
-  audio_document_id?: string | null;
-  transcript_text: string;
+  transcript_text?: string;
   summary?: string | null;
   tags?: string[];
 }

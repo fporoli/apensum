@@ -1,11 +1,15 @@
 import {
+  BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -15,7 +19,7 @@ import {
   ForbiddenException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, NoFilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
@@ -23,6 +27,7 @@ import { callerUserId, can, permissionIdsOf } from './access';
 import { grantedScopes } from '@worktime3/shared/permissions';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { CasesService } from './cases.service';
+import { interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from './case-interview-processing';
 import type {
   CreateCaseDto,
   UpdateCaseDto,
@@ -34,7 +39,27 @@ import type {
   UpdateAssessmentTemplateDto,
 } from '@worktime3/shared/cases';
 
-@Controller('api/v1/organizations/:orgId')
+const interviewUpload = { limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1, fields: 2, fieldSize: 1_300_000 } };
+const privateCache = 'private, no-store';
+
+function interviewPayload<T extends object>(body: T & { data?: string }): T {
+  try {
+    const data = typeof body?.data === 'string' ? JSON.parse(body.data) : body;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error();
+    return data;
+  } catch {
+    throw new BadRequestException('interview-invalid-data');
+  }
+}
+
+function interviewRevision(revision: unknown): string {
+  if (typeof revision !== 'string' || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(revision)) {
+    throw new BadRequestException('interview-revision-required');
+  }
+  return revision;
+}
+
+@Controller('organizations/:orgId')
 export class CasesController {
   constructor(
     private readonly dbService: DbService,
@@ -243,6 +268,7 @@ export class CasesController {
   // ---------------------------------------------------------------------------
 
   @Get('cases/:caseId/interviews')
+  @Header('Cache-Control', privateCache)
   async listInterviews(
     @Param('orgId') orgId: string,
     @Param('caseId') caseId: string,
@@ -255,36 +281,112 @@ export class CasesController {
       throw new ForbiddenException('forbidden');
     }
     const interviews = await this.casesService.listInterviews(caseId);
-    return { ok: true, interviews };
+    const editScopes = grantedScopes(await permissionIdsOf(this.db, orgId, callerId), 'nav.cases', 'edit');
+    const editable = editScopes.has('all') || (editScopes.size > 0 && caseItem.lead_user_id === callerId);
+    return { ok: true, interviews, editable, transcriptionEnabled: interviewTranscriptionEnabled() };
   }
 
   @Post('cases/:caseId/interviews')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(FileInterceptor('file', interviewUpload))
   async createInterview(
     @Param('orgId') orgId: string,
     @Param('caseId') caseId: string,
     @Req() req: AuthenticatedRequest,
-    @Body() body: CreateCaseInterviewDto,
+    @Body() body: CreateCaseInterviewDto & { data?: string },
+    @UploadedFile() file?: Express.Multer.File,
   ) {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    const interview = await this.casesService.createInterview(orgId, caseId, callerId, body);
+    const interview = await this.casesService.createInterview(orgId, caseId, callerId, interviewPayload(body), file);
     return { ok: true, interview };
   }
 
   @Patch('cases/:caseId/interviews/:interviewId')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(NoFilesInterceptor({ limits: { fields: 1, fieldSize: 1_300_000 } }))
   async updateInterview(
     @Param('orgId') orgId: string,
     @Param('caseId') caseId: string,
     @Param('interviewId') interviewId: string,
     @Req() req: AuthenticatedRequest,
-    @Body() body: Partial<CreateCaseInterviewDto>,
+    @Body() body: { data?: string; revision: string; transcript_text?: string; summary?: string | null },
   ) {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    const updated = await this.casesService.updateInterview(caseId, interviewId, body);
+    const payload = interviewPayload(body);
+    const updated = await this.casesService.updateInterview(orgId, caseId, interviewId, interviewRevision(payload.revision), payload);
     return { ok: true, interview: updated };
+  }
+
+  @Get('cases/:caseId/interviews/:interviewId/audio')
+  async playInterviewAudio(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('interviewId') interviewId: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    await this.getCase(orgId, caseId, req);
+    const { content, mime } = await this.casesService.readInterviewAudio(orgId, caseId, interviewId);
+    res.set({ 'Content-Type': mime, 'Cache-Control': privateCache, 'X-Content-Type-Options': 'nosniff' });
+    res.send(content);
+  }
+
+  @Put('cases/:caseId/interviews/:interviewId/audio')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(FileInterceptor('file', interviewUpload))
+  async replaceInterviewAudio(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('interviewId') interviewId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body('revision') revision: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    const callerId = await this.requireCallerId(req);
+    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    if (!file) throw new BadRequestException('interview-audio-not-found');
+    const interview = await this.casesService.replaceInterviewAudio(orgId, caseId, interviewId, callerId, interviewRevision(revision), file);
+    return { ok: true, interview };
+  }
+
+  @Post('cases/:caseId/interviews/:interviewId/transcribe')
+  @Header('Cache-Control', privateCache)
+  async draftInterviewTranscript(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('interviewId') interviewId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body('revision') revision: string,
+  ) {
+    const callerId = await this.requireCallerId(req);
+    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    if (!interviewTranscriptionEnabled()) throw new ServiceUnavailableException('interview-transcription-disabled');
+    const { content } = await this.casesService.readInterviewAudio(orgId, caseId, interviewId, interviewRevision(revision));
+    const draft = await transcribeInterviewAudio(content);
+    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    if ((await this.casesService.getInterview(caseId, interviewId)).revision !== revision) throw new ConflictException('interview-changed');
+    return { ok: true, draft };
+  }
+
+  @Post('cases/:caseId/interviews/:interviewId/summarize')
+  @Header('Cache-Control', privateCache)
+  async draftInterviewSummary(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('interviewId') interviewId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body('revision') revision: string,
+  ) {
+    const callerId = await this.requireCallerId(req);
+    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    const interview = await this.casesService.getInterview(caseId, interviewId);
+    if (interview.revision !== interviewRevision(revision)) throw new ConflictException('interview-changed');
+    if (!interview.transcript_text.trim() || interview.transcript_stale) throw new BadRequestException('interview-current-transcript-required');
+    return { ok: true, draft: summarizeInterview(interview.transcript_text) };
   }
 
   @Delete('cases/:caseId/interviews/:interviewId')
@@ -297,7 +399,7 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    await this.casesService.deleteInterview(caseId, interviewId);
+    await this.casesService.deleteInterview(orgId, caseId, interviewId);
     return { ok: true };
   }
 

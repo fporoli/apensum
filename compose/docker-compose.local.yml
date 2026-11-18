@@ -66,6 +66,7 @@ services:
       API_JWT_SECRET: ${API_JWT_SECRET:-}
       # Encryption of stored documents (empty = unencrypted, warned at startup).
       DOCUMENTS_KEY: ${DOCUMENTS_KEY:-}
+      CASES_WHISPER_URL: ${CASES_WHISPER_URL:-}
       DOCUMENTS_KEY_PREVIOUS: ${DOCUMENTS_KEY_PREVIOUS:-}
       # Keycloak tokens carry the browser's address (via caddy :8092); the API fetches the
       # signing keys from the keycloak container directly, since localhost here is the API itself.
@@ -86,6 +87,9 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_SECURE: ${SMTP_SECURE:-false}
+    volumes:
+      - api-documents:/app/apps/api/data/documents
+    networks: [default, interview-processing]
     depends_on:
       migrate: { condition: service_completed_successfully }
       mailpit: { condition: service_started }
@@ -106,3 +110,13 @@ services:
     volumes:
       - ../infra/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
     depends_on: [api, web, keycloak]
+  whisper:
+    extends: { file: whisper.service.yml, service: whisper }
+    networks: [interview-processing]
+
+networks:
+  interview-processing:
+    internal: true
+
+volumes:
+  api-documents:

@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
 import { DbService, type Db } from './db.service';
-import { DocumentsService } from './documents.service';
+import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
+import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 import {
   casesInCases,
   case_documentsInCases,
@@ -183,7 +185,15 @@ export class CasesService {
   /** Delete a case. */
   async deleteCase(orgId: string, caseId: string): Promise<void> {
     await this.getCase(orgId, caseId);
-    await this.db.execute(sql`DELETE FROM cases.cases WHERE organization_id = ${orgId}::uuid AND id = ${caseId}::uuid`);
+    const interviews = await this.db.transaction(async (tx) => {
+      await this.lockInterviewCase(tx, orgId, caseId);
+      const result = await tx.execute<{ id: string; audio_document_id: string }>(sql`
+        SELECT id, audio_document_id FROM cases.case_interviews WHERE case_id = ${caseId}::uuid AND audio_document_id IS NOT NULL
+      `);
+      await tx.execute(sql`DELETE FROM cases.cases WHERE organization_id = ${orgId}::uuid AND id = ${caseId}::uuid`);
+      return result.rows;
+    });
+    for (const row of interviews) await this.removeInterviewAudio(orgId, row.id, row.audio_document_id);
   }
 
   // ---------------------------------------------------------------------------
@@ -246,93 +256,182 @@ export class CasesService {
   // Case Interviews & Transcripts
   // ---------------------------------------------------------------------------
 
-  async listInterviews(caseId: string): Promise<CaseInterview[]> {
-    const rows = await this.db.execute(sql`
-      SELECT
-        ci.id,
-        ci.case_id,
-        ci.interviewee_name,
-        ci.interviewee_role,
-        ci.interview_date::text AS interview_date,
-        ci.duration_minutes,
-        ci.interviewer_user_id,
-        u.display_name AS interviewer_name,
-        ci.audio_document_id,
-        ci.transcript_text,
-        ci.summary,
-        ci.tags,
+  async listInterviews(caseId: string, interviewId?: string, db: Db = this.db): Promise<CaseInterview[]> {
+    const rows = await db.execute(sql`
+      SELECT ci.id, ci.case_id, ci.interviewee_name, ci.interviewee_role,
+        ci.interview_date::text AS interview_date, ci.duration_minutes, ci.interviewer_user_id,
+        u.display_name AS interviewer_name, d.id IS NOT NULL AS has_audio,
+        ci.revision, ci.transcript_stale, ci.summary_stale, ci.transcript_text, ci.summary, ci.tags,
         ci.created_at::text AS created_at
       FROM cases.case_interviews ci
+      JOIN cases.cases c ON c.id = ci.case_id
       LEFT JOIN public.users u ON u.id = ci.interviewer_user_id
-      WHERE ci.case_id = ${caseId}::uuid
+      LEFT JOIN public.documents d ON d.id = ci.audio_document_id AND d.organization_id = c.organization_id
+        AND d.source_table = ${INTERVIEW_AUDIO_SOURCE} AND d.source_table_id = ci.id
+      WHERE ci.case_id = ${caseId}::uuid ${interviewId ? sql`AND ci.id = ${interviewId}::uuid` : sql``}
       ORDER BY ci.interview_date DESC, ci.created_at DESC
     `);
     return rows.rows as unknown as CaseInterview[];
   }
 
-  async createInterview(
-    orgId: string,
-    caseId: string,
-    callerId: string,
-    dto: CreateCaseInterviewDto,
-  ): Promise<CaseInterview> {
-    const [row] = await this.db
-      .insert(case_interviewsInCases)
-      .values({
-        case_id: caseId,
-        interviewee_name: dto.interviewee_name.trim(),
-        interviewee_role: dto.interviewee_role ?? 'subject',
-        interview_date: dto.interview_date ?? sql`CURRENT_DATE`,
-        duration_minutes: dto.duration_minutes ?? 0,
-        interviewer_user_id: dto.interviewer_user_id ?? callerId,
-        audio_document_id: dto.audio_document_id ?? null,
-        transcript_text: dto.transcript_text,
-        summary: dto.summary ?? null,
-        tags: dto.tags ?? [],
-      })
-      .returning();
-
-    await this.db.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
-
-    const interviews = await this.listInterviews(caseId);
-    const created = interviews.find((i) => i.id === row.id);
-    if (!created) throw new NotFoundException('interview-not-found');
-    return created;
+  async getInterview(caseId: string, interviewId: string, db: Db = this.db) {
+    const [row] = await this.listInterviews(caseId, interviewId, db);
+    if (!row) throw new NotFoundException('interview-not-found');
+    return row;
   }
 
-  async updateInterview(
-    caseId: string,
-    interviewId: string,
-    dto: Partial<CreateCaseInterviewDto>,
-  ): Promise<CaseInterview> {
-    await this.db.execute(sql`
-      UPDATE cases.case_interviews
-      SET
-        interviewee_name = COALESCE(${dto.interviewee_name?.trim() ?? null}, interviewee_name),
-        interviewee_role = COALESCE(${dto.interviewee_role ?? null}, interviewee_role),
-        interview_date = CASE WHEN ${dto.interview_date !== undefined} THEN ${dto.interview_date ?? null}::date ELSE interview_date END,
-        duration_minutes = COALESCE(${dto.duration_minutes ?? null}, duration_minutes),
-        interviewer_user_id = CASE WHEN ${dto.interviewer_user_id !== undefined} THEN ${dto.interviewer_user_id ?? null}::uuid ELSE interviewer_user_id END,
-        transcript_text = COALESCE(${dto.transcript_text ?? null}, transcript_text),
-        summary = CASE WHEN ${dto.summary !== undefined} THEN ${dto.summary ?? null} ELSE summary END,
-        tags = CASE WHEN ${dto.tags !== undefined} THEN ${dto.tags ?? []}::text[] ELSE tags END
-      WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid
+  private async lockInterviewCase(db: Db, orgId: string, caseId: string) {
+    const { rows } = await db.execute(sql`
+      SELECT id FROM cases.cases WHERE organization_id = ${orgId}::uuid AND id = ${caseId}::uuid FOR UPDATE
     `);
-
-    await this.db.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
-
-    const interviews = await this.listInterviews(caseId);
-    const updated = interviews.find((i) => i.id === interviewId);
-    if (!updated) throw new NotFoundException('interview-not-found');
-    return updated;
+    if (!rows.length) throw new NotFoundException('case-not-found');
   }
 
-  async deleteInterview(caseId: string, interviewId: string): Promise<void> {
-    await this.db.execute(sql`
-      DELETE FROM cases.case_interviews
-      WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid
+  private async storeInterviewAudio(orgId: string, callerId: string, interviewId: string, file: { buffer: Buffer }) {
+    if (file.buffer.length > MAX_DOCUMENT_BYTES) throw new BadRequestException('interview-audio-too-large');
+    const { mime, extension } = interviewAudioFormat(file.buffer);
+    return this.documentsService.store(this.db, orgId, callerId,
+      { name: `interview-audio.${extension}`, mimeType: mime, buffer: file.buffer },
+      { table: INTERVIEW_AUDIO_SOURCE, id: interviewId });
+  }
+
+  private async removeInterviewAudio(orgId: string, interviewId: string, documentId: string | null) {
+    if (!documentId) return;
+    try {
+      const doc = await this.documentsService.get(this.db, documentId);
+      if (doc?.organization_id === orgId && doc.source_table === INTERVIEW_AUDIO_SOURCE && doc.source_table_id === interviewId) {
+        await this.documentsService.remove(this.db, documentId);
+      }
+    } catch {
+      console.error('Interview audio cleanup failed');
+    }
+  }
+
+  async readInterviewAudio(orgId: string, caseId: string, interviewId: string, revision?: string) {
+    const { rows } = await this.db.execute<{
+      revision: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null;
+    }>(sql`
+      SELECT ci.revision, d.mime_type, d.storage_path, d.encrypted_key, d.key_id
+      FROM cases.case_interviews ci JOIN cases.cases c ON c.id = ci.case_id
+      JOIN public.documents d ON d.id = ci.audio_document_id AND d.organization_id = c.organization_id
+        AND d.source_table = ${INTERVIEW_AUDIO_SOURCE} AND d.source_table_id = ci.id
+      WHERE c.organization_id = ${orgId}::uuid AND c.id = ${caseId}::uuid AND ci.id = ${interviewId}::uuid
     `);
-    await this.db.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+    const doc = rows[0];
+    if (!doc) throw new NotFoundException('interview-audio-not-found');
+    if (revision !== undefined && doc.revision !== revision) throw new ConflictException('interview-changed');
+    try {
+      return { content: await this.documentsService.read(doc), mime: doc.mime_type };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') throw new NotFoundException('interview-audio-not-found');
+      throw new ServiceUnavailableException('interview-audio-unreadable');
+    }
+  }
+
+  async createInterview(orgId: string, caseId: string, callerId: string, dto: CreateCaseInterviewDto, file?: { buffer: Buffer }) {
+    if (typeof dto.interviewee_name !== 'string' || !dto.interviewee_name.trim()) throw new BadRequestException('interview-name-required');
+    this.validateInterviewText(dto);
+    const id = randomUUID();
+    const documentId = file ? await this.storeInterviewAudio(orgId, callerId, id, file) : null;
+    try {
+      return await this.db.transaction(async (tx) => {
+        await this.lockInterviewCase(tx, orgId, caseId);
+        await tx.insert(case_interviewsInCases).values({
+          id,
+          case_id: caseId,
+          interviewee_name: dto.interviewee_name.trim(),
+          interviewee_role: dto.interviewee_role ?? 'subject',
+          interview_date: dto.interview_date ?? sql`CURRENT_DATE`,
+          duration_minutes: dto.duration_minutes ?? 0,
+          interviewer_user_id: callerId,
+          audio_document_id: documentId,
+          transcript_text: dto.transcript_text ?? '',
+          summary: dto.summary ?? null,
+          tags: dto.tags ?? [],
+        });
+        await tx.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+        return this.getInterview(caseId, id, tx);
+      });
+    } catch (error) {
+      await this.removeInterviewAudio(orgId, id, documentId);
+      throw error;
+    }
+  }
+
+  private validateInterviewText(dto: { transcript_text?: string; summary?: string | null }) {
+    for (const text of [dto.transcript_text, dto.summary]) {
+      if (text != null && (typeof text !== 'string' || text.length > MAX_INTERVIEW_TEXT || text.includes('\0'))) {
+        throw new BadRequestException('interview-invalid-text');
+      }
+    }
+  }
+
+  async updateInterview(orgId: string, caseId: string, interviewId: string, revision: string, dto: { transcript_text?: string; summary?: string | null }) {
+    this.validateInterviewText(dto);
+    const writesTranscript = typeof dto.transcript_text === 'string';
+    const writesSummary = dto.summary !== undefined;
+    if (!writesTranscript && !writesSummary) throw new BadRequestException('interview-invalid-data');
+    return this.db.transaction(async (tx) => {
+      await this.lockInterviewCase(tx, orgId, caseId);
+      const { rows } = await tx.execute(sql`
+        UPDATE cases.case_interviews
+        SET transcript_text = COALESCE(${dto.transcript_text ?? null}, transcript_text),
+          summary = CASE WHEN ${writesSummary} THEN ${dto.summary ?? null} ELSE summary END,
+          transcript_stale = CASE WHEN ${writesTranscript} THEN false ELSE transcript_stale END,
+          summary_stale = CASE
+            WHEN ${writesSummary} THEN ${!!dto.summary?.trim()} AND transcript_stale AND NOT ${writesTranscript}
+            WHEN ${writesTranscript} AND transcript_text IS DISTINCT FROM ${dto.transcript_text ?? null} THEN COALESCE(btrim(summary), '') <> ''
+            ELSE summary_stale
+          END,
+          revision = uuid_generate_v4()
+        WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid AND revision = ${revision}
+        RETURNING id
+      `);
+      if (!rows.length) throw new ConflictException('interview-changed');
+      await tx.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+      return this.getInterview(caseId, interviewId, tx);
+    });
+  }
+
+  async replaceInterviewAudio(orgId: string, caseId: string, interviewId: string, callerId: string, revision: string, file: { buffer: Buffer }) {
+    const existing = await this.getInterview(caseId, interviewId);
+    if (existing.revision !== revision) throw new ConflictException('interview-changed');
+    const documentId = await this.storeInterviewAudio(orgId, callerId, interviewId, file);
+    let result;
+    try {
+      result = await this.db.transaction(async (tx) => {
+        await this.lockInterviewCase(tx, orgId, caseId);
+        const { rows: [old] } = await tx.execute<{ audio_document_id: string | null }>(sql`
+          SELECT audio_document_id FROM cases.case_interviews
+          WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid AND revision = ${revision} FOR UPDATE
+        `);
+        if (!old) throw new ConflictException('interview-changed');
+        await tx.execute(sql`
+          UPDATE cases.case_interviews SET audio_document_id = ${documentId}::uuid, revision = uuid_generate_v4(),
+            transcript_stale = btrim(transcript_text) <> '', summary_stale = COALESCE(btrim(summary), '') <> ''
+          WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid
+        `);
+        await tx.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+        return { oldId: old.audio_document_id, interview: await this.getInterview(caseId, interviewId, tx) };
+      });
+    } catch (error) {
+      await this.removeInterviewAudio(orgId, interviewId, documentId);
+      throw error;
+    }
+    await this.removeInterviewAudio(orgId, interviewId, result.oldId);
+    return result.interview;
+  }
+
+  async deleteInterview(orgId: string, caseId: string, interviewId: string): Promise<void> {
+    const row = await this.db.transaction(async (tx) => {
+      await this.lockInterviewCase(tx, orgId, caseId);
+      const { rows: [deleted] } = await tx.execute<{ audio_document_id: string | null }>(sql`
+        DELETE FROM cases.case_interviews WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid RETURNING audio_document_id
+      `);
+      await tx.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+      return deleted;
+    });
+    if (row) await this.removeInterviewAudio(orgId, interviewId, row.audio_document_id);
   }
 
   // ---------------------------------------------------------------------------
@@ -587,10 +686,10 @@ export class CasesService {
           draftText = `Die Würdigung stützt sich auf ${interviews.length} durchgeführte Befragung(en):\n\n`;
           for (const inv of interviews) {
             draftText += `• Befragung von ${inv.interviewee_name} (${inv.interviewee_role}) vom ${inv.interview_date} (Dauer: ${inv.duration_minutes} Min.)\n`;
-            if (inv.summary) {
+            if (inv.summary && !inv.summary_stale) {
               draftText += `  Zusammenfassung: ${inv.summary}\n`;
             }
-            if (inv.transcript_text) {
+            if (inv.transcript_text && !inv.transcript_stale) {
               const preview = inv.transcript_text.slice(0, 250).trim().replace(/\n+/g, ' ');
               draftText += `  Protokollauszug: "${preview}..."\n`;
             }
