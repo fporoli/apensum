@@ -30,6 +30,8 @@ npm run local:up           # whole stack in Docker (.env.local); local:down / lo
 npm run stack -- <env> <push|build|reset|start|stop|all> [--reset]   # all excludes reset unless opted in
 ```
 
+`npm run site:deploy -- [site|sitepp|all] [--remove]` (`scripts/site-deploy.mjs`) dispatches the `site` workflow for
+apensum.ch (prod) and/or the wwwpp.apensum.ch preview (preprod) and waits for it; it deploys what is pushed.
 `scripts/stack.mjs` wraps the scripts above for dev/local and only dispatches/follows the
 GitHub workflows (`gh`) for VPS instances and Azure; keep deploy logic in the workflows.
 
