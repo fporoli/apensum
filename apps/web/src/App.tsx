@@ -4,6 +4,7 @@ import {
   Box,
   ButtonBase,
   Chip,
+  Collapse,
   Container,
   Divider,
   Drawer,
@@ -41,6 +42,8 @@ import {
   CalendarMonthIcon,
   CheckCircleIcon,
   DashboardIcon,
+  ExpandLessIcon,
+  ExpandMoreIcon,
   FolderCopyIcon,
   GroupIcon,
   HistoryIcon,
@@ -275,6 +278,7 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [appBarNode, setAppBarNode] = useState<HTMLElement | null>(null);
   const [appBarHeight, setAppBarHeight] = useState(64);
+  const [expandedNav, setExpandedNav] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!appBarNode) return;
@@ -623,20 +627,32 @@ export default function App() {
 
   const useProjectTimeRanges = session.settings?.useProjectTimeMinutesRanges === true;
 
+  interface NavSubItem {
+    id: string;
+    section: Section;
+    label: string;
+    icon?: ReactNode;
+    visible: boolean;
+    badge?: number;
+  }
+
+  interface NavItem {
+    id: string;
+    section: Section;
+    label: string;
+    icon: ReactNode;
+    visible: boolean;
+    indent?: boolean;
+    dividerBefore?: boolean;
+    badge?: number;
+    children?: NavSubItem[];
+  }
+
   const NAV_GROUPS: Array<{
     id: string;
     /** Empty: no heading, the group starts after a line instead. */
     header: string;
-    items: Array<{
-      id: string;
-      section: Section;
-      label: string;
-      icon: ReactNode;
-      visible: boolean;
-      indent?: boolean;
-      dividerBefore?: boolean;
-      badge?: number;
-    }>;
+    items: NavItem[];
   }> = [
     {
       id: 'myWork',
@@ -680,8 +696,22 @@ export default function App() {
           visible: allowed('approvals'),
           badge: approvalsCount,
         },
-        { id: 'users', section: 'users', label: t('nav.users'), icon: <PeopleIcon fontSize="small" />, visible: allowed('users') },
-        { id: 'invitations', section: 'invitations', label: t('nav.invitations'), icon: <MailIcon fontSize="small" />, visible: allowed('invitations'), indent: true },
+        {
+          id: 'users',
+          section: 'users',
+          label: t('nav.users'),
+          icon: <PeopleIcon fontSize="small" />,
+          visible: allowed('users') || allowed('invitations'),
+          children: [
+            {
+              id: 'invitations',
+              section: 'invitations',
+              label: t('nav.invitations'),
+              icon: <MailIcon fontSize="small" />,
+              visible: allowed('invitations'),
+            },
+          ],
+        },
         { id: 'management', section: 'management', label: t('nav.management'), icon: <WorkspacesIcon fontSize="small" />, visible: allowed('management') },
       ],
     },
@@ -741,38 +771,138 @@ export default function App() {
                   {group.header}
                 </ListSubheader>
               )}
-              {visibleItems.map((n) => (
-                <li key={n.id} style={{ listStyle: 'none' }}>
-                  {n.dividerBefore && <Divider sx={{ mx: 1, my: 0.5, mt: group.header ? 0.5 : 1.5 }} />}
-                  <ListItemButton
-                    // The Team Management page's Projects tab has its own route but the same nav item.
-                    selected={section === n.section || (n.section === 'management' && section === 'managementProjects')}
-                    onClick={() => {
-                      navigate(n.section);
-                      if (isMobile) setMobileNavOpen(false);
-                    }}
-                    sx={n.indent ? { pl: n.icon ? 3 : 5 } : undefined}
-                  >
-                    {n.icon && (
-                      <ListItemIcon sx={{ minWidth: 32, color: 'inherit' }}>
-                        {n.icon}
-                      </ListItemIcon>
-                    )}
-                    <ListItemText
-                      primary={n.label}
-                      slotProps={n.indent ? { primary: { fontSize: '0.86rem' } } : { primary: { fontSize: '0.9rem' } }}
-                    />
-                    {!!n.badge && n.badge > 0 && (
-                      <Chip
-                        size="small"
-                        label={n.badge}
-                        color="warning"
-                        sx={{ height: 20, fontSize: '0.72rem', ml: 0.5 }}
+              {visibleItems.map((n) => {
+                const visibleChildren = n.children?.filter((c) => c.visible) ?? [];
+                const hasChildren = visibleChildren.length > 0;
+                const isChildActive = visibleChildren.some((c) => c.section === section);
+                const isExpanded =
+                  expandedNav[n.id] !== undefined
+                    ? expandedNav[n.id]
+                    : (section === n.section || isChildActive);
+
+                return (
+                  <li key={n.id} style={{ listStyle: 'none' }}>
+                    {n.dividerBefore && <Divider sx={{ mx: 1, my: 0.5, mt: group.header ? 0.5 : 1.5 }} />}
+                    <ListItemButton
+                      // The Team Management page's Projects tab has its own route but the same nav item.
+                      selected={section === n.section || (n.section === 'management' && section === 'managementProjects')}
+                      onClick={() => {
+                        if (allowed(n.section)) {
+                          navigate(n.section);
+                          if (hasChildren) {
+                            if (section === n.section) {
+                              setExpandedNav((prev) => ({ ...prev, [n.id]: !isExpanded }));
+                            } else {
+                              setExpandedNav((prev) => ({ ...prev, [n.id]: true }));
+                            }
+                          }
+                          if (isMobile) setMobileNavOpen(false);
+                        } else if (hasChildren) {
+                          setExpandedNav((prev) => ({ ...prev, [n.id]: !isExpanded }));
+                        }
+                      }}
+                      sx={n.indent ? { pl: n.icon ? 3 : 5 } : undefined}
+                    >
+                      {n.icon && (
+                        <ListItemIcon sx={{ minWidth: 32, color: 'inherit' }}>
+                          {n.icon}
+                        </ListItemIcon>
+                      )}
+                      <ListItemText
+                        primary={n.label}
+                        slotProps={n.indent ? { primary: { fontSize: '0.86rem' } } : { primary: { fontSize: '0.9rem' } }}
                       />
+                      {!!n.badge && n.badge > 0 && (
+                        <Chip
+                          size="small"
+                          label={n.badge}
+                          color="warning"
+                          sx={{ height: 20, fontSize: '0.72rem', ml: 0.5 }}
+                        />
+                      )}
+                      {hasChildren && (
+                        <Box
+                          component="span"
+                          role="button"
+                          tabIndex={0}
+                          aria-label={isExpanded ? 'collapse' : 'expand'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedNav((prev) => ({ ...prev, [n.id]: !isExpanded }));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setExpandedNav((prev) => ({ ...prev, [n.id]: !isExpanded }));
+                            }
+                          }}
+                          sx={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            p: 0.25,
+                            ml: 0.5,
+                            borderRadius: 1,
+                            color: 'text.secondary',
+                            cursor: 'pointer',
+                            '&:hover': {
+                              bgcolor: 'action.hover',
+                              color: 'text.primary',
+                            },
+                          }}
+                        >
+                          {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                        </Box>
+                      )}
+                    </ListItemButton>
+                    {hasChildren && (
+                      <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                        <List component="div" disablePadding dense>
+                          {visibleChildren.map((child) => (
+                            <ListItemButton
+                              key={child.id}
+                              selected={section === child.section}
+                              onClick={() => {
+                                navigate(child.section);
+                                if (isMobile) setMobileNavOpen(false);
+                              }}
+                              sx={{
+                                pl: 4,
+                                py: 0.5,
+                                minHeight: 34,
+                              }}
+                            >
+                              {child.icon && (
+                                <ListItemIcon sx={{ minWidth: 28, color: 'inherit' }}>
+                                  {child.icon}
+                                </ListItemIcon>
+                              )}
+                              <ListItemText
+                                primary={child.label}
+                                slotProps={{
+                                  primary: {
+                                    fontSize: '0.84rem',
+                                    fontWeight: section === child.section ? 600 : 400,
+                                  },
+                                }}
+                              />
+                              {!!child.badge && child.badge > 0 && (
+                                <Chip
+                                  size="small"
+                                  label={child.badge}
+                                  color="warning"
+                                  sx={{ height: 18, fontSize: '0.7rem', ml: 0.5 }}
+                                />
+                              )}
+                            </ListItemButton>
+                          ))}
+                        </List>
+                      </Collapse>
                     )}
-                  </ListItemButton>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </li>
         );

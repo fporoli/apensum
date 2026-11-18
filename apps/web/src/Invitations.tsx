@@ -19,7 +19,7 @@ import {
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { ContentCopyIcon, MailIcon } from './icons';
+import { ContentCopyIcon, MailIcon, PeopleIcon } from './icons';
 import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -151,7 +151,22 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader title={t('invitations.title')} subtitle={t('invitations.subtitle')} />
+      <PageHeader
+        title={t('invitations.title')}
+        subtitle={t('invitations.subtitle')}
+        end={
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<PeopleIcon fontSize="small" />}
+            onClick={() => {
+              window.location.hash = '#/users';
+            }}
+          >
+            {t('nav.users')}
+          </Button>
+        }
+      />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}

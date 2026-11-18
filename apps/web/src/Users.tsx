@@ -31,7 +31,7 @@ import { BalancesPanel } from './BalancesPanel';
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { PageHeader, TableEmptyRow } from './components';
-import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon } from './icons';
+import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, MailIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -183,7 +183,24 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader title={t('users.title')} subtitle={t('users.subtitle')} />
+      <PageHeader
+        title={t('users.title')}
+        subtitle={t('users.subtitle')}
+        end={
+          canManage ? (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<MailIcon fontSize="small" />}
+              onClick={() => {
+                window.location.hash = '#/invitations';
+              }}
+            >
+              {t('nav.invitations')}
+            </Button>
+          ) : undefined
+        }
+      />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
 
