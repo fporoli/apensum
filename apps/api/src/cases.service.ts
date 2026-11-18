@@ -127,16 +127,23 @@ export class CasesService {
 
   /** Create a new case. */
   async createCase(orgId: string, callerId: string, dto: CreateCaseDto): Promise<Case> {
+    const ref = dto.reference_number?.trim();
+    const title = dto.title?.trim();
+    const subject = dto.subject_name?.trim();
+    if (!ref || !title || !subject) {
+      throw new BadRequestException('missing-required-fields');
+    }
+    const dob = dto.subject_dob && String(dto.subject_dob).trim() ? String(dto.subject_dob).trim() : null;
     const leadId = dto.lead_user_id ?? callerId;
     const [row] = await this.db
       .insert(casesInCases)
       .values({
         organization_id: orgId,
-        reference_number: dto.reference_number.trim(),
-        title: dto.title.trim(),
+        reference_number: ref,
+        title: title,
         domain: dto.domain ?? 'kesb',
-        subject_name: dto.subject_name.trim(),
-        subject_dob: dto.subject_dob ?? null,
+        subject_name: subject,
+        subject_dob: dob,
         lead_user_id: leadId,
         confidentiality: dto.confidentiality ?? 'standard',
         metadata: dto.metadata ?? {},
@@ -150,18 +157,9 @@ export class CasesService {
   async updateCase(orgId: string, caseId: string, dto: UpdateCaseDto): Promise<Case> {
     await this.getCase(orgId, caseId);
 
-    const values: Record<string, unknown> = {
-      updated_at: sql`now()`,
-    };
-    if (dto.reference_number !== undefined) values.reference_number = dto.reference_number.trim();
-    if (dto.title !== undefined) values.title = dto.title.trim();
-    if (dto.domain !== undefined) values.domain = dto.domain;
-    if (dto.subject_name !== undefined) values.subject_name = dto.subject_name.trim();
-    if (dto.subject_dob !== undefined) values.subject_dob = dto.subject_dob;
-    if (dto.status !== undefined) values.status = dto.status;
-    if (dto.lead_user_id !== undefined) values.lead_user_id = dto.lead_user_id;
-    if (dto.confidentiality !== undefined) values.confidentiality = dto.confidentiality;
-    if (dto.metadata !== undefined) values.metadata = dto.metadata;
+    const dob = dto.subject_dob !== undefined
+      ? (dto.subject_dob && String(dto.subject_dob).trim() ? String(dto.subject_dob).trim() : null)
+      : undefined;
 
     await this.db.execute(sql`
       UPDATE cases.cases
@@ -170,7 +168,7 @@ export class CasesService {
         title = COALESCE(${dto.title?.trim() ?? null}, title),
         domain = COALESCE(${dto.domain ?? null}, domain),
         subject_name = COALESCE(${dto.subject_name?.trim() ?? null}, subject_name),
-        subject_dob = CASE WHEN ${dto.subject_dob !== undefined} THEN ${dto.subject_dob ?? null}::date ELSE subject_dob END,
+        subject_dob = CASE WHEN ${dob !== undefined} THEN ${dob ?? null}::date ELSE subject_dob END,
         status = COALESCE(${dto.status ?? null}, status),
         lead_user_id = CASE WHEN ${dto.lead_user_id !== undefined} THEN ${dto.lead_user_id ?? null}::uuid ELSE lead_user_id END,
         confidentiality = COALESCE(${dto.confidentiality ?? null}, confidentiality),

@@ -107,7 +107,13 @@ export class CasesController {
   ) {
     const callerId = await this.requireCallerId(req);
     await this.checkEditAccess(orgId, callerId);
-    const created = await this.casesService.createCase(orgId, callerId, body);
+    const held = await permissionIdsOf(this.db, orgId, callerId);
+    const scopes = grantedScopes(held, 'nav.cases', 'edit');
+    const dto: CreateCaseDto = {
+      ...body,
+      lead_user_id: scopes.has('all') ? (body.lead_user_id ?? callerId) : callerId,
+    };
+    const created = await this.casesService.createCase(orgId, callerId, dto);
     return { ok: true, case: created };
   }
 
