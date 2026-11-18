@@ -13,6 +13,7 @@ import {
   TableHead,
   TableRow,
   Typography,
+  alpha,
   useTheme,
 } from '@mui/material';
 import { BarChart } from '@mui/x-charts/BarChart';
@@ -24,6 +25,7 @@ import { formatDays } from './BalancesPanel';
 import { PageHeader, TableEmptyRow } from './components';
 import { ReviewQueue } from './BasicDataPanel';
 import {
+  AccountBalanceWalletIcon,
   BeachAccessIcon,
   CalendarMonthIcon,
   CheckCircleIcon,
@@ -31,6 +33,7 @@ import {
   ReceiptLongIcon,
   ScheduleIcon,
   StopIcon,
+  TimerIcon,
 } from './icons';
 
 export { BasicDataPanel, sectionKeys } from './BasicDataPanel';
@@ -229,16 +232,72 @@ export default function Home({
 
       {/* Quick Actions */}
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        <Button size="small" variant="outlined" startIcon={<ScheduleIcon fontSize="small" />} onClick={() => onNavigate('time')}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<ScheduleIcon fontSize="small" />}
+          onClick={() => onNavigate('time')}
+          sx={{
+            borderRadius: 6,
+            px: 1.5,
+            bgcolor: 'background.paper',
+            borderColor: 'divider',
+            color: 'text.primary',
+            fontWeight: 500,
+            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
+          }}
+        >
           {t('dashboard.logTime')}
         </Button>
-        <Button size="small" variant="outlined" startIcon={<BeachAccessIcon fontSize="small" />} onClick={() => onNavigate('absences')}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<BeachAccessIcon fontSize="small" />}
+          onClick={() => onNavigate('absences')}
+          sx={{
+            borderRadius: 6,
+            px: 1.5,
+            bgcolor: 'background.paper',
+            borderColor: 'divider',
+            color: 'text.primary',
+            fontWeight: 500,
+            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
+          }}
+        >
           {t('dashboard.requestAbsence')}
         </Button>
-        <Button size="small" variant="outlined" startIcon={<ReceiptLongIcon fontSize="small" />} onClick={() => onNavigate('expenses')}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<ReceiptLongIcon fontSize="small" />}
+          onClick={() => onNavigate('expenses')}
+          sx={{
+            borderRadius: 6,
+            px: 1.5,
+            bgcolor: 'background.paper',
+            borderColor: 'divider',
+            color: 'text.primary',
+            fontWeight: 500,
+            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
+          }}
+        >
           {t('dashboard.addExpense')}
         </Button>
-        <Button size="small" variant="outlined" startIcon={<CalendarMonthIcon fontSize="small" />} onClick={() => onNavigate('timesheet')}>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<CalendarMonthIcon fontSize="small" />}
+          onClick={() => onNavigate('timesheet')}
+          sx={{
+            borderRadius: 6,
+            px: 1.5,
+            bgcolor: 'background.paper',
+            borderColor: 'divider',
+            color: 'text.primary',
+            fontWeight: 500,
+            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
+          }}
+        >
           {t('dashboard.openTimesheet')}
         </Button>
       </Box>
@@ -251,40 +310,225 @@ export default function Home({
           gap: 2,
         }}
       >
-        <Paper sx={{ p: 2, cursor: 'pointer' }} onClick={() => onNavigate('workTime')}>
-          <Typography variant="caption" color="text.secondary">{t('dashboard.attendance')}</Typography>
-          <Typography variant="h6" sx={{ mt: 0.5, color: checkedIn ? 'success.main' : 'text.primary' }}>
-            {checkedIn ? formatDurationMinutes(elapsedMinutes) : t('dashboard.checkedOut')}
-          </Typography>
+        <Paper
+          elevation={1}
+          sx={{
+            p: 2.25,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            borderRadius: 2,
+            transition: 'all 0.18s ease-in-out',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              borderColor: 'primary.main',
+              boxShadow: (th) =>
+                th.palette.mode === 'dark'
+                  ? '0 6px 20px rgba(0,0,0,0.5)'
+                  : '0 6px 16px -2px rgba(16,24,40,0.08), 0 2px 6px -1px rgba(16,24,40,0.04)',
+            },
+          }}
+          onClick={() => onNavigate('workTime')}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {t('dashboard.attendance')}
+            </Typography>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: checkedIn ? alpha('#10b981', 0.14) : (th) => alpha(th.palette.text.secondary, 0.08),
+                color: checkedIn ? '#059669' : 'text.secondary',
+              }}
+            >
+              <TimerIcon fontSize="small" />
+            </Box>
+          </Box>
+          <Box sx={{ my: 1.25 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {checkedIn && (
+                <Box
+                  sx={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: '50%',
+                    bgcolor: '#10b981',
+                    boxShadow: '0 0 0 3px rgba(16, 185, 129, 0.25)',
+                    animation: 'pulse 2s infinite ease-in-out',
+                    '@keyframes pulse': {
+                      '0%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0.6)' },
+                      '70%': { transform: 'scale(1)', boxShadow: '0 0 0 6px rgba(16, 185, 129, 0)' },
+                      '100%': { transform: 'scale(0.95)', boxShadow: '0 0 0 0 rgba(16, 185, 129, 0)' },
+                    },
+                  }}
+                />
+              )}
+              <Typography variant="h5" sx={{ fontWeight: 700, color: checkedIn ? 'success.main' : 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+                {checkedIn ? formatDurationMinutes(elapsedMinutes) : t('dashboard.checkedOut')}
+              </Typography>
+            </Box>
+          </Box>
           <Typography variant="caption" color="text.secondary">
             {checkedIn ? t('dashboard.checkedIn') : t('workTime.checkIn')}
           </Typography>
         </Paper>
 
-        <Paper sx={{ p: 2, cursor: 'pointer' }} onClick={() => onNavigate('time')}>
-          <Typography variant="caption" color="text.secondary">{t('dashboard.weekHours')}</Typography>
-          <Typography variant="h6" sx={{ mt: 0.5 }}>{formatDurationMinutes(totalWeekMinutes)}</Typography>
+        <Paper
+          elevation={1}
+          sx={{
+            p: 2.25,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            borderRadius: 2,
+            transition: 'all 0.18s ease-in-out',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              borderColor: 'primary.main',
+              boxShadow: (th) =>
+                th.palette.mode === 'dark'
+                  ? '0 6px 20px rgba(0,0,0,0.5)'
+                  : '0 6px 16px -2px rgba(16,24,40,0.08), 0 2px 6px -1px rgba(16,24,40,0.04)',
+            },
+          }}
+          onClick={() => onNavigate('time')}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {t('dashboard.weekHours')}
+            </Typography>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: alpha('#3b82f6', 0.12),
+                color: '#2563eb',
+              }}
+            >
+              <ScheduleIcon fontSize="small" />
+            </Box>
+          </Box>
+          <Box sx={{ my: 1.25 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+              {formatDurationMinutes(totalWeekMinutes)}
+            </Typography>
+          </Box>
           <Typography variant="caption" color="text.secondary">
             {weekEntries.length} {t('time.entries').toLowerCase()}
           </Typography>
         </Paper>
 
-        <Paper sx={{ p: 2, cursor: 'pointer' }} onClick={() => onNavigate('workTime')}>
-          <Typography variant="caption" color="text.secondary">{t('dashboard.overtime')}</Typography>
-          <Typography
-            variant="h6"
-            sx={{ mt: 0.5, color: balance && balance.overtimeMinutes + balance.pendingOvertimeMinutes < 0 ? 'error.main' : 'success.main' }}
-          >
-            {balance ? formatSignedMinutes(balance.overtimeMinutes + balance.pendingOvertimeMinutes) : '—'}
-          </Typography>
+        <Paper
+          elevation={1}
+          sx={{
+            p: 2.25,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            borderRadius: 2,
+            transition: 'all 0.18s ease-in-out',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              borderColor: 'primary.main',
+              boxShadow: (th) =>
+                th.palette.mode === 'dark'
+                  ? '0 6px 20px rgba(0,0,0,0.5)'
+                  : '0 6px 16px -2px rgba(16,24,40,0.08), 0 2px 6px -1px rgba(16,24,40,0.04)',
+            },
+          }}
+          onClick={() => onNavigate('workTime')}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {t('dashboard.overtime')}
+            </Typography>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: alpha('#8b5cf6', 0.12),
+                color: '#7c3aed',
+              }}
+            >
+              <AccountBalanceWalletIcon fontSize="small" />
+            </Box>
+          </Box>
+          <Box sx={{ my: 1.25 }}>
+            <Typography
+              variant="h5"
+              sx={{
+                fontWeight: 700,
+                color: balance && balance.overtimeMinutes + balance.pendingOvertimeMinutes < 0 ? 'error.main' : 'success.main',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {balance ? formatSignedMinutes(balance.overtimeMinutes + balance.pendingOvertimeMinutes) : '—'}
+            </Typography>
+          </Box>
           <Typography variant="caption" color="text.secondary">{t('balances.type.overtime')}</Typography>
         </Paper>
 
-        <Paper sx={{ p: 2, cursor: 'pointer' }} onClick={() => onNavigate('absences')}>
-          <Typography variant="caption" color="text.secondary">{t('dashboard.vacation')}</Typography>
-          <Typography variant="h6" sx={{ mt: 0.5 }}>
-            {balance ? t('balances.days', { value: formatDays(balance.vacationDays, locale) }) : '—'}
-          </Typography>
+        <Paper
+          elevation={1}
+          sx={{
+            p: 2.25,
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            borderRadius: 2,
+            transition: 'all 0.18s ease-in-out',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              borderColor: 'primary.main',
+              boxShadow: (th) =>
+                th.palette.mode === 'dark'
+                  ? '0 6px 20px rgba(0,0,0,0.5)'
+                  : '0 6px 16px -2px rgba(16,24,40,0.08), 0 2px 6px -1px rgba(16,24,40,0.04)',
+            },
+          }}
+          onClick={() => onNavigate('absences')}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              {t('dashboard.vacation')}
+            </Typography>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: alpha('#f59e0b', 0.12),
+                color: '#d97706',
+              }}
+            >
+              <BeachAccessIcon fontSize="small" />
+            </Box>
+          </Box>
+          <Box sx={{ my: 1.25 }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+              {balance ? t('balances.days', { value: formatDays(balance.vacationDays, locale) }) : '—'}
+            </Typography>
+          </Box>
           <Typography variant="caption" color="text.secondary">{t('balances.type.vacation')}</Typography>
         </Paper>
       </Box>

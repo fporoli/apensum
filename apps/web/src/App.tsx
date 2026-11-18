@@ -88,7 +88,7 @@ const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
-const DRAWER_WIDTH = 232;
+const DRAWER_WIDTH = 240;
 
 type Section =
   | 'home'
@@ -818,6 +818,11 @@ export default function App() {
                 sx={{
                   bgcolor: 'rgba(255,255,255,0.18)',
                   color: 'inherit',
+                  fontWeight: 600,
+                  border: '1px solid rgba(255,255,255,0.22)',
+                  backdropFilter: 'blur(4px)',
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.26)' },
                   '& .MuiChip-icon': { color: '#86efac' },
                   display: { xs: 'none', md: 'inline-flex' },
                 }}
