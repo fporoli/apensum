@@ -479,7 +479,7 @@ export default {
   ],
   'privacy.changes.title': 'Modifiche',
   'privacy.changes.text': ['Possiamo aggiornare questa informativa se il nostro sito o il diritto cambiano. Fa fede la versione pubblicata qui.'],
-  'slug.law': "legge-sul-lavoro",
+  'slug.law': "sicurezza/legge-sul-lavoro",
   'nav.law': "Legge sul lavoro",
   'law.meta.title': "Registrazione del tempo di lavoro secondo la legge sul lavoro – Apensum",
   'law.meta.description': "Cosa chiede la legge sul lavoro per la registrazione del tempo – riposi, pause, lavoro straordinario, conservazione – e come vi aiuta Apensum.",
@@ -507,4 +507,7 @@ export default {
   'law.simplified.title': "Anche con la registrazione semplificata",
   'law.simplified.text': "Dove è convenuta la registrazione semplificata basta la durata giornaliera. Il personale può comunque registrare tutto, e il datore di lavoro deve mettergli a disposizione uno strumento adeguato (art. 73b cpv. 4 OLL 1). Apensum consente entrambe le cose.",
   'law.note': "Questa pagina riassume le regole in modo semplificato e non è una consulenza legale. Fanno fede la legge sul lavoro, le sue ordinanze e il commento della SECO. Per le eccezioni, come le disposizioni speciali per singoli settori (OLL 2) o i quadri superiori, rivolgetevi all’ispettorato cantonale del lavoro.",
+  'security.law.title': "Registrazione del tempo di lavoro secondo la legge sul lavoro",
+  'security.law.text': "Cosa chiede la legge per riposi, pause, lavoro straordinario e conservazione – e come Apensum verifica i tempi registrati.",
+  'security.law.link': "Alla legge sul lavoro",
 };

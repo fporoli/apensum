@@ -480,7 +480,7 @@ export default {
   ],
   'privacy.changes.title': 'Modifications',
   'privacy.changes.text': ['Nous pouvons adapter cette politique si notre site ou le droit évolue. La version publiée ici fait foi.'],
-  'slug.law': "loi-sur-le-travail",
+  'slug.law': "securite/loi-sur-le-travail",
   'nav.law': "Loi sur le travail",
   'law.meta.title': "Saisie du temps de travail selon la loi sur le travail – Apensum",
   'law.meta.description': "Ce que la loi sur le travail exige pour la saisie du temps – repos, pauses, travail supplémentaire, conservation – et comment Apensum vous aide.",
@@ -508,4 +508,7 @@ export default {
   'law.simplified.title': "Aussi avec la saisie simplifiée",
   'law.simplified.text': "Là où la saisie simplifiée est convenue, la durée quotidienne suffit. Le personnel peut tout de même tout saisir, et l’employeur doit lui fournir un instrument approprié (art. 73b al. 4 OLT 1). Apensum permet les deux.",
   'law.note': "Cette page résume les règles de manière simplifiée et ne constitue pas un conseil juridique. Font foi la loi sur le travail, ses ordonnances et le commentaire du SECO. Pour les exceptions, comme les dispositions spéciales de certaines branches (OLT 2) ou les cadres supérieurs, adressez-vous à l’inspection cantonale du travail.",
+  'security.law.title': "Saisie du temps de travail selon la loi sur le travail",
+  'security.law.text': "Ce que la loi exige pour le repos, les pauses, le travail supplémentaire et la conservation – et comment Apensum contrôle les temps saisis.",
+  'security.law.link': "Vers la loi sur le travail",
 };

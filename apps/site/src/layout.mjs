@@ -1,4 +1,4 @@
-import { icon, logoMark } from './icons.mjs';
+import { githubMark, icon, logoMark } from './icons.mjs';
 
 export const LANGS = ['de', 'fr', 'it', 'en'];
 export const DEFAULT_LANG = 'de';
@@ -68,7 +68,8 @@ export function context(dicts, lang, page, config, assets) {
 function header(ctx) {
   const { t, link, lang, page, dicts, config } = ctx;
   const nav = ['features', 'pricing', 'security', 'about', 'contact']
-    .map((p) => `<a href="${link(p)}"${p === page ? ' aria-current="page"' : ''}>${t(`nav.${p}`)}</a>`)
+    // The Working Hours Act page lives under Security (its slug and its place in the menu).
+    .map((p) => `<a href="${link(p)}"${p === page || (p === 'security' && page === 'law') ? ' aria-current="page"' : ''}>${t(`nav.${p}`)}</a>`)
     .join('');
   const langs = LANGS.map(
     (l) =>
@@ -112,7 +113,7 @@ function footer(ctx) {
       <a href="${link('law')}">${t('nav.law')}</a>
       <a href="${ctx.demo}">${t('cta.demo')}</a>
       ${config.appUrl ? `<a href="${esc(config.appUrl)}">${t('nav.login')}</a>` : ''}
-      ${config.sourceUrl ? `<a href="${esc(config.sourceUrl)}" rel="noopener">${t('nav.source')}</a>` : ''}
+      ${config.sourceUrl ? `<a class="footer-github" href="${esc(config.sourceUrl)}" rel="noopener">${t('nav.source')}${githubMark()}</a>` : ''}
     </nav>
     <nav aria-label="${t('footer.company')}">
       <h2>${t('footer.company')}</h2>

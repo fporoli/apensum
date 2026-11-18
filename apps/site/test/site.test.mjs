@@ -33,7 +33,8 @@ test('slugs are unique per language and URL-safe', () => {
   for (const lang of LANGS) {
     const paths = PAGES.map((p) => pagePath(DICTS, lang, p));
     assert.equal(new Set(paths).size, paths.length, lang);
-    for (const p of paths) assert.match(p, /^\/[a-z]{2}\/([a-z-]+\/)?$/, p);
+    // One or two levels: the Working Hours Act page lives under Security.
+    for (const p of paths) assert.match(p, /^\/[a-z]{2}\/([a-z-]+\/){0,2}$/, p);
   }
 });
 

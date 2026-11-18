@@ -479,7 +479,7 @@ export default {
   ],
   'privacy.changes.title': 'Änderungen',
   'privacy.changes.text': ['Wir können diese Erklärung anpassen, wenn sich unsere Website oder das Recht ändert. Es gilt die hier veröffentlichte Fassung.'],
-  'slug.law': "arbeitsgesetz",
+  'slug.law': "sicherheit/arbeitsgesetz",
   'nav.law': "Arbeitsgesetz",
   'law.meta.title': "Arbeitszeiterfassung nach Arbeitsgesetz – Apensum",
   'law.meta.description': "Was das Arbeitsgesetz bei der Zeiterfassung verlangt – Ruhezeiten, Pausen, Überzeit, Aufbewahrung – und wie Apensum Sie dabei unterstützt.",
@@ -507,4 +507,7 @@ export default {
   'law.simplified.title': "Auch bei vereinfachter Erfassung",
   'law.simplified.text': "Wo die vereinfachte Erfassung vereinbart ist, genügt die tägliche Arbeitszeit. Mitarbeitende dürfen trotzdem lückenlos erfassen, und der Arbeitgeber muss ihnen dafür ein geeignetes Instrument zur Verfügung stellen (Art. 73b Abs. 4 ArGV 1). Apensum kann beides.",
   'law.note': "Diese Seite fasst die Regeln vereinfacht zusammen und ist keine Rechtsberatung. Massgebend sind das Arbeitsgesetz, seine Verordnungen und die Wegleitung des SECO. Für Ausnahmen, etwa Sonderbestimmungen für einzelne Branchen (ArGV 2) oder höhere leitende Angestellte, wenden Sie sich an das kantonale Arbeitsinspektorat.",
+  'security.law.title': "Arbeitszeiterfassung nach Arbeitsgesetz",
+  'security.law.text': "Was das Gesetz bei Ruhezeiten, Pausen, Überzeit und Aufbewahrung verlangt – und wie Apensum die erfassten Zeiten dafür prüft.",
+  'security.law.link': "Zum Arbeitsgesetz",
 };

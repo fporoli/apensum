@@ -454,3 +454,16 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 .contact-address { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
 .contact-address .icon { width: 18px; height: 18px; }
 .page-head .actions { margin-top: 28px; }
+
+/* GitHub button (security page, home page): mark, label, repository address. */
+.github-link { gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.github-link .icon { width: 20px; height: 20px; }
+.github-repo { font-weight: 400; font-size: 0.88em; }
+/* The Working Hours Act teaser on the security page: the whole card is the link. */
+.law-teaser { display: flex; gap: 20px; align-items: flex-start; text-decoration: none; color: inherit; margin-bottom: 24px; }
+.law-teaser:hover { border-color: var(--brand); }
+.law-teaser p { color: var(--muted); }
+.law-teaser .feature-icon { flex: none; margin: 0; }
+@media (max-width: 640px) { .law-teaser { flex-direction: column; gap: 12px; } }
+.footer-github { display: inline-flex; align-items: center; gap: 6px; }
+.footer-github .icon { width: 16px; height: 16px; }

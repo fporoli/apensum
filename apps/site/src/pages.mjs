@@ -1,5 +1,5 @@
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
-import { icon } from './icons.mjs';
+import { githubMark, icon } from './icons.mjs';
 import { esc, layout, pagePath } from './layout.mjs';
 
 /** The canton each language's holiday example shows. */
@@ -291,7 +291,7 @@ ${
       <p class="eyebrow">${icon('code')}${t('home.oss.eyebrow')}</p>
       <h2>${t('home.oss.title')}</h2>
       <p class="lead">${t('home.oss.text')}</p>
-      <a class="link-arrow" href="${esc(ctx.config.sourceUrl)}" rel="noopener">${t('home.oss.link')}${icon('arrow')}</a>
+      ${githubButton(ctx, t('home.oss.link'))}
     </div>
   </div>
 </section>`
@@ -387,6 +387,13 @@ ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('features.meta.title'), description: t('features.meta.description'), body });
 }
 
+/** A button to the public repository: GitHub's mark, the label and the repository's address. */
+function githubButton(ctx, label) {
+  const url = ctx.config.sourceUrl;
+  const repo = url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+  return `<a class="btn btn-ghost github-link" href="${esc(url)}" rel="noopener">${githubMark()}<span>${label}</span><span class="muted github-repo">${esc(repo)}</span></a>`;
+}
+
 /** What Apensum does for the Working Hours Act (page `law`): each card a claim the app keeps. */
 const LAW = [
   ['recording', 'clock'],
@@ -405,7 +412,7 @@ export function law(ctx) {
   const body = `
 <section class="page-head">
   <div class="wrap">
-    <p class="eyebrow">${icon('scale')}${t('nav.law')}</p>
+    <p class="eyebrow"><a href="${ctx.link('security')}">${t('nav.security')}</a> › ${t('nav.law')}</p>
     <h1>${t('law.title')}</h1>
     <p class="lead">${t('law.lead')}</p>
   </div>
@@ -447,12 +454,22 @@ export function security(ctx) {
   </div>
 </section>
 <section class="section tight">
+  <div class="wrap">
+    <a class="card feature law-teaser" href="${ctx.link('law')}">
+      <div class="feature-icon">${icon('scale')}</div>
+      <div>
+        <h2 class="h3">${t('security.law.title')}</h2>
+        <p>${t('security.law.text')}</p>
+        <span class="link-arrow">${t('security.law.link')}${icon('arrow')}</span>
+      </div>
+    </a>
+  </div>
   <div class="wrap grid grid-2">
   ${SECURITY.filter(([k]) => k !== 'opensource' || ctx.config.sourceUrl).map(
     ([k, ic]) => `<article class="card feature">
-      <div class="feature-icon">${icon(ic)}</div>
+      <div class="feature-icon">${k === 'opensource' ? githubMark() : icon(ic)}</div>
       <h2 class="h3">${t(`security.${k}.title`)}</h2>
-      <p>${t(`security.${k}.text`)}</p>
+      <p>${t(`security.${k}.text`)}</p>${k === 'opensource' ? `\n      ${githubButton(ctx, t('home.oss.link'))}` : ''}
     </article>`,
   ).join('\n  ')}
   </div>

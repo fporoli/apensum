@@ -480,7 +480,7 @@ export default {
   ],
   'privacy.changes.title': 'Changes',
   'privacy.changes.text': ['We may update this policy when our website or the law changes. The version published here applies.'],
-  'slug.law': "working-hours-act",
+  'slug.law': "security/working-hours-act",
   'nav.law': "Working Hours Act",
   'law.meta.title': "Time recording under the Swiss Working Hours Act – Apensum",
   'law.meta.description': "What the Swiss Working Hours Act requires for time recording – rest, breaks, Überzeit, retention – and how Apensum helps.",
@@ -508,4 +508,7 @@ export default {
   'law.simplified.title': "With simplified recording too",
   'law.simplified.text': "Where simplified recording is agreed, the daily total is enough. People may still record everything, and the employer has to give them a suitable tool for it (art. 73b para. 4 ArGV 1). Apensum does both.",
   'law.note': "This page summarises the rules in simplified form and is not legal advice. The Working Hours Act, its ordinances and SECO’s guidance prevail. For exceptions, such as special rules for some sectors (ArGV 2) or senior executives, contact the cantonal labour inspectorate.",
+  'security.law.title': "Time recording under the Working Hours Act",
+  'security.law.text': "What the law requires for rest, breaks, Überzeit and record keeping – and how Apensum checks the recorded times for it.",
+  'security.law.link': "To the Working Hours Act",
 };
