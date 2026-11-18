@@ -161,8 +161,10 @@ export function TableEmptyRow({
 }
 
 /**
- * Whose time records a page shows: the caller, or someone whose records they may change (their
- * reports; everyone for HR), from `time-record-people`. Renders nothing when there is no one else.
+ * Whose time records a page shows: the caller, or someone whose records they may see (everyone
+ * below them in the reporting line; everyone for HR), from `time-record-people`. Each person comes
+ * with `editable`; `onEditableChange` tells the page whether it may offer changes for the person
+ * shown (self, direct reports, HR) or is read-only. Renders nothing when there is no one else.
  */
 export function PersonPicker({
   orgId,
@@ -172,6 +174,7 @@ export function PersonPicker({
   onChange,
   authHeaders,
   highlight = false,
+  onEditableChange,
 }: {
   orgId: string;
   kind: 'workTime' | 'time' | 'timesheet' | 'projectTimesheet';
@@ -181,10 +184,19 @@ export function PersonPicker({
   authHeaders: () => Promise<Record<string, string>>;
   /** Pulses the field briefly, e.g. after the team overview opened a person. */
   highlight?: boolean;
+  /** Called once the people are known and whenever the person changes: may the caller change their records? */
+  onEditableChange?: (editable: boolean) => void;
 }) {
   const t = useT();
   const theme = useTheme();
-  const [people, setPeople] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [people, setPeople] = useState<{ id: string; name: string; email: string; editable?: boolean }[] | null>(null);
+
+  useEffect(() => {
+    if (!onEditableChange) return;
+    if (value === selfId) onEditableChange(true);
+    else if (people) onEditableChange(people.find((p) => p.id === value)?.editable === true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people, value, selfId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -203,7 +215,7 @@ export function PersonPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, kind]);
 
-  if (!people.some((p) => p.id !== selfId)) return null;
+  if (!people || !people.some((p) => p.id !== selfId)) return null;
   return (
     <TextField
       select

@@ -162,6 +162,9 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
   // Whose sessions are shown: one's own, or (manager/HR) someone whose work time one may correct.
   const [personId, setPersonId] = useState(initialPersonId ?? userId);
   const isSelf = personId === userId;
+  // Higher up the reporting line than the direct manager: the person's records are read-only here.
+  const [pickedEditable, setPickedEditable] = useState<boolean | null>(null);
+  const canEdit = isSelf || pickedEditable === true;
   // Back to the opened person (or oneself) when the org or user changes; also runs on mount.
   useEffect(() => setPersonId(initialPersonId ?? userId), [orgId, userId, initialPersonId]);
 
@@ -338,7 +341,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
         title={t('workTime.title')}
         end={
           <>
-            <PersonPicker orgId={orgId} kind="workTime" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} />
+            <PersonPicker orgId={orgId} kind="workTime" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} onEditableChange={setPickedEditable} />
             {isSelf && balance && (
             <>
               <Tooltip
@@ -367,6 +370,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
       />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {!canEdit && pickedEditable === false && <Alert severity="info">{t('people.readOnly')}</Alert>}
       {loading && <LinearProgress />}
 
       {isSelf && (
@@ -404,6 +408,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('workTime.recentSessions')}</Typography>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+              {canEdit && (
               <Button
                 size="small"
                 startIcon={<AddIcon fontSize="small" />}
@@ -414,6 +419,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
               >
                 {t('workTime.addEntry')}
               </Button>
+              )}
               <TextField
                 select
                 size="small"
@@ -449,16 +455,20 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
                       <TableCell>{formatDuration(e.check_in, e.check_out)}</TableCell>
                       <TableCell>{e.comment || '—'}</TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                        <Tooltip title={t('time.edit')}>
-                          <IconButton size="small" aria-label={t('time.edit')} onClick={() => setDraft(draftFromSession(e))}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title={t('time.remove')}>
-                          <IconButton size="small" color="error" aria-label={t('time.remove')} onClick={() => setConfirmDeleteId(e.id)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                        {canEdit && (
+                          <>
+                            <Tooltip title={t('time.edit')}>
+                              <IconButton size="small" aria-label={t('time.edit')} onClick={() => setDraft(draftFromSession(e))}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title={t('time.remove')}>
+                              <IconButton size="small" color="error" aria-label={t('time.remove')} onClick={() => setConfirmDeleteId(e.id)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

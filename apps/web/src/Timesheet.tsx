@@ -131,6 +131,8 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
   // Whose month is shown: one's own, or (manager/HR) a person whose month one may reopen.
   const [personId, setPersonId] = useState(initialPersonId ?? userId);
   const isSelf = personId === userId;
+  // Higher up the reporting line than the direct manager: the month is shown, not reopened.
+  const [pickedEditable, setPickedEditable] = useState<boolean | null>(null);
   const [reopening, setReopening] = useState(false);
   // Back to the opened person (or oneself) when the org or user changes; also runs on mount.
   useEffect(() => setPersonId(initialPersonId ?? userId), [orgId, userId, initialPersonId]);
@@ -296,7 +298,7 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
         subtitle={periodLabel('month', period, locale)}
         end={
           <>
-            <PersonPicker orgId={orgId} kind="timesheet" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} />
+            <PersonPicker orgId={orgId} kind="timesheet" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} onEditableChange={setPickedEditable} />
             <Chip label={t(`timesheet.status.${status}`)} color={STATUS_COLOR[status]} size="small" />
           </>
         }
@@ -463,7 +465,10 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
           {monthBalance && monthBalance.vacationDays > 0 && ` · ${t('timesheet.vacationTaken', { value: formatDays(monthBalance.vacationDays, locale) })}`}
         </Typography>
 
-        {!isSelf && (
+        {!isSelf && pickedEditable === false && (
+          <Typography variant="body2" color="text.secondary">{t('people.readOnly')}</Typography>
+        )}
+        {!isSelf && pickedEditable === true && (
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             {status === 'submitted' || status === 'approved' ? (
               <>

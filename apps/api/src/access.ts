@@ -133,6 +133,46 @@ export async function isManagerOf(db: Executor, organizationId: string, managerI
   return (await membershipManagerId(db, organizationId, targetUserId)) === managerId;
 }
 
+/** Assignments in force today, one row per person of the organization (user, manager). */
+function currentManagers(organizationId: string): SQL {
+  return sql`SELECT DISTINCT ON (user_id) user_id, manager_user_id FROM employee_assignments
+             WHERE organization_id = ${organizationId} AND valid_from <= CURRENT_DATE
+             ORDER BY user_id, valid_from DESC`;
+}
+
+/**
+ * Everyone below `managerId` in today's reporting line: their direct reports, those people's reports,
+ * and so on down. Read access only (canSeeUserData, listableUserIds); editing, approving and reopening
+ * stay with the direct manager (isManagerOf). A loop in the assignments ends instead of repeating.
+ */
+export async function reportingLineUserIds(db: Executor, organizationId: string, managerId: string): Promise<string[]> {
+  const rows = await db.execute(
+    sql`WITH RECURSIVE cur AS (${currentManagers(organizationId)}),
+        below(user_id) AS (
+          SELECT user_id FROM cur WHERE manager_user_id = ${managerId}
+          UNION
+          SELECT cur.user_id FROM cur JOIN below ON cur.manager_user_id = below.user_id
+        )
+        SELECT user_id FROM below WHERE user_id <> ${managerId}`,
+  );
+  return rows.rows.map((r: Record<string, unknown>) => r.user_id as string);
+}
+
+/** True when `managerId` is above `targetUserId` in today's reporting line (their manager, that manager's manager, ...). */
+export async function isAboveInReportingLine(db: Executor, organizationId: string, managerId: string, targetUserId: string): Promise<boolean> {
+  if (managerId === targetUserId) return false;
+  const rows = await db.execute(
+    sql`WITH RECURSIVE cur AS (${currentManagers(organizationId)}),
+        above(user_id) AS (
+          SELECT manager_user_id FROM cur WHERE user_id = ${targetUserId} AND manager_user_id IS NOT NULL
+          UNION
+          SELECT cur.manager_user_id FROM cur JOIN above ON cur.user_id = above.user_id WHERE cur.manager_user_id IS NOT NULL
+        )
+        SELECT 1 FROM above WHERE user_id = ${managerId} LIMIT 1`,
+  );
+  return rows.rows.length > 0;
+}
+
 /** user_ids whose assignment in force today names `managerId` as their manager — i.e. `managerId`'s direct reports. */
 export async function directReportUserIds(db: Executor, organizationId: string, managerId: string): Promise<string[]> {
   const rows = await db.execute(
@@ -433,14 +473,15 @@ function intersect(a: 'all' | Set<string>, b: 'all' | Set<string>): 'all' | Set<
 
 // ---------------------------------------------------------------------------------------------
 // People's data on a page (project time, absences, expenses, ...). Two rules combine:
-// - the reporting line: a person's designated manager always sees their data (approvals route
-//   there), whatever role the manager holds;
+// - the reporting line: everyone above a person (their manager, that manager's manager, ... up the
+//   chain) always sees their data, whatever role they hold; only the direct manager also edits,
+//   approves and reopens (approvals route there);
 // - permissions: a `see` grant on the page's object reaching that person (e.g. admin `all`).
 
-/** Self, the target's designated manager, or a `see` grant on `object` covering the target. */
+/** Self, anyone above the target in the reporting line, or a `see` grant on `object` covering the target. */
 export async function canSeeUserData(db: Executor, organizationId: string, callerId: string, object: string, targetUserId: string): Promise<boolean> {
   if (targetUserId === callerId) return true;
-  if (await isManagerOf(db, organizationId, callerId, targetUserId)) return true;
+  if (await isAboveInReportingLine(db, organizationId, callerId, targetUserId)) return true;
   return can(db, organizationId, callerId, object, 'see', targetUserId);
 }
 
@@ -473,13 +514,13 @@ export async function reachesAll(db: Executor, organizationId: string, callerId:
   return grantedScopes(ids, object, action).has('all');
 }
 
-/** Whose data a list shows when no person is asked for: everyone, or self + direct reports + whoever the grants cover. */
+/** Whose data a list shows when no person is asked for: everyone, or self + the whole reporting line below + whoever the grants cover. */
 export async function listableUserIds(db: Executor, organizationId: string, callerId: string, object: string): Promise<'all' | string[]> {
   const granted = await visibleUserIds(db, organizationId, callerId, object, 'see');
   if (granted === 'all') return 'all';
   const ids = new Set(granted);
   ids.add(callerId);
-  for (const id of await directReportUserIds(db, organizationId, callerId)) ids.add(id);
+  for (const id of await reportingLineUserIds(db, organizationId, callerId)) ids.add(id);
   return [...ids];
 }
 

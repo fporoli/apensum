@@ -151,8 +151,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   roles. Admin settings -> Roles & permissions (`roles.controller.ts`) manages both.
   `edit` implies `see`; a section also requires its parent navbar entry (My data for own
   data, Users for others'). `owner` holds everything; `admin` always keeps role management.
-  People's data: `canSeeUserData` = self, the designated manager (always), or a grant
-  covering them; admin-only overrides use `canEditBeyondOwn` (ignores everyone's `:edit:own`).
+  People's data: `canSeeUserData` = self, anyone above them in the reporting line (the manager, that
+  manager's manager, ... `isAboveInReportingLine`, read-only), or a grant covering them; `listableUserIds`
+  adds the whole line below (`reportingLineUserIds`). Editing, approving and reopening stay with the
+  direct manager (`isManagerOf`, `canEditUserData`); `time-record-people` flags each person `editable` and
+  the time pages are read-only for the others; admin-only overrides use `canEditBeyondOwn` (ignores everyone's `:edit:own`).
   New navbar entries/sections need a registry entry, catalogue rows and default grants
   (a new `NNN-permission-*.sql` changelog); the catalogue test checks those match the registry.
 - Roles are per organization. A membership can hold several roles

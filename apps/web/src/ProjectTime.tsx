@@ -144,6 +144,9 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
   // Whose project time is shown: one's own, or (manager/HR) someone whose hours one may correct.
   const [personId, setPersonId] = useState(initialPersonId ?? userId);
   const isSelf = personId === userId;
+  // Higher up the reporting line than the direct manager: the person's records are read-only here.
+  const [pickedEditable, setPickedEditable] = useState<boolean | null>(null);
+  const canEdit = isSelf || pickedEditable === true;
   // Back to the opened person (or oneself) when the org or user changes; also runs on mount.
   useEffect(() => setPersonId(initialPersonId ?? userId), [orgId, userId, initialPersonId]);
 
@@ -378,12 +381,13 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader
         title={t('nav.timeTracking')}
-        end={<PersonPicker orgId={orgId} kind="time" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} />}
+        end={<PersonPicker orgId={orgId} kind="time" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} onEditableChange={setPickedEditable} />}
       />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
-      {isEntryDateLocked && (
+      {!canEdit && pickedEditable === false && <Alert severity="info">{t('people.readOnly')}</Alert>}
+      {canEdit && isEntryDateLocked && (
         <Alert severity="warning">
           {t('time.projectLockedBanner', {
             project: projects.find((p) => p.id === projectId)?.name ?? '',
@@ -392,6 +396,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
         </Alert>
       )}
 
+      {canEdit && (
       <Paper
         component="form"
         onSubmit={(e) => {
@@ -473,6 +478,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           </Button>
         </Box>
       </Paper>
+      )}
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
@@ -581,6 +587,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                     <TableCell>{e.subproject_name ?? '—'}</TableCell>
                     <TableCell>{e.comment || '—'}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      {canEdit && (
+                      <>
                       <Tooltip title={t('time.duplicate')}>
                         <IconButton size="small" aria-label={t('time.duplicate')} onClick={() => duplicateEntry(e)}>
                           <ContentCopyIcon fontSize="small" />
@@ -623,6 +631,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                           </IconButton>
                         </span>
                       </Tooltip>
+                      </>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

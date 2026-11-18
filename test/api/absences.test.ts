@@ -86,10 +86,12 @@ test('AbsencesController.list permits manager querying direct report entries', a
 
 test('AbsencesController.list permits an org admin querying anyone', async () => {
   let executeCall = 0;
-  // 1: isOrgMember. 2: isManagerOf (no manager line). 3: permissions -> admin's `nav.absences:edit:all`.
-  // 4: the target is an active member, so the `all` grant covers them.
-  const mockDb = createMockDb(async () => {
+  // 1: isOrgMember. 2: the reporting line (the admin is not above them). 3: permissions -> admin's
+  // `nav.absences:edit:all`. 4: the target is an active member, so the `all` grant covers them.
+  const text = (q: any): string => (q?.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : text(c))).join('');
+  const mockDb = createMockDb(async (q) => {
     executeCall++;
+    if (text(q).includes('WITH RECURSIVE')) return { rows: [] };
     return { rows: [{ name: 'admin', permission_id: 'nav.absences:edit:all' }] };
   });
 

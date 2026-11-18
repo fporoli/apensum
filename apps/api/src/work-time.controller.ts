@@ -4,7 +4,7 @@ import { DbService, type Db } from './db.service';
 import { WorkTimeService } from './work-time.service';
 import { VersionsService } from './versions.service';
 import { isLongSession } from '@worktime3/shared/worktime';
-import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, reachesAll } from './access';
+import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, listableUserIds, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { organization_memberships, users, work_times } from './db/schema';
 
@@ -124,16 +124,19 @@ export class WorkTimeController {
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', people: [] };
     const object = TIME_RECORD_OBJECTS[kind ?? ''];
     if (!object) return { ok: false, error: 'invalid-kind', people: [] };
-    const ids = await editableUserIds(db, orgId, callerId, object);
+    // Everyone whose records the caller may see (the whole reporting line below them, grants), each
+    // flagged `editable` when they may also change them (self, direct reports, HR); the page is
+    // read-only for the others.
+    const [editable, visible] = await Promise.all([editableUserIds(db, orgId, callerId, object), listableUserIds(db, orgId, callerId, object)]);
     const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.status, 'active')];
-    if (ids !== 'all') conditions.push(inArray(organization_memberships.user_id, [...ids]));
+    if (visible !== 'all' && editable !== 'all') conditions.push(inArray(organization_memberships.user_id, [...new Set([...visible, ...editable])]));
     const rows = await db
       .select({ id: users.id, name: users.display_name, email: users.email })
       .from(organization_memberships)
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(and(...conditions))
       .orderBy(asc(users.display_name));
-    return { ok: true, people: rows };
+    return { ok: true, people: rows.map((r) => ({ ...r, editable: editable === 'all' || editable.has(r.id) })) };
   }
 
   @Get('organizations/:orgId/work-time')

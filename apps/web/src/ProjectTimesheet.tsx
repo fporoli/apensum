@@ -85,6 +85,8 @@ export default function ProjectTimesheet({
   const [busy, setBusy] = useState(false);
   const [personId, setPersonId] = useState(initialPersonId ?? userId);
   const isSelf = personId === userId;
+  // Higher up the reporting line than the direct manager: the months are shown, not reopened.
+  const [pickedEditable, setPickedEditable] = useState<boolean | null>(null);
   // Back to the opened person (or oneself) when the org or user changes; also runs on mount.
   useEffect(() => setPersonId(initialPersonId ?? userId), [orgId, userId, initialPersonId]);
 
@@ -165,7 +167,7 @@ export default function ProjectTimesheet({
       <PageHeader
         title={t('projectTimesheet.title')}
         subtitle={t('projectTimesheet.subtitle')}
-        end={<PersonPicker orgId={orgId} kind="projectTimesheet" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} />}
+        end={<PersonPicker orgId={orgId} kind="projectTimesheet" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} onEditableChange={setPickedEditable} />}
       />
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
@@ -220,7 +222,7 @@ export default function ProjectTimesheet({
                       {isSelf && status === 'submitted' && p.period && (
                         <Button size="small" disabled={busy} onClick={() => void withdraw(p.period!.id)}>{t('projectTimesheet.withdraw')}</Button>
                       )}
-                      {!isSelf && (status === 'submitted' || status === 'approved') && p.period && (
+                      {!isSelf && pickedEditable === true && (status === 'submitted' || status === 'approved') && p.period && (
                         <Button size="small" disabled={busy} onClick={() => void reopen(p.period!.id)}>{t('approvals.reopen')}</Button>
                       )}
                     </TableCell>
