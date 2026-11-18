@@ -62,6 +62,11 @@
       "types": "./dist/requests.d.ts",
       "default": "./dist/requests.js"
     },
+    "./cases": {
+      "source": "./src/cases.ts",
+      "types": "./dist/cases.d.ts",
+      "default": "./dist/cases.js"
+    },
     "./xlsx": {
       "source": "./src/xlsx.ts",
       "types": "./dist/xlsx.d.ts",
