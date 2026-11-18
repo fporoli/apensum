@@ -137,7 +137,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
      Never trust a user id from the body or query for the caller.
   3. Gate with permissions (below) via `can` / `canSeeUserData` / `listableUserIds` /
      `reachesAll` / `canEditBeyondOwn` / `canEditUserData`, plus `isOrgMember`, `isManagerOf`, `isSuperDeveloper`.
-     Team Management uses `canManageItem` (scope `own` = teams you lead, projects you own).
+     Teams & Projects uses `canManageItem` (scope `own` = teams you lead, projects you own).
      Don't add checks on role names; `isOrgDeveloper` (form design) is the one left.
   4. Work-time and absence writes check `isPeriodLocked` (working-time timesheet month
      submitted/approved); project-time writes check `isProjectPeriodLocked` (that project's
@@ -196,7 +196,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `work_schedules` row in force (minutes per weekday, with history; else the org's
   full-time week Mon-Fri), minus public holidays (computed per canton from
   `organizations.settings.holidayRegion`, plus `org_holidays` rows) and approved
-  absences. Project time stays independent of attendance, but a day's project time above its
+  absences. A session or project entry past midnight is one row, split at the person's local midnight
+  wherever days are counted (`minutesByLocalDay` in `work-time-model.service.ts`, `minutesPerDay` in the web's
+  `aggregate.ts`); lock checks cover every day it touches (`isPeriodLocked`/`isProjectPeriodLocked` take an end);
+  a session over 16 h (`LONG_SESSION_MINUTES`) returns `long-session-confirm` until resent with
+  `acknowledgeLongSession`. Project time stays independent of attendance, but a day's project time above its
   attendance + `projectTimeToleranceMinutes` returns `project-exceeds-attendance-confirm`
   until the client resends with `acknowledgeAttendance`.
 - Balances (`balances.service.ts`, `computeYearBalances` is pure): approving a working-time
@@ -212,7 +216,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   timesheet (`project_time_periods`, one row per person, project and month,
   `project-timesheets.controller.ts`) goes to each project's owner (Approvals page), approved
   on submit when the person owns the project or it has none. Hours without a project can't
-  be submitted. Work time and project time are changed by the person, their designated manager or
+  be submitted. A project can be limited to teams (`project_teams`, 070, set under Teams & Projects → Projects): then only
+  their members and leads and the project owner book on it (`projectBookingError` in `access.ts`, checked on
+  create and when an entry moves to another project, for the person whose entry it is; existing entries stay);
+  `GET projects?bookableFor=` flags each project `bookable`. Work time and project time are changed by the person, their designated manager or
   HR (`canEditUserData`: `nav.workTime` / `nav.time` edit beyond own) and only while the month is
   open; the manager or HR reopens a submitted/approved month (`timesheet-periods/:id/reopen`,
   `project-timesheets/:id/reopen`). The pages pick the person via `time-record-people` (`PersonPicker`).
@@ -274,7 +281,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Handlers are worked out per call, never stored: the requester's manager in force, or the department's
   members in force and its leader, plus `nav.requests:edit:all` (admin). Any handler takes, answers, sets
   the status, archives; the requester answers and resolves/reopens. Every change notifies the other
-  side (`source_table = 'requests'`, the bell opens the thread).
+  side (`source_table = 'requests'`, the bell opens the thread). Each request has a type (static_data
+  `requests`/`request_type`, global row in 069: service, support, other; `{"sort": n}` orders them), an
+  `urgent` flag and an optional http(s) `link_url`; validation is `packages/shared/src/requests.ts` plus
+  `validateRequestDetails`, and requester or handler change them via `POST requests/:id/details`.
   Messages carry attachments (054): files go through `DocumentsService` (`documents` rows, linked by
   `request_message_documents`), uploaded multipart in `files` on create/reply, downloaded via
   `requests/:id/attachments/:documentId` with the request's access check; the web composer takes the

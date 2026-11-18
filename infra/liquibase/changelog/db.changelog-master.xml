@@ -84,6 +84,8 @@
     <include file="066-expense-currencies.sql" relativeToChangelogFile="true"/>
     <include file="067-drop-unused-static-data.sql" relativeToChangelogFile="true"/>
     <include file="068-permission-import-export.sql" relativeToChangelogFile="true"/>
+    <include file="069-request-type-urgency-link.sql" relativeToChangelogFile="true"/>
+    <include file="070-project-teams.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

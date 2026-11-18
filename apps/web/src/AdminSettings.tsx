@@ -16,14 +16,12 @@ import {
   LinearProgress,
   MenuItem,
   Paper,
-  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -82,34 +80,22 @@ function rowKey(entity: string, enumName: string): string {
 interface AdminSettingsProps {
   orgId: string;
   authHeaders: () => Promise<Record<string, string>>;
-  /** The caller may manage roles (`section.admin.roles`): shows the Roles & permissions tab. */
-  canManageRoles: boolean;
+  /**
+   * Which page: static data (`#/admin`) or roles & permissions (`#/admin/roles`, its own navbar
+   * entry under Admin settings, shown only with `section.admin.roles`).
+   */
+  tab: 'staticData' | 'roles';
 }
 
-type AdminTab = 'staticData' | 'roles';
-
-export default function AdminSettings({ orgId, authHeaders, canManageRoles }: AdminSettingsProps) {
-  const t = useT();
-  const [tab, setTab] = useState<AdminTab>('staticData');
-  const current = canManageRoles ? tab : 'staticData';
-  return (
-    <Box sx={{ display: 'grid', gap: 2 }}>
-      {canManageRoles && (
-        <Tabs value={current} onChange={(_, v: AdminTab) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab value="staticData" label={t('staticdata.title')} />
-          <Tab value="roles" label={t('roles.title')} />
-        </Tabs>
-      )}
-      {current === 'staticData' ? (
-        <StaticDataSettings orgId={orgId} authHeaders={authHeaders} />
-      ) : (
-        <RolesPermissions orgId={orgId} authHeaders={authHeaders} />
-      )}
-    </Box>
+export default function AdminSettings({ orgId, authHeaders, tab }: AdminSettingsProps) {
+  return tab === 'roles' ? (
+    <RolesPermissions orgId={orgId} authHeaders={authHeaders} />
+  ) : (
+    <StaticDataSettings orgId={orgId} authHeaders={authHeaders} />
   );
 }
 
-function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'canManageRoles'>) {
+function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'tab'>) {
   const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);

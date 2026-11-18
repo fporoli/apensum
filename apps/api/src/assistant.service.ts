@@ -5,7 +5,7 @@ import { and, asc, eq, ilike, inArray } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { VersionsService } from './versions.service';
 import { WorkTimeModelService } from './work-time-model.service';
-import { can, isOrgMember, isProjectPeriodLocked, listableUserIds } from './access';
+import { can, isOrgMember, isProjectPeriodLocked, listableUserIds, projectBookingError } from './access';
 import { project_times, projects, teams, team_members, organization_memberships, users } from './db/schema';
 
 export interface AssistantMessage {
@@ -247,7 +247,11 @@ export class AssistantService {
         results.push({ date, ok: false, error: `unknown project "${projectName}"` });
         continue;
       }
-      if (await isProjectPeriodLocked(ctx.db, ctx.orgId, ctx.callerId, project?.id, start)) {
+      if (project && (await projectBookingError(ctx.db, ctx.orgId, ctx.callerId, project.id))) {
+        results.push({ date, ok: false, error: `you may not book on "${project.name}": it is limited to teams you are not in` });
+        continue;
+      }
+      if (await isProjectPeriodLocked(ctx.db, ctx.orgId, ctx.callerId, project?.id, start, end)) {
         results.push({ date, ok: false, error: "that project's month is locked (submitted/approved)" });
         continue;
       }

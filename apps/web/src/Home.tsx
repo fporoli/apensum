@@ -20,9 +20,9 @@ import { BarChart } from '@mui/x-charts/BarChart';
 import { bucket, minutes, periodRange, shiftPeriod, startOfWeek, todayDate, type Entry } from './aggregate';
 import BalanceOverview from './BalanceOverview';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatSignedMinutes, swissLocale } from './localeFormat';
+import { formatDurationMinutes, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
 import { formatDays } from './BalancesPanel';
-import { PageHeader, TableEmptyRow } from './components';
+import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { ReviewQueue } from './BasicDataPanel';
 import {
   AccountBalanceWalletIcon,
@@ -100,6 +100,8 @@ export default function Home({
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Checking out after more than 16 hours (usually a forgotten check-out) is confirmed first.
+  const [longCheckOut, setLongCheckOut] = useState<string | null>(null);
   const [status, setStatus] = useState<WorkSession | null>(null);
   const [balance, setBalance] = useState<Balance | null>(null);
   const [weekEntries, setWeekEntries] = useState<Entry[]>([]);
@@ -166,15 +168,20 @@ export default function Home({
     return () => clearInterval(timer);
   }, [checkedIn]);
 
-  async function toggleClock() {
+  async function toggleClock(acknowledgeLongSession = false) {
     setClockBusy(true);
     setError(null);
     try {
       const headers = { 'Content-Type': 'application/json', ...(await authHeaders()) };
       const res = checkedIn
-        ? await fetch(`${API}/work-time/check-out`, { method: 'POST', headers })
+        ? await fetch(`${API}/work-time/check-out`, { method: 'POST', headers, body: JSON.stringify({ acknowledgeLongSession }) })
         : await fetch(`${API}/organizations/${orgId}/work-time/check-in`, { method: 'POST', headers, body: JSON.stringify({}) });
       const data = await res.json();
+      if (data.error === 'long-session-confirm') {
+        const minutes = Math.round((Date.now() - new Date(data.checkIn).getTime()) / 60000);
+        setLongCheckOut(t('workTime.longCheckOut', { since: formatLocaleDateTime(data.checkIn, locale), duration: formatDurationMinutes(minutes) }));
+        return;
+      }
       if (!data.ok) {
         setError(t(checkedIn ? 'workTime.checkOutFailed' : 'workTime.checkInFailed', { error: data.error ?? t('common.unknownError') }));
         return;
@@ -220,7 +227,7 @@ export default function Home({
             color={checkedIn ? 'warning' : 'success'}
             disabled={clockBusy}
             startIcon={checkedIn ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
-            onClick={toggleClock}
+            onClick={() => void toggleClock()}
           >
             {checkedIn ? `${t('workTime.checkOut')} (${formatDurationMinutes(elapsedMinutes)})` : t('workTime.checkIn')}
           </Button>
@@ -627,6 +634,17 @@ export default function Home({
           )}
         </Box>
       </Box>
+
+      <ConfirmDialog
+        open={!!longCheckOut}
+        title={t('workTime.longTitle')}
+        message={longCheckOut ?? ''}
+        confirmLabel={t('workTime.checkOutAnyway')}
+        cancelLabel={t('common.cancel')}
+        confirmColor="warning"
+        onClose={() => setLongCheckOut(null)}
+        onConfirm={() => toggleClock(true)}
+      />
     </Box>
   );
 }

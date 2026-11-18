@@ -4,6 +4,7 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
@@ -11,7 +12,9 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
+  IconButton,
   LinearProgress,
+  Link,
   List,
   ListItemButton,
   ListItemText,
@@ -27,7 +30,8 @@ import {
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
-import { AddIcon, ChevronLeftIcon, MailIcon } from './icons';
+import { AddIcon, ChevronLeftIcon, EditIcon, MailIcon, PublicIcon } from './icons';
+import { cleanRequestLink, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
 import ForwardMailDialog, { type Recipient } from './ForwardMailDialog';
 import { formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
@@ -41,6 +45,9 @@ interface RequestItem {
   id: string;
   subject: string;
   status: Status;
+  request_type: string | null;
+  urgent: boolean;
+  link_url: string | null;
   target_kind: 'manager' | 'department';
   department_name: string | null;
   requester_user_id: string;
@@ -59,7 +66,12 @@ interface Message {
   id: string;
   kind: 'message' | 'event';
   body: string | null;
-  data: { status?: Status; archived?: boolean; assignee?: string | null };
+  data: {
+    status?: Status;
+    archived?: boolean;
+    assignee?: string | null;
+    details?: { request_type?: string | null; urgent?: boolean; link_url?: string | null };
+  };
   posted_at: string;
   author_user_id: string | null;
   author_name: string | null;
@@ -72,6 +84,19 @@ interface Detail {
   handlers: { id: string; name: string; email: string }[];
   isRequester: boolean;
   isHandler: boolean;
+}
+
+/** The org's request_type static_data row (its own copy, else the global one). */
+interface TypeRow {
+  values: Record<string, unknown>;
+  translation: Record<string, Record<string, string>>;
+}
+
+/** Type, urgency and link as the forms edit them. */
+interface DetailsDraft {
+  type: string;
+  urgent: boolean;
+  link: string;
 }
 
 interface Targets {
@@ -122,7 +147,28 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const [forwarding, setForwarding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [types, setTypes] = useState<TypeRow>({ values: {}, translation: {} });
   const replyFiles = useAttachmentDraft(setError);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/organizations/${orgId}/static-data/requests`, { headers: await authHeaders() });
+        const rows = await res.json();
+        const row = Array.isArray(rows) ? rows.find((x: { enum_name?: string }) => x.enum_name === 'request_type') : null;
+        if (!cancelled) setTypes({ values: row?.values ?? {}, translation: row?.translation ?? {} });
+      } catch {
+        /* no types: the forms just don't show the field */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, authHeaders]);
+
+  const typeLabel = (key: string | null | undefined) => (key ? requestTypeLabel(types.translation, locale, key) : '');
 
   const errorText = useCallback(
     (code: string | undefined) => {
@@ -235,6 +281,11 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
 
   function eventText(m: Message): string {
     const who = m.author_name ?? t('requests.someone');
+    if (m.data.details) {
+      const d = m.data.details;
+      if (Object.keys(d).length === 1 && d.urgent !== undefined) return t(d.urgent ? 'requests.event.urgent' : 'requests.event.notUrgent', { who });
+      return t('requests.event.details', { who });
+    }
     if (m.data.archived === true) return t('requests.event.archived', { who });
     if (m.data.archived === false) return t('requests.event.unarchived', { who });
     if (m.data.assignee !== undefined) return m.data.assignee ? t('requests.event.took', { who }) : t('requests.event.released', { who });
@@ -258,6 +309,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                   primaryTypographyProps={{ noWrap: true, fontWeight: 600 }}
                   secondary={
                     <>
+                      {item.request_type ? `${typeLabel(item.request_type)} · ` : ''}
                       {box === 'mine' ? target(item) : `${item.requester_name ?? item.requester_email} · ${target(item)}`}
                       <br />
                       {formatRelativeTime(item.last_activity_at, locale)}
@@ -265,7 +317,10 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                     </>
                   }
                 />
-                <Chip size="small" color={STATUS_COLOR[item.status]} label={t(`requests.status.${item.status}`)} sx={{ flexShrink: 0 }} />
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
+                  <Chip size="small" color={STATUS_COLOR[item.status]} label={t(`requests.status.${item.status}`)} />
+                  {item.urgent && item.status !== 'resolved' && <Chip size="small" color="error" variant="outlined" label={t('requests.urgent')} />}
+                </Box>
               </ListItemButton>
             </Box>
           ))}
@@ -294,7 +349,14 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       });
     return [
       t('requests.mail.intro', { subject: req.subject }),
-      `${t('requests.from', { name: req.requester_name ?? req.requester_email })} · ${target(req)} · ${t(`requests.status.${req.status}`)}`,
+      [
+        t('requests.from', { name: req.requester_name ?? req.requester_email }),
+        target(req),
+        req.request_type ? typeLabel(req.request_type) : null,
+        req.urgent ? t('requests.urgent') : null,
+        t(`requests.status.${req.status}`),
+      ].filter(Boolean).join(' · '),
+      ...(req.link_url ? [req.link_url] : []),
       ...(messages.length ? ['', t('requests.mail.latest'), '', messages.join('\n\n---\n\n')] : []),
     ].join('\n');
   }
@@ -315,10 +377,30 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          {r.urgent && <Chip size="small" color="error" label={t('requests.urgent')} />}
+          {r.request_type && <Chip size="small" variant="outlined" label={typeLabel(r.request_type)} />}
           <Chip size="small" color={STATUS_COLOR[r.status]} label={t(`requests.status.${r.status}`)} />
           {r.archived_at && <Chip size="small" label={t('requests.archived')} />}
+          {!r.archived_at && (detail.isHandler || detail.isRequester) && (
+            <Tooltip title={t('requests.editDetails')}>
+              <IconButton size="small" aria-label={t('requests.editDetails')} onClick={() => setEditingDetails(true)}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
         </Box>
       </Box>
+
+      {r.link_url && (
+        <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', minWidth: 0 }}>
+          <PublicIcon fontSize="small" color="action" />
+          <Tooltip title={t('requests.openLink')}>
+            <Link href={r.link_url} target="_blank" rel="noopener noreferrer" variant="body2" noWrap sx={{ minWidth: 0 }}>
+              {r.link_url.replace(/^https?:\/\//, '')}
+            </Link>
+          </Tooltip>
+        </Box>
+      )}
 
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         {r.assignee_name && <Typography variant="body2" color="text.secondary">{t('requests.handledBy', { name: r.assignee_name })}</Typography>}
@@ -503,8 +585,23 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         />
       )}
 
+      {r && (
+        <EditDetailsDialog
+          open={editingDetails}
+          request={r}
+          types={types}
+          busy={busy}
+          onClose={() => setEditingDetails(false)}
+          onSave={async (d) => {
+            const ok = await post(`/${r.id}/details`, { type: d.type || undefined, urgent: d.urgent, link: d.link });
+            if (ok) setEditingDetails(false);
+          }}
+        />
+      )}
+
       <NewRequestDialog
         open={composeOpen}
+        types={types}
         orgId={orgId}
         authHeaders={authHeaders}
         errorText={errorText}
@@ -520,8 +617,104 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   );
 }
 
+/** Type, urgency and link fields, shared by the new-request and edit dialogs. */
+function DetailsFields({
+  value,
+  onChange,
+  types,
+  keepType,
+}: {
+  value: DetailsDraft;
+  onChange: (next: DetailsDraft) => void;
+  types: TypeRow;
+  keepType?: string | null;
+}) {
+  const { t, locale } = useI18n();
+  const options = requestTypeOptions(types.values, types.translation, locale, [keepType]);
+  const linkInvalid = cleanRequestLink(value.link) === undefined;
+  return (
+    <>
+      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        {options.length > 0 && (
+          <TextField
+            select
+            size="small"
+            required
+            label={t('requests.type')}
+            value={value.type}
+            onChange={(e) => onChange({ ...value, type: e.target.value })}
+            sx={{ minWidth: 220, flex: 1 }}
+          >
+            {options.map((o) => (
+              <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+            ))}
+          </TextField>
+        )}
+        <Tooltip title={t('requests.urgentHint')}>
+          <FormControlLabel
+            control={<Checkbox size="small" color="error" checked={value.urgent} onChange={(e) => onChange({ ...value, urgent: e.target.checked })} />}
+            label={t('requests.urgent')}
+          />
+        </Tooltip>
+      </Box>
+      <TextField
+        size="small"
+        label={t('requests.link')}
+        placeholder="https://"
+        value={value.link}
+        error={linkInvalid}
+        helperText={linkInvalid ? t('requests.linkInvalid') : t('requests.linkHint')}
+        onChange={(e) => onChange({ ...value, link: e.target.value })}
+        slotProps={{ htmlInput: { maxLength: 2000, inputMode: 'url', autoComplete: 'off', spellCheck: false } }}
+      />
+    </>
+  );
+}
+
+/** Whether the drafted details can be sent: a type when the org has types, and a usable link. */
+function detailsReady(d: DetailsDraft, types: TypeRow): boolean {
+  return (Object.keys(types.values).length === 0 || !!d.type) && cleanRequestLink(d.link) !== undefined;
+}
+
+function EditDetailsDialog({
+  open,
+  request,
+  types,
+  busy,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  request: RequestItem;
+  types: TypeRow;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (d: DetailsDraft) => void | Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [draft, setDraft] = useState<DetailsDraft>({ type: '', urgent: false, link: '' });
+  useEffect(() => {
+    if (open) setDraft({ type: request.request_type ?? '', urgent: request.urgent, link: request.link_url ?? '' });
+  }, [open, request]);
+  // A request from before types existed may be saved without choosing one.
+  const ready = cleanRequestLink(draft.link) !== undefined && (!!draft.type || !request.request_type);
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{t('requests.editDetails')}</DialogTitle>
+      <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
+        <DetailsFields value={draft} onChange={setDraft} types={types} keepType={request.request_type} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
+        <Button variant="contained" disabled={busy || !ready} onClick={() => void onSave(draft)}>{t('common.save')}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 function NewRequestDialog({
   open,
+  types,
   orgId,
   authHeaders,
   errorText,
@@ -529,27 +722,32 @@ function NewRequestDialog({
   onCreated,
 }: {
   open: boolean;
+  types: TypeRow;
   orgId: string;
   authHeaders: () => Promise<Record<string, string>>;
   errorText: (code: string | undefined) => string;
   onClose: () => void;
   onCreated: (id: string) => void | Promise<void>;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [targets, setTargets] = useState<Targets>({ manager: null, departments: [] });
   const [kind, setKind] = useState<'manager' | 'department'>('manager');
   const [departmentId, setDepartmentId] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [details, setDetails] = useState<DetailsDraft>({ type: '', urgent: false, link: '' });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = useAttachmentDraft(setError);
+  // The first type in the org's order (Service request by default) is preselected.
+  const firstType = requestTypeOptions(types.values, types.translation, locale)[0]?.value ?? '';
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setSubject('');
     setMessage('');
+    setDetails({ type: '', urgent: false, link: '' });
     draft.clear();
     (async () => {
       try {
@@ -568,11 +766,27 @@ function NewRequestDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, orgId, authHeaders, t]);
 
+  // Preselect a type once the types are known (they may arrive after the dialog opened).
+  useEffect(() => {
+    if (open && firstType) setDetails((d) => (d.type ? d : { ...d, type: firstType }));
+  }, [open, firstType]);
+
   async function submit() {
     setBusy(true);
     setError(null);
     try {
-      const payload = messageBody({ target: kind, departmentId: kind === 'department' ? departmentId : undefined, subject, message }, draft.files);
+      const payload = messageBody(
+        {
+          target: kind,
+          departmentId: kind === 'department' ? departmentId : undefined,
+          subject,
+          message,
+          type: details.type || undefined,
+          urgent: details.urgent ? 'true' : undefined,
+          link: details.link.trim() || undefined,
+        },
+        draft.files,
+      );
       const res = await fetch(`${API}/organizations/${orgId}/requests`, {
         method: 'POST',
         headers: { ...payload.headers, ...(await authHeaders()) },
@@ -592,7 +806,11 @@ function NewRequestDialog({
     }
   }
 
-  const ready = subject.trim() && (message.trim() || draft.files.length > 0) && (kind === 'manager' ? !!targets.manager : !!departmentId);
+  const ready =
+    subject.trim() &&
+    (message.trim() || draft.files.length > 0) &&
+    (kind === 'manager' ? !!targets.manager : !!departmentId) &&
+    detailsReady(details, types);
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -616,6 +834,7 @@ function NewRequestDialog({
           </TextField>
         )}
         <TextField size="small" label={t('requests.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
+        <DetailsFields value={details} onChange={setDetails} types={types} />
         <DropZone dragging={draft.dragging} dropProps={draft.dropProps}>
           <Box sx={{ display: 'grid', gap: 1 }}>
             <TextField

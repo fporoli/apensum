@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { WorkSchedulesController } from '../../apps/api/src/work-schedules.controller';
-import { WorkTimeModelService, localDate, parseWorkTimeSettings } from '../../apps/api/src/work-time-model.service';
+import { WorkTimeModelService, localDate, localDaysOf, minutesByLocalDay, parseWorkTimeSettings } from '../../apps/api/src/work-time-model.service';
 import type { DbService } from '../../apps/api/src/db.service';
 import type { VersionsService } from '../../apps/api/src/versions.service';
 import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
@@ -130,7 +130,7 @@ test('checkProjectTime compares the day\'s project time with its attendance', as
   const stub = service as any;
   stub.timeZone = async () => 'Europe/Zurich';
   stub.settings = async () => ({ fullTimeWeeklyMinutes: 2400, holidayRegion: null, projectTimeToleranceMinutes: 15 });
-  stub.projectMinutesOn = async () => 120; // already booked that day
+  stub.projectMinutesByDay = async () => new Map([['2026-11-10', 120]]); // already booked that day
   stub.attendanceByDay = async () => new Map([['2026-11-10', 240]]);
   const db = {} as any;
   // 120 booked + 2h new = 240 <= 240 + 15.
@@ -144,4 +144,52 @@ test('checkProjectTime compares the day\'s project time with its attendance', as
     attendanceMinutes: 240,
     toleranceMinutes: 15,
   });
+});
+
+test('checkProjectTime checks both days of an entry past midnight', async () => {
+  const service = new WorkTimeModelService();
+  const stub = service as any;
+  stub.timeZone = async () => 'UTC';
+  stub.settings = async () => ({ fullTimeWeeklyMinutes: 2400, holidayRegion: null, projectTimeToleranceMinutes: 0 });
+  stub.projectMinutesByDay = async () => new Map();
+  // A night shift: 2h attended on the 10th, 6h on the 11th.
+  stub.attendanceByDay = async () => new Map([['2026-11-10', 120], ['2026-11-11', 360]]);
+  const db = {} as any;
+  assert.deepEqual(await service.checkProjectTime(db, 'org', 'u', '2026-11-10T22:00:00Z', '2026-11-11T06:00:00Z'), { ok: true });
+  // 3h before midnight is more than the 2h attended that day.
+  const late = await service.checkProjectTime(db, 'org', 'u', '2026-11-10T21:00:00Z', '2026-11-11T02:00:00Z');
+  assert.equal(late.ok, false);
+  assert.equal((late as any).date, '2026-11-10');
+  assert.equal((late as any).projectMinutes, 180);
+});
+
+test('minutesByLocalDay splits a session at local midnight', () => {
+  // 22:00-06:00 Zurich time (winter, UTC+1).
+  const night = minutesByLocalDay([{ start: '2026-11-10T21:00:00Z', end: '2026-11-11T05:00:00Z' }], '2026-11-01', '2026-12-01', 'Europe/Zurich');
+  assert.deepEqual([...night], [['2026-11-10', 120], ['2026-11-11', 360]]);
+  // Only the days asked for: the month ends at midnight.
+  const monthEnd = minutesByLocalDay([{ start: '2026-11-30T21:00:00Z', end: '2026-12-01T05:00:00Z' }], '2026-11-01', '2026-12-01', 'Europe/Zurich');
+  assert.deepEqual([...monthEnd], [['2026-11-30', 120]]);
+  // Ending exactly at midnight adds nothing to the next day; several sessions add up.
+  const two = minutesByLocalDay(
+    [{ start: '2026-11-10T17:00:00Z', end: '2026-11-10T23:00:00Z' }, { start: '2026-11-10T07:00:00Z', end: '2026-11-10T11:00:00Z' }],
+    '2026-11-01', '2026-12-01', 'Europe/Zurich',
+  );
+  assert.deepEqual([...two], [['2026-11-10', 600]]);
+});
+
+test('minutesByLocalDay follows daylight saving: the night of the switch is one hour shorter', () => {
+  // Zurich, 29 March 2026: clocks jump from 02:00 to 03:00. 22:00 (UTC+1) to 06:00 (UTC+2) is 7h.
+  const m = minutesByLocalDay([{ start: '2026-03-28T21:00:00Z', end: '2026-03-29T04:00:00Z' }], '2026-03-01', '2026-04-01', 'Europe/Zurich');
+  assert.deepEqual([...m], [['2026-03-28', 120], ['2026-03-29', 300]]);
+  // An unknown zone falls back to UTC instead of failing.
+  assert.deepEqual([...minutesByLocalDay([{ start: '2026-11-10T22:00:00Z', end: '2026-11-11T02:00:00Z' }], '2026-11-01', '2026-12-01', 'Not/AZone')], [
+    ['2026-11-10', 120],
+    ['2026-11-11', 120],
+  ]);
+});
+
+test('localDaysOf: the days a span touches; ending at 00:00 does not touch the next', () => {
+  assert.deepEqual(localDaysOf({ start: '2026-11-10T21:00:00Z', end: '2026-11-11T05:00:00Z' }, 'Europe/Zurich'), ['2026-11-10', '2026-11-11']);
+  assert.deepEqual(localDaysOf({ start: '2026-11-10T17:00:00Z', end: '2026-11-10T23:00:00Z' }, 'Europe/Zurich'), ['2026-11-10']);
 });

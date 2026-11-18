@@ -56,6 +56,8 @@ function fakeDb(opts: { locked?: boolean; row?: Record<string, unknown> } = {}) 
       if (text.includes('SELECT manager_user_id')) return { rows: [{ manager_user_id: MANAGER_OF[params[1]] ?? null }] };
       if (text.includes('SELECT 1 FROM organization_memberships')) return { rows: ROLES[params[1]] ? [{ '?column?': 1 }] : [] };
       if (text.includes('FROM timesheet_periods') || text.includes('FROM project_time_periods')) return { rows: opts.locked ? [{ '?column?': 1 }] : [] };
+      // projectBookingError: the project is open to the person (no teams).
+      if (text.includes('AS sub_ok')) return { rows: [{ bookable: true, sub_ok: true }] };
       return { rows: [] };
     },
     select: () => db,
@@ -113,7 +115,7 @@ test('work time: a manual entry for someone else needs their manager or HR, and 
 
 test('project time: booked for someone else only by their manager or HR', async () => {
   const workTime = { checkProjectTime: async () => ({ ok: true }) } as unknown as WorkTimeModelService;
-  const body = { projectId: 'p1', startTime: '2026-11-02T08:00:00Z', endTime: '2026-11-02T10:00:00Z', userId: 'emp' };
+  const body = { projectId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', startTime: '2026-11-02T08:00:00Z', endTime: '2026-11-02T10:00:00Z', userId: 'emp' };
   const setup = () => {
     const f = fakeDb({ row: { settings: {} } });
     return { ...f, controller: new ProjectTimeController(f.service, {} as ProjectTimeService, versions, workTime) };

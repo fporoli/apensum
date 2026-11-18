@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Db } from './db.service';
+import { zonedDate, zonedTime } from './report-schedule';
 import { absences, org_holidays, organizations, users, work_schedules } from './db/schema';
 import {
   DEFAULT_FULL_TIME_WEEKLY_MINUTES,
@@ -76,6 +77,65 @@ export function localDate(instant: Date | string, timeZone: string): string {
   } catch {
     return d.toISOString().slice(0, 10);
   }
+}
+
+/** The zone itself when Intl knows it, else UTC (as `localDate` falls back). */
+function validZone(timeZone: string): string {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone });
+    return timeZone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** A stretch of time: a check-in/check-out session or a project-time entry. */
+export interface TimeSpan {
+  start: Date | string;
+  end: Date | string;
+}
+
+/**
+ * Minutes per local day ('YYYY-MM-DD' in `timeZone`) of `spans`, each split at local midnight, so
+ * a night shift from 22:00 to 06:00 counts 2 hours on its first day and 6 on the next. Only days
+ * from `from` to `toExclusive` are kept; days with no time are left out. Midnight is taken from the
+ * zone, so the split stays right across a daylight saving switch.
+ */
+export function minutesByLocalDay(spans: readonly TimeSpan[], from: string, toExclusive: string, zone: string): Map<string, number> {
+  const timeZone = validZone(zone);
+  const ms = new Map<string, number>();
+  for (const span of spans) {
+    const end = new Date(span.end).getTime();
+    let start = new Date(span.start).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end)) continue;
+    let day = zonedDate(new Date(start), timeZone);
+    while (start < end) {
+      const nextMidnight = zonedTime(addDays(day, 1), 0, timeZone).getTime();
+      const pieceEnd = Math.min(end, nextMidnight);
+      if (day >= from && day < toExclusive && pieceEnd > start) ms.set(day, (ms.get(day) ?? 0) + (pieceEnd - start));
+      start = nextMidnight;
+      day = addDays(day, 1);
+      if (day >= toExclusive) break;
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [day, total] of ms) {
+    const minutes = Math.round(total / 60000);
+    if (minutes > 0) out.set(day, minutes);
+  }
+  return out;
+}
+
+/** The local days ('YYYY-MM-DD') a span touches; a span ending at 00:00 does not touch that day. */
+export function localDaysOf(span: TimeSpan, zone: string): string[] {
+  const timeZone = validZone(zone);
+  const start = new Date(span.start);
+  const end = new Date(span.end);
+  const first = zonedDate(start, timeZone);
+  const last = end.getTime() > start.getTime() ? zonedDate(new Date(end.getTime() - 1), timeZone) : first;
+  const days = [first];
+  while (days[days.length - 1] < last) days.push(addDays(days[days.length - 1], 1));
+  return days;
 }
 
 export type ProjectTimeCheck =
@@ -159,49 +219,59 @@ export class WorkTimeModelService {
   }
 
   /**
-   * Attended minutes per local day ('YYYY-MM-DD' in `timeZone`) from check-in/check-out
-   * sessions, by the day of check-in. `includeOpen` counts a session still open up to now.
+   * Attended minutes per local day ('YYYY-MM-DD' in `timeZone`) from check-in/check-out sessions,
+   * each split at local midnight (`minutesByLocalDay`): a night shift counts on both days, in both
+   * weeks and months it touches. `includeOpen` counts a session still open up to now.
    */
   async attendanceByDay(db: Db, orgId: string, userId: string, from: string, toExclusive: string, timeZone: string, includeOpen: boolean): Promise<Map<string, number>> {
     const result = await db.execute(sql`
-      SELECT to_char((check_in AT TIME ZONE ${timeZone})::date, 'YYYY-MM-DD') AS day,
-             SUM(EXTRACT(EPOCH FROM (COALESCE(check_out, now()) - check_in))) / 60 AS minutes
+      SELECT check_in AS start, COALESCE(check_out, now()) AS end
       FROM work_times
       WHERE organization_id = ${orgId} AND user_id = ${userId}
-        AND check_in >= (${from}::date::timestamp AT TIME ZONE ${timeZone})
         AND check_in < (${toExclusive}::date::timestamp AT TIME ZONE ${timeZone})
-        ${includeOpen ? sql`` : sql`AND check_out IS NOT NULL`}
-      GROUP BY 1`);
-    return new Map((result.rows as { day: string; minutes: string | number }[]).map((r) => [r.day, Math.round(Number(r.minutes))]));
+        AND COALESCE(check_out, now()) > (${from}::date::timestamp AT TIME ZONE ${timeZone})
+        ${includeOpen ? sql`` : sql`AND check_out IS NOT NULL`}`);
+    return minutesByLocalDay(result.rows as unknown as TimeSpan[], from, toExclusive, timeZone);
   }
 
-  /** Project minutes booked on one local day, by start time, optionally leaving one entry out. */
-  async projectMinutesOn(db: Db, orgId: string, userId: string, date: string, timeZone: string, excludeId?: string): Promise<number> {
+  /** Project minutes per local day, each entry split at local midnight, optionally leaving one entry out. */
+  async projectMinutesByDay(db: Db, orgId: string, userId: string, from: string, toExclusive: string, timeZone: string, excludeId?: string): Promise<Map<string, number>> {
     const result = await db.execute(sql`
-      SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time))), 0) / 60 AS minutes
+      SELECT start_time AS start, end_time AS end
       FROM project_times
       WHERE organization_id = ${orgId} AND user_id = ${userId}
-        AND start_time >= (${date}::date::timestamp AT TIME ZONE ${timeZone})
-        AND start_time < (${addDays(date, 1)}::date::timestamp AT TIME ZONE ${timeZone})
+        AND start_time < (${toExclusive}::date::timestamp AT TIME ZONE ${timeZone})
+        AND end_time > (${from}::date::timestamp AT TIME ZONE ${timeZone})
         ${excludeId ? sql`AND id <> ${excludeId}` : sql``}`);
-    return Math.round(Number((result.rows[0] as { minutes: string | number } | undefined)?.minutes ?? 0));
+    return minutesByLocalDay(result.rows as unknown as TimeSpan[], from, toExclusive, timeZone);
   }
 
   /**
-   * Whether an entry from `startTime` to `endTime` keeps that day's project time within the
-   * day's attendance (an open session counts up to now) plus the organization's tolerance.
+   * Whether an entry from `startTime` to `endTime` keeps project time within attendance (an open
+   * session counts up to now) plus the organization's tolerance, on every local day it touches:
+   * an entry past midnight is checked against both days. The first day over the limit is reported.
    */
   async checkProjectTime(db: Db, orgId: string, userId: string, startTime: string, endTime: string, excludeId?: string): Promise<ProjectTimeCheck> {
     const start = new Date(startTime);
     const end = new Date(endTime);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return { ok: true };
     const timeZone = await this.timeZone(db, userId);
-    const date = localDate(start, timeZone);
+    const days = localDaysOf({ start, end }, timeZone);
+    const from = days[0];
+    const toExclusive = addDays(days[days.length - 1], 1);
     const { projectTimeToleranceMinutes } = await this.settings(db, orgId);
-    const entryMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
-    const projectMinutes = (await this.projectMinutesOn(db, orgId, userId, date, timeZone, excludeId)) + entryMinutes;
-    const attendanceMinutes = (await this.attendanceByDay(db, orgId, userId, date, addDays(date, 1), timeZone, true)).get(date) ?? 0;
-    if (projectTimeWithinAttendance(projectMinutes, attendanceMinutes, projectTimeToleranceMinutes)) return { ok: true };
-    return { ok: false, error: 'project-exceeds-attendance', date, projectMinutes, attendanceMinutes, toleranceMinutes: projectTimeToleranceMinutes };
+    const [booked, attendance] = await Promise.all([
+      this.projectMinutesByDay(db, orgId, userId, from, toExclusive, timeZone, excludeId),
+      this.attendanceByDay(db, orgId, userId, from, toExclusive, timeZone, true),
+    ]);
+    const entry = minutesByLocalDay([{ start, end }], from, toExclusive, timeZone);
+    for (const date of days) {
+      const projectMinutes = (booked.get(date) ?? 0) + (entry.get(date) ?? 0);
+      const attendanceMinutes = attendance.get(date) ?? 0;
+      if (!projectTimeWithinAttendance(projectMinutes, attendanceMinutes, projectTimeToleranceMinutes)) {
+        return { ok: false, error: 'project-exceeds-attendance', date, projectMinutes, attendanceMinutes, toleranceMinutes: projectTimeToleranceMinutes };
+      }
+    }
+    return { ok: true };
   }
 }

@@ -222,10 +222,13 @@ erDiagram
     ORGANIZATIONS { uuid id PK }
 ```
 
-## Projects & Time Tracking (3 tables)
+## Projects & Time Tracking (4 tables)
 
 Work entries tag an optional project/subproject; both fall back to null on
-delete rather than orphan the entry.
+delete rather than orphan the entry. `project_teams` (070) limits a project to
+teams: only their members and leads, and the project's owner, book time on it;
+a project without rows is open to everyone. A team still assigned to a project
+can't be deleted (RESTRICT).
 
 ```mermaid
 erDiagram
@@ -237,7 +240,13 @@ erDiagram
     ORGANIZATIONS ||--o{ PROJECT_TIMES : "scopes"
     PROJECTS ||--o{ PROJECT_TIMES : "tags"
     SUBPROJECTS ||--o{ PROJECT_TIMES : "tags"
+    PROJECTS ||--o{ PROJECT_TEAMS : "limited to"
+    TEAMS ||--o{ PROJECT_TEAMS : "team_id"
 
+    PROJECT_TEAMS {
+        uuid project_id PK,FK
+        uuid team_id PK,FK
+    }
     PROJECTS {
         uuid id PK
         uuid organization_id FK
@@ -688,7 +697,10 @@ to a department, with a message thread. Who handles it is not stored: for
 `target_kind = 'manager'` it is the requester's manager in force
 (`employee_assignments`), for `'department'` everyone whose assignment in force
 is in `target_department_id` plus its leader. Changes notify the other side
-through `notifications` (`source_table = 'requests'`).
+through `notifications` (`source_table = 'requests'`). Since 069 a request has
+a type (`request_type`, a key of the `requests`/`request_type` static_data row),
+an `urgent` flag (urgent open requests are listed first) and an optional
+`link_url` (http(s) only).
 
 ```mermaid
 erDiagram
@@ -709,6 +721,9 @@ erDiagram
         uuid target_department_id FK "nullable — set iff target_kind = department"
         text subject
         text status "open | in_progress | resolved"
+        text request_type "nullable — key of static_data requests/request_type"
+        boolean urgent
+        text link_url "nullable — http(s) link, e.g. another ticket"
         uuid assignee_user_id FK "nullable — the handler who took it"
         timestamptz opened_at
         timestamptz last_activity_at

@@ -117,6 +117,7 @@ type Section =
   | 'users'
   | 'audit'
   | 'admin'
+  | 'adminRoles'
   | 'orgSettings'
   | 'expenseProcessing'
   | 'reports'
@@ -146,6 +147,7 @@ const SECTION_TO_HASH: Record<Section, string> = {
   audit: '#/audit',
   expenseProcessing: '#/expense-processing',
   admin: '#/admin',
+  adminRoles: '#/admin/roles',
   reports: '#/reports',
   importExport: '#/import-export',
 };
@@ -218,6 +220,7 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   users: 'nav.users',
   audit: 'nav.audit',
   admin: 'nav.admin',
+  adminRoles: 'section.admin.roles',
   orgSettings: 'nav.orgSettings',
   expenseProcessing: 'nav.expenseProcessing',
   reports: 'nav.reports',
@@ -256,6 +259,7 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'expenseProcessing':
       return flags.canProcessExpenses;
     case 'admin':
+    case 'adminRoles':
     case 'audit':
     case 'orgSettings':
       return flags.isAdmin;
@@ -712,7 +716,22 @@ export default function App() {
             },
           ],
         },
-        { id: 'management', section: 'management', label: t('nav.management'), icon: <WorkspacesIcon fontSize="small" />, visible: allowed('management') },
+        {
+          id: 'management',
+          section: 'management',
+          label: t('nav.management'),
+          icon: <WorkspacesIcon fontSize="small" />,
+          visible: allowed('management'),
+          children: [
+            {
+              id: 'managementProjects',
+              section: 'managementProjects',
+              label: t('nav.projects'),
+              icon: <FolderCopyIcon fontSize="small" />,
+              visible: allowed('managementProjects'),
+            },
+          ],
+        },
       ],
     },
     {
@@ -723,7 +742,22 @@ export default function App() {
         { id: 'importExport', section: 'importExport', label: t('nav.importExport'), icon: <ImportExportIcon fontSize="small" />, visible: allowed('importExport') },
         { id: 'audit', section: 'audit', label: t('nav.auditLog'), icon: <HistoryIcon fontSize="small" />, visible: allowed('audit') },
         { id: 'expenseProcessing', section: 'expenseProcessing', label: t('nav.expenseProcessing'), icon: <PaymentsIcon fontSize="small" />, visible: allowed('expenseProcessing') },
-        { id: 'admin', section: 'admin', label: t('nav.adminSettings'), icon: <TuneIcon fontSize="small" />, visible: allowed('admin') },
+        {
+          id: 'admin',
+          section: 'admin',
+          label: t('nav.adminSettings'),
+          icon: <TuneIcon fontSize="small" />,
+          visible: allowed('admin'),
+          children: [
+            {
+              id: 'adminRoles',
+              section: 'adminRoles',
+              label: t('roles.title'),
+              icon: <GroupIcon fontSize="small" />,
+              visible: allowed('adminRoles'),
+            },
+          ],
+        },
       ],
     },
     {
@@ -784,8 +818,7 @@ export default function App() {
                   <li key={n.id} style={{ listStyle: 'none' }}>
                     {n.dividerBefore && <Divider sx={{ mx: 1, my: 0.5, mt: group.header ? 0.5 : 1.5 }} />}
                     <ListItemButton
-                      // The Team Management page's Projects tab has its own route but the same nav item.
-                      selected={section === n.section || (n.section === 'management' && section === 'managementProjects')}
+                      selected={section === n.section}
                       onClick={() => {
                         if (allowed(n.section)) {
                           navigate(n.section);
@@ -1147,7 +1180,6 @@ export default function App() {
                   }
                   authHeaders={authHeaders}
                   tab={section === 'managementProjects' ? 'projects' : 'teams'}
-                  onTabChange={(tab) => navigate(tab === 'projects' ? 'managementProjects' : 'management')}
                   onDataChanged={() => setProjectsVersion((v) => v + 1)}
                 />
               )}
@@ -1199,12 +1231,8 @@ export default function App() {
               {section === 'audit' && allowed('audit') && orgId && (
                 <AuditLog orgId={orgId} authHeaders={authHeaders} />
               )}
-              {section === 'admin' && allowed('admin') && orgId && (
-                <AdminSettings
-                  orgId={orgId}
-                  authHeaders={authHeaders}
-                  canManageRoles={permissions ? holdsAny(permissions, 'section.admin.roles') : flags.isAdmin}
-                />
+              {(section === 'admin' || section === 'adminRoles') && allowed(section) && orgId && (
+                <AdminSettings orgId={orgId} authHeaders={authHeaders} tab={section === 'adminRoles' ? 'roles' : 'staticData'} />
               )}
               {section === 'orgSettings' && allowed('orgSettings') && orgId && (
                 <OrganizationSettings orgId={orgId} authHeaders={authHeaders} onModulesChanged={() => setPermissionsVersion((v) => v + 1)} />

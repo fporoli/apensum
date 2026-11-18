@@ -16,16 +16,34 @@ export function minutes(e: Entry): number {
   return (new Date(e.end_time).getTime() - new Date(e.start_time).getTime()) / 60000;
 }
 
+/**
+ * An entry's minutes per local day: an entry past midnight is split there, so a night from 22:00 to
+ * 06:00 adds 2 hours to its first day and 6 to the next (as the API counts attendance).
+ */
+export function minutesPerDay(e: Pick<Entry, 'start_time' | 'end_time'>): [string, number][] {
+  const end = new Date(e.end_time).getTime();
+  let start = new Date(e.start_time).getTime();
+  const out: [string, number][] = [];
+  while (start < end) {
+    const d = new Date(start);
+    const nextMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+    const pieceEnd = Math.min(end, nextMidnight);
+    out.push([dateKey(d), (pieceEnd - start) / 60000]);
+    start = pieceEnd;
+  }
+  return out;
+}
+
 export function bucket(entries: Entry[], view: View): { label: string; minutes: number }[] {
   const map = new Map<string, number>();
   for (const e of entries) {
-    const d = new Date(e.start_time);
-    const localDay = dateKey(d);
-    let key: string;
-    if (view === 'daily') key = localDay;
-    else if (view === 'monthly') key = localDay.slice(0, 7);
-    else key = startOfWeek(localDay);
-    map.set(key, (map.get(key) ?? 0) + minutes(e));
+    for (const [localDay, mins] of minutesPerDay(e)) {
+      let key: string;
+      if (view === 'daily') key = localDay;
+      else if (view === 'monthly') key = localDay.slice(0, 7);
+      else key = startOfWeek(localDay);
+      map.set(key, (map.get(key) ?? 0) + mins);
+    }
   }
   return [...map.entries()].map(([label, mins]) => ({ label, minutes: mins })).sort((a, b) => (a.label < b.label ? -1 : 1));
 }

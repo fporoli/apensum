@@ -57,6 +57,11 @@
       "types": "./dist/reports.d.ts",
       "default": "./dist/reports.js"
     },
+    "./requests": {
+      "source": "./src/requests.ts",
+      "types": "./dist/requests.d.ts",
+      "default": "./dist/requests.js"
+    },
     "./xlsx": {
       "source": "./src/xlsx.ts",
       "types": "./dist/xlsx.d.ts",

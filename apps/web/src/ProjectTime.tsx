@@ -37,12 +37,14 @@ import { ClockTimeField, DurationField } from './TimeFields';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DEFAULT_PROJECT_TIME_START = '08:00';
-const PROJECT_TIME_ERRORS = new Set(['period-locked', 'forbidden', 'not-found', 'unknown-user']);
+const PROJECT_TIME_ERRORS = new Set(['period-locked', 'forbidden', 'not-found', 'unknown-user', 'project-not-allowed', 'unknown-project']);
 const DURATION_PRESETS = [15, 30, 60, 120, 240, 480];
 
 interface Option {
   id: string;
   name: string;
+  /** Projects only: whether the person shown may book on it (teams, project_teams). */
+  bookable?: boolean;
 }
 
 interface Draft {
@@ -148,6 +150,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
   const rows = useMemo(() => bucket(entries, 'daily'), [entries]);
   const total = rows.reduce((s, r) => s + r.minutes, 0);
   const subprojects = subprojectsByProject[projectId] ?? [];
+  const bookableProjects = projects.filter((p) => p.bookable !== false);
   const draftSubprojects = draft ? (subprojectsByProject[draft.projectId] ?? []) : [];
 
   const lockOf = (pid: string | null | undefined, date: string) =>
@@ -183,9 +186,14 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
 
   async function reloadProjects() {
     try {
-      const res = await fetch(`${API}/organizations/${orgId}/projects`, { headers: await authHeaders() });
-      const data = await res.json();
-      if (Array.isArray(data)) setProjects(data);
+      // `bookable` is worked out for the person whose time is shown, not for the caller.
+      const res = await fetch(`${API}/organizations/${orgId}/projects?bookableFor=${personId}`, { headers: await authHeaders() });
+      const data: Option[] = await res.json();
+      if (Array.isArray(data)) {
+        setProjects(data);
+        // A project chosen for someone else may not be open to the person now shown.
+        setProjectId((current) => (current && !data.some((p) => p.id === current && p.bookable !== false) ? '' : current));
+      }
     } catch { /* offline fallback */ }
   }
 
@@ -420,7 +428,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
             sx={{ minWidth: 180 }}
           >
             <MenuItem value=""><em>{t('time.none')}</em></MenuItem>
-            {projects.map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>))}
+            {bookableProjects.map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>))}
           </TextField>
           <TextField
             select
@@ -666,7 +674,10 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                 size="small"
               >
                 <MenuItem value=""><em>{t('time.none')}</em></MenuItem>
-                {projects.map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>))}
+                {/* An entry keeps its project even when the person is no longer in its teams. */}
+                {projects
+                  .filter((p) => p.bookable !== false || p.id === entries.find((e) => e.id === draft.id)?.project_id)
+                  .map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>))}
               </TextField>
               <TextField
                 select

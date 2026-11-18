@@ -12,14 +12,12 @@ import {
   LinearProgress,
   MenuItem,
   Paper,
-  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Tabs,
   TextField,
   Tooltip,
   Typography,
@@ -71,6 +69,8 @@ export interface ProjectItem {
   owner_name?: string | null;
   owner_email?: string | null;
   subproject_count?: number;
+  /** Teams the project is limited to; empty = everyone may book on it. */
+  team_ids?: string[];
 }
 
 export interface SubprojectItem {
@@ -92,11 +92,11 @@ interface ManagementProps {
   role: 'admin' | 'manager' | 'user';
   authHeaders: () => Promise<Record<string, string>>;
   onDataChanged?: () => void;
+  /** Which page: Teams (`#/teams`) or Projects (`#/projects`), each its own navbar entry. */
   tab: 'teams' | 'projects';
-  onTabChange: (tab: 'teams' | 'projects') => void;
 }
 
-export default function Management({ session, orgId, role, authHeaders, onDataChanged, tab, onTabChange }: ManagementProps) {
+export default function Management({ session, orgId, role, authHeaders, onDataChanged, tab }: ManagementProps) {
   const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -124,6 +124,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
   const [projectType, setProjectType] = useState<'internal' | 'customer' | 'research'>('internal');
   const [projectCost, setProjectCost] = useState('');
   const [projectOwner, setProjectOwner] = useState(session.userId);
+  const [projectTeamIds, setProjectTeamIds] = useState<string[]>([]);
 
   const [subprojectDialogOpen, setSubprojectDialogOpen] = useState(false);
   const [editingSubproject, setEditingSubproject] = useState<SubprojectItem | null>(null);
@@ -267,7 +268,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
       const res = await fetch(`${API}/teams/${teamId}`, { method: 'DELETE', headers: await authHeaders() });
       const data = await res.json();
       if (!res.ok || data.ok === false) {
-        setError(t('management.teamDeleteFailed'));
+        setError(data?.error === 'team-has-projects' ? t('management.teamHasProjects') : t('management.teamDeleteFailed'));
         return;
       }
       setTeams((prev) => prev.filter((tm) => tm.id !== teamId));
@@ -330,6 +331,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setProjectType('internal');
     setProjectCost('');
     setProjectOwner(session.userId);
+    setProjectTeamIds([]);
     setProjectDialogOpen(true);
   }
 
@@ -339,6 +341,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setProjectType(proj.type);
     setProjectCost(proj.cost_item ?? '');
     setProjectOwner(proj.owner_user_id);
+    setProjectTeamIds(proj.team_ids ?? []);
     setProjectDialogOpen(true);
   }
 
@@ -356,6 +359,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
             type: projectType,
             costItem: projectCost.trim() || null,
             ownerUserId: projectOwner,
+            teamIds: projectTeamIds,
           }),
         });
         const data = await res.json();
@@ -373,6 +377,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
             type: projectType,
             costItem: projectCost.trim() || undefined,
             ownerUserId: projectOwner,
+            teamIds: projectTeamIds,
           }),
         });
         const data = await res.json();
@@ -510,8 +515,8 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader
-        title={t('management.title')}
-        subtitle={`${t('management.subtitle')}${role === 'manager' ? ` ${t('management.managerNote')}` : ''}`}
+        title={tab === 'projects' ? t('management.projectsTitle') : t('management.teamsTitle')}
+        subtitle={`${tab === 'projects' ? t('management.projectsSubtitle') : t('management.teamsSubtitle')}${role === 'manager' ? ` ${t('management.managerNote')}` : ''}`}
         end={
           <Chip
             label={role === 'admin' ? t('management.accessAdmin') : t('management.accessManager')}
@@ -527,11 +532,6 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
       {loading && <LinearProgress />}
 
       <Paper sx={{ p: 2 }}>
-        <Tabs value={tab} onChange={(_, v) => onTabChange(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-          <Tab value="teams" label={t('management.tabTeams', { count: teams.length })} />
-          <Tab value="projects" label={t('management.tabProjects', { count: projects.length })} />
-        </Tabs>
-
         {tab === 'teams' && (
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
@@ -616,6 +616,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                     <TableCell>{t('approvals.col.type')}</TableCell>
                     <TableCell>{t('management.costItem')}</TableCell>
                     <TableCell>{t('management.owner')}</TableCell>
+                    <TableCell>{t('management.projectTeams')}</TableCell>
                     <TableCell align="center">{t('management.subprojects')}</TableCell>
                     <TableCell align="right">{t('common.actions')}</TableCell>
                   </TableRow>
@@ -641,6 +642,17 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                         <TableCell>
                           {p.owner_name ?? p.owner_email ?? '—'}
                           {isOwner && <Chip label={t('management.you')} size="small" color="success" sx={{ ml: 1 }} />}
+                        </TableCell>
+                        <TableCell>
+                          {p.team_ids?.length ? (
+                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                              {p.team_ids.map((id) => (
+                                <Chip key={id} size="small" variant="outlined" label={teams.find((tm) => tm.id === id)?.name ?? '—'} />
+                              ))}
+                            </Box>
+                          ) : (
+                            <Typography variant="body2" color="text.secondary">{t('management.projectTeamsEveryone')}</Typography>
+                          )}
                         </TableCell>
                         <TableCell align="center">
                           <Button
@@ -688,7 +700,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                     );
                   })}
                   {projects.length === 0 && !loading && (
-                    <TableEmptyRow colSpan={6} icon={<WorkspacesIcon fontSize="inherit" />} title={t('management.noProjects')} />
+                    <TableEmptyRow colSpan={7} icon={<WorkspacesIcon fontSize="inherit" />} title={t('management.noProjects')} />
                   )}
                 </TableBody>
               </Table>
@@ -924,6 +936,37 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                 <MenuItem key={m.user_id} value={m.user_id}>
                   {m.display_name} ({m.email}) {m.user_id === session.userId ? `(${t('management.you')})` : ''}
                 </MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              select
+              label={t('management.projectTeams')}
+              value={projectTeamIds}
+              onChange={(e) => {
+                const v = e.target.value as unknown as string[] | string;
+                setProjectTeamIds(typeof v === 'string' ? v.split(',') : v);
+              }}
+              size="small"
+              helperText={projectTeamIds.length ? t('management.projectTeamsHint') : t('management.projectTeamsEveryoneHint')}
+              slotProps={{
+                select: {
+                  multiple: true,
+                  displayEmpty: true,
+                  renderValue: (selected) => {
+                    const ids = selected as string[];
+                    if (ids.length === 0) return <Typography variant="body2" color="text.secondary">{t('management.projectTeamsEveryone')}</Typography>;
+                    return (
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                        {ids.map((id) => <Chip key={id} size="small" label={teams.find((tm) => tm.id === id)?.name ?? '—'} />)}
+                      </Box>
+                    );
+                  },
+                },
+                inputLabel: { shrink: true },
+              }}
+            >
+              {teams.map((tm) => (
+                <MenuItem key={tm.id} value={tm.id}>{tm.name}</MenuItem>
               ))}
             </TextField>
           </DialogContent>

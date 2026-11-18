@@ -3,6 +3,7 @@ import { and, asc, eq, getTableColumns, gte, inArray, isNull, lt } from 'drizzle
 import { DbService, type Db } from './db.service';
 import { WorkTimeService } from './work-time.service';
 import { VersionsService } from './versions.service';
+import { isLongSession } from '@worktime3/shared/worktime';
 import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { organization_memberships, users, work_times } from './db/schema';
@@ -44,9 +45,13 @@ export class WorkTimeController {
     return { ok: true, id: row.id, checkIn: now };
   }
 
-  /** Closes the caller's one open session, wherever it is — no org param needed. */
+  /**
+   * Closes the caller's one open session, wherever it is — no org param needed. A session open
+   * longer than LONG_SESSION_MINUTES (usually a forgotten check-out) answers `long-session-confirm`
+   * with its check-in until resent with `{ acknowledgeLongSession: true }`.
+   */
   @Post('work-time/check-out')
-  async checkOut(@Req() req: AuthenticatedRequest) {
+  async checkOut(@Body() body: { acknowledgeLongSession?: boolean } | undefined, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const userId = req.user ? await callerUserId(db, req.user) : null;
@@ -56,6 +61,9 @@ export class WorkTimeController {
     if (!open) return { ok: false, error: 'not-checked-in' };
 
     const now = new Date().toISOString();
+    if (isLongSession(open.check_in, now) && !body?.acknowledgeLongSession) {
+      return { ok: false, error: 'long-session-confirm', checkIn: open.check_in };
+    }
     const patch = { check_out: now };
     await db.update(work_times).set(patch).where(eq(work_times.id, open.id));
     void this.versions.record('work_times', open.id, 'update_delta', userId, patch).catch(() => {});
@@ -80,7 +88,7 @@ export class WorkTimeController {
   async addEntry(
     @Param('orgId') orgId: string,
     @Param('userId') targetUserId: string,
-    @Body() body: { checkIn?: string; checkOut?: string; comment?: string },
+    @Body() body: { checkIn?: string; checkOut?: string; comment?: string; acknowledgeLongSession?: boolean },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -94,7 +102,9 @@ export class WorkTimeController {
     if (Number.isNaN(Date.parse(checkIn)) || Number.isNaN(Date.parse(checkOut)) || Date.parse(checkOut) <= Date.parse(checkIn)) {
       return { ok: false, error: 'invalid-range' };
     }
-    if (await isPeriodLocked(db, orgId, targetUserId, checkIn)) return { ok: false, error: 'period-locked' };
+    // Every month the session touches must be open (a night shift on the 31st reaches the 1st).
+    if (await isPeriodLocked(db, orgId, targetUserId, checkIn, checkOut)) return { ok: false, error: 'period-locked' };
+    if (isLongSession(checkIn, checkOut) && !body.acknowledgeLongSession) return { ok: false, error: 'long-session-confirm' };
     const values = { user_id: targetUserId, organization_id: orgId, check_in: checkIn, check_out: checkOut, comment: body.comment?.trim() || null };
     const [row] = await db.insert(work_times).values(values).returning({ id: work_times.id });
     void this.versions.record('work_times', row.id, 'insert', callerId, { id: row.id, ...values }).catch(() => {});
@@ -172,7 +182,7 @@ export class WorkTimeController {
   @Patch('work-time/:id')
   async update(
     @Param('id') id: string,
-    @Body() body: { checkIn?: string; checkOut?: string | null; comment?: string },
+    @Body() body: { checkIn?: string; checkOut?: string | null; comment?: string; acknowledgeLongSession?: boolean },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -180,10 +190,18 @@ export class WorkTimeController {
     const owned = await this.assertEditableEntry(db, id, req);
     if ('error' in owned) return owned;
 
-    if (body.checkIn !== undefined && body.checkIn !== owned.entry.check_in && owned.entry.organization_id) {
-      if (await isPeriodLocked(db, owned.entry.organization_id, owned.entry.user_id, body.checkIn)) {
+    const checkIn = body.checkIn ?? owned.entry.check_in;
+    const checkOut = body.checkOut !== undefined ? body.checkOut : owned.entry.check_out;
+    const moved = checkIn !== owned.entry.check_in || checkOut !== owned.entry.check_out;
+    if (moved) {
+      if (Number.isNaN(Date.parse(checkIn)) || (checkOut && (Number.isNaN(Date.parse(checkOut)) || Date.parse(checkOut) <= Date.parse(checkIn)))) {
+        return { ok: false, error: 'invalid-range' };
+      }
+      // Where the session ends up must be open too, over every day it covers.
+      if (owned.entry.organization_id && (await isPeriodLocked(db, owned.entry.organization_id, owned.entry.user_id, checkIn, checkOut))) {
         return { ok: false, error: 'period-locked' };
       }
+      if (checkOut && isLongSession(checkIn, checkOut) && !body.acknowledgeLongSession) return { ok: false, error: 'long-session-confirm' };
     }
 
     const patch: Partial<typeof work_times.$inferInsert> = {};
@@ -239,7 +257,7 @@ export class WorkTimeController {
     if (row.user_id !== userId && !(row.organization_id && (await canEditUserData(db, row.organization_id, userId, 'nav.workTime', row.user_id)))) {
       return { ok: false, error: 'forbidden' };
     }
-    if (row.organization_id && (await isPeriodLocked(db, row.organization_id, row.user_id, row.check_in))) {
+    if (row.organization_id && (await isPeriodLocked(db, row.organization_id, row.user_id, row.check_in, row.check_out))) {
       return { ok: false, error: 'period-locked' };
     }
     return { userId, entry: row };

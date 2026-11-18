@@ -26,7 +26,7 @@ import {
 } from '@mui/material';
 import BalanceOverview from './BalanceOverview';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatSignedMinutes, swissLocale } from './localeFormat';
+import { formatDurationMinutes, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { BalancesPanel, formatDays } from './BalancesPanel';
 import { AddIcon, DeleteIcon, EditIcon, PlayArrowIcon, StopIcon, TimerIcon } from './icons';
@@ -153,6 +153,8 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
   const [entries, setEntries] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A session over 16 hours (usually a forgotten check-out): confirmed before it is saved.
+  const [longConfirm, setLongConfirm] = useState<{ kind: 'checkout' | 'save'; message: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [draft, setDraft] = useState<SessionDraft | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -244,11 +246,23 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
     }
   }
 
-  async function checkOut() {
+  async function checkOut(acknowledgeLongSession = false) {
     setError(null);
     try {
-      const res = await fetch(`${API}/work-time/check-out`, { method: 'POST', headers: await authHeaders() });
+      const res = await fetch(`${API}/work-time/check-out`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ acknowledgeLongSession }),
+      });
       const data = await res.json();
+      if (data.error === 'long-session-confirm') {
+        const minutes = Math.round((Date.now() - new Date(data.checkIn).getTime()) / 60000);
+        setLongConfirm({
+          kind: 'checkout',
+          message: t('workTime.longCheckOut', { since: formatLocaleDateTime(data.checkIn, locale), duration: formatDurationMinutes(minutes) }),
+        });
+        return;
+      }
       if (!data.ok) {
         setError(t('workTime.checkOutFailed', { error: data.error ?? 'unknown error' }));
         return;
@@ -276,10 +290,10 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
     }
   }
 
-  async function saveDraft() {
+  async function saveDraft(acknowledgeLongSession = false) {
     if (!draft || !draftSession) return;
     setError(null);
-    const body = JSON.stringify({ checkIn: draftSession.checkIn, checkOut: draftSession.checkOut, comment: draft.comment });
+    const body = JSON.stringify({ checkIn: draftSession.checkIn, checkOut: draftSession.checkOut, comment: draft.comment, acknowledgeLongSession });
     try {
       // A new entry (no id) is added by hand for the person shown; an existing one is patched.
       const res = draft.id
@@ -294,6 +308,11 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
             body,
           });
       const data = await res.json();
+      if (data.error === 'long-session-confirm' && draftSession.checkOut) {
+        const minutes = Math.round((new Date(draftSession.checkOut).getTime() - new Date(draftSession.checkIn).getTime()) / 60000);
+        setLongConfirm({ kind: 'save', message: t('workTime.longSession', { duration: formatDurationMinutes(minutes) }) });
+        return;
+      }
       if (!data.ok) {
         setError(failure('workTime.saveFailed', data.error));
         return;
@@ -358,7 +377,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
               variant="contained"
               color={checkedIn ? 'warning' : 'success'}
               startIcon={checkedIn ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
-              onClick={checkedIn ? checkOut : checkIn}
+              onClick={() => void (checkedIn ? checkOut() : checkIn())}
             >
               {checkedIn ? t('workTime.checkOut') : t('workTime.checkIn')}
             </Button>
@@ -518,6 +537,17 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
           </DialogActions>
         </Box>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!longConfirm}
+        title={t('workTime.longTitle')}
+        message={longConfirm?.message ?? ''}
+        confirmLabel={longConfirm?.kind === 'checkout' ? t('workTime.checkOutAnyway') : t('workTime.saveAnyway')}
+        cancelLabel={t('common.cancel')}
+        confirmColor="warning"
+        onClose={() => setLongConfirm(null)}
+        onConfirm={() => (longConfirm?.kind === 'checkout' ? checkOut(true) : saveDraft(true))}
+      />
 
       <ConfirmDialog
         open={!!confirmDeleteId}

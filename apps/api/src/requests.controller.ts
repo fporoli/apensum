@@ -9,6 +9,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
+import { cleanRequestLink, requestTypeKeys } from '@worktime3/shared/requests';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -57,6 +58,49 @@ export function canChangeStatus(from: RequestStatus, to: RequestStatus, who: { h
   return false;
 }
 
+/** The fields a request's type, urgency and link are stored in. */
+export interface RequestDetails {
+  request_type?: string | null;
+  urgent?: boolean;
+  link_url?: string | null;
+}
+
+/** A flag from JSON (`true`) or a multipart form (`'true'`). */
+function flag(value: unknown): boolean | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  return value === true || value === 'true' || value === '1';
+}
+
+/**
+ * Validates a request's type, urgency and link. `typeKeys` are the org's request types (its
+ * static_data row). On create (`current` absent) every field is set: the type is required when the
+ * org has types. On an update only the fields present change; a request keeps an older type the
+ * org no longer lists, but can't be moved to one.
+ */
+export function validateRequestDetails(
+  input: { type?: unknown; urgent?: unknown; link?: unknown },
+  typeKeys: string[],
+  current?: { request_type: string | null },
+): { ok: true; value: RequestDetails } | { ok: false; error: string } {
+  const value: RequestDetails = {};
+  if (!current || input.type !== undefined) {
+    const type = typeof input.type === 'string' && input.type.trim() ? input.type.trim() : null;
+    if (type === null) {
+      if (typeKeys.length > 0) return { ok: false, error: 'request-type-required' };
+    } else if (!typeKeys.includes(type) && type !== current?.request_type) {
+      return { ok: false, error: 'unknown-request-type' };
+    }
+    value.request_type = type;
+  }
+  if (!current || input.urgent !== undefined) value.urgent = flag(input.urgent) ?? false;
+  if (!current || input.link !== undefined) {
+    const link = cleanRequestLink(input.link);
+    if (link === undefined) return { ok: false, error: 'invalid-link' };
+    value.link_url = link;
+  }
+  return { ok: true, value };
+}
+
 /** Assignments in force today, one row per person of the organization. */
 function currentAssignments(orgId: string): SQL {
   return sql`SELECT DISTINCT ON (user_id) user_id, department_id, manager_user_id FROM employee_assignments
@@ -78,7 +122,7 @@ function handlesCondition(orgId: string, callerId: string, handlesAll: boolean):
 /** A timestamptz column as an ISO string (raw queries otherwise return Postgres's text format). */
 const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
 
-const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.target_kind, r.target_department_id, d.name AS department_name,
+const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.request_type, r.urgent, r.link_url, r.target_kind, r.target_department_id, d.name AS department_name,
   r.requester_user_id, ru.display_name AS requester_name, ru.email AS requester_email,
   r.assignee_user_id, au.display_name AS assignee_name,
   ${iso('r.opened_at')} AS opened_at, ${iso('r.last_activity_at')} AS last_activity_at,
@@ -99,9 +143,14 @@ interface RequestRow {
   target_department_id: string | null;
   subject: string;
   status: RequestStatus;
+  request_type: string | null;
+  urgent: boolean;
+  link_url: string | null;
   assignee_user_id: string | null;
   archived_at: string | null;
 }
+
+const ROW_COLUMNS = sql`id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, request_type, urgent, link_url, assignee_user_id, archived_at`;
 
 @Controller('organizations/:orgId/requests')
 export class RequestsController {
@@ -152,8 +201,7 @@ export class RequestsController {
 
   private async load(db: Executor, orgId: string, id: string): Promise<RequestRow | null> {
     const rows = await db.execute(
-      sql`SELECT id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, assignee_user_id, archived_at
-          FROM requests WHERE id = ${id} AND organization_id = ${orgId}`,
+      sql`SELECT ${ROW_COLUMNS} FROM requests WHERE id = ${id} AND organization_id = ${orgId}`,
     );
     return (rows.rows[0] as unknown as RequestRow) ?? null;
   }
@@ -192,6 +240,16 @@ export class RequestsController {
     await db.execute(
       sql`INSERT INTO request_messages (request_id, author_user_id, kind, data) VALUES (${requestId}, ${actorId}, 'event', ${JSON.stringify(data)}::jsonb)`,
     );
+  }
+
+  /** The org's request type keys: its own static_data row, else the global one. */
+  private async typeKeys(db: Executor, orgId: string): Promise<string[]> {
+    const rows = await db.execute(
+      sql`SELECT "values" FROM static_data
+          WHERE entity = 'requests' AND enum_name = 'request_type' AND (organization_id = ${orgId} OR organization_id IS NULL)
+          ORDER BY organization_id NULLS LAST LIMIT 1`,
+    );
+    return requestTypeKeys(rows.rows[0]?.values);
   }
 
   /** Where the caller can send a request: their manager in force, and the organization's active departments. */
@@ -234,7 +292,7 @@ export class RequestsController {
           : sql`r.archived_at IS NULL AND ${mine}`;
     const rows = await db.execute(
       sql`SELECT ${LIST_COLUMNS} ${LIST_FROM(orgId)} WHERE r.organization_id = ${orgId} AND ${where}
-          ORDER BY r.last_activity_at DESC LIMIT 500`,
+          ORDER BY (r.urgent AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`,
     );
     return { ok: true, requests: rows.rows };
   }
@@ -298,14 +356,15 @@ export class RequestsController {
   }
 
   /**
-   * Sends a request: `{ target: 'manager' | 'department', departmentId?, subject, message }`, as JSON
-   * or multipart with attachments in `files`. A message needs text or at least one file.
+   * Sends a request: `{ target: 'manager' | 'department', departmentId?, subject, message, type, urgent?, link? }`,
+   * as JSON or multipart with attachments in `files`. A message needs text or at least one file;
+   * `type` is one of the org's request types (`validateRequestDetails`).
    */
   @Post()
   @UseInterceptors(Attachments())
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string },
+    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; link?: string },
     @UploadedFiles() uploaded: Express.Multer.File[] | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
@@ -319,6 +378,9 @@ export class RequestsController {
     const message = cleanRequestText(body.message, MAX_BODY);
     if (!subject) return { ok: false, error: 'subject-required' };
     if (!message && files.length === 0) return { ok: false, error: 'message-required' };
+    const details = validateRequestDetails(body, await this.typeKeys(db, orgId));
+    if (!details.ok) return details;
+    const { request_type, urgent, link_url } = details.value;
 
     let departmentId: string | null = null;
     if (body.target === 'manager') {
@@ -335,16 +397,17 @@ export class RequestsController {
 
     const [created] = (
       await db.execute(
-        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject)
-            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject})
-            RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, assignee_user_id, archived_at`,
+        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, request_type, urgent, link_url)
+            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null})
+            RETURNING ${ROW_COLUMNS}`,
       )
     ).rows as unknown as RequestRow[];
     await this.addMessage(db, created, callerId, message, files);
     const fileNames = files.map((f) => f.originalname);
     void this.versions.record('requests', created.id, 'insert', callerId, { ...created, message, attachments: fileNames }).catch(() => {});
     const who = await this.displayName(db, callerId);
-    await this.notifyOthers(db, created, callerId, 'request.created', `New request from ${who}: ${subject}`, messagePreview(message, fileNames)).catch(() => {});
+    const title = created.urgent ? `Urgent request from ${who}: ${subject}` : `New request from ${who}: ${subject}`;
+    await this.notifyOthers(db, created, callerId, 'request.created', title, messagePreview(message, fileNames)).catch(() => {});
     return { ok: true, id: created.id };
   }
 
@@ -414,6 +477,45 @@ export class RequestsController {
     return { ok: true, status: to };
   }
 
+  /**
+   * Changes the type, urgency or link (`{ type?, urgent?, link? }`, only the fields given). The
+   * requester and the handlers may, while the request is not archived.
+   */
+  @Post(':id/details')
+  async setDetails(
+    @Param('orgId') orgId: string,
+    @Param('id') id: string,
+    @Body() body: { type?: string; urgent?: boolean; link?: string | null },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.caller(db, orgId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const a = await this.access(db, orgId, callerId, id);
+    if (!a) return { ok: false, error: 'not-found' };
+    if (a.r.archived_at) return { ok: false, error: 'request-archived' };
+    const details = validateRequestDetails(body ?? {}, await this.typeKeys(db, orgId), a.r);
+    if (!details.ok) return details;
+    // Only what actually changes goes into the thread and the history.
+    const changed: RequestDetails = {};
+    for (const k of ['request_type', 'urgent', 'link_url'] as const) {
+      if (details.value[k] !== undefined && details.value[k] !== a.r[k]) (changed as Record<string, unknown>)[k] = details.value[k];
+    }
+    if (Object.keys(changed).length === 0) return { ok: true };
+    const next = { ...a.r, ...changed };
+    await db.execute(
+      sql`UPDATE requests SET request_type = ${next.request_type}, urgent = ${next.urgent}, link_url = ${next.link_url}, last_activity_at = now()
+          WHERE id = ${id}`,
+    );
+    await this.event(db, id, callerId, { details: changed });
+    void this.versions.record('requests', id, 'update_delta', callerId, changed).catch(() => {});
+    const who = await this.displayName(db, callerId);
+    const title = changed.urgent === true ? `${who} marked "${a.r.subject}" as urgent` : `${who} updated "${a.r.subject}"`;
+    await this.notifyOthers(db, a.r, callerId, 'request.status', title).catch(() => {});
+    return { ok: true };
+  }
+
   /** A handler takes the request over (or `{ release: true }` gives it back to everyone). */
   @Post(':id/take')
   async take(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: { release?: boolean }, @Req() req: AuthenticatedRequest) {
@@ -454,7 +556,6 @@ export class RequestsController {
     return { ok: true, archived };
   }
 
-  /** Downloads an attachment of a request the caller may see. */
   /** "Send by e-mail": mails the request to colleagues (`{ userIds, subject, message }`), anyone who may see it. */
   @Post(':id/forward')
   async forward(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: ForwardInput, @Req() req: AuthenticatedRequest) {
@@ -465,6 +566,7 @@ export class RequestsController {
     return this.forwardMail.send(db, orgId, callerId, body ?? {}, { type: 'request', id, path: `#/requests?id=${id}` });
   }
 
+  /** Downloads an attachment of a request the caller may see. */
   @Get(':id/attachments/:documentId')
   async download(
     @Param('orgId') orgId: string,

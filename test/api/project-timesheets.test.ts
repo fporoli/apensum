@@ -42,6 +42,7 @@ test('project time is locked by its project month, not by the working-time times
       execute: async (q: unknown) => {
         const text = sqlText(q);
         if (text.includes('JOIN membership_roles')) return { rows: [{ name: 'member' }] };
+        if (text.includes('AS sub_ok')) return { rows: [{ bookable: true, sub_ok: true }] };
         if (text.includes(lockedTable)) return { rows: [{ '?column?': 1 }] };
         return { rows: [] };
       },
@@ -51,7 +52,7 @@ test('project time is locked by its project month, not by the working-time times
     const workTime = { checkProjectTime: async () => ({ ok: true }) } as unknown as WorkTimeModelService;
     return new ProjectTimeController({ getDb: () => db } as unknown as DbService, {} as ProjectTimeService, versions, workTime);
   };
-  const body = { projectId: 'p1', startTime: '2026-11-02T08:00:00Z', endTime: '2026-11-02T10:00:00Z' };
+  const body = { projectId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', startTime: '2026-11-02T08:00:00Z', endTime: '2026-11-02T10:00:00Z' };
   assert.deepEqual(await make('FROM project_time_periods').create('org', body, req), { ok: false, error: 'period-locked' });
   assert.deepEqual(await make('FROM timesheet_periods').create('org', body, req), { ok: true, id: 'new' });
 });

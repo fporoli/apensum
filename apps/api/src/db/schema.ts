@@ -1080,6 +1080,9 @@ export const requests = pgTable("requests", {
 	last_activity_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
 	archived_at: timestamp({ withTimezone: true, mode: 'string' }),
+	request_type: text(),
+	urgent: boolean().default(false).notNull(),
+	link_url: text(),
 }, (table) => [
 	index("idx_requests_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
 	index("idx_requests_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
@@ -1103,6 +1106,7 @@ export const requests = pgTable("requests", {
 			foreignColumns: [users.id],
 			name: "requests_assignee_user_id_fkey"
 		}).onDelete("set null"),
+	check("chk_requests_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
 	check("chk_requests_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL))`),
 	check("chk_requests_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
 	check("chk_requests_subject", sql`length(btrim(subject)) > 0`),
@@ -1344,3 +1348,21 @@ export const audit = pgView("audit", {	uuid: uuid(),
 	organization_id: uuid(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }),
 }).as(sql`SELECT id AS uuid, target_type AS entity, target_id AS entity_uuid, action, actor_user_id AS actionby, organization_id, created_at FROM audit_logs`);
+
+export const project_teams = pgTable("project_teams", {
+	project_id: uuid().notNull(),
+	team_id: uuid().notNull(),
+}, (table) => [
+	index("idx_project_teams_team").using("btree", table.team_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.project_id],
+			foreignColumns: [projects.id],
+			name: "project_teams_project_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.team_id],
+			foreignColumns: [teams.id],
+			name: "project_teams_team_id_fkey"
+		}).onDelete("restrict"),
+	primaryKey({ columns: [table.project_id, table.team_id], name: "project_teams_pkey"}),
+]);

@@ -18,7 +18,7 @@ export type Action = (typeof ACTIONS)[number];
  * - `team`: anyone sharing a team with the caller (as member or lead)
  * - `reports`: the caller's direct reports (`organization_memberships.manager_user_id`)
  * - `all`: everyone in the organization
- * Team Management reads `own` as "items you lead or own" (see its catalogue entry).
+ * Teams & Projects reads `own` as "items you lead or own" (see its catalogue entry).
  */
 export const SCOPES = ['own', 'team', 'reports', 'all'] as const;
 export type Scope = (typeof SCOPES)[number];

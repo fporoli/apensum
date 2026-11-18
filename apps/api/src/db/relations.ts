@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { organizations, saved_reports, users, user_identities, report_schedules, organization_domains, roles, teams, report_runs, documents, organization_memberships, organization_invitations, audit_logs, projects, subprojects, project_times, timesheet_periods, static_data, versions, workflow_definitions, expense_reports, workflows, expense_report_items, expenses, notifications, work_times, work_time_balance_entries, absences, basicdata_versions, field_config, balance_adjustments, work_schedules, work_time_months, org_holidays, vacation_entitlements, departments, project_time_periods, employee_assignments, requests, request_messages, timesheet_documents, personnel_documents, role_permissions, permissions, request_message_documents, team_members, membership_roles, work_time_balances } from "./schema";
+import { organizations, saved_reports, users, user_identities, report_schedules, organization_domains, roles, teams, report_runs, documents, organization_memberships, organization_invitations, audit_logs, projects, subprojects, project_times, timesheet_periods, static_data, versions, workflow_definitions, expense_reports, workflows, expense_report_items, expenses, notifications, work_times, work_time_balance_entries, absences, basicdata_versions, field_config, balance_adjustments, work_schedules, work_time_months, org_holidays, vacation_entitlements, departments, project_time_periods, employee_assignments, requests, request_messages, timesheet_documents, personnel_documents, role_permissions, permissions, request_message_documents, project_teams, team_members, membership_roles, work_time_balances } from "./schema";
 
 export const saved_reportsRelations = relations(saved_reports, ({one, many}) => ({
 	organization: one(organizations, {
@@ -208,6 +208,7 @@ export const teamsRelations = relations(teams, ({one, many}) => ({
 		references: [users.id]
 	}),
 	workflows: many(workflows),
+	project_teams: many(project_teams),
 	team_members: many(team_members),
 }));
 
@@ -299,6 +300,7 @@ export const projectsRelations = relations(projects, ({one, many}) => ({
 	project_times: many(project_times),
 	expenses: many(expenses),
 	project_time_periods: many(project_time_periods),
+	project_teams: many(project_teams),
 }));
 
 export const subprojectsRelations = relations(subprojects, ({one, many}) => ({
@@ -797,5 +799,16 @@ export const work_time_balancesRelations = relations(work_time_balances, ({one})
 	user: one(users, {
 		fields: [work_time_balances.user_id],
 		references: [users.id]
+	}),
+}));
+
+export const project_teamsRelations = relations(project_teams, ({one}) => ({
+	project: one(projects, {
+		fields: [project_teams.project_id],
+		references: [projects.id]
+	}),
+	team: one(teams, {
+		fields: [project_teams.team_id],
+		references: [teams.id]
 	}),
 }));

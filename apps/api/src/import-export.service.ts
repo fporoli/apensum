@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { cleanRequestLink } from '@worktime3/shared/requests';
 import type { Db } from './db.service';
 import { BalancesService, type MonthBalance } from './balances.service';
 import {
@@ -29,6 +30,7 @@ import {
   request_message_documents,
   request_messages,
   requests,
+  project_teams,
   role_permissions,
   roles,
   saved_reports,
@@ -933,6 +935,7 @@ export class ImportExportService {
 
     const absencesData = await db.select().from(absences).where(eq(absences.organization_id, orgId));
     const projectsData = await db.select().from(projects).where(eq(projects.organization_id, orgId));
+    const projectTeamsData = projectsData.length > 0 ? await db.select().from(project_teams).where(inArray(project_teams.project_id, projectsData.map((p) => p.id))) : [];
     const subprojectsData = await db.select().from(subprojects).where(eq(subprojects.organization_id, orgId));
     const projectTimesData = await db.select().from(project_times).where(eq(project_times.organization_id, orgId));
     const projectTimePeriodsData = await db.select().from(project_time_periods).where(eq(project_time_periods.organization_id, orgId));
@@ -1089,6 +1092,7 @@ export class ImportExportService {
       jsonFile('database/absences.json', absencesData),
       jsonFile('database/projects.json', projectsData),
       jsonFile('database/subprojects.json', subprojectsData),
+      jsonFile('database/project_teams.json', projectTeamsData),
       jsonFile('database/project_times.json', projectTimesData),
       jsonFile('database/project_time_periods.json', projectTimePeriodsData),
       jsonFile('database/expenses.json', expensesData),
@@ -1751,6 +1755,14 @@ export class ImportExportService {
       subprojectIdMap.set(sp.id, subproject.id);
     }
 
+    // Teams a project is limited to (070); exports from before that have no file.
+    for (const ptm of readJson<any>('database/project_teams.json')) {
+      const pId = projectIdMap.get(ptm.project_id);
+      const tId = teamIdMap.get(ptm.team_id);
+      if (!pId || !tId) continue;
+      await db.insert(project_teams).values({ project_id: pId, team_id: tId }).onConflictDoNothing();
+    }
+
     // 16. Project Times
     const projectTimesList = readJson<any>('database/project_times.json');
     for (const pt of projectTimesList) {
@@ -1871,6 +1883,9 @@ export class ImportExportService {
           target_department_id: reqRow.target_department_id ? deptIdMap.get(reqRow.target_department_id) ?? null : null,
           subject: reqRow.subject || 'Request',
           status: reqRow.status || 'open',
+          request_type: typeof reqRow.request_type === 'string' ? reqRow.request_type : null,
+          urgent: reqRow.urgent === true,
+          link_url: cleanRequestLink(reqRow.link_url) ?? null,
           assignee_user_id: reqRow.assignee_user_id ? userIdMap.get(reqRow.assignee_user_id) ?? null : null,
           opened_at: reqRow.opened_at || new Date().toISOString(),
           last_activity_at: reqRow.last_activity_at || new Date().toISOString(),

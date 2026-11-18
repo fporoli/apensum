@@ -359,6 +359,17 @@ export function sumTargets(days: readonly DayTarget[]): number {
 }
 
 /**
+ * A check-in/check-out session longer than this needs confirming (usually a forgotten check-out):
+ * the API answers `long-session-confirm` until the client resends with `acknowledgeLongSession`.
+ */
+export const LONG_SESSION_MINUTES = 16 * 60;
+
+/** Whether a session from `checkIn` to `checkOut` needs that confirmation. */
+export function isLongSession(checkIn: string | Date, checkOut: string | Date): boolean {
+  return new Date(checkOut).getTime() - new Date(checkIn).getTime() > LONG_SESSION_MINUTES * 60_000;
+}
+
+/**
  * Whether booking `projectMinutes` of project time on a day is within the person's attendance
  * that day, give or take the organization's tolerance.
  */

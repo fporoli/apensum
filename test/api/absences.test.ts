@@ -127,7 +127,10 @@ test('touchesLockedPeriod checks every month the absence touches', async () => {
   const checked: string[] = [];
   const db: any = {
     execute: async (q: any) => {
-      const date = (q.queryChunks ?? []).find((c: any) => typeof c === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c));
+      // The day sits in a nested SQL piece (lockDay in access.ts), so search the chunks recursively.
+      const find = (x: any): string | undefined =>
+        typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : (x?.queryChunks ?? []).map(find).find(Boolean);
+      const date = find(q);
       checked.push(date);
       return { rows: date === '2026-12-01' ? [{ '?column?': 1 }] : [] };
     },

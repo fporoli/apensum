@@ -701,3 +701,13 @@ INSERT INTO request_messages (id, request_id, author_user_id, kind, body, data, 
   ('eeee1111-0000-0000-0000-000000000009', 'eeee0000-0000-0000-0000-000000000004', '22222222-2222-2222-2222-222222222223', 'event', NULL,
    '{"archived": true}', now() - interval '14 days')
 ON CONFLICT DO NOTHING;
+
+-- Request type, urgency and link (069). Only fills in what is still unset, so re-seeding changes nothing.
+UPDATE requests r SET request_type = v.request_type, urgent = v.urgent, link_url = v.link_url
+FROM (VALUES
+  ('eeee0000-0000-0000-0000-000000000001'::uuid, 'service', false, NULL),
+  ('eeee0000-0000-0000-0000-000000000002'::uuid, 'support', true, 'https://intranet.acme.example/payroll/2026-10'),
+  ('eeee0000-0000-0000-0000-000000000003'::uuid, 'other', false, NULL),
+  ('eeee0000-0000-0000-0000-000000000004'::uuid, 'service', false, NULL)
+) AS v(id, request_type, urgent, link_url)
+WHERE r.id = v.id AND r.request_type IS NULL;

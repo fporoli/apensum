@@ -138,6 +138,11 @@ export class TeamsController {
       return { ok: false, error: 'forbidden' };
     }
 
+    // A team that limits projects stays until it is removed from them (070), so no project
+    // silently opens up to everyone.
+    const used = await db.execute(sql`SELECT 1 FROM project_teams WHERE team_id = ${id} LIMIT 1`);
+    if (used.rows.length > 0) return { ok: false, error: 'team-has-projects' };
+
     await db.delete(teams).where(eq(teams.id, id));
     void this.versions.record('teams', id, 'delete', callerId, team).catch(() => {});
     return { ok: true };

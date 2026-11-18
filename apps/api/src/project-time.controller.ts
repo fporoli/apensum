@@ -4,7 +4,7 @@ import { DbService, type Db } from './db.service';
 import { ProjectTimeService } from './project-time.service';
 import { VersionsService } from './versions.service';
 import { WorkTimeModelService } from './work-time-model.service';
-import { callerUserId, canEditUserData, canSeeUserData, isOrgMember, isProjectPeriodLocked, reachesAll } from './access';
+import { callerUserId, canEditUserData, canSeeUserData, isOrgMember, isProjectPeriodLocked, projectBookingError, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { project_times, projects, subprojects, users } from './db/schema';
 
@@ -48,8 +48,11 @@ export class ProjectTimeController {
       if (!(await isOrgMember(db, orgId, userId))) return { ok: false, error: 'unknown-user' };
       if (!(await canEditUserData(db, orgId, callerId, 'nav.time', userId))) return { ok: false, error: 'forbidden' };
     }
+    // The project must be open to the person (its teams, project_teams); checked for whoever books it.
+    const bookingError = await projectBookingError(db, orgId, userId, body.projectId, body.subprojectId);
+    if (bookingError) return { ok: false, error: bookingError };
     // Project time is locked per project and month by the project timesheet, not by the working-time one.
-    if (await isProjectPeriodLocked(db, orgId, userId, body.projectId, body.startTime)) return { ok: false, error: 'period-locked' };
+    if (await isProjectPeriodLocked(db, orgId, userId, body.projectId, body.startTime, body.endTime)) return { ok: false, error: 'period-locked' };
     // Only "ranges" users care about overlap at all — everyone else logs duration-only entries that
     // are expected to share the same 08:00 start, so there's nothing to warn about.
     if (await this.usesProjectTimeRanges(db, userId)) {
@@ -153,8 +156,16 @@ export class ProjectTimeController {
     // A locked project month can't be edited into either: check where the entry ends up, not just where it is.
     const targetProject = body.projectId !== undefined ? body.projectId || null : owned.entry.project_id;
     const targetStart = body.startTime ?? owned.entry.start_time;
-    if (owned.entry.organization_id && (targetProject !== owned.entry.project_id || targetStart !== owned.entry.start_time)) {
-      if (await isProjectPeriodLocked(db, owned.entry.organization_id, owned.userId, targetProject, targetStart)) {
+    // Moving an entry to another project (or subproject) needs that project to be open to the person;
+    // an entry that stays where it is can always be corrected, even after the person left the team.
+    const targetSub = body.subprojectId !== undefined ? body.subprojectId || null : owned.entry.subproject_id;
+    if (owned.entry.organization_id && (targetProject !== owned.entry.project_id || targetSub !== owned.entry.subproject_id)) {
+      const bookingError = await projectBookingError(db, owned.entry.organization_id, owned.userId, targetProject, targetSub);
+      if (bookingError) return { ok: false, error: bookingError };
+    }
+    const targetEnd = body.endTime ?? owned.entry.end_time;
+    if (owned.entry.organization_id && (targetProject !== owned.entry.project_id || targetStart !== owned.entry.start_time || targetEnd !== owned.entry.end_time)) {
+      if (await isProjectPeriodLocked(db, owned.entry.organization_id, owned.userId, targetProject, targetStart, targetEnd)) {
         return { ok: false, error: 'period-locked' };
       }
     }
@@ -216,7 +227,11 @@ export class ProjectTimeController {
     req: AuthenticatedRequest,
   ): Promise<
     | { ok: false; error: string }
-    | { userId: string; actorId: string; entry: { organization_id: string | null; project_id: string | null; start_time: string; end_time: string } }
+    | {
+        userId: string;
+        actorId: string;
+        entry: { organization_id: string | null; project_id: string | null; subproject_id: string | null; start_time: string; end_time: string };
+      }
   > {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unknown-user' };
@@ -225,6 +240,7 @@ export class ProjectTimeController {
         user_id: project_times.user_id,
         organization_id: project_times.organization_id,
         project_id: project_times.project_id,
+        subproject_id: project_times.subproject_id,
         start_time: project_times.start_time,
         end_time: project_times.end_time,
       })
@@ -234,7 +250,7 @@ export class ProjectTimeController {
     if (row.user_id !== callerId && !(row.organization_id && (await canEditUserData(db, row.organization_id, callerId, 'nav.time', row.user_id)))) {
       return { ok: false, error: 'forbidden' };
     }
-    if (row.organization_id && (await isProjectPeriodLocked(db, row.organization_id, row.user_id, row.project_id, row.start_time))) {
+    if (row.organization_id && (await isProjectPeriodLocked(db, row.organization_id, row.user_id, row.project_id, row.start_time, row.end_time))) {
       return { ok: false, error: 'period-locked' };
     }
     const { user_id: userId, ...entry } = row;

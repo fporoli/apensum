@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
 import type { AuthenticatedPrincipal } from './jwt';
 import {
@@ -164,31 +164,93 @@ export async function canManageTeamMembers(db: Executor, organizationId: string,
 }
 
 /**
- * True when `dateOrTimestamp` falls inside a submitted/approved timesheet
- * period for this user — the single gate the project-time create/update/delete
- * handlers call before touching an entry. `rejected`/`open` periods are NOT
- * locked (an employee fixing a rejected month must be able to edit again).
+ * SQL condition (over `p` = projects) for "`userId` may book time on project p": the project has
+ * no teams (project_teams, 070), or the person owns it, or is an active member or the lead of one
+ * of its teams.
+ */
+export function bookableProjectCondition(userId: string): SQL {
+  return sql`(NOT EXISTS (SELECT 1 FROM project_teams pt WHERE pt.project_id = p.id)
+    OR p.owner_user_id = ${userId}
+    OR EXISTS (
+      SELECT 1 FROM project_teams pt JOIN teams t ON t.id = pt.team_id
+      WHERE pt.project_id = p.id AND (t.lead_user_id = ${userId} OR EXISTS (
+        SELECT 1 FROM team_members tm JOIN organization_memberships m ON m.id = tm.membership_id
+        WHERE tm.team_id = t.id AND m.user_id = ${userId} AND m.status = 'active'))))`;
+}
+
+/**
+ * Whether `userId` may book project time on this project (and subproject): both belong to the
+ * organization, the subproject to the project, and the project is open to the person
+ * (`bookableProjectCondition`). Returns the refusal as an error code, or null when allowed.
+ * No project at all is always allowed (hours without a project).
+ */
+export async function projectBookingError(
+  db: Executor,
+  organizationId: string,
+  userId: string,
+  projectId: string | null | undefined,
+  subprojectId?: string | null,
+): Promise<string | null> {
+  if (!projectId) return subprojectId ? 'unknown-project' : null;
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(projectId) || (subprojectId && !uuid.test(subprojectId))) return 'unknown-project';
+  const rows = await db.execute(
+    sql`SELECT ${bookableProjectCondition(userId)} AS bookable,
+          ${subprojectId ? sql`EXISTS (SELECT 1 FROM subprojects s WHERE s.id = ${subprojectId}::uuid AND s.project_id = p.id)` : sql`TRUE`} AS sub_ok
+        FROM projects p WHERE p.id = ${projectId}::uuid AND p.organization_id = ${organizationId}`,
+  );
+  const row = rows.rows[0] as { bookable: boolean; sub_ok: boolean } | undefined;
+  if (!row || !row.sub_ok) return 'unknown-project';
+  return row.bookable ? null : 'project-not-allowed';
+}
+
+/**
+ * A local calendar day for the lock checks: a 'YYYY-MM-DD' date as it is, a timestamp as its date
+ * in the person's time zone (`users.timezone`, else UTC), so 00:30 on the 1st is in the new month.
+ */
+function lockDay(userId: string, value: string): SQL {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return sql`${value}::date`;
+  return sql`(${value}::timestamptz AT TIME ZONE coalesce((SELECT timezone FROM users WHERE id = ${userId}), 'UTC'))::date`;
+}
+
+/**
+ * The first and last local day of `from` .. `until` (exclusive end: a session ending at 00:00 does
+ * not reach into that day). Without `until`, or with an end not after the start, only `from`'s day.
+ */
+function lockDays(userId: string, from: string, until?: string | null): { first: SQL; last: SQL } {
+  const first = lockDay(userId, from);
+  const end = until ? Date.parse(until) : NaN;
+  if (Number.isNaN(end) || end <= Date.parse(from)) return { first, last: first };
+  return { first, last: lockDay(userId, new Date(end - 1).toISOString()) };
+}
+
+/**
+ * True when `dateOrTimestamp` (through `until`, for a session running past midnight) touches a
+ * submitted/approved working-time timesheet month of this user: the single gate the work-time and
+ * absence handlers call before touching an entry. `rejected`/`open` periods are NOT locked (an
+ * employee fixing a rejected month must be able to edit again).
  */
 export async function isPeriodLocked(
   db: Executor,
   organizationId: string,
   userId: string,
   dateOrTimestamp: string,
+  until?: string | null,
 ): Promise<boolean> {
+  const { first, last } = lockDays(userId, dateOrTimestamp, until);
   const rows = await db.execute(
     sql`SELECT 1 FROM timesheet_periods
         WHERE organization_id = ${organizationId} AND user_id = ${userId}
           AND status IN ('submitted', 'approved')
-          AND period_start <= ${dateOrTimestamp}::date AND period_end > ${dateOrTimestamp}::date
+          AND period_start <= ${last} AND period_end > ${first}
         LIMIT 1`,
   );
   return rows.rows.length > 0;
 }
 
 /**
- * Whether a person's project time on `projectId` at a date is locked: that project's month is
- * submitted or approved in their project timesheet (project_time_periods). Project time without
- * a project is never locked; the working-time timesheet does not lock project time.
+ * True when project time from `dateOrTimestamp` (through `until`) on this project touches a
+ * submitted/approved project month (project timesheet) of this user. No project never locks.
  */
 export async function isProjectPeriodLocked(
   db: Executor,
@@ -196,13 +258,15 @@ export async function isProjectPeriodLocked(
   userId: string,
   projectId: string | null | undefined,
   dateOrTimestamp: string,
+  until?: string | null,
 ): Promise<boolean> {
   if (!projectId) return false;
+  const { first, last } = lockDays(userId, dateOrTimestamp, until);
   const rows = await db.execute(
     sql`SELECT 1 FROM project_time_periods
         WHERE organization_id = ${organizationId} AND user_id = ${userId} AND project_id = ${projectId}
           AND status IN ('submitted', 'approved')
-          AND period_start <= ${dateOrTimestamp}::date AND period_end > ${dateOrTimestamp}::date
+          AND period_start <= ${last} AND period_end > ${first}
         LIMIT 1`,
   );
   return rows.rows.length > 0;

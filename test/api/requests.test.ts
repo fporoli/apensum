@@ -42,3 +42,27 @@ test('a notification previews the text, else the attached file names', async () 
   assert.equal(messagePreview('Hello', ['a.pdf']), 'Hello');
   assert.equal(messagePreview(null, ['a.pdf', 'b.png']), '📎 a.pdf, b.png');
 });
+
+test('validateRequestDetails on create: type required when the org has types, link checked', async () => {
+  const { validateRequestDetails } = await import('../../apps/api/src/requests.controller');
+  const keys = ['service', 'support', 'other'];
+  assert.deepEqual(validateRequestDetails({ type: 'support', urgent: 'true', link: 'jira.example.com/IT-1' }, keys), {
+    ok: true,
+    value: { request_type: 'support', urgent: true, link_url: 'https://jira.example.com/IT-1' },
+  });
+  assert.deepEqual(validateRequestDetails({ type: 'service' }, keys), { ok: true, value: { request_type: 'service', urgent: false, link_url: null } });
+  assert.deepEqual(validateRequestDetails({}, keys), { ok: false, error: 'request-type-required' });
+  assert.deepEqual(validateRequestDetails({ type: 'hack' }, keys), { ok: false, error: 'unknown-request-type' });
+  assert.deepEqual(validateRequestDetails({ type: 'service', link: 'javascript:alert(1)' }, keys), { ok: false, error: 'invalid-link' });
+  // An org without types sends requests without one.
+  assert.deepEqual(validateRequestDetails({}, []), { ok: true, value: { request_type: null, urgent: false, link_url: null } });
+});
+
+test('validateRequestDetails on update: only given fields, an older type may stay', async () => {
+  const { validateRequestDetails } = await import('../../apps/api/src/requests.controller');
+  const keys = ['service', 'support'];
+  assert.deepEqual(validateRequestDetails({ urgent: true }, keys, { request_type: 'retired' }), { ok: true, value: { urgent: true } });
+  assert.deepEqual(validateRequestDetails({ type: 'retired' }, keys, { request_type: 'retired' }), { ok: true, value: { request_type: 'retired' } });
+  assert.deepEqual(validateRequestDetails({ type: 'other' }, keys, { request_type: 'service' }), { ok: false, error: 'unknown-request-type' });
+  assert.deepEqual(validateRequestDetails({ link: '' }, keys, { request_type: 'service' }), { ok: true, value: { link_url: null } });
+});
