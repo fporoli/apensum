@@ -159,33 +159,9 @@ export class CasesService {
 
   /** Create a new case. */
   async createCase(orgId: string, callerId: string, dto: CreateCaseDto): Promise<Case> {
-    if (dto.enc !== undefined) return this.createEncryptedCase(orgId, callerId, dto);
-    await this.assertCustomValues(orgId, 'case', checkCustom(dto.custom));
-    const ref = dto.reference_number?.trim();
-    const title = dto.title?.trim();
-    const subject = dto.subject_name?.trim();
-    if (!ref || !title || !subject) {
-      throw new BadRequestException('missing-required-fields');
-    }
-    const dob = dto.subject_dob && String(dto.subject_dob).trim() ? String(dto.subject_dob).trim() : null;
-    const leadId = dto.lead_user_id ?? callerId;
-    const [row] = await this.db
-      .insert(casesInCases)
-      .values({
-        organization_id: orgId,
-        reference_number: ref,
-        title: title,
-        domain: dto.domain ?? 'kesb',
-        subject_name: subject,
-        subject_dob: dob,
-        lead_user_id: leadId,
-        confidentiality: dto.confidentiality ?? 'standard',
-        metadata: dto.metadata ?? {},
-        custom: checkCustom(dto.custom) ?? {},
-      })
-      .returning();
-
-    return this.getCase(orgId, row.id);
+    // Every case is created encrypted: the browser seals it, the server never accepts a plaintext one.
+    if (dto.enc === undefined) throw new BadRequestException('case-must-be-encrypted');
+    return this.createEncryptedCase(orgId, callerId, dto);
   }
 
   /** A case created encrypted: the browser sealed title, subject and the rest; the case and its first key go in together. */

@@ -62,7 +62,8 @@ It cannot read the case, so these run in the browser or as stateless jobs:
 - Search covers the reference number on the server; encrypted cases are always returned and the browser filters
   them by their opened title and subject.
 
-New cases are encrypted by default (a switch in the create dialog allows a plain one). Existing cases are not converted.
+Every new case is encrypted: the create dialog has no opt-out and the API refuses a case created without an envelope
+(`case-must-be-encrypted`). Cases that existed before encryption are not converted; the plaintext code paths remain only for them.
 
 ## Custom fields
 

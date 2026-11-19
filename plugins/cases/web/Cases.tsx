@@ -78,7 +78,6 @@ export default function Cases({
 }) {
   const { t } = useI18n();
   const keyring = useKeyringState();
-  const [encryptNew, setEncryptNew] = useState(true);
 
   // Navigation & selection
   const [cases, setCases] = useState<Case[]>([]);
@@ -146,24 +145,20 @@ export default function Cases({
   const handleCreateCase = async () => {
     if (creatingCase || !newCaseData.reference_number.trim() || !newCaseData.title.trim() || !newCaseData.subject_name.trim()) return;
     setCreateCaseError(null);
-    if (encryptNew && !isUnlocked()) {
+    // Every case is encrypted: the passphrase must be set up and unlocked first.
+    if (!isUnlocked()) {
       setCreateCaseError(t('cases.keys.unlockFirst'));
       return;
     }
     setCreatingCase(true);
     let sealedId: string | null = null;
     try {
-      const payload = encryptNew
-        ? await newEncryptedCaseBody({ ...newCaseData, subject_dob: newCaseData.subject_dob || null })
-        : null;
-      sealedId = payload?.id ?? null;
+      const payload = await newEncryptedCaseBody({ ...newCaseData, subject_dob: newCaseData.subject_dob || null });
+      sealedId = payload.id;
       const res = await fetch(`${API}/organizations/${orgId}/cases`, {
         method: 'POST',
         headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload ? payload.body : {
-          ...newCaseData,
-          subject_dob: newCaseData.subject_dob || null,
-        }),
+        body: JSON.stringify(payload.body),
       });
       const data = await res.json();
       if (data?.ok) {
@@ -448,11 +443,7 @@ export default function Cases({
               </Stack>
             </DialogContent>
             <DialogActions>
-              <FormControlLabel
-                sx={{ mr: 'auto', ml: 1 }}
-                control={<Switch checked={encryptNew} onChange={(e) => setEncryptNew(e.target.checked)} />}
-                label={t('cases.keys.encryptNew')}
-              />
+              <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', ml: 1 }}>{t('cases.keys.alwaysEncrypted')}</Typography>
               <Button onClick={closeCreateCase} disabled={creatingCase}>{t('common.cancel')}</Button>
               <Button
                 variant="contained"
