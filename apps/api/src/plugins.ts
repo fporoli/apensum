@@ -3,6 +3,7 @@ import { join, resolve } from 'node:path';
 import { Logger, type Provider, type Type } from '@nestjs/common';
 import { registerModule, type ModuleDefinition } from '@worktime3/shared/modules';
 import { registerPermissionObjects, type PermissionObject } from '@worktime3/shared/permissions';
+import { pluginApiMismatch } from '@worktime3/shared/pluginApi';
 import type { ApiPlugin } from './plugin';
 import { registerApiReport } from './report-sources';
 import { registerTeamView } from './team-overview.controller';
@@ -18,6 +19,8 @@ import { registerBackup, registerPayrollItem } from './import-export.service';
 
 export interface PluginManifest {
   id: string;
+  /** The plugin API version it was built for (packages/shared/src/pluginApi.ts); must equal the core's. */
+  apensumApi: number;
   /** Optional feature module the organization switches on or off (packages/shared/src/modules.ts). */
   module?: ModuleDefinition;
   /**
@@ -67,6 +70,8 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
   const logger = new Logger('Plugins');
   const loaded: LoadedPlugins = { ids: [], plugins: [], controllers: [], providers: [] };
   for (const { dir: pluginDir, manifest } of readPluginManifests(dir)) {
+    const mismatch = pluginApiMismatch(manifest.id, manifest.apensumApi);
+    if (mismatch) throw new Error(mismatch);
     if (manifest.permissions) registerPermissionObjects(manifest.permissions);
     if (manifest.module) registerModule(manifest.module);
     if (manifest.api) {

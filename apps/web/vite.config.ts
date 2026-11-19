@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig, defaultClientConditions, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { pluginApiMismatch } from '../../packages/shared/src/pluginApi.ts';
 
 /**
  * `virtual:apensum-plugins`: imports the web entry (package.json `apensum.web`) of every plugin
@@ -27,6 +28,10 @@ function apensumPlugins(): Plugin {
     load(source) {
       if (source !== resolved) return undefined;
       const found = manifests();
+      for (const p of found) {
+        const mismatch = pluginApiMismatch(p.manifest.id ?? p.name, p.manifest.apensumApi);
+        if (mismatch) throw new Error(mismatch);
+      }
       const files = found.filter((p) => p.manifest.web).map((p) => join(dir, p.name, p.manifest.web));
       const permissions = found.flatMap((p) => p.manifest.permissions ?? []);
       return [

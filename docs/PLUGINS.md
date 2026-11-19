@@ -25,6 +25,7 @@ plugins/<id>/
 ```json
 "apensum": {
   "id": "expenses",
+  "apensumApi": 1,
   "permissions": [
     { "id": "nav.expenses", "kind": "nav", "scopes": ["own", "team", "reports", "all"], "caption": "nav.expenses" },
     ...
@@ -37,6 +38,10 @@ plugins/<id>/
 ```
 
 - `id` must equal the folder name.
+- `apensumApi` is the plugin API version the plugin was built for (`packages/shared/src/pluginApi.ts`,
+  `PLUGIN_API_VERSION`). The API's start, the web build and `scripts/plugins.mjs` refuse a plugin with
+  none or another one. The core bumps it when a change can break a plugin built against the previous
+  version (something removed or renamed, a type or behavior changed), not for additions.
 - `module` (optional) appears under Organization settings -> Modules. Switching it off removes the
   listed permission objects for everyone in the organization, so the plugin's pages disappear and its
   endpoints refuse (`can()` fails). Its texts are `modules.<id>` and `modules.<id>.description`.

@@ -17,6 +17,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { pluginApiMismatch } from '../packages/shared/src/pluginApi.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dir = process.env.APENSUM_PLUGINS_DIR?.trim() || join(root, 'plugins');
@@ -39,6 +40,13 @@ function run(cmd, args, cwd) {
 }
 
 const list = plugins();
+for (const p of list) {
+  const mismatch = pluginApiMismatch(p.manifest.id, p.manifest.apensumApi);
+  if (mismatch && command !== 'list') {
+    console.error(mismatch);
+    process.exit(1);
+  }
+}
 if (command === 'list') {
   for (const p of list) console.log(`${p.manifest.id}\t${p.dir}`);
 } else if (command === 'build') {

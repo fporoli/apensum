@@ -32,6 +32,11 @@
       "types": "./dist/branding.d.ts",
       "default": "./dist/branding.js"
     },
+    "./pluginApi": {
+      "source": "./src/pluginApi.ts",
+      "types": "./dist/pluginApi.d.ts",
+      "default": "./dist/pluginApi.js"
+    },
     "./modules": {
       "source": "./src/modules.ts",
       "types": "./dist/modules.d.ts",
