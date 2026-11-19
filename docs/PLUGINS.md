@@ -14,7 +14,7 @@ plugins/<id>/
   tsconfig.api.json   the build: api/ -> dist/api (against the core's built declarations)
   shared/             optional: code both parts import (e.g. a report's definition and texts)
   changelog/          Liquibase: db.changelog-master.xml + NNN-name.sql, run after the core's (below)
-  api/index.ts        export default defineApiPlugin({ id, controllers, providers })
+  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, backup, workflows, documents })
   web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
   web/tsconfig.json   editor only: extends apps/web/tsconfig.json
   web/texts.ts        the plugin's UI texts, en/de/fr/it with the same keys
@@ -103,8 +103,8 @@ defineWebPlugin({ ..., reports: [MY_REPORT] });
 
 A plugin's files that belong to a person (expenses: receipts) appear on that person's Documents page:
 
-- API, in a provider's `onModuleInit`: `documents.registerPersonalDocuments('<category>', (db, orgId, userId) => ...)`
-  returns that person's own documents (`PersonalDocument`: document id, source id, file, date, context).
+- API: `documents: { '<category>': (db, orgId, userId) => ... }` in `defineApiPlugin` returns that
+  person's own documents (`PersonalDocument`: document id, source id, file, date, context).
   The page lists them with the core's, and a download is allowed only for what the list holds.
 - Web: `documentCategories: [{ category, color, after, staticData?, describe }]`; `describe` turns the
   context into the line under the file name; its name is the text `documents.category.<category>`.
@@ -137,18 +137,28 @@ tables, exchange rates included.
 ## Approvals (Workflow page)
 
 An approval a plugin owns is a workflow like the core's (`WorkflowsService`: `ensureDefinition`, `start`,
-`findPending`, `resolve`). The plugin registers, in its controller's `onModuleInit`:
+`findPending`, `resolve`; the plugin's controller starts it). The rest is declared in `defineApiPlugin`:
 
-- `registerAction('<kind>.approve' | '<kind>.reject', handler)`: what a decision does to its record;
-- `registerSourceOrgResolver('<table>', ...)`: the record's organization (admin override, audit,
-  notifications, rerouting);
-- `registerSourceRecords('<table>', '<field>', loader)`: what `GET workflows/assigned-to-me` puts under
-  `<field>` of each item (`id`, `user_id`, `user_display_name`, `user_email`, ...);
-- `registerManagerRoutedWorkflow('<definition name>')`: the request goes to the person's manager and
-  follows them when the manager changes.
+```ts
+workflows: {
+  // what a decision does to the record; `core` = { versions, audit }
+  actions: { 'demo.approve': async (db, ctx, core) => ..., 'demo.reject': ... },
+  sources: {
+    demo_things: {
+      organization: async (db, id) => orgId,     // admin override, audit, notifications, rerouting
+      records: { field: 'demo_thing', load: async (db, ids) => [...] },  // GET workflows/assigned-to-me
+    },
+  },
+  managerRouted: ['approve demo thing'],        // goes to the person's manager, follows manager changes
+}
+```
 
-Its web part's `workflowKinds` entry (same `recordField`) gives the item its label, title and Inspect
-dialog. `plugins/expenses/api/expense-reports.controller.ts` and `web/ExpenseReportReview.tsx` do all of it.
+Its web part's `workflowKinds` entry (same `recordField` as `records.field`) gives the item its label,
+title and Inspect dialog. `plugins/expenses/api/workflow.ts` and `web/ExpenseReportReview.tsx` do it.
+
+Everything a plugin adds to the API is declared in `defineApiPlugin`, so its `api/index.ts` shows all of
+it; the core registers it at startup (`plugins.ts`, `plugin-registrar.ts`). A plugin calls no
+`register*` method itself.
 
 ## Database changes
 

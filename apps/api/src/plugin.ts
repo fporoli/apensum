@@ -12,6 +12,33 @@ import type { Provider, Type } from '@nestjs/common';
 import type { ApiReport } from './report-sources';
 import type { ApiTeamView } from './team-overview.controller';
 import type { ApiBackup, ApiPayrollItem } from './import-export.service';
+import type { Db } from './db.service';
+import type { AuditService } from './audit.service';
+import type { VersionsService } from './versions.service';
+import type { PersonalDocumentSource } from './documents.service';
+import type { SourceOrgResolver, SourceRecordLoader, WorkflowActionContext } from './workflows.service';
+
+/** Core services a plugin's declared functions get as their last argument. */
+export interface PluginCore {
+  versions: VersionsService;
+  audit: AuditService;
+}
+
+/**
+ * A plugin's approvals (workflows run by WorkflowsService, shown on the Workflow page with the web
+ * part's `workflowKinds`).
+ */
+export interface ApiPluginWorkflows {
+  /** What a step's `onApprove`/`onReject` action does to the record, by action name (e.g. 'expense.approve'). */
+  actions?: Record<string, (db: Db, ctx: WorkflowActionContext, core: PluginCore) => Promise<void>>;
+  /**
+   * Per source table of the plugin's workflows: the record's organization (admin override, audit,
+   * notifications, rerouting) and, optionally, what the Workflow page shows of it under `field`.
+   */
+  sources?: Record<string, { organization: SourceOrgResolver; records?: { field: string; load: SourceRecordLoader } }>;
+  /** Workflow definition names that go to the person's manager and follow them when the manager changes. */
+  managerRouted?: string[];
+}
 
 export interface ApiPlugin {
   /** The plugin's id, as in its package.json `apensum.id`. */
@@ -34,6 +61,10 @@ export interface ApiPlugin {
   payroll?: ApiPayrollItem[];
   /** The plugin's tables in an organization's backup and restore (Import/Export). */
   backup?: ApiBackup;
+  /** Approvals: workflow actions, source tables and manager routing. */
+  workflows?: ApiPluginWorkflows;
+  /** A person's own documents on the Documents page, by category (e.g. `expense` receipts). */
+  documents?: Record<string, PersonalDocumentSource>;
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
@@ -65,7 +96,7 @@ export {
 // Documents, form templates, approval workflows
 export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type PersonalDocumentSource } from './documents.service';
 export { FieldsService } from './fields.service';
-export { WorkflowsService, type SourceRecordLoader, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
+export { WorkflowsService, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 
 // Paid AI calls (Azure, Switzerland): always through AiBudgetService
 export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';

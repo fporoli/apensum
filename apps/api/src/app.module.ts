@@ -62,6 +62,7 @@ import { CasesService } from './cases.service';
 import { CaseAiService } from './case-ai.service';
 import { AiBudgetService } from './ai-budget.service';
 import { loadApiPlugins } from './plugins';
+import { API_PLUGINS, PluginRegistrar } from './plugin-registrar';
 
 // Plugins (plugins/<id>, docs/PLUGINS.md): their controllers and providers join the core's.
 const plugins = loadApiPlugins();
@@ -132,6 +133,8 @@ const plugins = loadApiPlugins();
     NotificationsGateway,
     BasicDataService,
     FieldsService,
+    { provide: API_PLUGINS, useValue: plugins.plugins },
+    PluginRegistrar,
     ...plugins.providers,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],

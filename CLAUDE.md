@@ -313,7 +313,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   paperclip, drag-and-drop and pasted screenshots (`attachments.tsx`).
 - Documents (`nav.documents`, `documents.controller.ts`, `Documents.tsx`, Personal navbar group): the
   caller's own documents only, as one list built per call: timesheet PDFs, monthly project reports, absence
-  evidence, attachments of requests they sent, and plugin documents (`DocumentsService.registerPersonalDocuments`,
+  evidence, attachments of requests they sent, and plugin documents (`ApiPlugin.documents`,
   web `documentCategories`: expense receipts); downloads are checked against that same list.
   `timesheet-documents.service.ts` (pdfkit, labels in the person's `users.locale`) issues a working-time
   timesheet PDF when that month is approved, and one project report per person and month (every project
@@ -348,8 +348,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   (`scripts/plugins.mjs build`, after the API's declarations). Web: Vite's `virtual:apensum-plugins`
   (`vite.config.ts`) bundles them; `plugins.ts` merges their texts into the dictionaries and App.tsx /
   main.tsx / OrganizationSettings.tsx / Approvals.tsx show their pages, nav groups, settings sections, public routes and
-  workflow kinds (label, source, title, Inspect dialog of an approval kind; the API side registers its actions, org
-  resolver, record loader `registerSourceRecords` and `registerManagerRoutedWorkflow` with `WorkflowsService`).
+  workflow kinds (label, source, title, Inspect dialog of an approval kind; the API side declares `ApiPlugin.workflows`:
+  actions, source tables with org resolver and record loader, manager routing). Everything a plugin adds to the API is
+  declared in `defineApiPlugin`; `plugins.ts` and `plugin-registrar.ts` register it, plugins call no `register*` themselves.
   Tests: `plugins/<id>/test` (`*.test.ts` via tsx, `*.test.mjs` via node), run by `npm test` (`scripts/plugins.mjs test`).
   The core must work without plugins: CI job `core-only` (empty `APENSUM_PLUGINS_DIR`, `scripts/smoke-no-plugins.mjs`);
   grants on objects outside the catalogue (a missing plugin's) count for nothing (`mergePermissionRows`).

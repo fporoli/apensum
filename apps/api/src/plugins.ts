@@ -57,13 +57,15 @@ export function readPluginManifests(dir: string): { dir: string; manifest: Plugi
 
 export interface LoadedPlugins {
   ids: string[];
+  /** The plugins' API parts, as they export them (PluginRegistrar registers what they declare). */
+  plugins: ApiPlugin[];
   controllers: Type<unknown>[];
   providers: Provider[];
 }
 
 export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
   const logger = new Logger('Plugins');
-  const loaded: LoadedPlugins = { ids: [], controllers: [], providers: [] };
+  const loaded: LoadedPlugins = { ids: [], plugins: [], controllers: [], providers: [] };
   for (const { dir: pluginDir, manifest } of readPluginManifests(dir)) {
     if (manifest.permissions) registerPermissionObjects(manifest.permissions);
     if (manifest.module) registerModule(manifest.module);
@@ -74,6 +76,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       const mod = require(entry) as { default?: ApiPlugin };
       const plugin = mod.default;
       if (!plugin || plugin.id !== manifest.id) throw new Error(`Plugin ${manifest.id}: ${manifest.api} must export default defineApiPlugin({ id: '${manifest.id}', ... })`);
+      loaded.plugins.push(plugin);
       loaded.controllers.push(...(plugin.controllers ?? []));
       loaded.providers.push(...(plugin.providers ?? []));
       for (const report of plugin.reports ?? []) registerApiReport(report);
