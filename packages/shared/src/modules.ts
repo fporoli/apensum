@@ -24,6 +24,8 @@ export const MODULES: ModuleDefinition[] = [
   { id: 'requests', caption: 'modules.requests', defaultEnabled: true, objects: ['nav.requests'] },
   // Reports: project hours, attendance and overtime, absences, with filters, chart and export.
   { id: 'reports', caption: 'modules.reports', defaultEnabled: true, objects: ['nav.reports'] },
+  // News: posts by admin or HR to the organization or some departments, with optional read confirmation.
+  { id: 'news', caption: 'modules.news', defaultEnabled: true, objects: ['nav.news'] },
 ];
 
 /**

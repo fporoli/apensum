@@ -330,6 +330,10 @@ export default function App() {
       navigate('documents');
       return;
     }
+    if (n.source_table === 'news_posts') {
+      window.location.hash = `#/news?id=${n.source_table_uuid}`;
+      return;
+    }
     if (n.source_table === 'requests') {
       setRequestFocus(n.source_table_uuid);
       navigate('requests');

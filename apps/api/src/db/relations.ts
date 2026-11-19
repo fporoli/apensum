@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { organizations, ai_usage, users, basicdata_versions, absences, documents, field_config, work_schedules, org_holidays, balance_adjustments, vacation_entitlements, project_time_periods, projects, work_time_months, timesheet_periods, departments, employee_assignments, user_identities, organization_domains, roles, teams, organization_memberships, organization_invitations, audit_logs, subprojects, project_times, static_data, versions, workflow_definitions, workflows, notifications, work_times, work_time_balance_entries, requests, request_messages, timesheet_documents, report_schedules, saved_reports, personnel_documents, report_runs, role_permissions, permissions, request_message_documents, project_teams, team_members, membership_roles, work_time_balances } from "./schema";
+import { organizations, ai_usage, users, news_posts, basicdata_versions, absences, documents, field_config, work_schedules, org_holidays, balance_adjustments, vacation_entitlements, project_time_periods, projects, work_time_months, timesheet_periods, departments, employee_assignments, user_identities, organization_domains, roles, teams, organization_memberships, organization_invitations, audit_logs, subprojects, project_times, static_data, versions, workflow_definitions, workflows, notifications, work_times, work_time_balance_entries, requests, request_messages, timesheet_documents, report_schedules, saved_reports, personnel_documents, report_runs, news_post_departments, news_post_documents, role_permissions, permissions, request_message_documents, project_teams, team_members, news_post_reads, membership_roles, work_time_balances } from "./schema";
 
 export const ai_usageRelations = relations(ai_usage, ({one}) => ({
 	organization: one(organizations, {
@@ -14,6 +14,7 @@ export const ai_usageRelations = relations(ai_usage, ({one}) => ({
 
 export const organizationsRelations = relations(organizations, ({one, many}) => ({
 	ai_usages: many(ai_usage),
+	news_posts: many(news_posts),
 	absences: many(absences),
 	field_configs: many(field_config),
 	work_schedules: many(work_schedules),
@@ -63,6 +64,7 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 
 export const usersRelations = relations(users, ({many}) => ({
 	ai_usages: many(ai_usage),
+	news_posts: many(news_posts),
 	basicdata_versions_user_id: many(basicdata_versions, {
 		relationName: "basicdata_versions_user_id_users_id"
 	}),
@@ -148,8 +150,23 @@ export const usersRelations = relations(users, ({many}) => ({
 	}),
 	saved_reports: many(saved_reports),
 	report_runs: many(report_runs),
+	news_post_reads: many(news_post_reads),
 	membership_roles: many(membership_roles),
 	work_time_balances: many(work_time_balances),
+}));
+
+export const news_postsRelations = relations(news_posts, ({one, many}) => ({
+	organization: one(organizations, {
+		fields: [news_posts.organization_id],
+		references: [organizations.id]
+	}),
+	user: one(users, {
+		fields: [news_posts.author_user_id],
+		references: [users.id]
+	}),
+	news_post_departments: many(news_post_departments),
+	news_post_documents: many(news_post_documents),
+	news_post_reads: many(news_post_reads),
 }));
 
 export const basicdata_versionsRelations = relations(basicdata_versions, ({one}) => ({
@@ -199,6 +216,7 @@ export const documentsRelations = relations(documents, ({one, many}) => ({
 	timesheet_documents: many(timesheet_documents),
 	personnel_documents: many(personnel_documents),
 	report_runs: many(report_runs),
+	news_post_documents: many(news_post_documents),
 	request_message_documents: many(request_message_documents),
 }));
 
@@ -342,6 +360,7 @@ export const departmentsRelations = relations(departments, ({one, many}) => ({
 	}),
 	employee_assignments: many(employee_assignments),
 	requests: many(requests),
+	news_post_departments: many(news_post_departments),
 }));
 
 export const employee_assignmentsRelations = relations(employee_assignments, ({one}) => ({
@@ -678,6 +697,28 @@ export const report_runsRelations = relations(report_runs, ({one}) => ({
 	}),
 }));
 
+export const news_post_departmentsRelations = relations(news_post_departments, ({one}) => ({
+	news_post: one(news_posts, {
+		fields: [news_post_departments.post_id],
+		references: [news_posts.id]
+	}),
+	department: one(departments, {
+		fields: [news_post_departments.department_id],
+		references: [departments.id]
+	}),
+}));
+
+export const news_post_documentsRelations = relations(news_post_documents, ({one}) => ({
+	news_post: one(news_posts, {
+		fields: [news_post_documents.post_id],
+		references: [news_posts.id]
+	}),
+	document: one(documents, {
+		fields: [news_post_documents.document_id],
+		references: [documents.id]
+	}),
+}));
+
 export const role_permissionsRelations = relations(role_permissions, ({one}) => ({
 	role: one(roles, {
 		fields: [role_permissions.role_id],
@@ -727,6 +768,17 @@ export const team_membersRelations = relations(team_members, ({one}) => ({
 	role: one(roles, {
 		fields: [team_members.team_role_id],
 		references: [roles.id]
+	}),
+}));
+
+export const news_post_readsRelations = relations(news_post_reads, ({one}) => ({
+	news_post: one(news_posts, {
+		fields: [news_post_reads.post_id],
+		references: [news_posts.id]
+	}),
+	user: one(users, {
+		fields: [news_post_reads.user_id],
+		references: [users.id]
 	}),
 }));
 

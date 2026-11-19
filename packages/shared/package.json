@@ -86,6 +86,16 @@
       "source": "./src/expenses.ts",
       "types": "./dist/expenses.d.ts",
       "default": "./dist/expenses.js"
+    },
+    "./markdown": {
+      "source": "./src/markdown.ts",
+      "types": "./dist/markdown.d.ts",
+      "default": "./dist/markdown.js"
+    },
+    "./news": {
+      "source": "./src/news.ts",
+      "types": "./dist/news.d.ts",
+      "default": "./dist/news.js"
     }
   }
 }

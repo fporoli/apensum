@@ -59,6 +59,8 @@ export const NAV_OBJECTS: PermissionObject[] = [
   // Requests module (modules.ts): `own` = send and follow one's own requests, `all` = handle every
   // request of the organization. Handling as manager or department member needs no extra grant.
   { id: 'nav.requests', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.requests' },
+  // News module (modules.ts, news.ts): `see:all` reads the organization's news, `edit:all` writes and publishes.
+  { id: 'nav.news', kind: 'nav', scopes: ['all'], caption: 'nav.news' },
   { id: 'nav.documents', kind: 'nav', scopes: ['own'], caption: 'nav.documents' },
   { id: 'nav.directory', kind: 'nav', scopes: ['all'], caption: 'nav.directory' },
   // Reports module (modules.ts, reports.ts): the Reports page. Whose rows a report shows is not this

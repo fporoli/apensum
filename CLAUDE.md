@@ -324,6 +324,13 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `request_message_documents`), uploaded multipart in `files` on create/reply, downloaded via
   `requests/:id/attachments/:documentId` with the request's access check; the web composer takes the
   paperclip, drag-and-drop and pasted screenshots (`attachments.tsx`).
+- News (module `news`, `nav.news`, 080/081; `news.controller.ts`, `News.tsx`, `NewsHomeCard.tsx` on Home,
+  `packages/shared/src/news.ts`): admin and HR (`nav.news:edit:all`) write posts (title + Markdown per language, pictures
+  as `![alt](doc:<document id>)` uploaded to the post, no SVG), publish them to everyone or some departments (audience
+  worked out per call like request handlers), optionally by e-mail (a link, never the text's pictures), optionally asking
+  readers to confirm (`require_ack`; editors see who read/confirmed). Everyone but guests reads (`see:all`). Markdown is
+  `packages/shared/src/markdown.ts` (escapes everything; also used by the website's news posts). Planned: product news
+  from a superdeveloper to every organization's admins, and public posts for the website and newsletter.
 - Documents (`nav.documents`, `documents.controller.ts`, `Documents.tsx`, Personal navbar group): the
   caller's own documents only, as one list built per call: timesheet PDFs, monthly project reports, absence
   evidence, attachments of requests they sent, and plugin documents (`ApiPlugin.documents`,

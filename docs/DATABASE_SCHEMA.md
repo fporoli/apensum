@@ -749,6 +749,56 @@ erDiagram
     DOCUMENTS { uuid id PK }
 ```
 
+## News (4 tables)
+
+The "news" module (080): posts an organization's admin or HR (`nav.news:edit`)
+publishes to everyone, or to the departments in `news_post_departments` (whoever's
+assignment in force is in one of them, and its leaders; worked out per call).
+`texts` holds a title and a Markdown text per language. `published_at` NULL is a
+draft. Publishing notifies the audience (`notifications.source_table = 'news_posts'`)
+and optionally mails them a link. `news_post_reads` records when each person
+opened a post and, for a post with `require_ack`, confirmed reading it. Pictures
+are documents linked by `news_post_documents` and shown as `![alt](doc:<id>)`.
+
+```mermaid
+erDiagram
+    ORGANIZATIONS ||--o{ NEWS_POSTS : "scopes"
+    USERS ||--o{ NEWS_POSTS : "author_user_id"
+    NEWS_POSTS ||--o{ NEWS_POST_DEPARTMENTS : "audience"
+    DEPARTMENTS ||--o{ NEWS_POST_DEPARTMENTS : "department_id"
+    NEWS_POSTS ||--o{ NEWS_POST_READS : "read by"
+    USERS ||--o{ NEWS_POST_READS : "user_id"
+    NEWS_POSTS ||--o{ NEWS_POST_DOCUMENTS : "pictures"
+    DOCUMENTS ||--o{ NEWS_POST_DOCUMENTS : "document_id"
+
+    NEWS_POSTS {
+        uuid id PK
+        uuid organization_id FK
+        uuid author_user_id FK "nullable"
+        jsonb texts "{ lang: { title, body } }, at least one language"
+        boolean require_ack "readers confirm they read it"
+        timestamptz published_at "nullable — NULL = draft"
+    }
+    NEWS_POST_DEPARTMENTS {
+        uuid post_id PK, FK
+        uuid department_id PK, FK
+    }
+    NEWS_POST_READS {
+        uuid post_id PK, FK
+        uuid user_id PK, FK
+        timestamptz read_at
+        timestamptz acknowledged_at "nullable"
+    }
+    NEWS_POST_DOCUMENTS {
+        uuid post_id PK, FK
+        uuid document_id PK, FK
+    }
+    ORGANIZATIONS { uuid id PK }
+    USERS { uuid id PK }
+    DEPARTMENTS { uuid id PK }
+    DOCUMENTS { uuid id PK }
+```
+
 ## Versioning (1 table)
 
 Generic per-record version history: one row per tracked

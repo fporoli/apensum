@@ -24,6 +24,7 @@ import { formatDurationMinutes, formatLocaleDateTime, formatSignedMinutes, swiss
 import { formatDays } from './BalancesPanel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import SetupChecklist from './SetupChecklist';
+import NewsHomeCard from './NewsHomeCard';
 import { ReviewQueue } from './BasicDataPanel';
 import {
   AccountBalanceWalletIcon,
@@ -252,6 +253,7 @@ export default function Home({
       />
 
       <SetupChecklist orgId={orgId} authHeaders={authHeaders} />
+      <NewsHomeCard orgId={orgId} authHeaders={authHeaders} />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {loading && <LinearProgress />}

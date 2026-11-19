@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, check, uuid, text, numeric, integer, timestamp, uniqueIndex, unique, jsonb, date, varchar, boolean, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, check, uuid, text, numeric, integer, timestamp, uniqueIndex, unique, jsonb, boolean, date, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -71,6 +71,28 @@ export const newsletter_subscribers = pgTable("newsletter_subscribers", {
 	unique("newsletter_subscribers_email_key").on(table.email),
 	check("chk_newsletter_lang", sql`lang = ANY (ARRAY['de'::text, 'fr'::text, 'it'::text, 'en'::text])`),
 	check("chk_newsletter_status", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'unsubscribed'::text])`),
+]);
+
+export const news_posts = pgTable("news_posts", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	author_user_id: uuid(),
+	texts: jsonb().notNull(),
+	require_ack: boolean().default(false).notNull(),
+	published_at: timestamp({ withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("idx_news_posts_org").using("btree", table.organization_id.asc().nullsLast(), table.published_at.desc().nullsFirst()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "news_posts_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.author_user_id],
+			foreignColumns: [users.id],
+			name: "news_posts_author_user_id_fkey"
+		}).onDelete("set null"),
+	check("chk_news_posts_texts", sql`jsonb_typeof(texts) = 'object'::text`),
 ]);
 
 export const basicdata_versions = pgTable("basicdata_versions", {
@@ -1183,6 +1205,41 @@ export const report_runs = pgTable("report_runs", {
 	unique("report_runs_document_id_key").on(table.document_id),
 ]);
 
+export const news_post_departments = pgTable("news_post_departments", {
+	post_id: uuid().notNull(),
+	department_id: uuid().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.post_id],
+			foreignColumns: [news_posts.id],
+			name: "news_post_departments_post_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.department_id],
+			foreignColumns: [departments.id],
+			name: "news_post_departments_department_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.post_id, table.department_id], name: "news_post_departments_pkey"}),
+]);
+
+export const news_post_documents = pgTable("news_post_documents", {
+	post_id: uuid().notNull(),
+	document_id: uuid().notNull(),
+}, (table) => [
+	index("idx_news_post_documents_document").using("btree", table.document_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.post_id],
+			foreignColumns: [news_posts.id],
+			name: "news_post_documents_post_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.document_id],
+			foreignColumns: [documents.id],
+			name: "news_post_documents_document_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.post_id, table.document_id], name: "news_post_documents_pkey"}),
+]);
+
 export const role_permissions = pgTable("role_permissions", {
 	role_id: uuid().notNull(),
 	permission_id: varchar({ length: 64 }).notNull(),
@@ -1257,6 +1314,26 @@ export const team_members = pgTable("team_members", {
 			name: "team_members_team_role_id_fkey"
 		}).onDelete("set null"),
 	primaryKey({ columns: [table.team_id, table.membership_id], name: "team_members_pkey"}),
+]);
+
+export const news_post_reads = pgTable("news_post_reads", {
+	post_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	read_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	acknowledged_at: timestamp({ withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("idx_news_post_reads_user").using("btree", table.user_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.post_id],
+			foreignColumns: [news_posts.id],
+			name: "news_post_reads_post_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "news_post_reads_user_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.post_id, table.user_id], name: "news_post_reads_pkey"}),
 ]);
 
 export const membership_roles = pgTable("membership_roles", {

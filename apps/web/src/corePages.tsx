@@ -9,6 +9,7 @@ import {
   BarChartIcon,
   BeachAccessIcon,
   CalendarMonthIcon,
+  CampaignIcon,
   CheckCircleIcon,
   ContactsIcon,
   DashboardIcon,
@@ -49,6 +50,7 @@ const Users = lazy(() => import('./Users'));
 const Requests = lazy(() => import('./Requests'));
 const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
+const News = lazy(() => import('./News'));
 const ImportExport = lazy(() => import('./ImportExport'));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -199,6 +201,21 @@ export const CORE_PAGES: AppPage[] = [
   },
 
   // organization
+  {
+    section: 'news',
+    hash: '#/news',
+    object: 'nav.news',
+    nav: {
+      group: 'organization',
+      label: 'nav.news',
+      icon: <CampaignIcon fontSize="small" />,
+      badge: async ({ orgId, authHeaders }) => {
+        const d = (await fetchJson(`${API}/organizations/${orgId}/news/summary`, authHeaders)) as { unread?: unknown } | null;
+        return typeof d?.unread === 'number' ? d.unread : 0;
+      },
+    },
+    render: (c) => <News orgId={c.orgId} userId={c.userId} authHeaders={c.authHeaders} refreshKey={c.liveNotification} onChanged={c.onBadgesChanged} />,
+  },
   {
     section: 'directory',
     hash: '#/directory',
