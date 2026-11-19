@@ -8,5 +8,5 @@
     "customConditions": ["source"],
     "noEmit": true
   },
-  "include": ["api/**/*.ts", "test/**/*.ts"]
+  "include": ["api/**/*.ts", "shared/**/*.ts", "test/**/*.ts"]
 }

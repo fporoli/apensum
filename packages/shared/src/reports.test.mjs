@@ -1,11 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { REPORTS, groupReport, monthEnd, monthsBetween, parseGroupBy, reportById, sanitizeSavedSettings } from './reports.ts';
+import { REPORTS, groupReport, registerReport, monthEnd, monthsBetween, parseGroupBy, reportById, sanitizeSavedSettings } from './reports.ts';
 import { PERMISSION_OBJECTS } from './permissions.ts';
 
 test('every report reads through a page that exists, and groups only by its own dimensions', () => {
-  // The expenses report reads the expenses plugin's page (plugins/expenses, its manifest's permissions).
-  const nav = new Set([...PERMISSION_OBJECTS.map((o) => o.id), 'nav.expenses']);
+  const nav = new Set(PERMISSION_OBJECTS.map((o) => o.id));
   for (const r of REPORTS) {
     assert.ok(nav.has(r.object), r.id);
     for (const d of r.defaultGroupBy) assert.ok(r.dimensions.includes(d), `${r.id}: ${d}`);
@@ -54,8 +53,22 @@ test("a balance is each person's last month, summed over people, never added up 
   assert.equal(byPerson.totals.worked, 340);
 });
 
-test('expenses always keep the currency and never add up amounts in different currencies', () => {
-  const def = reportById('expenses');
+test('a registered report always keeps the currency and never adds up amounts in different currencies', () => {
+  const def = {
+    id: 'testExpenses',
+    object: 'nav.time',
+    dimensions: ['person', 'category', 'currency'],
+    defaultGroupBy: ['category'],
+    alwaysGroupBy: ['currency'],
+    measures: [{ key: 'amount', kind: 'money', aggregate: 'sum' }, { key: 'count', kind: 'count', aggregate: 'sum' }],
+    chart: ['amount'],
+  };
+  registerReport(def);
+  assert.equal(reportById('testExpenses'), def);
+  assert.equal(REPORTS.at(-1), def, 'after the core reports');
+  assert.throws(() => registerReport({ ...def, id: 'bad id' }), /Invalid report id/);
+  assert.throws(() => registerReport({ ...def, id: 'other', defaultGroupBy: ['salary'] }), /not one of its dimensions/);
+  assert.throws(() => registerReport({ ...def, id: 'other', chart: ['salary'] }), /unknown/);
   assert.deepEqual(parseGroupBy(def, 'person'), ['person', 'currency']);
   const raw = [
     { person: 'u1', personName: 'Anna', category: 'travel', currency: 'CHF', amount: 10, count: 1 },

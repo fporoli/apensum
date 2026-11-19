@@ -1,6 +1,7 @@
 import { defineApiPlugin } from '@worktime3/api/plugin';
 import { ExchangeRatesController } from './exchange-rates.controller';
 import { ExpenseReceiptService } from './expense-receipt.service';
+import { EXPENSES_API_REPORT } from './expense-report';
 import { ExpenseReportsController } from './expense-reports.controller';
 import { ExpensesController } from './expenses.controller';
 import { ReceiptHandoffController } from './receipt-handoff.controller';
@@ -10,4 +11,5 @@ export default defineApiPlugin({
   id: 'expenses',
   controllers: [ExpensesController, ExpenseReportsController, ExchangeRatesController, ReceiptHandoffController],
   providers: [ExpenseReceiptService, ReceiptHandoffService],
+  reports: [EXPENSES_API_REPORT],
 });

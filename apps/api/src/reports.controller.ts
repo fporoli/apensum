@@ -58,7 +58,7 @@ export class ReportsController {
       .from(departments)
       .where(and(eq(departments.organization_id, orgId), eq(departments.is_active, true)))
       .orderBy(asc(departments.sort_order), asc(departments.name));
-    const projs = scope.def.id === 'projectHours' || scope.def.id === 'expenses'
+    const projs = scope.def.projectFilter
       ? await db.select({ id: projects.id, name: projects.name }).from(projects).where(eq(projects.organization_id, orgId)).orderBy(asc(projects.name))
       : [];
     return { ok: true, people: scope.people, departments: depts, projects: projs };

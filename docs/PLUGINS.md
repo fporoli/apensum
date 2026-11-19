@@ -12,6 +12,7 @@ plugins/<id>/
   package.json        name, license, and the manifest under "apensum" (below)
   tsconfig.json       editor + tests for api/ and test/ (core sources via the `source` condition)
   tsconfig.api.json   the build: api/ -> dist/api (against the core's built declarations)
+  shared/             optional: code both parts import (e.g. a report's definition and texts)
   changelog/          Liquibase: db.changelog-master.xml + NNN-name.sql, run after the core's (below)
   api/index.ts        export default defineApiPlugin({ id, controllers, providers })
   web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
@@ -70,6 +71,33 @@ hashes and who may open a page are built from the core's and the plugins' pages 
 ```
 
 Core groups: `myWork`, `projectTracking`, `cases`, `organization`, `administration`, `personal`.
+
+## Reports
+
+A plugin adds reports to the Reports page (and so to saved and scheduled reports). Its definition and
+texts live in one file both parts import (`plugins/expenses/shared/report.ts`); the API part adds the
+rows (`plugins/expenses/api/expense-report.ts`):
+
+```ts
+// shared/report.ts
+export const MY_REPORT = { definition: { id: 'myReport', object: 'nav.myPage', dimensions: [...], measures: [...],
+  labels: { kind: { staticData: { entity: 'my', enum: 'my_kind' } }, status: { textPrefix: 'reports.myStatus.' } },
+  projectFilter: true, ... }, texts: { en: { 'reports.report.myReport': '...', ... }, de: ..., fr: ..., it: ... } };
+// api/index.ts
+defineApiPlugin({ ..., reports: [{ ...MY_REPORT, rows: async ({ db, orgId, people, first, last, projectId }) => [...] }] });
+// web/index.tsx
+defineWebPlugin({ ..., reports: [MY_REPORT] });
+```
+
+- **Who is in it:** the core works out the people first (`listableUserIds` of the definition's `object`,
+  narrowed by the filters) and passes them in `people`; rows of anyone else are dropped.
+- **Rows:** one per finest combination of the dimensions, `person` = the person's id, `personName` from
+  `people`; the core groups, totals and labels them (`packages/shared/src/reports.ts`, `reportTable.ts`).
+- **Texts:** `reports.report.<id>`, `reports.report.<id>.description`, `reports.note.<id>`, and
+  `reports.dim.<dim>` / `reports.measure.<key>` where the core has none yet. They are added to the web
+  dictionaries and, for scheduled reports, to the API's texts (`registerAvailablePluginTexts`); a key the
+  core already has with another text is refused.
+- A saved report of a plugin that is no longer installed fails with `unknown-report`.
 
 ## Database changes
 
@@ -143,5 +171,5 @@ npm test                                    # core tests, then each plugin's tes
     source, title and Inspect dialog (expenses: the expense report review).
   - The API side is still in the core: `workflows.service.ts` and `GET workflows/assigned-to-me` join the
     expense report.
-  - Reports, Documents, Team overview and Import/Export still show expense data themselves (the tables
-    are core). Each needs its own extension point.
+  - Documents, Team overview and Import/Export still show expense data themselves (the tables are
+    core). Each needs its own extension point.

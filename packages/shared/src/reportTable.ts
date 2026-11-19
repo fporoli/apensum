@@ -43,12 +43,20 @@ export interface StaticLabels {
 }
 
 export interface LabelSources {
-  /** Absence types (static data `absence_type`). */
-  absenceTypes: StaticLabels;
-  /** Expense categories (static data `expense_category`). */
-  categories: StaticLabels;
+  /**
+   * Static data labels per dimension: for each `staticData` entry of the report's `labels`
+   * (staticDataLabelsOf), the organization's row, else the global one.
+   */
+  static: Record<string, StaticLabels>;
   /** Last resort for a value without a label (the web app's built-in absence type names). */
   fallback?: (dim: string, value: string) => string | undefined;
+}
+
+/** The static data a report's labels need: dimension -> static data entity and enum. */
+export function staticDataLabelsOf(def: { labels?: ReportDefinition['labels'] }): { dim: string; entity: string; enum: string }[] {
+  const out: { dim: string; entity: string; enum: string }[] = [];
+  for (const [dim, l] of Object.entries(def.labels ?? {})) if ('staticData' in l) out.push({ dim, ...l.staticData });
+  return out;
 }
 
 /** A text lookup: the key itself when missing; `{{name}}` placeholders filled from `vars`. */
@@ -74,25 +82,25 @@ export function dateLabel(date: string, locale: string): string {
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).toLocaleDateString(swissLocale(locale), { timeZone: 'UTC' });
 }
 
-/** How a dimension value reads in the language. */
-export function labelFor(locale: string, t: Texts, sources: LabelSources): (dim: string, row: ReportRow) => string {
-  const fromStatic = (s: StaticLabels, v: string) => s.translation[locale]?.[v] ?? s.values?.[v] ?? s.translation.en?.[v];
+/** How a dimension value of `def` reads in the language: built in, else as the report's `labels` say. */
+export function labelFor(def: { labels?: ReportDefinition['labels'] }, locale: string, t: Texts, sources: LabelSources): (dim: string, row: ReportRow) => string {
+  const fromStatic = (s: StaticLabels | undefined, v: string) => s?.translation[locale]?.[v] ?? s?.values?.[v] ?? s?.translation.en?.[v];
   return (dim, row) => {
     const v = String(row[dim] ?? '');
     switch (dim) {
       case 'person': return String(row.personName ?? v);
       case 'month': return monthLabel(v, locale);
       case 'project': return v || t('reports.noProject');
-      case 'type': return fromStatic(sources.absenceTypes, v) ?? sources.fallback?.(dim, v) ?? v;
-      case 'category': return fromStatic(sources.categories, v) ?? sources.fallback?.(dim, v) ?? v;
-      case 'status': return t(`reports.status.${v}`);
-      case 'check': return t(`reports.check.${v}`);
       case 'date': return dateLabel(v, locale);
       case 'department':
       case 'function':
       case 'manager': return v || t('reports.none');
-      default: return v;
     }
+    const l = def.labels?.[dim];
+    if (!l) return v;
+    if ('textPrefix' in l) return t(`${l.textPrefix}${v}`);
+    const key = l.fallback?.[v];
+    return fromStatic(sources.static[dim], v) ?? (key ? t(key) : undefined) ?? sources.fallback?.(dim, v) ?? v;
   };
 }
 

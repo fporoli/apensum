@@ -1,5 +1,6 @@
 import PLUGINS, { permissions as PLUGIN_PERMISSIONS } from 'virtual:apensum-plugins';
 import { registerPermissionObjects } from '@worktime3/shared/permissions';
+import { registerReport } from '@worktime3/shared/reports';
 import { DICTIONARIES, type Locale } from './dictionaries';
 import type { PluginNavGroup, PluginPage, PluginPublicRoute, PluginSettingsSection, PluginWorkflowKind, WebPlugin } from './plugin';
 
@@ -14,12 +15,19 @@ export function mergePluginTexts(plugins: readonly WebPlugin[], dictionaries: Re
     for (const [locale, texts] of Object.entries(plugin.texts ?? {}) as [Locale, Record<string, string>][]) {
       if (dictionaries[locale]) Object.assign(dictionaries[locale], texts);
     }
+    for (const report of plugin.reports ?? []) {
+      for (const [locale, texts] of Object.entries(report.texts ?? {}) as [Locale, Record<string, string>][]) {
+        if (dictionaries[locale]) Object.assign(dictionaries[locale], texts);
+      }
+    }
   }
 }
 
 mergePluginTexts(WEB_PLUGINS, DICTIONARIES);
 // The plugins' permission objects join the catalogue (roles editor, owner's ids) as the API's do.
 registerPermissionObjects(PLUGIN_PERMISSIONS);
+// Their reports join the Reports page's tabs (the API registers the same definitions with their rows).
+for (const report of WEB_PLUGINS.flatMap((p) => p.reports ?? [])) registerReport(report.definition);
 
 export const PLUGIN_PAGES: readonly PluginPage[] = WEB_PLUGINS.flatMap((p) => p.pages ?? []);
 export const PLUGIN_NAV_GROUPS: readonly PluginNavGroup[] = WEB_PLUGINS.flatMap((p) => p.navGroups ?? []);

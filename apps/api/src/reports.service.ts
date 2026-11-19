@@ -6,7 +6,8 @@ import { WorkTimeModelService } from './work-time-model.service';
 import { checkWorkingTimeAct } from './working-time-act';
 import { weekStart } from '@worktime3/shared/worktime';
 import { can, isOrgMember, listableUserIds } from './access';
-import { employee_assignments, expenses, organization_memberships, project_times, projects, users, work_times } from './db/schema';
+import { employee_assignments, organization_memberships, project_times, projects, users, work_times } from './db/schema';
+import { reportSource } from './report-sources';
 import { groupReport, monthEnd, monthsBetween, parseGroupBy, reportById, type ReportDefinition, type ReportRow } from '@worktime3/shared/reports';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
@@ -137,8 +138,14 @@ export class ReportsService {
     const raw: ReportRow[] = [];
     const first = months[0];
     const last = months[months.length - 1];
-    if (def.id === 'projectHours') {
-      if (projectId && !UUID.test(projectId)) return { ok: false, error: 'unknown-project', groupBy, rows: [], totals: {} };
+    if (projectId && def.projectFilter && !UUID.test(projectId)) return { ok: false, error: 'unknown-project', groupBy, rows: [], totals: {} };
+    const pluginRows = reportSource(def.id);
+    if (pluginRows) {
+      // A plugin's report: only the people checked above, and only theirs.
+      const allowed = new Set(people.map((p) => p.id));
+      const rows = await pluginRows({ db, orgId, callerId: caller, people, first, last, projectId: def.projectFilter ? projectId : undefined });
+      raw.push(...rows.filter((r) => allowed.has(String(r.person))));
+    } else if (def.id === 'projectHours') {
       const timeZone = await this.workTime.timeZone(db, caller);
       const [ly, lm] = last.split('-').map(Number);
       const end = lm === 12 ? `${ly + 1}-01` : `${ly}-${String(lm + 1).padStart(2, '0')}`;
@@ -168,14 +175,11 @@ export class ReportsService {
       for (const r of result) {
         raw.push({ person: r.userId, personName: names.get(r.userId) ?? '', project: r.project, month: r.month, hours: hours(Number(r.minutes)) });
       }
-    } else if (def.id === 'expenses') {
-      if (projectId && !UUID.test(projectId)) return { ok: false, error: 'unknown-project', groupBy, rows: [], totals: {} };
-      raw.push(...(await this.expenseRows(db, orgId, people, first, last, projectId)));
     } else if (def.id === 'people') {
       raw.push(...(await this.peopleRows(db, orgId, people, last)));
     } else if (def.id === 'workingTimeAct') {
       raw.push(...(await this.workingTimeActRows(db, orgId, people, first, last)));
-    } else {
+    } else if (def.id === 'attendance' || def.id === 'absences') {
       // Attendance and absences come from the balances, year by year, as the Balances page shows them.
       const settings = await this.workTime.settings(db, orgId);
       const fullTimeDay = settings.fullTimeWeeklyMinutes / 5;
@@ -188,6 +192,8 @@ export class ReportsService {
           raw.push(...(def.id === 'attendance' ? attendanceRows(p.id, p.name, inRange) : absenceRows(p.id, p.name, inRange, fullTimeDay)));
         }
       }
+    } else {
+      return { ok: false, error: 'unknown-report', groupBy, rows: [], totals: {} };
     }
 
     const grouped = groupReport(def, raw, groupBy, (d, r) => (d === 'person' ? String(r.personName ?? '') : String(r[d] ?? '')));
@@ -233,45 +239,6 @@ export class ReportsService {
       }
     }
     return out;
-  }
-
-  /**
-   * One row per expense dated in the period: amount in its own currency, and the status of the
-   * expense report it is in (`none` when it is in none yet).
-   */
-  private async expenseRows(db: Db, orgId: string, people: Array<{ id: string; name: string }>, first: string, last: string, projectId?: string): Promise<ReportRow[]> {
-    const names = new Map(people.map((p) => [p.id, p.name]));
-    const conditions = [
-      eq(expenses.organization_id, orgId),
-      inArray(expenses.user_id, people.map((p) => p.id)),
-      gte(expenses.expense_date, `${first}-01`),
-      lte(expenses.expense_date, monthEnd(last)),
-    ];
-    if (projectId) conditions.push(eq(expenses.project_id, projectId));
-    const result = await db
-      .select({
-        userId: expenses.user_id,
-        category: expenses.category,
-        project: sql<string>`coalesce(${projects.name}, '')`,
-        date: expenses.expense_date,
-        currency: expenses.currency,
-        value: expenses.value,
-        status: sql<string | null>`(SELECT er.status FROM expense_report_items i JOIN expense_reports er ON er.id = i.expense_report_id WHERE i.expense_id = ${expenses.id} LIMIT 1)`,
-      })
-      .from(expenses)
-      .leftJoin(projects, eq(projects.id, expenses.project_id))
-      .where(and(...conditions));
-    return result.map((r) => ({
-      person: r.userId,
-      personName: names.get(r.userId) ?? '',
-      category: r.category,
-      project: r.project,
-      month: String(r.date).slice(0, 7),
-      status: r.status ?? 'none',
-      currency: String(r.currency).trim().toUpperCase(),
-      amount: Math.round(Number(r.value) * 100) / 100,
-      count: 1,
-    }));
   }
 
   /**

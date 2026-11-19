@@ -5,6 +5,7 @@
  * plugins declare, App.tsx, main.tsx and OrganizationSettings.tsx show it. docs/PLUGINS.md.
  */
 import type { ComponentType, ReactNode } from 'react';
+import type { ReportDefinition } from '@worktime3/shared/reports';
 import type { Locale, TFunction } from './i18n';
 
 export interface PluginRoles {
@@ -126,6 +127,16 @@ export interface PluginWorkflowKind {
   Inspect?: ComponentType<PluginWorkflowInspectProps & { open: boolean }>;
 }
 
+/**
+ * A report on the Reports page: the same definition and texts as the plugin's API part registers
+ * with its rows (share them in one file, e.g. plugins/<id>/shared). Texts: `reports.report.<id>`,
+ * `reports.report.<id>.description`, `reports.note.<id>`, `reports.dim.<dim>`, `reports.measure.<key>`.
+ */
+export interface PluginReport {
+  definition: ReportDefinition;
+  texts?: Partial<Record<Locale, Record<string, string>>>;
+}
+
 export interface WebPlugin {
   id: string;
   /** The plugin's UI texts per language; every language the same keys (the plugin's tests check it). */
@@ -137,6 +148,8 @@ export interface WebPlugin {
   publicRoutes?: PluginPublicRoute[];
   /** Approval kinds the plugin owns on the Workflow page. */
   workflowKinds?: PluginWorkflowKind[];
+  /** Reports on the Reports page. */
+  reports?: PluginReport[];
   /** A notification's source_table -> the section its click opens. */
   notificationSections?: Record<string, string>;
 }

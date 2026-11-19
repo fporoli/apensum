@@ -377,14 +377,17 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   totals are `packages/shared/src/reports.ts` (a `balance` measure is each person's last month, summed over people).
   Each report shows `listableUserIds` of its page object (project hours `nav.time`, attendance `nav.workTime`,
   absences `nav.absences`); a filter naming someone outside that is refused. Attendance and absences come from
-  `BalancesService.year`, so they match Time balances. Expenses (`nav.expenses`) always group by currency and never
-  total across currencies; People (`section.people.employment`) is a snapshot on the period's last day. Excel/CSV are
+  `BalancesService.year`, so they match Time balances. A report with a money measure keeps `alwaysGroupBy: ['currency']`
+  and never totals across currencies (the expenses plugin's report); People (`section.people.employment`) is a snapshot on the period's last day. Excel/CSV are
   built in the browser from the shown rows (`packages/shared/src/xlsx.ts`, no dependency); the PDF is the same table,
   labelled in the browser and laid out by `POST reports/pdf` (`report-pdf.ts`, pdfkit, nothing stored). Saved reports
   (`saved_reports` 064, `saved-reports.controller.ts`): the owner edits; sharing with role names needs
   `nav.reports:edit` (admin, hr, manager); whoever opens one runs it with their own rights. Report logic is
   `reports.service.ts`; labels and the table (page, PDF, Excel, scheduled files) are `packages/shared/src/reportTable.ts`
-  with the texts in `reportTexts.ts` (spread into `dictionaries.ts`; the API uses them for scheduled files).
+  with the texts in `reportTexts.ts` (spread into `dictionaries.ts`; the API uses them for scheduled files). Dimension
+  labels come from the definition (`labels`: static data or a text prefix), the project filter from `projectFilter`.
+  Plugins add reports (`ApiPlugin.reports` / `WebPlugin.reports`: one shared definition + texts, `registerReport`,
+  `registerAvailablePluginTexts`; rows from the plugin, `report-sources.ts`, filtered by the core to the checked people).
   The `workingTimeAct` report checks recorded attendance against the Working Hours Act (`working-time-act.ts`, pure:
   daily rest, breaks, 14-hour day, weekly maximum, yearly Überzeit, night and Sunday work; rules as SECO's 710.224.d
   summary states them; it lists findings, it does not judge permits or exceptions).

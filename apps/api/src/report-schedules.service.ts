@@ -11,9 +11,9 @@ import { pdfLang } from './timesheet-documents.service';
 import { appBaseUrl } from './orgs.controller';
 import { sendMail } from './mailer';
 import { departments, projects, report_runs, report_schedules, saved_reports, static_data, users } from './db/schema';
-import { reportById, type SavedReportSettings } from '@worktime3/shared/reports';
+import { reportById, type ReportDefinition, type SavedReportSettings } from '@worktime3/shared/reports';
 import { REPORT_TEXTS } from '@worktime3/shared/reportTexts';
-import { buildReportTable, labelFor, periodText, presetRange, sortRows, swissLocale, textsOf, type Preset, type StaticLabels } from '@worktime3/shared/reportTable';
+import { buildReportTable, labelFor, periodText, presetRange, sortRows, staticDataLabelsOf, swissLocale, textsOf, type LabelSources, type Preset, type StaticLabels } from '@worktime3/shared/reportTable';
 import { buildXlsx } from '@worktime3/shared/xlsx';
 
 type Schedule = typeof report_schedules.$inferSelect;
@@ -120,7 +120,7 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
           WHERE m.organization_id = ${orgId} AND m.status = 'active' AND u.is_active
             AND u.id IN (${sql.join(schedule.recipient_user_ids.map((id) => sql`${id}::uuid`), sql`, `)})`)
       : { rows: [] };
-    const labels = await this.staticLabels(db, orgId);
+    const labels = await this.staticLabels(db, orgId, def);
     const filterNames = await this.filterNames(db, settings);
     const outcome: RunOutcome = { delivered: 0, failed: 0 };
 
@@ -141,7 +141,7 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
         await db.insert(report_runs).values({ id: runId, organization_id: orgId, schedule_id: schedule.id, user_id: r.id, title: saved.name, period_from: from, period_to: to, ran_at: now.toISOString(), error: result.error ?? 'failed' });
         continue;
       }
-      const label = labelFor(lang, t, labels);
+      const label = labelFor(def, lang, t, labels);
       const rows = sortRows(result.rows, result.groupBy, label, lang);
       const table = buildReportTable(def, { groupBy: result.groupBy, rows, totals: result.totals }, lang, t, label);
       const period = periodText(def, from, to, lang, t, runDay);
@@ -176,17 +176,21 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
     return outcome;
   }
 
-  /** Absence type and expense category labels: the organization's row, else the global one. */
-  private async staticLabels(db: Db, orgId: string): Promise<{ absenceTypes: StaticLabels; categories: StaticLabels }> {
+  /** The static data labels the report's dimensions need (absence types, ...): the organization's row, else the global one. */
+  private async staticLabels(db: Db, orgId: string, def: ReportDefinition): Promise<LabelSources> {
+    const wanted = staticDataLabelsOf(def);
+    if (!wanted.length) return { static: {} };
     const rows = await db
-      .select({ enum: static_data.enum_name, org: static_data.organization_id, values: static_data.values, translation: static_data.translation })
+      .select({ entity: static_data.entity, enum: static_data.enum_name, org: static_data.organization_id, values: static_data.values, translation: static_data.translation })
       .from(static_data)
-      .where(and(inArray(static_data.enum_name, ['absence_type', 'expense_category']), or(isNull(static_data.organization_id), eq(static_data.organization_id, orgId))));
-    const pick = (name: string): StaticLabels => {
-      const row = rows.find((r) => r.enum === name && r.org === orgId) ?? rows.find((r) => r.enum === name);
-      return { translation: (row?.translation ?? {}) as StaticLabels['translation'], values: (row?.values ?? {}) as Record<string, string> };
-    };
-    return { absenceTypes: pick('absence_type'), categories: pick('expense_category') };
+      .where(and(inArray(static_data.enum_name, wanted.map((w) => w.enum)), or(isNull(static_data.organization_id), eq(static_data.organization_id, orgId))));
+    const out: LabelSources = { static: {} };
+    for (const w of wanted) {
+      const mine = rows.filter((r) => r.entity === w.entity && r.enum === w.enum);
+      const row = mine.find((r) => r.org === orgId) ?? mine[0];
+      out.static[w.dim] = { translation: (row?.translation ?? {}) as StaticLabels['translation'], values: (row?.values ?? {}) as Record<string, string> };
+    }
+    return out;
   }
 
   /** The names of the saved filters, for the line under the title. */

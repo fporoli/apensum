@@ -7,9 +7,13 @@
 // the dimensions the person chose. A `balance` measure is a running balance: within a group it is
 // the value at the end of each person's last month, summed over the people.
 //
+// Plugins add reports of their own (registerReport; their rows come from the plugin's API part,
+// apps/api/src/report-sources.ts).
+//
 // Keep this file erasable TypeScript (no enums, no imports) so Node tests can load it directly.
 
-export type ReportId = 'projectHours' | 'attendance' | 'absences' | 'expenses' | 'people' | 'workingTimeAct';
+/** A core report ('projectHours', 'attendance', 'absences', 'people', 'workingTimeAct') or a plugin's. */
+export type ReportId = string;
 /** `money` is in the row's `currency`: amounts in different currencies are never added up. */
 export type MeasureKind = 'hours' | 'days' | 'money' | 'count' | 'fte';
 
@@ -19,6 +23,17 @@ export interface ReportMeasure {
   /** `sum` adds up; `balance` takes each person's last month, then adds up people. */
   aggregate: 'sum' | 'balance';
 }
+
+/**
+ * How the values of a dimension read, for dimensions without a built-in label (person, month,
+ * project, date, department, function, manager are built in; reportTable.ts labelFor):
+ * - `staticData`: the label of the organization's static data row `entity`/`enum` (else the global
+ *   one), in the language; `fallback` maps a value without one to a text key.
+ * - `textPrefix`: the text `<prefix><value>`, e.g. 'reports.check.' + 'dailyRest'.
+ */
+export type DimensionLabels =
+  | { staticData: { entity: string; enum: string }; fallback?: Record<string, string> }
+  | { textPrefix: string };
 
 export interface ReportDefinition {
   id: ReportId;
@@ -35,9 +50,14 @@ export interface ReportDefinition {
   details?: readonly string[];
   /** The report is a snapshot on the last day of the period instead of a sum over its months. */
   snapshot?: boolean;
+  /** Offers the project filter (`projectId`): the rows have a project. */
+  projectFilter?: boolean;
+  /** Labels of the report's own dimensions (DimensionLabels). */
+  labels?: Readonly<Record<string, DimensionLabels>>;
 }
 
-export const REPORTS: readonly ReportDefinition[] = [
+/** Texts of a report: `reports.report.<id>`, `.description`, `reports.note.<id>`, its dims and measures. */
+export const REPORTS: ReportDefinition[] = [
   {
     id: 'projectHours',
     object: 'nav.time',
@@ -45,6 +65,7 @@ export const REPORTS: readonly ReportDefinition[] = [
     defaultGroupBy: ['project', 'person'],
     measures: [{ key: 'hours', kind: 'hours', aggregate: 'sum' }],
     chart: ['hours'],
+    projectFilter: true,
   },
   {
     id: 'attendance',
@@ -66,23 +87,12 @@ export const REPORTS: readonly ReportDefinition[] = [
     object: 'nav.absences',
     dimensions: ['person', 'type', 'month'],
     defaultGroupBy: ['type'],
+    labels: { type: { staticData: { entity: 'absences', enum: 'absence_type' } } },
     measures: [
       { key: 'days', kind: 'days', aggregate: 'sum' },
       { key: 'hours', kind: 'hours', aggregate: 'sum' },
     ],
     chart: ['days'],
-  },
-  {
-    id: 'expenses',
-    object: 'nav.expenses',
-    dimensions: ['person', 'category', 'project', 'month', 'status', 'currency'],
-    defaultGroupBy: ['category'],
-    alwaysGroupBy: ['currency'],
-    measures: [
-      { key: 'amount', kind: 'money', aggregate: 'sum' },
-      { key: 'count', kind: 'count', aggregate: 'sum' },
-    ],
-    chart: ['amount'],
   },
   {
     id: 'people',
@@ -104,6 +114,7 @@ export const REPORTS: readonly ReportDefinition[] = [
     object: 'nav.workTime',
     dimensions: ['person', 'check', 'month', 'date'],
     defaultGroupBy: ['person', 'check'],
+    labels: { check: { textPrefix: 'reports.check.' } },
     measures: [
       { key: 'occurrences', kind: 'count', aggregate: 'sum' },
       { key: 'hours', kind: 'hours', aggregate: 'sum' },
@@ -114,6 +125,22 @@ export const REPORTS: readonly ReportDefinition[] = [
 
 export function reportById(id: string): ReportDefinition | undefined {
   return REPORTS.find((r) => r.id === id);
+}
+
+/**
+ * Adds a plugin's report (after the core's, in the order registered). Registering the same id again
+ * replaces it; the definition must be consistent (dimensions it groups and charts by exist).
+ */
+export function registerReport(def: ReportDefinition): void {
+  if (!def || typeof def.id !== 'string' || !/^[a-z][A-Za-z0-9]*$/.test(def.id)) throw new Error(`Invalid report id: ${JSON.stringify(def?.id)}`);
+  if (typeof def.object !== 'string' || !def.object) throw new Error(`Report ${def.id}: object (a permission object) is required`);
+  for (const d of [...def.defaultGroupBy, ...(def.alwaysGroupBy ?? [])]) {
+    if (!def.dimensions.includes(d)) throw new Error(`Report ${def.id}: ${d} is not one of its dimensions`);
+  }
+  for (const c of def.chart) if (!def.measures.some((m) => m.key === c)) throw new Error(`Report ${def.id}: chart measure ${c} is unknown`);
+  const at = REPORTS.findIndex((r) => r.id === def.id);
+  if (at >= 0) REPORTS[at] = def;
+  else REPORTS.push(def);
 }
 
 /** One raw row: its dimension values (person id under `person`, its name under `personName`) and measures. */

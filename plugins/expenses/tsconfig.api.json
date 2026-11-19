@@ -3,9 +3,9 @@
   "compilerOptions": {
     "module": "node20",
     "moduleResolution": "node16",
-    "rootDir": "api",
-    "outDir": "dist/api",
+    "rootDir": ".",
+    "outDir": "dist",
     "declaration": false
   },
-  "include": ["api/**/*.ts"]
+  "include": ["api/**/*.ts", "shared/**/*.ts"]
 }

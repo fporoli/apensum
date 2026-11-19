@@ -3,6 +3,7 @@ import { defineWebPlugin, FolderCopyIcon, PaymentsIcon, ReceiptLongIcon, TeamVie
 import { getExpenseReportTitle } from './expenseRows';
 import { parseReceiptHash } from './receiptHash';
 import { EXPENSE_TEXTS } from './texts';
+import { EXPENSES_REPORT } from '../shared/report';
 
 const Expenses = lazy(() => import('./Expenses'));
 const ExpenseReports = lazy(() => import('./ExpenseReports'));
@@ -79,5 +80,6 @@ export default defineWebPlugin({
       ),
     },
   ],
+  reports: [EXPENSES_REPORT],
   notificationSections: { expense_reports: 'expenseReports' },
 });

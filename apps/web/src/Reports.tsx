@@ -31,13 +31,12 @@ import {
 import { BarChart } from '@mui/x-charts/BarChart';
 import { REPORTS, reportById, type ReportDefinition, type ReportId, type ReportMeasure, type ReportRow, type SavedReportSettings } from '@worktime3/shared/reports';
 import { buildCsv, buildXlsx } from '@worktime3/shared/xlsx';
-import { PRESETS, buildReportTable, detailsShown, formatMeasure, labelFor, periodText, presetRange, sortRows, type Preset } from '@worktime3/shared/reportTable';
+import { PRESETS, buildReportTable, detailsShown, formatMeasure, labelFor, periodText, presetRange, sortRows, staticDataLabelsOf, type Preset, type StaticLabels } from '@worktime3/shared/reportTable';
 import { useI18n } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { DeleteIcon, DownloadIcon, SaveIcon, ScheduleIcon } from './icons';
 import { formatLocaleDate, formatLocaleDateTime, swissLocale } from './localeFormat';
 import { roleLabel, type OrgRole } from './roleLabel';
-import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -59,11 +58,11 @@ interface ScheduleForm {
   nextRunAt?: string;
   runs: { ranAt: string; person: string; error: string | null; periodFrom: string; periodTo: string }[];
 }
-type Translations = Record<string, Record<string, string>>;
 
 /**
  * Reports (nav.reports, module `reports`; packages/shared/src/reports.ts, reports.controller.ts):
- * project hours, attendance and overtime, absences, expenses and people. Each shows the people the
+ * project hours, attendance and overtime, absences, people, Working Hours Act, and the plugins' reports
+ * (registered by plugins.ts before this page loads). Each shows the people the
  * caller may see on the matching page; filters narrow that down. The table, chart and the
  * Excel/CSV/PDF files are built from the same grouped rows, so a download is what is on screen.
  * Saved reports (saved-reports.controller.ts) keep the report, period and choices under a name and
@@ -84,8 +83,8 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [absenceLabels, setAbsenceLabels] = useState<Translations>({});
-  const [categoryLabels, setCategoryLabels] = useState<{ values: Record<string, string>; translation: Translations }>({ values: {}, translation: {} });
+  // Static data labels of the current report's dimensions (absence types, ...), by dimension.
+  const [staticLabels, setStaticLabels] = useState<Record<string, StaticLabels>>({});
 
   const [saved, setSaved] = useState<SavedReport[]>([]);
   const [canShare, setCanShare] = useState(false);
@@ -106,26 +105,31 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
 
   const errorText = useCallback((code: string) => (t(`reports.error.${code}`) !== `reports.error.${code}` ? t(`reports.error.${code}`) : t('reports.error.failed')), [t]);
 
-  // Absence types and expense categories as their pages show them (static data, else the key).
+  // The labels the report's dimensions take from static data (absence types, ...), as their pages show them.
   useEffect(() => {
+    let cancelled = false;
+    setStaticLabels({});
+    const wanted = staticDataLabelsOf(def);
+    if (!wanted.length) return;
     (async () => {
       const headers = await authHeaders();
-      const load = async (kind: string) => {
+      const out: Record<string, StaticLabels> = {};
+      for (const w of wanted) {
         try {
-          const data = await (await fetch(`${API}/organizations/${orgId}/static-data/${kind}`, { headers })).json();
-          return Array.isArray(data) ? data : [];
+          const data = await (await fetch(`${API}/organizations/${orgId}/static-data/${w.entity}`, { headers })).json();
+          const row = Array.isArray(data) ? data.find((r: { enum_name?: string }) => r.enum_name === w.enum) : undefined;
+          out[w.dim] = { values: row?.values ?? {}, translation: row?.translation && typeof row.translation === 'object' ? row.translation : {} };
         } catch {
-          return [];
+          /* offline: the keys */
         }
-      };
-      const [absences, expenses] = await Promise.all([load('absences'), load('expenses')]);
-      const types = absences.find((r) => r.enum_name === 'absence_type');
-      setAbsenceLabels(types?.translation && typeof types.translation === 'object' ? types.translation : {});
-      const categories = expenses.find((r) => r.enum_name === 'expense_category');
-      setCategoryLabels({ values: categories?.values ?? {}, translation: categories?.translation ?? {} });
+      }
+      if (!cancelled) setStaticLabels(out);
     })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  }, [orgId, reportId]);
 
   const loadSaved = useCallback(async () => {
     try {
@@ -176,7 +180,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
       const q = new URLSearchParams({ from, to, groupBy: dims.join(',') });
       if (userId) q.set('userId', userId);
       if (departmentId) q.set('departmentId', departmentId);
-      if (projectId && (reportId === 'projectHours' || reportId === 'expenses')) q.set('projectId', projectId);
+      if (projectId && def.projectFilter) q.set('projectId', projectId);
       const res = await fetch(`${API}/organizations/${orgId}/reports/${reportId}?${q}`, { headers: await authHeaders() });
       const data = (await res.json()) as Result;
       if (!data?.ok) {
@@ -199,16 +203,14 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
   /** A dimension value as people read it (shared with scheduled reports: packages/shared/src/reportTable.ts). */
   const label = useMemo(
     () =>
-      labelFor(locale, t, {
-        absenceTypes: { translation: absenceLabels },
-        categories: categoryLabels,
+      labelFor(def, locale, t, {
+        static: staticLabels,
         fallback: (dim, v) => {
-          if (v === MILEAGE_CATEGORY) return t('expenses.mileage');
           const key = `absences.type.${v}`;
-          return dim === 'type' && t(key) !== key ? t(key) : undefined;
+          return reportId === 'absences' && dim === 'type' && t(key) !== key ? t(key) : undefined;
         },
       }),
-    [locale, t, absenceLabels, categoryLabels],
+    [def, reportId, locale, t, staticLabels],
   );
   const number = useCallback((n: number, m?: Pick<ReportMeasure, 'kind'>) => formatMeasure(n, m, locale), [locale]);
 
@@ -417,7 +419,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     const dept = options.departments.find((d) => d.id === departmentId);
     if (dept) parts.push(dept.name);
     const project = options.projects.find((p) => p.id === projectId);
-    if (project && (reportId === 'projectHours' || reportId === 'expenses')) parts.push(project.name);
+    if (project && def.projectFilter) parts.push(project.name);
     return parts.join(' · ');
   };
   const table = () => buildReportTable(def, { groupBy: shownDims, rows, totals: result?.totals ?? {} }, locale, t, label);
@@ -476,7 +478,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
   }
 
   const palette = [theme.palette.primary.main, theme.palette.success.main, theme.palette.warning.main];
-  const filterProjects = (reportId === 'projectHours' || reportId === 'expenses') && options.projects.length > 0;
+  const filterProjects = !!def.projectFilter && options.projects.length > 0;
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>

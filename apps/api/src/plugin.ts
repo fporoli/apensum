@@ -9,6 +9,7 @@
  * injects the same DbService, exception classes match).
  */
 import type { Provider, Type } from '@nestjs/common';
+import type { ApiReport } from './report-sources';
 
 export interface ApiPlugin {
   /** The plugin's id, as in its package.json `apensum.id`. */
@@ -17,11 +18,20 @@ export interface ApiPlugin {
   controllers?: Type<unknown>[];
   /** Nest providers; they may inject any core service exported below. */
   providers?: Provider[];
+  /**
+   * Reports on the Reports page (and in saved and scheduled reports): definition and texts, shared
+   * with the plugin's web part, and the rows. The core checks who may see whom first.
+   */
+  reports?: ApiReport[];
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
   return plugin;
 }
+
+// Reports
+export type { ApiReport, ReportRowsContext } from './report-sources';
+export type { ReportDefinition, ReportRow } from '@worktime3/shared/reports';
 
 // Database and history
 export { DbService, type Db } from './db.service';
