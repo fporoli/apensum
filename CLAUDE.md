@@ -339,7 +339,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   grant alone, not the reporting line; a person never edits their own file.
 - Plugins (`plugins/<id>`, docs/PLUGINS.md): a folder with a package.json `apensum` manifest (`id` = folder name,
   `apensumApi` = `PLUGIN_API_VERSION` of `packages/shared/src/pluginApi.ts`, checked at API start and web build: bump it
-  when a contract change can break existing plugins,
+  when a contract change can break existing plugins; every name a plugin adds (tables, permission objects, reports,
+  pages, ...) starts with its id, checked by `namespaceMismatch`, `legacyNames: true` only for expenses,
   optional `module` registered via `registerModule`, optional `permissions` = its permission objects, registered via
   `registerPermissionObjects` by the API and the web app, `api` = built entry, `web` = TS entry). Not npm workspaces and
   no dependencies of their own (everything resolves from the root `node_modules`), so a private plugin cloned into

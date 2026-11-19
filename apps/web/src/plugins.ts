@@ -1,4 +1,5 @@
-import PLUGINS, { permissions as PLUGIN_PERMISSIONS } from 'virtual:apensum-plugins';
+import PLUGINS, { manifests as PLUGIN_MANIFESTS, permissions as PLUGIN_PERMISSIONS } from 'virtual:apensum-plugins';
+import { namespaceMismatch, type PluginName } from '@worktime3/shared/pluginApi';
 import { registerPermissionObjects } from '@worktime3/shared/permissions';
 import { registerReport } from '@worktime3/shared/reports';
 import { DICTIONARIES, type Locale } from './dictionaries';
@@ -9,6 +10,24 @@ import type { PluginDocumentCategory, PluginTeamView, PluginNavGroup, PluginPage
  * what they add, collected once. Their texts join the dictionaries here, before anything renders.
  */
 export const WEB_PLUGINS: readonly WebPlugin[] = PLUGINS;
+
+/** Every name a plugin's web part adds, for the namespace rule (the API part checks its own). */
+export function webPluginNames(plugin: WebPlugin): PluginName[] {
+  return [
+    ...(plugin.pages ?? []).map((p) => ({ kind: 'page', name: p.section })),
+    ...(plugin.navGroups ?? []).map((g) => ({ kind: 'nav group', name: g.id })),
+    ...(plugin.documentCategories ?? []).map((c) => ({ kind: 'document category', name: c.category })),
+    ...(plugin.teamViews ?? []).map((v) => ({ kind: 'team view', name: v.kind })),
+    ...(plugin.reports ?? []).map((r) => ({ kind: 'report', name: r.definition.id })),
+    ...(plugin.workflowKinds ?? []).map((k) => ({ kind: 'workflow record field', name: k.recordField })),
+  ];
+}
+
+for (const plugin of WEB_PLUGINS) {
+  const legacy = PLUGIN_MANIFESTS.find((m) => m.id === plugin.id)?.legacyNames;
+  const mismatch = namespaceMismatch(plugin.id, webPluginNames(plugin), legacy);
+  if (mismatch) throw new Error(mismatch);
+}
 
 export function mergePluginTexts(plugins: readonly WebPlugin[], dictionaries: Record<Locale, Record<string, string>>): void {
   for (const plugin of plugins) {

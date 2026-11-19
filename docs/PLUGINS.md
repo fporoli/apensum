@@ -26,6 +26,7 @@ plugins/<id>/
 "apensum": {
   "id": "expenses",
   "apensumApi": 1,
+  "legacyNames": true,
   "permissions": [
     { "id": "nav.expenses", "kind": "nav", "scopes": ["own", "team", "reports", "all"], "caption": "nav.expenses" },
     ...
@@ -50,6 +51,27 @@ plugins/<id>/
   objects under Pages, sections under "Plugin sections"), `owner` holds them. An id the core or another
   plugin already uses is refused. Their rows and default grants come from the plugin's changelog.
 - `api` and `web` are both optional.
+
+## Names
+
+Every name a plugin adds starts with its id, so plugins never collide with each other or with the
+core. For a plugin `cases`:
+
+| What | Examples |
+|---|---|
+| tables (`apensum.tables`) | `cases`, `cases_documents` |
+| permission objects | `nav.cases`, `nav.casesTemplates`, `section.cases.notes` |
+| module, report, team view, payroll item, document category | `cases`, `casesArchive` |
+| workflow actions, source tables, record fields | `cases.approve`, `cases_reviews`, `cases_review` |
+| pages and nav groups (web) | `cases`, `casesTemplates` |
+
+The id is followed by nothing, `.`, `_`, `-` or a capital letter. The API's start and the web app check
+it (`namespaceMismatch` in `packages/shared/src/pluginApi.ts`) and refuse a plugin that breaks it, naming
+each offending name. Text keys need no prefix but may not override a core text.
+
+`"legacyNames": true` turns the check off. It is only for a plugin carved out of the core that keeps
+the names it had there (the bundled expenses plugin: `expense_reports`, `nav.expenseReports`, ...).
+A new plugin never sets it.
 
 ## Pages and the navbar
 

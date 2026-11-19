@@ -28,6 +28,8 @@ function apensumPlugins(): Plugin {
     load(source) {
       if (source !== resolved) return undefined;
       const found = manifests();
+      // A changed manifest (permissions, version, names) rebuilds this module; a new plugin folder needs a restart.
+      for (const p of found) this.addWatchFile(join(dir, p.name, 'package.json'));
       for (const p of found) {
         const mismatch = pluginApiMismatch(p.manifest.id ?? p.name, p.manifest.apensumApi);
         if (mismatch) throw new Error(mismatch);
@@ -38,6 +40,7 @@ function apensumPlugins(): Plugin {
         ...files.map((f, i) => `import plugin${i} from ${JSON.stringify(f)};`),
         `export default [${files.map((_, i) => `plugin${i}`).join(', ')}];`,
         `export const permissions = ${JSON.stringify(permissions)};`,
+        `export const manifests = ${JSON.stringify(found.map((p) => ({ id: p.manifest.id, legacyNames: p.manifest.legacyNames === true })))};`,
       ].join('\n');
     },
   };

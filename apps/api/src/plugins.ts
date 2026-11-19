@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { Logger, type Provider, type Type } from '@nestjs/common';
 import { registerModule, type ModuleDefinition } from '@worktime3/shared/modules';
 import { registerPermissionObjects, type PermissionObject } from '@worktime3/shared/permissions';
-import { pluginApiMismatch } from '@worktime3/shared/pluginApi';
+import { namespaceMismatch, pluginApiMismatch, type PluginName } from '@worktime3/shared/pluginApi';
 import type { ApiPlugin } from './plugin';
 import { registerApiReport } from './report-sources';
 import { registerTeamView } from './team-overview.controller';
@@ -29,6 +29,13 @@ export interface PluginManifest {
    * (`changelog/db.changelog-master.xml`, run after the core's; docs/PLUGINS.md).
    */
   permissions?: PermissionObject[];
+  /** Tables the plugin owns (introspected into its api/db/schema.ts, apps/api/scripts/plugin-schemas.mjs). */
+  tables?: string[];
+  /**
+   * Keeps names that do not start with the plugin's id (pluginApi.ts, namespaceMismatch). Only for a
+   * plugin carved out of the core with its old names (expenses); a new plugin never sets it.
+   */
+  legacyNames?: boolean;
   /** Built API entry, relative to the plugin folder; its default export is an ApiPlugin. */
   api?: string;
   /** Web entry (TypeScript source, bundled by Vite; see apps/web/vite.config.ts). */
@@ -66,21 +73,41 @@ export interface LoadedPlugins {
   providers: Provider[];
 }
 
+/** Every name a plugin adds to the core, for the namespace rule (packages/shared/src/pluginApi.ts). */
+export function pluginNames(manifest: PluginManifest, plugin: ApiPlugin | undefined): PluginName[] {
+  const names: PluginName[] = [];
+  if (manifest.module) names.push({ kind: 'module', name: manifest.module.id });
+  for (const o of manifest.permissions ?? []) names.push({ kind: 'permission object', name: o.id });
+  for (const t of manifest.tables ?? []) names.push({ kind: 'table', name: t });
+  for (const r of plugin?.reports ?? []) names.push({ kind: 'report', name: r.definition.id });
+  for (const v of plugin?.teamViews ?? []) names.push({ kind: 'team view', name: v.kind });
+  for (const p of plugin?.payroll ?? []) names.push({ kind: 'payroll item', name: p.key });
+  for (const c of Object.keys(plugin?.documents ?? {})) names.push({ kind: 'document category', name: c });
+  for (const a of Object.keys(plugin?.workflows?.actions ?? {})) names.push({ kind: 'workflow action', name: a });
+  for (const t of Object.keys(plugin?.workflows?.sources ?? {})) names.push({ kind: 'workflow source table', name: t });
+  return names;
+}
+
 export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
   const logger = new Logger('Plugins');
   const loaded: LoadedPlugins = { ids: [], plugins: [], controllers: [], providers: [] };
   for (const { dir: pluginDir, manifest } of readPluginManifests(dir)) {
     const mismatch = pluginApiMismatch(manifest.id, manifest.apensumApi);
     if (mismatch) throw new Error(mismatch);
-    if (manifest.permissions) registerPermissionObjects(manifest.permissions);
-    if (manifest.module) registerModule(manifest.module);
+    let plugin: ApiPlugin | undefined;
     if (manifest.api) {
       const entry = join(pluginDir, manifest.api);
       if (!existsSync(entry)) throw new Error(`Plugin ${manifest.id} is not built (${entry} is missing): run npm run build --workspace=@worktime3/api`);
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const mod = require(entry) as { default?: ApiPlugin };
-      const plugin = mod.default;
+      plugin = (require(entry) as { default?: ApiPlugin }).default;
       if (!plugin || plugin.id !== manifest.id) throw new Error(`Plugin ${manifest.id}: ${manifest.api} must export default defineApiPlugin({ id: '${manifest.id}', ... })`);
+    }
+    // Checked before anything of it is registered: a plugin with foreign names does not start.
+    const names = namespaceMismatch(manifest.id, pluginNames(manifest, plugin), manifest.legacyNames);
+    if (names) throw new Error(names);
+    if (manifest.permissions) registerPermissionObjects(manifest.permissions);
+    if (manifest.module) registerModule(manifest.module);
+    if (plugin) {
       loaded.plugins.push(plugin);
       loaded.controllers.push(...(plugin.controllers ?? []));
       loaded.providers.push(...(plugin.providers ?? []));

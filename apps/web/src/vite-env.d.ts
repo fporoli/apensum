@@ -16,4 +16,6 @@ declare module 'virtual:apensum-plugins' {
   export default plugins;
   /** Permission objects from the plugins' manifests (`apensum.permissions`). */
   export const permissions: PermissionObject[];
+  /** Each plugin's id and whether it keeps names outside its namespace (`apensum.legacyNames`). */
+  export const manifests: { id: string; legacyNames: boolean }[];
 }
