@@ -1,7 +1,7 @@
 /**
  * The expenses plugin's UI texts (merged into the app's dictionaries at startup, apps/web/src/plugins.ts).
  * Every language has the same keys and {{placeholders}} as English; test/texts.test.mjs checks it.
- * Keys the core still shows itself (expense form captions, report statuses, mileage) stay in
+ * Keys the core still shows itself (expense form captions, mileage) stay in
  * apps/web/src/dictionaries.ts.
  */
 import type { Locale } from '@worktime3/web/plugin';
@@ -9,6 +9,18 @@ import type { Locale } from '@worktime3/web/plugin';
 // prettier-ignore
 export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
   en: {
+    'expenseReports.status.in_preparation': 'In preparation',
+    'expenseReports.status.submitted': 'Submitted',
+    'expenseReports.status.approved': 'Approved',
+    'expenseReports.status.rejected': 'Rejected',
+    'expenseReports.status.submitted_processing': 'Processing',
+    'expenseReports.status.processing_finished': 'Processing finished',
+    'expenseReports.status.request_payment': 'Payment requested',
+    'expenseReports.status.finished': 'Finished',
+    'team.mixedCurrencies': "Several currencies",
+    'team.col.notInReport': "Not in a report",
+    'team.col.report': "Expense report",
+    'team.col.reports': "Reports",
     'documents.category.expense': "Expense",
     'nav.expenses': 'Expenses',
     'nav.expenseReports': 'Expense Reports',
@@ -131,6 +143,18 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Expense report ({{date}})',
   },
   de: {
+    'expenseReports.status.in_preparation': 'In Vorbereitung',
+    'expenseReports.status.submitted': 'Eingereicht',
+    'expenseReports.status.approved': 'Genehmigt',
+    'expenseReports.status.rejected': 'Abgelehnt',
+    'expenseReports.status.submitted_processing': 'In Bearbeitung',
+    'expenseReports.status.processing_finished': 'Bearbeitung abgeschlossen',
+    'expenseReports.status.request_payment': 'Zahlung angefordert',
+    'expenseReports.status.finished': 'Abgeschlossen',
+    'team.mixedCurrencies': "Mehrere Währungen",
+    'team.col.notInReport': "Nicht abgerechnet",
+    'team.col.report': "Spesenabrechnung",
+    'team.col.reports': "Abrechnungen",
     'documents.category.expense': "Spesen",
     'nav.expenses': 'Spesen',
     'nav.expenseReports': 'Spesenabrechnungen',
@@ -253,6 +277,18 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Spesenbericht ({{date}})',
   },
   fr: {
+    'expenseReports.status.in_preparation': 'En préparation',
+    'expenseReports.status.submitted': 'Soumis',
+    'expenseReports.status.approved': 'Approuvé',
+    'expenseReports.status.rejected': 'Refusé',
+    'expenseReports.status.submitted_processing': 'En traitement',
+    'expenseReports.status.processing_finished': 'Traitement terminé',
+    'expenseReports.status.request_payment': 'Paiement demandé',
+    'expenseReports.status.finished': 'Terminé',
+    'team.mixedCurrencies': "Plusieurs devises",
+    'team.col.notInReport': "Hors note de frais",
+    'team.col.report': "Note de frais",
+    'team.col.reports': "Notes de frais",
     'documents.category.expense': "Frais",
     'nav.expenses': 'Notes de frais',
     'nav.expenseReports': 'Rapports de frais',
@@ -375,6 +411,18 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Note de frais ({{date}})',
   },
   it: {
+    'expenseReports.status.in_preparation': 'In preparazione',
+    'expenseReports.status.submitted': 'Inviata',
+    'expenseReports.status.approved': 'Approvata',
+    'expenseReports.status.rejected': 'Respinta',
+    'expenseReports.status.submitted_processing': 'In elaborazione',
+    'expenseReports.status.processing_finished': 'Elaborazione completata',
+    'expenseReports.status.request_payment': 'Pagamento richiesto',
+    'expenseReports.status.finished': 'Completata',
+    'team.mixedCurrencies': "Più valute",
+    'team.col.notInReport': "Non in nota spese",
+    'team.col.report': "Nota spese",
+    'team.col.reports': "Note spese",
     'documents.category.expense': "Spesa",
     'nav.expenses': 'Spese',
     'nav.expenseReports': 'Note spese',

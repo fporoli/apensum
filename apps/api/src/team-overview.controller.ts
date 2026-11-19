@@ -7,16 +7,33 @@ import { WorkTimeModelService, localDate } from './work-time-model.service';
 import { organization_memberships, timesheet_periods, users } from './db/schema';
 import { addDays } from '@worktime3/shared/worktime';
 
-/** Which permission object decides whose records each team table lists. */
+/** Which permission object decides whose records each of the core's team tables lists. */
 export const TEAM_OBJECTS: Record<string, string> = {
   workTime: 'nav.workTime',
   absences: 'nav.absences',
   timesheet: 'nav.timesheet',
   time: 'nav.time',
   projectTimesheet: 'nav.projectTimesheet',
-  expenses: 'nav.expenses',
-  expenseReports: 'nav.expenseReports',
 };
+
+/**
+ * A plugin's team table (ApiPlugin.teamViews): the permission object that decides whose records it
+ * lists, and the month's rows of those people (`userIds`, never empty, never the caller), each with
+ * the person's `user_id`. The web part's `teamViews` entry of the same kind shows them.
+ */
+export interface ApiTeamView {
+  kind: string;
+  object: string;
+  rows: (db: Db, ctx: { orgId: string; userIds: string[]; from: string; toExclusive: string }) => Promise<unknown[]>;
+}
+
+const PLUGIN_TEAM_VIEWS = new Map<string, ApiTeamView>();
+
+/** Adds a plugin's team table (plugins.ts). */
+export function registerTeamView(view: ApiTeamView): void {
+  if (TEAM_OBJECTS[view.kind]) throw new Error(`Team view ${view.kind} is the core's`);
+  PLUGIN_TEAM_VIEWS.set(view.kind, view);
+}
 
 /** 'YYYY-MM' → first day of that month and of the next one; null for anything else. */
 export function monthRange(month: string | undefined): { from: string; toExclusive: string } | null {
@@ -59,7 +76,8 @@ export class TeamOverviewController {
     if (!db) return { ok: true, offline: true, people: [] };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', people: [] };
-    const object = TEAM_OBJECTS[kind ?? ''];
+    const plugin = PLUGIN_TEAM_VIEWS.get(kind ?? '');
+    const object = TEAM_OBJECTS[kind ?? ''] ?? plugin?.object;
     if (!object) return { ok: false, error: 'invalid-kind', people: [] };
     // `peopleOnly` answers "is there a team to show?" without computing the month.
     if (peopleOnly) return { ok: true, people: await this.team(db, orgId, callerId, object) };
@@ -71,19 +89,20 @@ export class TeamOverviewController {
     const base = { ok: true as const, month, people };
     if (ids.length === 0) return { ...base, rows: [] };
 
+    if (plugin) {
+      // Only the people checked above, and only theirs.
+      const allowed = new Set(ids);
+      const rows = await plugin.rows(db, { orgId, userIds: ids, from: range.from, toExclusive: range.toExclusive });
+      return { ...base, rows: rows.filter((r) => allowed.has(String((r as { user_id?: unknown }).user_id))) };
+    }
     switch (kind) {
       case 'workTime':
       case 'timesheet':
         return { ...base, rows: await this.attendance(db, orgId, ids, range.from, range.toExclusive) };
       case 'absences':
         return { ...base, ...(await this.absences(db, orgId, ids, range.from, range.toExclusive)) };
-      case 'time':
-      case 'projectTimesheet':
-        return { ...base, rows: await this.projectMonths(db, orgId, ids, range.from, range.toExclusive) };
-      case 'expenses':
-        return { ...base, rows: await this.expenses(db, orgId, ids, range.from, range.toExclusive) };
       default:
-        return { ...base, rows: await this.expenseReports(db, orgId, ids, range.from, range.toExclusive) };
+        return { ...base, rows: await this.projectMonths(db, orgId, ids, range.from, range.toExclusive) };
     }
   }
 
@@ -192,42 +211,6 @@ export class TeamOverviewController {
       FULL JOIN periods p ON p.user_id = b.user_id AND p.project_id IS NOT DISTINCT FROM b.project_id
       LEFT JOIN projects pr ON pr.id = COALESCE(b.project_id, p.project_id)
       ORDER BY pr.name NULLS LAST`);
-    return result.rows;
-  }
-
-  private async expenses(db: Db, orgId: string, ids: string[], from: string, toExclusive: string) {
-    const result = await db.execute(sql`
-      SELECT e.id, e.user_id, e.expense_date::text AS expense_date, e.category, e.sub_category,
-             e.value::float AS value, e.currency, e.comment, pr.name AS project_name,
-             er.status AS report_status
-      FROM expenses e
-      LEFT JOIN projects pr ON pr.id = e.project_id
-      LEFT JOIN expense_report_items eri ON eri.expense_id = e.id
-      LEFT JOIN expense_reports er ON er.id = eri.expense_report_id
-      WHERE e.organization_id = ${orgId}
-        AND e.user_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
-        AND e.expense_date >= ${from}::date AND e.expense_date < ${toExclusive}::date
-      ORDER BY e.expense_date`);
-    return result.rows;
-  }
-
-  /** Reports submitted in the month, plus every report still in preparation. */
-  private async expenseReports(db: Db, orgId: string, ids: string[], from: string, toExclusive: string) {
-    const result = await db.execute(sql`
-      SELECT er.id, er.user_id, er.status, er.date_submitted,
-             COUNT(e.id)::int AS items,
-             COALESCE(SUM(e.value), 0)::float AS total,
-             MIN(e.currency) AS currency,
-             COUNT(DISTINCT e.currency)::int AS currencies
-      FROM expense_reports er
-      LEFT JOIN expense_report_items eri ON eri.expense_report_id = er.id
-      LEFT JOIN expenses e ON e.id = eri.expense_id
-      WHERE er.organization_id = ${orgId}
-        AND er.user_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
-        AND (er.date_submitted IS NULL
-             OR (er.date_submitted >= ${from}::date AND er.date_submitted < ${toExclusive}::date))
-      GROUP BY er.id
-      ORDER BY er.date_submitted DESC NULLS FIRST`);
     return result.rows;
   }
 }

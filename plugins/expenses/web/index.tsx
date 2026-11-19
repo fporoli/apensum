@@ -4,6 +4,7 @@ import { getExpenseReportTitle } from './expenseRows';
 import { parseReceiptHash } from './receiptHash';
 import { EXPENSE_TEXTS } from './texts';
 import { EXPENSES_REPORT } from '../shared/report';
+import { EXPENSE_TEAM_VIEWS } from './teamViews';
 
 const Expenses = lazy(() => import('./Expenses'));
 const ExpenseReports = lazy(() => import('./ExpenseReports'));
@@ -95,6 +96,7 @@ export default defineWebPlugin({
       },
     },
   ],
+  teamViews: EXPENSE_TEAM_VIEWS,
   reports: [EXPENSES_REPORT],
   notificationSections: { expense_reports: 'expenseReports' },
 });

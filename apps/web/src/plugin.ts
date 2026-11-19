@@ -162,6 +162,37 @@ export interface PluginDocumentCategory {
   describe: (doc: PluginPersonalDocument, ctx: { t: TFunction; locale: Locale; staticLabel: (key: string) => string }) => string;
 }
 
+/** What a plugin's team table is built from (TeamView's Team tab). */
+export interface PluginTeamTableContext {
+  /** The month's rows from the API part's team view (each with `user_id`). */
+  rows: unknown[];
+  /** yyyy-mm */
+  month: string;
+  t: TFunction;
+  locale: Locale;
+  /** The rows of one person. */
+  byUser: <T>(rows: T[], userId: string) => T[];
+  /** Amounts per currency, as "CHF 12.50 · EUR 3.00" ('—' when none). */
+  money: (pairs: [string, number][]) => string;
+  /** A date (or timestamp) as the language writes it; '—' when null. */
+  date: (iso: string | null) => string;
+}
+
+/**
+ * The Team tab of a plugin page wrapped in TeamView (`kind` = the API part's ApiTeamView kind): one
+ * row per person, the columns from `cells`, and an expandable `details` table (or, with
+ * `opensPerson`, a click opens that person on the page itself).
+ */
+export interface PluginTeamView {
+  kind: string;
+  opensPerson?: boolean;
+  table: (ctx: PluginTeamTableContext) => {
+    headers: string[];
+    cells: (userId: string) => ReactNode[];
+    details?: (userId: string) => ReactNode;
+  };
+}
+
 export interface WebPlugin {
   id: string;
   /** The plugin's UI texts per language; every language the same keys (the plugin's tests check it). */
@@ -173,6 +204,8 @@ export interface WebPlugin {
   publicRoutes?: PluginPublicRoute[];
   /** Approval kinds the plugin owns on the Workflow page. */
   workflowKinds?: PluginWorkflowKind[];
+  /** Team tables (TeamView) of the plugin's pages. */
+  teamViews?: PluginTeamView[];
   /** Document categories on the Documents page. */
   documentCategories?: PluginDocumentCategory[];
   /** Reports on the Reports page. */
@@ -198,4 +231,5 @@ export * from './icons';
 export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, type Attachment } from './attachments';
 export { currencyOptions, type CurrencyOption } from './currencyOptions';
 export { SectionPaper } from './SettingsSection';
-export { default as TeamView } from './TeamView';
+export { default as TeamView, DetailTable as TeamDetailTable, StatusChip } from './TeamView';
+export { totalsByCurrency } from './teamOverview';

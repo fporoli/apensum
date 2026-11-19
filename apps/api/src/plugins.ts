@@ -5,6 +5,7 @@ import { registerModule, type ModuleDefinition } from '@worktime3/shared/modules
 import { registerPermissionObjects, type PermissionObject } from '@worktime3/shared/permissions';
 import type { ApiPlugin } from './plugin';
 import { registerApiReport } from './report-sources';
+import { registerTeamView } from './team-overview.controller';
 
 /**
  * Finds the plugins under <repo>/plugins/<id> (a folder with a package.json that has an `apensum`
@@ -75,6 +76,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       loaded.controllers.push(...(plugin.controllers ?? []));
       loaded.providers.push(...(plugin.providers ?? []));
       for (const report of plugin.reports ?? []) registerApiReport(report);
+      for (const view of plugin.teamViews ?? []) registerTeamView(view);
     }
     loaded.ids.push(manifest.id);
   }

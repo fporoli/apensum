@@ -10,6 +10,7 @@
  */
 import type { Provider, Type } from '@nestjs/common';
 import type { ApiReport } from './report-sources';
+import type { ApiTeamView } from './team-overview.controller';
 
 export interface ApiPlugin {
   /** The plugin's id, as in its package.json `apensum.id`. */
@@ -23,11 +24,19 @@ export interface ApiPlugin {
    * with the plugin's web part, and the rows. The core checks who may see whom first.
    */
   reports?: ApiReport[];
+  /**
+   * Team tables (the Team tab of the plugin's pages, TeamView): whose records the permission object
+   * decides, the core checks it; the rows come from here.
+   */
+  teamViews?: ApiTeamView[];
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
   return plugin;
 }
+
+// Team tables
+export type { ApiTeamView } from './team-overview.controller';
 
 // Reports
 export type { ApiReport, ReportRowsContext } from './report-sources';

@@ -34,16 +34,17 @@ import {
   isWeekend,
   monthOf,
   shiftMonth,
-  totalsByCurrency,
   type TeamAbsence,
 } from './teamOverview';
+import { PLUGIN_TEAM_VIEWS } from './plugins';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-export type TeamKind = 'workTime' | 'absences' | 'timesheet' | 'time' | 'projectTimesheet' | 'expenses' | 'expenseReports';
+/** A core page's team table, or a plugin's (PLUGIN_TEAM_VIEWS). */
+export type TeamKind = 'workTime' | 'absences' | 'timesheet' | 'time' | 'projectTimesheet' | (string & {});
 
 /** Pages whose own view can show another person (PersonPicker): a row opens that person there. */
-const OPENS_PERSON: TeamKind[] = ['workTime', 'timesheet', 'time', 'projectTimesheet'];
+const OPENS_PERSON: string[] = ['workTime', 'timesheet', 'time', 'projectTimesheet'];
 
 interface Person {
   id: string;
@@ -71,30 +72,6 @@ interface ProjectRow {
   entries: number;
   status: string;
   submitted_at: string | null;
-}
-
-interface ExpenseRow {
-  id: string;
-  user_id: string;
-  expense_date: string;
-  category: string;
-  sub_category: string | null;
-  value: number;
-  currency: string;
-  comment: string | null;
-  project_name: string | null;
-  report_status: string | null;
-}
-
-interface ReportRow {
-  id: string;
-  user_id: string;
-  status: string;
-  date_submitted: string | null;
-  items: number;
-  total: number;
-  currency: string | null;
-  currencies: number;
 }
 
 interface Overview {
@@ -162,7 +139,7 @@ export default function TeamView({
           onMonth={setMonth}
           authHeaders={authHeaders}
           onOpenPerson={
-            OPENS_PERSON.includes(kind)
+            OPENS_PERSON.includes(kind) || PLUGIN_TEAM_VIEWS.some((v) => v.kind === kind && v.opensPerson)
               ? (id) => {
                   setPersonId(id);
                   setTab('own');
@@ -264,7 +241,8 @@ function TeamOverview({
   );
 }
 
-function StatusChip({ status, prefix }: { status: string; prefix: string }) {
+/** A status as a chip: `<prefix>.<status>` as its text, colored by how far it got. */
+export function StatusChip({ status, prefix }: { status: string; prefix: string }) {
   const { t } = useI18n();
   const color = status === 'approved' || status === 'finished' ? 'success' : status === 'rejected' ? 'error' : status === 'open' || status === 'in_preparation' ? 'default' : 'warning';
   return <Chip size="small" color={color} variant={color === 'default' ? 'outlined' : 'filled'} label={t(`${prefix}.${status}`)} />;
@@ -402,52 +380,13 @@ function TeamTable({
       );
       break;
     }
-    case 'expenses': {
-      const list = rows as ExpenseRow[];
-      headers = [t('team.col.entries'), t('team.col.total'), t('team.col.notInReport')];
-      cells = (id) => {
-        const mine = byUser(list, id);
-        const loose = mine.filter((e) => !e.report_status).length;
-        return [mine.length, money(totalsByCurrency(mine)), loose ? <Chip size="small" color="warning" variant="outlined" label={loose} /> : '—'];
-      };
-      details = (id) => (
-        <DetailTable
-          headers={[t('team.col.date'), t('team.col.category'), t('team.col.project'), t('team.col.total'), t('team.col.report'), t('team.col.note')]}
-          rows={byUser(list, id).map((e) => [
-            date(e.expense_date),
-            [e.category, e.sub_category].filter(Boolean).join(' / '),
-            e.project_name ?? '—',
-            money([[e.currency, Number(e.value)]]),
-            e.report_status ? <StatusChip status={e.report_status} prefix="expenseReports.status" /> : '—',
-            e.comment ?? '',
-          ])}
-        />
-      );
-      break;
-    }
     default: {
-      const list = rows as ReportRow[];
-      headers = [t('team.col.reports'), t('team.col.total'), t('timesheet.status')];
-      cells = (id) => {
-        const mine = byUser(list, id);
-        const statuses = [...new Set(mine.map((r) => r.status))];
-        return [
-          mine.length,
-          money(totalsByCurrency(mine.filter((r) => r.currencies <= 1).map((r) => ({ value: r.total, currency: r.currency })))),
-          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>{statuses.map((s) => <StatusChip key={s} status={s} prefix="expenseReports.status" />)}</Box>,
-        ];
-      };
-      details = (id) => (
-        <DetailTable
-          headers={[t('team.col.submittedAt'), t('timesheet.status'), t('team.col.entries'), t('team.col.total')]}
-          rows={byUser(list, id).map((r) => [
-            r.date_submitted ? formatLocaleDateTime(r.date_submitted, locale) : '—',
-            <StatusChip status={r.status} prefix="expenseReports.status" />,
-            r.items,
-            r.currencies > 1 ? t('team.mixedCurrencies') : money(r.currency ? [[r.currency, Number(r.total)]] : []),
-          ])}
-        />
-      );
+      // A plugin's team table (PLUGIN_TEAM_VIEWS, e.g. expenses): it builds its columns from the rows.
+      const view = PLUGIN_TEAM_VIEWS.find((v) => v.kind === kind);
+      const table = view?.table({ rows: data.rows, month, t, locale, byUser: <T,>(list: T[], id: string) => byUser(list as { user_id?: string }[], id) as T[], money, date });
+      headers = table?.headers ?? [];
+      cells = table ? table.cells : () => [];
+      details = table?.details ?? null;
     }
   }
 
@@ -489,7 +428,8 @@ function TeamTable({
   );
 }
 
-function DetailTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
+/** The table under an expanded person: one line per record. */
+export function DetailTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
   const { t } = useI18n();
   return (
     <Table size="small">

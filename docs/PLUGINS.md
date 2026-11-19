@@ -109,6 +109,17 @@ A plugin's files that belong to a person (expenses: receipts) appear on that per
 - Web: `documentCategories: [{ category, color, after, staticData?, describe }]`; `describe` turns the
   context into the line under the file name; its name is the text `documents.category.<category>`.
 
+## Team tab (TeamView)
+
+A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab for managers and HR:
+
+- API: `teamViews: [{ kind, object, rows }]` in `defineApiPlugin`. The core works out whose records the
+  caller may see (`listableUserIds` of `object`, without the caller) and asks `rows(db, { orgId, userIds,
+  from, toExclusive })` for that month; rows of anyone else are dropped (each row has `user_id`).
+- Web: `teamViews: [{ kind, opensPerson?, table }]`. `table({ rows, month, t, locale, byUser, money, date })`
+  returns the columns (`headers`, `cells(userId)`) and the expanded `details(userId)`; `StatusChip`,
+  `TeamDetailTable` and `totalsByCurrency` from the contract keep it looking like the core's tables.
+
 ## Approvals (Workflow page)
 
 An approval a plugin owns is a workflow like the core's (`WorkflowsService`: `ensureDefinition`, `start`,
@@ -193,5 +204,4 @@ npm test                                    # core tests, then each plugin's tes
 - **The plugin's own drizzle schema.** Plugin tables are introspected into the core's
   `apps/api/src/db/schema.ts`, so a private plugin's tables show up in the core's generated files.
 - **Plugin parts of core pages.**
-  - Team overview and Import/Export still show expense data themselves (the tables are core). Each
-    needs its own extension point.
+  - Import/Export still reads expense data itself (payroll export, backup and restore).
