@@ -6,7 +6,6 @@ import {
   Chip,
   Collapse,
   Container,
-  Divider,
   Drawer,
   FormControl,
   IconButton,
@@ -32,142 +31,37 @@ import { DesignModeNotice, DesignModeProvider, useDesignAccess } from './designM
 import NotificationBell from './NotificationBell';
 import { useNotifications, type Notification } from './useNotifications';
 import { formatDurationMinutes } from './localeFormat';
-import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES, pluginPage } from './plugins';
-import type { PluginPage } from './plugin';
-import type { TFunction } from './i18n';
-import { grantedScopes, holdsAny, holdsBeyondOwn, isBasicDataReviewer, seesOthersBasicData } from '@worktime3/shared/permissions';
+import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES } from './plugins';
 import { ApensumMark } from './ApensumMark';
+import { CORE_NAV_GROUPS, CORE_PAGES, type AppPage, type CorePageContext } from './corePages';
+import { buildNavTree, sectionHashes } from './navigation';
+import { resolveRoleFlags, type RoleFlags } from './roleFlags';
+import { holdsAny, isBasicDataReviewer } from '@worktime3/shared/permissions';
 import {
-  AccountBalanceWalletIcon,
   AutoAwesomeIcon,
-  BarChartIcon,
-  BeachAccessIcon,
-  CalendarMonthIcon,
-  CheckCircleIcon,
-  DashboardIcon,
   ExpandLessIcon,
   ExpandMoreIcon,
-  FolderCopyIcon,
-  GroupIcon,
-  HistoryIcon,
-  MailIcon,
   MenuIcon,
-  PeopleIcon,
-  PersonIcon,
   PushPinIcon,
-  ScheduleIcon,
-  SettingsIcon,
   TimerIcon,
-  TuneIcon,
-  WorkspacesIcon,
-  ForumIcon,
-  DescriptionIcon,
-  ContactsIcon,
-  ImportExportIcon,
-  FolderSharedIcon,
-  ArticleIcon,
 } from './icons';
 
-const Home = lazy(() => import('./Home'));
-const MyData = lazy(() => import('./MyData'));
-const ProjectTime = lazy(() => import('./ProjectTime'));
-const Management = lazy(() => import('./Management'));
-const Invitations = lazy(() => import('./Invitations'));
-const AdminSettings = lazy(() => import('./AdminSettings'));
-const OrganizationSettings = lazy(() => import('./OrganizationSettings'));
-const Timesheet = lazy(() => import('./Timesheet'));
-const WorkTime = lazy(() => import('./WorkTime'));
-const Absences = lazy(() => import('./Absences'));
-const Approvals = lazy(() => import('./Approvals'));
 const Assistant = lazy(() => import('./Assistant'));
-const TeamHours = lazy(() => import('./TeamHours'));
-const Reports = lazy(() => import('./Reports'));
-const ProjectTimesheet = lazy(() => import('./ProjectTimesheet'));
-const TeamView = lazy(() => import('./TeamView'));
-const BalanceReport = lazy(() => import('./BalanceReport'));
-const AuditLog = lazy(() => import('./AuditLog'));
-const Users = lazy(() => import('./Users'));
-const Requests = lazy(() => import('./Requests'));
-const Documents = lazy(() => import('./Documents'));
-const Directory = lazy(() => import('./Directory'));
-const ImportExport = lazy(() => import('./ImportExport'));
-const Cases = lazy(() => import('./Cases'));
-const AssessmentTemplates = lazy(() => import('./Cases').then((m) => ({ default: m.AssessmentTemplates })));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DRAWER_WIDTH = 240;
 
-/** The core's pages; plugins add theirs (plugins.ts, PLUGIN_PAGES). */
-type CoreSection =
-  | 'home'
-  | 'myData'
-  | 'time'
-  | 'projectTimesheet'
-  | 'timesheet'
-  | 'workTime'
-  | 'absences'
-  | 'management'
-  | 'managementProjects'
-  | 'hours'
-  | 'balances'
-  | 'invitations'
-  | 'approvals'
-  | 'requests'
-  | 'documents'
-  | 'directory'
-  | 'users'
-  | 'audit'
-  | 'admin'
-  | 'adminRoles'
-  | 'orgSettings'
-  | 'reports'
-  | 'importExport'
-  | 'cases'
-  | 'assessmentTemplates';
+/** Every page: the core's (corePages.tsx), then the plugins' (plugins.ts). */
+const PAGES: readonly AppPage[] = [...CORE_PAGES, ...PLUGIN_PAGES];
+const NAV_TREE = buildNavTree([...CORE_NAV_GROUPS, ...PLUGIN_NAV_GROUPS], PAGES);
+const { toHash: SECTION_TO_HASH, toSection: HASH_TO_SECTION } = sectionHashes(PAGES);
 
-/** A core page or a plugin's section id. */
-type Section = CoreSection | (string & {});
+/** A page's section id (core or plugin). */
+type Section = string;
 
-const CORE_SECTION_TO_HASH: Record<CoreSection, string> = {
-  home: '#/home',
-  myData: '#/my-data',
-  time: '#/time',
-  projectTimesheet: '#/project-timesheet',
-  timesheet: '#/timesheet',
-  workTime: '#/work-time',
-  absences: '#/absences',
-  hours: '#/team-hours',
-  balances: '#/balances',
-  approvals: '#/approvals',
-  requests: '#/requests',
-  documents: '#/documents',
-  directory: '#/directory',
-  users: '#/users',
-  invitations: '#/invitations',
-  management: '#/teams',
-  managementProjects: '#/projects',
-  orgSettings: '#/org-settings',
-  audit: '#/audit',
-  admin: '#/admin',
-  adminRoles: '#/admin/roles',
-  reports: '#/reports',
-  importExport: '#/import-export',
-  cases: '#/cases',
-  assessmentTemplates: '#/assessment-templates',
-};
-
-const SECTION_TO_HASH: Record<string, string> = {
-  ...CORE_SECTION_TO_HASH,
-  ...Object.fromEntries(PLUGIN_PAGES.map((p) => [p.section, p.hash])),
-};
-
-function isCoreSection(sec: string): sec is CoreSection {
-  return Object.prototype.hasOwnProperty.call(CORE_SECTION_TO_HASH, sec);
+function pageOf(section: Section): AppPage | undefined {
+  return PAGES.find((p) => p.section === section);
 }
-
-const HASH_TO_SECTION = Object.fromEntries(
-  Object.entries(SECTION_TO_HASH).map(([sec, hash]) => [hash, sec as Section]),
-) as Record<string, Section>;
 
 function sectionFromHash(): Section {
   if (typeof window === 'undefined') return 'home';
@@ -175,142 +69,22 @@ function sectionFromHash(): Section {
   return HASH_TO_SECTION[clean] ?? 'home';
 }
 
-/** Adds the plugins' navbar groups (after the group they name) and their pages' entries. */
-function addPluginNav<I extends { id: string }>(
-  groups: { id: string; header: string; items: I[] }[],
-  toItem: (page: PluginPage) => I,
-  t: TFunction,
-): void {
-  for (const g of PLUGIN_NAV_GROUPS) {
-    if (groups.some((x) => x.id === g.id)) continue;
-    const at = groups.findIndex((x) => x.id === g.after);
-    const group = { id: g.id, header: t(g.header), items: [] as I[] };
-    if (at >= 0) groups.splice(at + 1, 0, group);
-    else groups.push(group);
-  }
-  for (const page of PLUGIN_PAGES) {
-    const group = page.nav && groups.find((x) => x.id === page.nav!.group);
-    if (!group) continue;
-    const after = page.nav!.after ? group.items.findIndex((i) => i.id === page.nav!.after) : -1;
-    if (after >= 0) group.items.splice(after + 1, 0, toItem(page));
-    else group.items.push(toItem(page));
-  }
-}
-
 const ASSISTANT_TAB_WIDTH = 40;
 const ASSISTANT_PANEL_WIDTH = 380;
 const ASSISTANT_TAB_HEIGHT = 40;
 const ASSISTANT_PANEL_HEIGHT_MOBILE = '50vh';
 
-interface RoleFlags {
-  isAdmin: boolean;
-  isManager: boolean;
-  isHr: boolean;
-  isBillingAdmin: boolean;
-  canManage: boolean;
-  canSeeUsers: boolean;
-  displayRole: 'admin' | 'manager' | 'user';
-}
-
-function resolveRoleFlags(session: Session | null, orgId: string | null): RoleFlags {
-  const membership = session?.memberships.find((m) => m.organizationId === orgId);
-  const roles = membership?.roles ?? (membership?.role ? [membership.role] : []);
-  const isAdmin = roles.includes('owner') || roles.includes('admin') || membership?.role === 'owner' || membership?.role === 'admin';
-  const isManager = roles.includes('manager') || membership?.role === 'manager';
-  const isHr = roles.includes('hr');
-  const isBillingAdmin = roles.includes('billing_admin');
-  const canManage = isAdmin || isManager;
-  return {
-    isAdmin,
-    isManager,
-    isHr,
-    isBillingAdmin,
-    canManage,
-    canSeeUsers: canManage || isHr,
-    displayRole: isAdmin ? 'admin' : isManager ? 'manager' : 'user',
-  };
-}
-
-/** The permission object (packages/shared/src/permissions.ts) behind each page; `home` is always allowed. */
-const SECTION_NAV_OBJECT: Record<Exclude<CoreSection, 'home'>, string> = {
-  myData: 'nav.myData',
-  time: 'nav.time',
-  projectTimesheet: 'nav.projectTimesheet',
-  timesheet: 'nav.timesheet',
-  workTime: 'nav.workTime',
-  absences: 'nav.absences',
-  management: 'nav.management',
-  managementProjects: 'nav.management',
-  hours: 'nav.teamHours',
-  balances: 'nav.balances',
-  invitations: 'nav.invitations',
-  approvals: 'nav.approvals',
-  requests: 'nav.requests',
-  documents: 'nav.documents',
-  directory: 'nav.directory',
-  users: 'nav.users',
-  audit: 'nav.audit',
-  admin: 'nav.admin',
-  adminRoles: 'section.admin.roles',
-  orgSettings: 'nav.orgSettings',
-  reports: 'nav.reports',
-  importExport: 'nav.importExport',
-  cases: 'nav.cases',
-  // Templates belong to Cases: whoever may open Cases sees them (editing is checked by the API).
-  assessmentTemplates: 'nav.cases',
-};
-
 /**
  * Whether the caller may open a page. Uses their permissions in the current organization
- * (GET organizations/:orgId/me/permissions); until those have loaded, or when the API is
- * offline, falls back to the role checks the app used before permissions existed.
+ * (GET organizations/:orgId/me/permissions) on the page's object; until those have loaded, or when the
+ * API is offline, falls back to the page's role check.
  */
 function isSectionAllowed(sec: Section, flags: RoleFlags, permissions: Set<string> | null): boolean {
-  if (sec === 'home') return true;
-  if (!isCoreSection(sec)) {
-    const page = pluginPage(sec);
-    if (!page) return false;
-    if (permissions) return holdsAny(permissions, page.object);
-    return page.allowedByRole ? page.allowedByRole(flags) : true;
-  }
-  if (permissions) return holdsAny(permissions, SECTION_NAV_OBJECT[sec as Exclude<CoreSection, 'home'>]);
-  return isSectionAllowedByRole(sec, flags);
-}
-
-function isSectionAllowedByRole(sec: CoreSection, flags: RoleFlags): boolean {
-  switch (sec) {
-    case 'home':
-    case 'myData':
-    case 'time':
-    case 'projectTimesheet':
-    case 'timesheet':
-    case 'workTime':
-    case 'absences':
-    case 'requests':
-    case 'documents':
-    case 'directory':
-    case 'reports':
-      return true;
-    case 'users':
-      return flags.canSeeUsers;
-    case 'admin':
-    case 'adminRoles':
-    case 'audit':
-    case 'orgSettings':
-      return flags.isAdmin;
-    case 'importExport':
-      return flags.isAdmin || flags.isHr;
-    case 'cases':
-    case 'assessmentTemplates':
-      return flags.isAdmin || flags.isManager;
-    case 'management':
-    case 'managementProjects':
-    case 'hours':
-    case 'balances':
-    case 'invitations':
-    case 'approvals':
-      return flags.canManage;
-  }
+  const page = pageOf(sec);
+  if (!page) return false;
+  if (!page.object) return true;
+  if (permissions) return holdsAny(permissions, page.object);
+  return page.allowedByRole ? page.allowedByRole(flags) : true;
 }
 
 export default function App() {
@@ -346,9 +120,8 @@ export default function App() {
   const [workTimeVersion, setWorkTimeVersion] = useState(0);
   const [activeCheckIn, setActiveCheckIn] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [approvalsCount, setApprovalsCount] = useState(0);
-  const [hrPendingCount, setHrPendingCount] = useState(0);
-  const [requestsCount, setRequestsCount] = useState(0);
+  // Navbar counts per section (PageNav.badge).
+  const [badges, setBadges] = useState<Record<string, number>>({});
   // A request to open on the Requests page (from a notification).
   const [requestFocus, setRequestFocus] = useState<string | null>(null);
   // Bumped when an organization's modules change, so the permissions (and navbar) reload.
@@ -462,47 +235,21 @@ export default function App() {
 
   const refreshBadges = useCallback(async () => {
     if (!session || !orgId) {
-      setApprovalsCount(0);
-      setHrPendingCount(0);
-      setRequestsCount(0);
+      setBadges({});
       return;
     }
-    try {
-      const headers = await authHeaders();
-      const tasks: Promise<void>[] = [];
-      if (flags.canManage) {
-        tasks.push(
-          fetch(`${API}/workflows/assigned-to-me`, { headers })
-            .then((r) => r.json())
-            .then((d) => setApprovalsCount(Array.isArray(d) ? d.length : 0))
-            .catch(() => {}),
-        );
-      } else {
-        setApprovalsCount(0);
-      }
-      if (isReviewer) {
-        tasks.push(
-          fetch(`${API}/organizations/${orgId}/basicdata/pending`, { headers })
-            .then((r) => r.json())
-            .then((d) => setHrPendingCount(Array.isArray(d) ? d.length : 0))
-            .catch(() => {}),
-        );
-      } else {
-        setHrPendingCount(0);
-      }
-      if (allowed('requests')) {
-        tasks.push(
-          fetch(`${API}/organizations/${orgId}/requests/summary`, { headers })
-            .then((r) => r.json())
-            .then((d) => setRequestsCount(typeof d?.inbox === 'number' ? d.inbox : 0))
-            .catch(() => {}),
-        );
-      } else {
-        setRequestsCount(0);
-      }
-      await Promise.all(tasks);
-    } catch { /* offline fallback */ }
-  }, [session, orgId, flags.canManage, isReviewer, authHeaders, allowed]);
+    const ctx = { orgId, authHeaders, permissions, roles: flags };
+    const counted = await Promise.all(
+      PAGES.filter((p) => p.nav?.badge && allowed(p.section)).map(async (p) => {
+        try {
+          return [p.section, await p.nav!.badge!(ctx)] as const;
+        } catch {
+          return [p.section, 0] as const; // offline
+        }
+      }),
+    );
+    setBadges(Object.fromEntries(counted));
+  }, [session, orgId, flags, permissions, authHeaders, allowed]);
 
   const refreshWorkStatus = useCallback(async () => {
     if (!session) {
@@ -668,8 +415,6 @@ export default function App() {
     );
   }
 
-  const useProjectTimeRanges = session.settings?.useProjectTimeMinutesRanges === true;
-
   interface NavSubItem {
     id: string;
     section: Section;
@@ -679,149 +424,52 @@ export default function App() {
     badge?: number;
   }
 
-  interface NavItem {
-    id: string;
-    section: Section;
-    label: string;
-    icon: ReactNode;
-    visible: boolean;
-    indent?: boolean;
-    dividerBefore?: boolean;
-    badge?: number;
+  interface NavItem extends NavSubItem {
     children?: NavSubItem[];
   }
 
-  const NAV_GROUPS: Array<{
-    id: string;
-    /** Empty: no heading, the group starts after a line instead. */
-    header: string;
-    items: NavItem[];
-  }> = [
-    {
-      id: 'myWork',
-      header: t('nav.myWork'),
-      items: [
-        { id: 'home', section: 'home', label: t('nav.home'), icon: <DashboardIcon fontSize="small" />, visible: allowed('home') },
-        { id: 'workTime', section: 'workTime', label: t('nav.workTime'), icon: <TimerIcon fontSize="small" />, visible: allowed('workTime') },
-        { id: 'absences', section: 'absences', label: t('nav.absences'), icon: <BeachAccessIcon fontSize="small" />, visible: allowed('absences') },
-        { id: 'timesheet', section: 'timesheet', label: t('nav.monthlyTimesheet'), icon: <CalendarMonthIcon fontSize="small" />, visible: allowed('timesheet') },
-      ],
-    },
-    {
-      id: 'projectTracking',
-      header: t('nav.projectTracking'),
-      items: [
-        { id: 'time', section: 'time', label: t('nav.timeTracking'), icon: <ScheduleIcon fontSize="small" />, visible: allowed('time') },
-        { id: 'projectTimesheet', section: 'projectTimesheet', label: t('nav.projectTimesheet'), icon: <WorkspacesIcon fontSize="small" />, visible: allowed('projectTimesheet') },
-      ],
-    },
-    {
-      id: 'cases',
-      header: t('nav.casesGroup'),
-      items: [
-        { id: 'cases', section: 'cases', label: t('nav.cases'), icon: <FolderSharedIcon fontSize="small" />, visible: allowed('cases') },
-        {
-          id: 'assessmentTemplates',
-          section: 'assessmentTemplates',
-          label: t('nav.assessmentTemplates'),
-          icon: <ArticleIcon fontSize="small" />,
-          visible: allowed('assessmentTemplates'),
-        },
-      ],
-    },
-    {
-      id: 'organization',
-      header: t('nav.organization'),
-      items: [
-        { id: 'directory', section: 'directory', label: t('nav.directory'), icon: <ContactsIcon fontSize="small" />, visible: allowed('directory') },
-        { id: 'hours', section: 'hours', label: t('nav.teamHours'), icon: <GroupIcon fontSize="small" />, visible: allowed('hours') },
-        { id: 'balances', section: 'balances', label: t('nav.balances'), icon: <AccountBalanceWalletIcon fontSize="small" />, visible: allowed('balances') },
-        { id: 'reports', section: 'reports', label: t('nav.reports'), icon: <BarChartIcon fontSize="small" />, visible: allowed('reports') },
-        {
-          id: 'approvals',
-          section: 'approvals',
-          label: t('nav.approvals'),
-          icon: <CheckCircleIcon fontSize="small" />,
-          visible: allowed('approvals'),
-          badge: approvalsCount,
-        },
-        {
-          id: 'users',
-          section: 'users',
-          label: t('nav.users'),
-          icon: <PeopleIcon fontSize="small" />,
-          visible: allowed('users') || allowed('invitations'),
-          children: [
-            {
-              id: 'invitations',
-              section: 'invitations',
-              label: t('nav.invitations'),
-              icon: <MailIcon fontSize="small" />,
-              visible: allowed('invitations'),
-            },
-          ],
-        },
-        {
-          id: 'management',
-          section: 'management',
-          label: t('nav.management'),
-          icon: <WorkspacesIcon fontSize="small" />,
-          visible: allowed('management'),
-          children: [
-            {
-              id: 'managementProjects',
-              section: 'managementProjects',
-              label: t('nav.projects'),
-              icon: <FolderCopyIcon fontSize="small" />,
-              visible: allowed('managementProjects'),
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'administration',
-      header: t('nav.administration'),
-      items: [
-        { id: 'orgSettings', section: 'orgSettings', label: t('nav.organizationSettings'), icon: <SettingsIcon fontSize="small" />, visible: allowed('orgSettings') },
-        { id: 'importExport', section: 'importExport', label: t('nav.importExport'), icon: <ImportExportIcon fontSize="small" />, visible: allowed('importExport') },
-        { id: 'audit', section: 'audit', label: t('nav.auditLog'), icon: <HistoryIcon fontSize="small" />, visible: allowed('audit') },
-        {
-          id: 'admin',
-          section: 'admin',
-          label: t('nav.adminSettings'),
-          icon: <TuneIcon fontSize="small" />,
-          visible: allowed('admin'),
-          children: [
-            {
-              id: 'adminRoles',
-              section: 'adminRoles',
-              label: t('roles.title'),
-              icon: <GroupIcon fontSize="small" />,
-              visible: allowed('adminRoles'),
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'personal',
-      header: t('nav.personal'),
-      items: [
-        { id: 'requests', section: 'requests', label: t('nav.requests'), icon: <ForumIcon fontSize="small" />, visible: allowed('requests'), badge: requestsCount },
-        { id: 'documents', section: 'documents', label: t('nav.documents'), icon: <DescriptionIcon fontSize="small" />, visible: allowed('documents') },
-        {
-          id: 'myData',
-          section: 'myData',
-          label: t('nav.myData'),
-          icon: <PersonIcon fontSize="small" />,
-          visible: allowed('myData'),
-          badge: isReviewer ? hrPendingCount : 0,
-        },
-      ],
-    },
-  ];
-  addPluginNav(NAV_GROUPS, (p) => ({ id: p.section, section: p.section, label: t(p.nav!.label), icon: p.nav!.icon, visible: allowed(p.section) }), t);
+  const toNavItem = (p: AppPage): NavSubItem => ({
+    id: p.section,
+    section: p.section,
+    label: t(p.nav!.label),
+    icon: p.nav!.icon,
+    visible: allowed(p.section),
+    badge: badges[p.section],
+  });
+  const NAV_GROUPS: Array<{ id: string; header: string; items: NavItem[] }> = NAV_TREE.map((g) => ({
+    id: g.id,
+    header: g.header ? t(g.header) : '',
+    items: g.items.map(({ page, children }): NavItem => {
+      const subItems = children.map(toNavItem);
+      const item = toNavItem(page);
+      return {
+        ...item,
+        visible: item.visible || (!!page.nav!.showForChildren && subItems.some((c) => c.visible)),
+        children: subItems.length > 0 ? subItems : undefined,
+      };
+    }),
+  }));
+
+  const pageContext: CorePageContext | null = orgId
+    ? {
+        orgId,
+        userId: session.userId,
+        authHeaders,
+        permissions,
+        roles: flags,
+        navigate,
+        session,
+        isReviewer,
+        onBadgesChanged: () => void refreshBadges(),
+        onWorkTimeChanged: () => setWorkTimeVersion((v) => v + 1),
+        projectsVersion,
+        onProjectsChanged: () => setProjectsVersion((v) => v + 1),
+        requestFocus,
+        liveNotification,
+        onModulesChanged: () => setPermissionsVersion((v) => v + 1),
+      }
+    : null;
+  const currentPage = pageContext && allowed(section) ? pageOf(section) : undefined;
 
   const navList = (
     <List dense>
@@ -861,7 +509,6 @@ export default function App() {
 
                 return (
                   <li key={n.id} style={{ listStyle: 'none' }}>
-                    {n.dividerBefore && <Divider sx={{ mx: 1, my: 0.5, mt: group.header ? 0.5 : 1.5 }} />}
                     <ListItemButton
                       selected={section === n.section}
                       onClick={() => {
@@ -879,7 +526,6 @@ export default function App() {
                           setExpandedNav((prev) => ({ ...prev, [n.id]: !isExpanded }));
                         }
                       }}
-                      sx={n.indent ? { pl: n.icon ? 3 : 5 } : undefined}
                     >
                       {n.icon && (
                         <ListItemIcon sx={{ minWidth: 32, color: 'inherit' }}>
@@ -888,7 +534,7 @@ export default function App() {
                       )}
                       <ListItemText
                         primary={n.label}
-                        slotProps={n.indent ? { primary: { fontSize: '0.86rem' } } : { primary: { fontSize: '0.9rem' } }}
+                        slotProps={{ primary: { fontSize: '0.9rem' } }}
                       />
                       {!!n.badge && n.badge > 0 && (
                         <Chip
@@ -1128,179 +774,7 @@ export default function App() {
           <Container maxWidth="xl" sx={{ py: 3, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 2 }}>
             <DesignModeNotice />
             <Suspense fallback={<LinearProgress sx={{ my: 2 }} />}>
-              {section === 'home' && orgId && (
-                <Home
-                  orgId={orgId}
-                  userId={session.userId}
-                  displayName={session.displayName}
-                  canManage={flags.canManage}
-                  isHrOrAdmin={isReviewer}
-                  authHeaders={authHeaders}
-                  onNavigate={(target) => navigate(target)}
-                  onWorkTimeChanged={() => setWorkTimeVersion((v) => v + 1)}
-                  onReviewResolved={() => void refreshBadges()}
-                />
-              )}
-              {section === 'myData' && allowed('myData') && orgId && (
-                <MyData
-                  orgId={orgId}
-                  userId={session.userId}
-                  authHeaders={authHeaders}
-                  onReviewResolved={() => void refreshBadges()}
-                  showWorkSchedule={permissions ? holdsAny(permissions, 'section.workTime.schedule') : true}
-                  showEmployment={permissions ? holdsAny(permissions, 'section.people.employment') : true}
-                />
-              )}
-              {section === 'projectTimesheet' && allowed('projectTimesheet') && orgId && (
-                <TeamView
-                  orgId={orgId}
-                  kind="projectTimesheet"
-                  authHeaders={authHeaders}
-                  renderOwn={(personId, month) => (
-                    <ProjectTimesheet orgId={orgId} userId={session.userId} authHeaders={authHeaders} initialPersonId={personId} initialMonth={month} />
-                  )}
-                />
-              )}
-              {section === 'time' && allowed('time') && orgId && (
-                <TeamView
-                  orgId={orgId}
-                  kind="time"
-                  authHeaders={authHeaders}
-                  renderOwn={(personId) => (
-                    <ProjectTime
-                      orgId={orgId}
-                      userId={session.userId}
-                      useProjectTimeRanges={useProjectTimeRanges}
-                      authHeaders={authHeaders}
-                      projectsVersion={projectsVersion}
-                      initialPersonId={personId}
-                    />
-                  )}
-                />
-              )}
-              {section === 'timesheet' && allowed('timesheet') && orgId && (
-                <TeamView
-                  orgId={orgId}
-                  kind="timesheet"
-                  authHeaders={authHeaders}
-                  renderOwn={(personId, month) => (
-                    <Timesheet orgId={orgId} userId={session.userId} authHeaders={authHeaders} initialPersonId={personId} initialMonth={month} />
-                  )}
-                />
-              )}
-              {section === 'workTime' && allowed('workTime') && orgId && (
-                <TeamView
-                  orgId={orgId}
-                  kind="workTime"
-                  authHeaders={authHeaders}
-                  renderOwn={(personId) => (
-                    <WorkTime
-                      orgId={orgId}
-                      userId={session.userId}
-                      authHeaders={authHeaders}
-                      onWorkTimeChanged={() => setWorkTimeVersion((v) => v + 1)}
-                      initialPersonId={personId}
-                    />
-                  )}
-                />
-              )}
-              {section === 'absences' && allowed('absences') && orgId && (
-                <TeamView orgId={orgId} kind="absences" authHeaders={authHeaders} renderOwn={() => <Absences orgId={orgId} userId={session.userId} authHeaders={authHeaders} />} />
-              )}
-              {(section === 'management' || section === 'managementProjects') && allowed(section) && orgId && (
-                <Management
-                  session={session}
-                  orgId={orgId}
-                  // 'admin' = edits every team and project; 'manager' = only the ones they lead/own.
-                  role={
-                    permissions
-                      ? grantedScopes(permissions, 'nav.management', 'edit').has('all') ? 'admin' : 'manager'
-                      : flags.displayRole
-                  }
-                  authHeaders={authHeaders}
-                  tab={section === 'managementProjects' ? 'projects' : 'teams'}
-                  onDataChanged={() => setProjectsVersion((v) => v + 1)}
-                />
-              )}
-              {section === 'hours' && allowed('hours') && orgId && (
-                <TeamHours orgId={orgId} authHeaders={authHeaders} />
-              )}
-              {section === 'reports' && allowed('reports') && orgId && (
-                <Reports orgId={orgId} authHeaders={authHeaders} />
-              )}
-              {section === 'balances' && allowed('balances') && orgId && (
-                <BalanceReport orgId={orgId} authHeaders={authHeaders} />
-              )}
-              {section === 'invitations' && allowed('invitations') && orgId && (
-                <Invitations orgId={orgId} authHeaders={authHeaders} />
-              )}
-              {section === 'approvals' && allowed('approvals') && orgId && (
-                <Approvals
-                  orgId={orgId}
-                  role={flags.displayRole}
-                  authHeaders={authHeaders}
-                  onChanged={() => void refreshBadges()}
-                />
-              )}
-              {section === 'documents' && allowed('documents') && orgId && <Documents orgId={orgId} authHeaders={authHeaders} />}
-              {section === 'directory' && allowed('directory') && orgId && <Directory orgId={orgId} authHeaders={authHeaders} />}
-              {section === 'requests' && allowed('requests') && orgId && (
-                <Requests
-                  orgId={orgId}
-                  userId={session?.userId ?? null}
-                  authHeaders={authHeaders}
-                  focusId={requestFocus}
-                  refreshKey={liveNotification}
-                  onChanged={() => void refreshBadges()}
-                />
-              )}
-              {section === 'users' && allowed('users') && orgId && (
-                <Users
-                  orgId={orgId}
-                  isAdmin={flags.isAdmin}
-                  isHr={flags.isHr}
-                  canAccessBasicData={permissions ? seesOthersBasicData(permissions) : flags.isAdmin || flags.isHr}
-                  canSeeWorkSchedules={permissions ? holdsBeyondOwn(permissions, 'section.workTime.schedule', 'see') : flags.isAdmin || flags.isHr || flags.canManage}
-                  canSeeEmployment={permissions ? holdsBeyondOwn(permissions, 'section.people.employment', 'see') : flags.isAdmin || flags.isHr || flags.canManage}
-                  canSeePersonnelDocs={permissions ? holdsBeyondOwn(permissions, 'section.people.documents', 'see') : flags.isHr}
-                  canManage={flags.canManage}
-                  authHeaders={authHeaders}
-                />
-              )}
-              {section === 'audit' && allowed('audit') && orgId && (
-                <AuditLog orgId={orgId} authHeaders={authHeaders} />
-              )}
-              {(section === 'admin' || section === 'adminRoles') && allowed(section) && orgId && (
-                <AdminSettings orgId={orgId} authHeaders={authHeaders} tab={section === 'adminRoles' ? 'roles' : 'staticData'} />
-              )}
-              {section === 'orgSettings' && allowed('orgSettings') && orgId && (
-                <OrganizationSettings orgId={orgId} authHeaders={authHeaders} onModulesChanged={() => setPermissionsVersion((v) => v + 1)} />
-              )}
-              {section === 'importExport' && allowed('importExport') && orgId && (
-                <ImportExport orgId={orgId} isAdmin={flags.isAdmin} isHr={flags.isHr} authHeaders={authHeaders} />
-              )}
-              {section === 'cases' && allowed('cases') && orgId && (
-                <Cases
-                  orgId={orgId}
-                  authHeaders={authHeaders}
-                  canEdit={flags.isAdmin || flags.isManager || (permissions ? holdsAny(permissions, 'nav.cases') : true)}
-                />
-              )}
-              {section === 'assessmentTemplates' && allowed('assessmentTemplates') && orgId && (
-                <AssessmentTemplates
-                  orgId={orgId}
-                  authHeaders={authHeaders}
-                  canEdit={flags.isAdmin || flags.isManager || (permissions ? holdsAny(permissions, 'nav.cases') : true)}
-                />
-              )}
-              {orgId && allowed(section) && pluginPage(section)?.render({
-                orgId,
-                userId: session.userId,
-                authHeaders,
-                permissions,
-                roles: flags,
-                navigate,
-              })}
+              {currentPage && pageContext && currentPage.render(pageContext)}
             </Suspense>
           </Container>
           {isMobile && orgId && (

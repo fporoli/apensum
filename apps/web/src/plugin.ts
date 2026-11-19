@@ -25,18 +25,46 @@ export interface PluginPageContext {
   navigate: (section: string) => void;
 }
 
-export interface PluginPage {
+/** What a navbar count (`PageNav.badge`) is loaded with. */
+export interface PluginBadgeContext<R extends PluginRoles = PluginRoles> {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  permissions: Set<string> | null;
+  roles: R;
+}
+
+/** A page's navbar entry. */
+export interface PageNav<R extends PluginRoles = PluginRoles> {
+  /** A core group ('myWork', 'projectTracking', 'cases', 'organization', 'administration', 'personal') or one of navGroups. */
+  group: string;
+  /** i18n key of the label. */
+  label: string;
+  icon?: ReactNode;
+  /** The entry (section) it follows in its group, or among its parent's sub-entries; at the end when unknown. */
+  after?: string;
+  /** Shows it as a sub-entry of another page's entry (that page's section), e.g. Users -> Invitations. */
+  parent?: string;
+  /** Shown while the caller may open one of its sub-entries, even when not the page itself. */
+  showForChildren?: boolean;
+  /** A count next to the entry (e.g. items waiting); loaded while the page is allowed, again on every notification. */
+  badge?: (ctx: PluginBadgeContext<R>) => Promise<number>;
+}
+
+/**
+ * A page of the app. The core's pages (corePages.tsx) and the plugins' use the same shape; the core's
+ * get a richer context (C).
+ */
+export interface PluginPage<C extends PluginPageContext = PluginPageContext> {
   /** Section id, unique across the app (e.g. 'expenses'). */
   section: string;
   /** Location hash, e.g. '#/expenses'. */
   hash: string;
-  /** Permission object behind the page (packages/shared/src/permissions.ts), e.g. 'nav.expenses'. */
-  object: string;
+  /** Permission object behind the page (packages/shared/src/permissions.ts), e.g. 'nav.expenses'; none = everyone. */
+  object?: string;
   /** Who may open it before permissions have loaded or when the API is offline; default everyone. */
-  allowedByRole?: (roles: PluginRoles) => boolean;
-  /** Navbar entry: a core group ('myWork', 'projectTracking', 'organization', 'administration', 'personal') or one of navGroups. */
-  nav?: { group: string; label: string; icon: ReactNode; after?: string };
-  render: (ctx: PluginPageContext) => ReactNode;
+  allowedByRole?: (roles: C['roles']) => boolean;
+  nav?: PageNav<C['roles']>;
+  render: (ctx: C) => ReactNode;
 }
 
 export interface PluginNavGroup {

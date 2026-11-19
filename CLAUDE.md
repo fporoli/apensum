@@ -248,8 +248,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
 
 ## Web conventions (`apps/web/src`)
 
-- Flat folder of PascalCase page components, lazy-loaded from `App.tsx`,
-  which owns the nav drawer, session, org switcher and role gating.
+- Flat folder of PascalCase page components. Each page is an entry in `corePages.tsx` (section, hash,
+  permission object, role fallback, navbar entry with optional parent and count, render), the same shape
+  plugins use (`PluginPage`); `App.tsx` builds the navbar (`navigation.ts`), hashes and gating from
+  the core's and the plugins' entries alike and owns session, org switcher and badges.
 - Each page calls the API directly with
   `fetch(\`${API}/...\`, { headers: await authHeaders() })`, where
   `const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1'`

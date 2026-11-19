@@ -43,7 +43,7 @@ host-run API and web app directly.
 
 | Path | What it is |
 | --- | --- |
-| `apps/web` | React 18 + MUI + Vite. One PascalCase file per page, lazy-loaded from `App.tsx` (nav drawer, session, org switcher, role gating). |
+| `apps/web` | React 18 + MUI + Vite. One PascalCase file per page, registered in `corePages.tsx` like a plugin page; `App.tsx` builds nav drawer, routing and gating from them. |
 | `apps/api` | NestJS API, one controller per resource. |
 | `packages/shared` | Code shared by web and API: `permissions.ts` (permission catalogue), `fields.ts` (configurable form fields), `branding.ts`, `worktime.ts` (daily targets, holidays, month summaries, vacation entitlement). `index.ts` (role ids, RBAC matrix) is mirrored but not yet imported. |
 | `infra/liquibase` | The database schema's source of truth (see below). |
@@ -66,7 +66,7 @@ host-run API and web app directly.
 
 | Area | Files |
 | --- | --- |
-| Session and shell | `App.tsx` (nav groups, session, org switcher, branding), `Login.tsx` (local + Keycloak SSO + invite-accept), `Home`, `NotificationBell`, `UserMenu` |
+| Session and shell | `App.tsx` (session, org switcher, branding), `corePages.tsx` (pages and nav groups), `Login.tsx` (local + Keycloak SSO + invite-accept), `Home`, `NotificationBell`, `UserMenu` |
 | My work | `WorkTime` (check-in/out), `Absences` (requests, approvals, calendar, RFC 5545 iCal/WebCal subscriptions), `Timesheet` (monthly working-time timesheet for the line manager), `MyData` (`BasicDataPanel`), `BalancesPanel` (overtime/vacation by month) |
 | Projects | `ProjectTime` (hours per project), `ProjectTimesheet` (monthly submission to each project's owner) |
 | Expenses | `Expenses`, `ExpenseReports`, `ExpenseProcessing` |

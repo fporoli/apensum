@@ -24,7 +24,3 @@ export const PLUGIN_ORG_SETTINGS: readonly PluginSettingsSection[] = WEB_PLUGINS
 export const PLUGIN_PUBLIC_ROUTES: readonly PluginPublicRoute[] = WEB_PLUGINS.flatMap((p) => p.publicRoutes ?? []);
 export const PLUGIN_WORKFLOW_KINDS: readonly PluginWorkflowKind[] = WEB_PLUGINS.flatMap((p) => p.workflowKinds ?? []);
 export const PLUGIN_NOTIFICATION_SECTIONS: Readonly<Record<string, string>> = Object.assign({}, ...WEB_PLUGINS.map((p) => p.notificationSections ?? {}));
-
-export function pluginPage(section: string): PluginPage | undefined {
-  return PLUGIN_PAGES.find((p) => p.section === section);
-}
