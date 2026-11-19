@@ -77,15 +77,6 @@ test('caseKeys returns the caller\'s wrapped key and nothing to people who may n
   assert.deepEqual(outsider, { ok: true, encrypted: false, mine: null, members: [] });
 });
 
-test('revoking: holders who may edit remove others, never the last key', async () => {
-  const a = setup({ perms, holders: [LEAD, MEMBER] });
-  assert.deepEqual(await a.controller.revokeKey(ORG, CASE, MEMBER, a.as(LEAD)), { ok: true });
-  const b = setup({ perms, holders: [LEAD] });
-  assert.deepEqual(await b.controller.revokeKey(ORG, CASE, LEAD, b.as(LEAD)), { ok: false, error: 'last-key' });
-  const c = setup({ perms, holders: [LEAD] });
-  assert.deepEqual(await c.controller.revokeKey(ORG, CASE, LEAD, c.as(MEMBER)), { ok: false, error: 'forbidden' });
-});
-
 test('own key pair: created once, public key must stay on a passphrase change', async () => {
   const rec = { publicKey: 'cHVi', wrappedPrivateKey: 'd3Jh', salt: 'c2FsdA==', iterations: 600000 };
   const { controller, as } = setup({ perms });

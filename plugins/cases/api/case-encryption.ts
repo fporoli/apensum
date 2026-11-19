@@ -67,3 +67,46 @@ export function checkComputeContent(raw: unknown): ComputeContent {
     })),
   } as unknown as ComputeContent;
 }
+
+/**
+ * Replacing a case's key: the browser re-seals every row under a new key and wraps it for everyone who keeps access,
+ * all in one request. Every row must come back exactly once (a row left behind would be unreadable), and the
+ * caller must keep a key. The server cannot check the envelopes or the wrapped keys, only their shape and coverage.
+ */
+export interface RotationPlan {
+  expectedUpdatedAt: string;
+  keys: { userId: string; wrappedKey: string }[];
+  enc: unknown;
+  interviews: { id: string; enc: unknown }[];
+  assessments: { id: string; enc: unknown }[];
+  documents: { id: string; enc: unknown }[];
+}
+
+export function checkRotation(
+  body: Record<string, any>,
+  callerId: string,
+  existing: { interviews: string[]; assessments: string[]; documents: string[] },
+): RotationPlan {
+  if (typeof body.expectedUpdatedAt !== 'string') throw new BadRequestException('rotation-incomplete');
+  if (!validEnvelope(body.case?.enc)) throw new BadRequestException('invalid-envelope');
+  if (!Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > 200) throw new BadRequestException('rotation-incomplete');
+  const keys = body.keys.map((k: any) => {
+    if (typeof k?.userId !== 'string' || !UUID.test(k.userId) || !isWrappedKey(k.wrappedKey)) throw new BadRequestException('invalid-key');
+    return { userId: k.userId as string, wrappedKey: k.wrappedKey as string };
+  });
+  if (new Set(keys.map((k: { userId: string }) => k.userId)).size !== keys.length || !keys.some((k: { userId: string }) => k.userId === callerId)) throw new BadRequestException('rotation-incomplete');
+  const take = (list: unknown, want: string[]) => {
+    if (!Array.isArray(list)) throw new BadRequestException('rotation-incomplete');
+    const items = list.map((x: any) => {
+      if (typeof x?.id !== 'string' || !validEnvelope(x.enc)) throw new BadRequestException('invalid-envelope');
+      return { id: x.id as string, enc: x.enc };
+    });
+    const ids = new Set(items.map((i) => i.id));
+    if (ids.size !== items.length || ids.size !== want.length || want.some((id) => !ids.has(id))) throw new BadRequestException('rotation-incomplete');
+    return items;
+  };
+  return {
+    expectedUpdatedAt: body.expectedUpdatedAt, keys, enc: body.case.enc,
+    interviews: take(body.interviews, existing.interviews), assessments: take(body.assessments, existing.assessments), documents: take(body.documents, existing.documents),
+  };
+}

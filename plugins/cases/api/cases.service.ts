@@ -9,6 +9,7 @@ import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-
 import { CaseAiService } from './case-ai.service';
 import { documents, users } from '@worktime3/api/schema';
 import { buildRuleDraft } from '../shared/caseDraft';
+import { validateCustomFieldDefs, validateCustomValues, type CaseCustomField, type CustomFieldTarget } from '../shared/cases';
 import type { ComputeContent } from './case-encryption';
 import { checkCustom, checkNewEncryptedCase, checkWrite } from './case-encryption';
 import { casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases } from './db/schema';
@@ -43,6 +44,27 @@ export class CasesService {
     const d = this.dbService.getDb();
     if (!d) throw new ServiceUnavailableException('db-unavailable');
     return d;
+  }
+
+  /** The organization's own fields on cases and assessments (Organization settings), never failing: a bad stored value reads as none. */
+  async customFields(orgId: string): Promise<CaseCustomField[]> {
+    const { rows } = await this.db.execute<{ f: unknown }>(sql`SELECT settings->'cases'->'customFields' AS f FROM organizations WHERE id = ${orgId}::uuid`);
+    const checked = validateCustomFieldDefs(rows[0]?.f ?? []);
+    return checked.ok ? checked.value : [];
+  }
+
+  async saveCustomFields(orgId: string, fields: CaseCustomField[]): Promise<void> {
+    await this.db.execute(sql`
+      UPDATE organizations
+      SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{cases}',
+                               COALESCE(settings->'cases', '{}'::jsonb) || jsonb_build_object('customFields', ${JSON.stringify(fields)}::jsonb))
+      WHERE id = ${orgId}::uuid`);
+  }
+
+  /** Plain rows: the values must match the definitions. (An encrypted row's values are checked by the browser.) */
+  private async assertCustomValues(orgId: string, target: CustomFieldTarget, custom: unknown): Promise<void> {
+    if (custom === undefined) return;
+    if (validateCustomValues(await this.customFields(orgId), target, custom)) throw new BadRequestException('invalid-custom');
   }
 
   /** List cases for an organization, optionally restricted to those led by callerId. */
@@ -138,6 +160,7 @@ export class CasesService {
   /** Create a new case. */
   async createCase(orgId: string, callerId: string, dto: CreateCaseDto): Promise<Case> {
     if (dto.enc !== undefined) return this.createEncryptedCase(orgId, callerId, dto);
+    await this.assertCustomValues(orgId, 'case', checkCustom(dto.custom));
     const ref = dto.reference_number?.trim();
     const title = dto.title?.trim();
     const subject = dto.subject_name?.trim();
@@ -188,6 +211,7 @@ export class CasesService {
     const existing = await this.getCase(orgId, caseId);
     checkWrite('case', !!existing.encrypted, dto as Record<string, unknown>, { requireEnc: false });
     const custom = checkCustom(dto.custom);
+    if (!existing.encrypted) await this.assertCustomValues(orgId, 'case', custom);
 
     const dob = dto.subject_dob !== undefined
       ? (dto.subject_dob && String(dto.subject_dob).trim() ? String(dto.subject_dob).trim() : null)
@@ -665,6 +689,7 @@ export class CasesService {
       return this.getAssessment(caseId, dto.id as string);
     }
     const custom = checkCustom(dto.custom) ?? {};
+    await this.assertCustomValues(orgId, 'assessment', custom);
 
     // Initial section content defaults if not provided
     const initialSections: Record<string, string> = dto.sections_content ?? {};
@@ -703,6 +728,10 @@ export class CasesService {
     await this.getAssessment(caseId, assessmentId);
     checkWrite('assessment', encrypted, dto as Record<string, unknown>, { requireEnc: false });
     const custom = checkCustom(dto.custom);
+    if (!encrypted && custom) {
+      const { rows: [own] } = await this.db.execute<{ organization_id: string }>(sql`SELECT organization_id FROM cases.cases WHERE id = ${caseId}::uuid`);
+      if (own) await this.assertCustomValues(own.organization_id, 'assessment', custom);
+    }
 
     await this.db.execute(sql`
       UPDATE cases.assessments

@@ -8,8 +8,8 @@ import { decryptJson, encryptJson, isEnvelope, type Envelope } from './caseCrypt
 import type { Assessment, Case, CaseDocument, CaseInterview } from './cases';
 
 export const CASE_FIELDS = ['title', 'subject_name', 'subject_dob', 'metadata', 'custom'] as const;
-export const INTERVIEW_FIELDS = ['interviewee_name', 'transcript_text', 'summary', 'tags', 'audio_mime'] as const;
-export const DOCUMENT_FIELDS = ['title', 'extracted_text', 'file_name', 'mime_type', 'metadata'] as const;
+export const INTERVIEW_FIELDS = ['interviewee_name', 'transcript_text', 'summary', 'tags', 'audio_mime', 'audio_key'] as const;
+export const DOCUMENT_FIELDS = ['title', 'extracted_text', 'file_name', 'mime_type', 'metadata', 'file_key'] as const;
 export const ASSESSMENT_FIELDS = ['title', 'sections_content', 'custom'] as const;
 
 export type VaultKind = 'case' | 'interview' | 'assessment' | 'document';
@@ -20,8 +20,8 @@ export const vaultAad = (kind: VaultKind, id: string) => `cases:${kind}:${id}`;
 /** What a row looks like when its secrets are removed: sent to the server next to `enc`. */
 export const BLANK: Record<VaultKind, Record<string, unknown>> = {
   case: { title: '', subject_name: '', subject_dob: null, metadata: {}, custom: {} },
-  interview: { interviewee_name: '', transcript_text: '', summary: null, tags: [], audio_mime: null },
-  document: { title: '', extracted_text: null, file_name: null, mime_type: null, metadata: {} },
+  interview: { interviewee_name: '', transcript_text: '', summary: null, tags: [], audio_mime: null, audio_key: null },
+  document: { title: '', extracted_text: null, file_name: null, mime_type: null, metadata: {}, file_key: null },
   assessment: { title: '', sections_content: {}, custom: {} },
 };
 

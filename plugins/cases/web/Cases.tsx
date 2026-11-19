@@ -28,9 +28,12 @@ import {
 } from '@mui/material';
 import { useI18n } from '@worktime3/web/plugin';
 import { CaseKeyControl } from './CaseKeyControl';
+import { CaseMembersDialog } from './CaseMembersDialog';
+import { CustomFieldsForm, useCustomFields } from './CustomFields';
 import { isUnlocked, useKeyringState } from './caseKeyring';
-import { caseMatches, compute, discardNewCaseKey, keyOf, newEncryptedCaseBody, openAssessments, openBytes, openCaseList, openDocuments, openInterviews, saveBlob, sealBytes } from './caseVaultClient';
+import { caseMatches, compute, discardNewCaseKey, keyOf, newEncryptedCaseBody, openAssessments, openCaseList, openDocuments, openFile, openInterviews, saveBlob, sealFile } from './caseVaultClient';
 import { buildRuleDraft } from '../shared/caseDraft';
+import { buildAssessmentDocx, DOCX_MIME } from '../shared/caseDocx';
 import { sealedBody } from '../shared/caseVault';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 import { CaseInterviewEditor, caseErrorText, interviewError, interviewResponse, type InterviewAiProviders } from './CaseInterviewEditor';
@@ -514,9 +517,11 @@ function CaseDossierWorkspace({
   onRefreshCase: () => Promise<void>;
 }) {
   const { t } = useI18n();
+  const [membersOpen, setMembersOpen] = useState(false);
 
   return (
     <Box>
+      {membersOpen && <CaseMembersDialog orgId={orgId} caseItem={caseItem} authHeaders={authHeaders} canEdit={canEdit} onClose={() => setMembersOpen(false)} onChanged={onRefreshCase} />}
       {/* Dossier Header */}
       <Box sx={{ mb: 3 }}>
         <Button onClick={onBack} sx={{ mb: 1 }} size="small">
@@ -548,6 +553,9 @@ function CaseDossierWorkspace({
               {caseItem.lead_user_name ?? t('cases.unassigned')}
             </Typography>
           </Box>
+          {caseItem.enc && !caseItem.vault_locked && (
+            <Button size="small" variant="outlined" onClick={() => setMembersOpen(true)}>{t('cases.members.button')}</Button>
+          )}
         </Box>
       </Box>
 
@@ -619,6 +627,53 @@ export function AssessmentTemplates({ orgId, authHeaders, canEdit }: {
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       <CaseTemplatesTab orgId={orgId} authHeaders={authHeaders} canEdit={canEdit} />
+    </Box>
+  );
+}
+
+/** The organization's own fields on this case (none shown until Organization settings define some). */
+function CaseCustomCard({ orgId, caseItem, authHeaders, canEdit, onDone }: {
+  orgId: string;
+  caseItem: Case;
+  authHeaders: () => Promise<Record<string, string>>;
+  canEdit: boolean;
+  onDone: () => Promise<void>;
+}) {
+  const { t } = useI18n();
+  const fields = useCustomFields(orgId, authHeaders, 'case');
+  const [values, setValues] = useState<Record<string, unknown>>(caseItem.custom ?? {});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { setValues(caseItem.custom ?? {}); }, [caseItem.id, caseItem.updated_at, caseItem.custom]);
+  if (!fields.length) return null;
+
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const key = caseItem.enc ? await keyOf(orgId, authHeaders, caseItem.id) : null;
+      const body = key
+        ? await sealedBody(key, 'case', caseItem.id, { title: caseItem.title, subject_name: caseItem.subject_name, subject_dob: caseItem.subject_dob, metadata: caseItem.metadata ?? {}, custom: values })
+        : { custom: values };
+      const res = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}`, {
+        method: 'PATCH', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.ok === false) throw new Error(data?.message ?? data?.error);
+      await onDone();
+    } catch {
+      setError(t('cases.keys.failed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 3 }}>
+      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>{t('cases.custom.cardTitle')}</Typography>
+      {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+      <CustomFieldsForm fields={fields} values={values} onChange={setValues} disabled={!canEdit || busy} />
+      {canEdit && <Button sx={{ mt: 1.5 }} variant="contained" size="small" disabled={busy} onClick={() => void save()}>{t('common.save')}</Button>}
     </Box>
   );
 }
@@ -721,6 +776,8 @@ function CaseOverviewTab({
             </Grid>
 
             {caseItem.enc && <Alert severity="success" sx={{ mt: 3 }}>{t('cases.keys.caseEncrypted')}</Alert>}
+
+            <CaseCustomCard orgId={orgId} caseItem={caseItem} authHeaders={authHeaders} canEdit={canEdit} onDone={onRefresh} />
 
             {caseItem.confidentiality === 'strictly_confidential' && (
               <Alert severity="warning" sx={{ mt: 3 }}>
@@ -869,10 +926,12 @@ function CaseDocumentsTab({
           if (r?.ok) { text = r.text; extraction = r.extraction; }
         }
         formData.set('id', id);
+        const sealedFile = selectedFile ? await sealFile('file', id, await selectedFile.arrayBuffer()) : null;
         formData.set('enc', JSON.stringify((await sealedBody(key, 'document', id, {
           title: title.trim() || selectedFile?.name || 'Document', extracted_text: text, file_name: selectedFile?.name ?? null, mime_type: selectedFile?.type || null, metadata: {},
+          file_key: sealedFile?.fileKey ?? null,
         })).enc));
-        if (selectedFile) formData.set('file', await sealBytes(key, 'file', id, await selectedFile.arrayBuffer()), 'document.bin');
+        if (sealedFile) formData.set('file', sealedFile.blob, 'document.bin');
         setNotice(extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
       } else {
         formData.set('title', title.trim() || selectedFile?.name || 'Document');
@@ -917,7 +976,7 @@ function CaseDocumentsTab({
       if (!res.ok) throw new Error();
       const key = encrypted ? await keyOf(orgId, authHeaders, caseId) : null;
       const bytes = await res.arrayBuffer();
-      saveBlob(new Blob([key ? await openBytes(key, 'file', d.id, bytes) : bytes], { type: d.mime_type || 'application/octet-stream' }), d.file_name || d.title);
+      saveBlob(new Blob([key && d.file_key ? await openFile(d.file_key, 'file', d.id, bytes) : bytes], { type: d.mime_type || 'application/octet-stream' }), d.file_name || d.title);
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -1201,9 +1260,10 @@ function CaseInterviewsTab({
       };
       const key = encrypted ? await keyOf(orgId, authHeaders, caseId) : null;
       const id = key ? crypto.randomUUID() : undefined;
-      const sealedFields = key && id ? { ...fields, audio_mime: audioFile?.type || null } : fields;
+      const sealedAudio = key && id && audioFile ? await sealFile('audio', id, await audioFile.arrayBuffer()) : null;
+      const sealedFields = key && id ? { ...fields, audio_mime: audioFile?.type || null, audio_key: sealedAudio?.fileKey ?? null } : fields;
       form.append('data', JSON.stringify(key && id ? { id, ...(await sealedBody(key, 'interview', id, sealedFields)) } : fields));
-      if (audioFile) form.append('file', key && id ? await sealBytes(key, 'audio', id, await audioFile.arrayBuffer()) : audioFile, key ? 'interview-audio.bin' : undefined);
+      if (audioFile) form.append('file', sealedAudio ? sealedAudio.blob : audioFile, sealedAudio ? 'interview-audio.bin' : undefined);
       const created = await interviewResponse(await fetch(endpoint, { method: 'POST', headers: await authHeaders(), body: form }));
       const interview = key ? (await openInterviews(key, [created.interview]))[0] : created.interview;
       setOpenModal(false);
@@ -1443,6 +1503,8 @@ function CaseAssessmentsTab({
   const [sectionsContent, setSectionsContent] = useState<Record<string, string>>({});
   const [savingAssessment, setSavingAssessment] = useState(false);
   const [assessmentStatus, setAssessmentStatus] = useState<string>('draft');
+  const [assessmentCustom, setAssessmentCustom] = useState<Record<string, unknown>>({});
+  const assessmentFields = useCustomFields(orgId, authHeaders, 'assessment');
 
   // Evidence panel in side-by-side view
   const [evidenceDocs, setEvidenceDocs] = useState<CaseDocument[]>([]);
@@ -1507,6 +1569,7 @@ function CaseAssessmentsTab({
     setActiveAssessment(ass);
     setAssessmentStatus(ass.status);
     setSectionsContent(ass.sections_content ?? {});
+    setAssessmentCustom(ass.custom ?? {});
     const tpl = templates.find((t) => t.id === ass.template_id);
     if (tpl) {
       setActiveTemplate(tpl);
@@ -1610,8 +1673,8 @@ function CaseAssessmentsTab({
           method: 'PATCH',
           headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify(key
-            ? { status: assessmentStatus, ...(await sealedBody(key, 'assessment', activeAssessment.id, { title: activeAssessment.title, sections_content: sectionsContent, custom: activeAssessment.custom ?? {} })) }
-            : { status: assessmentStatus, sections_content: sectionsContent }),
+            ? { status: assessmentStatus, ...(await sealedBody(key, 'assessment', activeAssessment.id, { title: activeAssessment.title, sections_content: sectionsContent, custom: assessmentCustom })) }
+            : { status: assessmentStatus, sections_content: sectionsContent, custom: assessmentCustom }),
         },
       );
       const data = await res.json();
@@ -1623,6 +1686,29 @@ function CaseAssessmentsTab({
       setError(t('common.cannotReachApi'));
     } finally {
       setSavingAssessment(false);
+    }
+  };
+
+  /** The Word file is built here from what the page has decrypted: nothing goes to the server, also for encrypted cases. */
+  const handleDownloadDocx = async (assessmentId: string) => {
+    const a = activeAssessment?.id === assessmentId ? { ...activeAssessment, sections_content: sectionsContent } : assessments.find((x) => x.id === assessmentId);
+    let tpl = activeAssessment?.id === assessmentId ? activeTemplate : templates.find((x) => x.id === a?.template_id);
+    if (!a) return;
+    try {
+      if (!tpl) {
+        const res = await fetch(`${API}/organizations/${orgId}/assessment-templates/${a.template_id}`, { headers: await authHeaders() });
+        const data = await res.json();
+        if (data?.ok) tpl = data.template;
+      }
+      if (!tpl) throw new Error();
+      const bytes = buildAssessmentDocx({
+        title: a.title, templateName: tpl.name, version: a.version, status: a.status, createdAt: a.created_at, confidentiality: caseItem.confidentiality,
+        case: caseItem, sections: tpl.sections as AssessmentTemplateSection[], contents: (a.sections_content as Record<string, string>) ?? {},
+        documents: evidenceDocs, interviews: interviewTranscripts,
+      });
+      saveBlob(new Blob([bytes], { type: DOCX_MIME }), `Beurteilung_${caseItem.reference_number}.docx`);
+    } catch {
+      setError(t('common.cannotReachApi'));
     }
   };
 
@@ -1740,6 +1826,14 @@ function CaseAssessmentsTab({
                           onClick={() => handleDownloadPdf(a.id)}
                         >
                           {t('cases.assessments.exportPdf')}
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<DownloadIcon fontSize="small" />}
+                          onClick={() => void handleDownloadDocx(a.id)}
+                        >
+                          {t('cases.assessments.exportWord')}
                         </Button>
                       </Stack>
                     </Box>
@@ -1875,6 +1969,15 @@ function CaseAssessmentsTab({
               </Button>
 
               <Button
+                variant="outlined"
+                size="small"
+                startIcon={<DownloadIcon fontSize="small" />}
+                onClick={() => void handleDownloadDocx(activeAssessment.id)}
+              >
+                {t('cases.assessments.exportWord')}
+              </Button>
+
+              <Button
                 variant="contained"
                 size="small"
                 startIcon={<SaveIcon fontSize="small" />}
@@ -1894,6 +1997,14 @@ function CaseAssessmentsTab({
             {/* Left: Template Section Editors */}
             <Grid item xs={12} md={showEvidenceSidebar ? 7 : 12}>
               <Stack spacing={2.5}>
+                {assessmentFields.length > 0 && (
+                  <Card variant="outlined">
+                    <CardContent>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>{t('cases.custom.cardTitle')}</Typography>
+                      <CustomFieldsForm fields={assessmentFields} values={assessmentCustom} onChange={setAssessmentCustom} disabled={!canEdit} />
+                    </CardContent>
+                  </Card>
+                )}
                 {((activeTemplate?.sections as AssessmentTemplateSection[]) ?? []).map((sec, idx) => (
                   <Card key={sec.key} variant="outlined">
                     <CardContent>

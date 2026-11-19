@@ -30,7 +30,7 @@ import { CasesService } from './cases.service';
 import { extractPdfText, isPdf, tidyExtractedText } from '@worktime3/api/plugin';
 import { CaseAiService, caseAiAvailability } from './case-ai.service';
 import { VersionsService } from '@worktime3/api/plugin';
-import { validateCaseAiSettings } from '../shared/cases';
+import { validateCaseAiSettings, validateCustomFieldDefs } from '../shared/cases';
 import { checkComputeContent, checkWrite } from './case-encryption';
 import { interviewAudioFormat } from './case-interview-processing';
 import type {
@@ -737,6 +737,29 @@ export class CasesController {
     await this.caseAi.saveSettings(orgId, checked.value);
     void this.versions.record('organizations', orgId, 'update_delta', callerId, { settings: { cases: { ai: checked.value } } }).catch(() => {});
     return { ok: true, settings: checked.value };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Custom fields: the organization's own fields on cases and assessments
+  // ---------------------------------------------------------------------------
+
+  @Get('case-custom-fields')
+  @Header('Cache-Control', privateCache)
+  async getCustomFields(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
+    const callerId = await this.requireCallerId(req);
+    if (!(await can(this.db, orgId, callerId, 'nav.cases', 'see')) && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see'))) throw new ForbiddenException('forbidden');
+    return { ok: true, fields: await this.casesService.customFields(orgId), canEdit: await can(this.db, orgId, callerId, 'nav.orgSettings', 'edit') };
+  }
+
+  @Put('case-custom-fields')
+  async putCustomFields(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Body() body: { fields?: unknown }) {
+    const callerId = await this.requireCallerId(req);
+    if (!(await can(this.db, orgId, callerId, 'nav.orgSettings', 'edit'))) throw new ForbiddenException('forbidden');
+    const checked = validateCustomFieldDefs(body?.fields);
+    if (!checked.ok) throw new BadRequestException(checked.error);
+    await this.casesService.saveCustomFields(orgId, checked.value);
+    void this.versions.record('organizations', orgId, 'update_delta', callerId, { settings: { cases: { customFields: checked.value } } }).catch(() => {});
+    return { ok: true, fields: checked.value };
   }
 
   // ---------------------------------------------------------------------------

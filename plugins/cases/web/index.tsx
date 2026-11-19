@@ -5,6 +5,7 @@ import { CASES_TEXTS } from './texts';
 
 const Cases = lazy(() => import('./Cases'));
 const AssessmentTemplates = lazy(() => import('./Cases').then((m) => ({ default: m.AssessmentTemplates })));
+const CaseCustomFieldsPanel = lazy(() => import('./CaseCustomFieldsPanel').then((m) => ({ default: m.CaseCustomFieldsPanel })));
 const CaseAiSettingsPanel = lazy(() => import('./CaseAiSettingsPanel').then((m) => ({ default: m.CaseAiSettingsPanel })));
 
 /** Cases' editors: admins and managers, or whoever holds Cases (editing is checked by the API). */
@@ -33,8 +34,19 @@ export default defineWebPlugin({
       render: (ctx) => <AssessmentTemplates orgId={ctx.orgId} authHeaders={ctx.authHeaders} canEdit={canEdit(ctx)} />,
     },
   ],
-  // The Cases providers, inside Organization settings -> AI and costs (after the organization's limit).
+  // The organization's own fields on cases and assessments.
   orgSettings: [
+    {
+      id: 'org.cases.fields',
+      title: (t) => t('cases.custom.title'),
+      subtitle: (t) => t('cases.custom.subtitle'),
+      render: ({ orgId, authHeaders }) => (
+        <Suspense fallback={null}>
+          <CaseCustomFieldsPanel orgId={orgId} authHeaders={authHeaders} />
+        </Suspense>
+      ),
+    },
+    // The Cases providers, inside Organization settings -> AI and costs (after the organization's limit).
     {
       id: 'org.ai.cases',
       within: 'org.ai',

@@ -159,6 +159,19 @@ export async function decryptJson<T = unknown>(caseKey: CryptoKey, envelope: Env
   return JSON.parse(dec.decode(await open(caseKey, fromBase64(envelope.iv), fromBase64(envelope.ct), aad))) as T;
 }
 
+/**
+ * A fresh key for one file (a document, an interview's audio). It is kept sealed inside that file's own row (`enc`),
+ * so a case key rotation re-seals small rows and never re-uploads the files.
+ */
+export async function createFileKey(): Promise<{ key: CryptoKey; raw: string }> {
+  const key = await subtle().generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  return { key, raw: toBase64(new Uint8Array(await subtle().exportKey('raw', key))) };
+}
+
+export function importFileKey(raw: string): Promise<CryptoKey> {
+  return subtle().importKey('raw', fromBase64(raw), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
 /** Files: iv (12 bytes) + ciphertext in one buffer, what the server stores as the document. */
 export async function encryptBytes(caseKey: CryptoKey, data: Uint8Array<ArrayBuffer>, aad?: string): Promise<Uint8Array<ArrayBuffer>> {
   const { iv, ct } = await seal(caseKey, data, aad);

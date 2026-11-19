@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { checkCustom, checkNewEncryptedCase, checkWrite } from '../api/case-encryption';
+import { checkCustom, checkRotation, checkNewEncryptedCase, checkWrite } from '../api/case-encryption';
 import { createCaseKey } from '../shared/caseCrypto';
 import { BLANK, openRow, plaintextSecrets, sealedBody, validEnvelope } from '../shared/caseVault';
 
@@ -78,4 +78,21 @@ test('compute content: shapes are coerced and bounded', async () => {
   assert.equal(c.interviews[0].transcript_stale, false);
   assert.equal(code(() => checkComputeContent(null)), 'invalid-content');
   assert.equal(code(() => checkComputeContent({ case: {}, documents: new Array(301).fill({}), interviews: [] })), 'invalid-content');
+});
+
+test('rotation must re-seal every row once and keep the caller\'s key', () => {
+  const ME = '00000000-0000-0000-0000-000000000001', B = '00000000-0000-0000-0000-000000000002';
+  const body = (over: Record<string, unknown> = {}) => ({
+    expectedUpdatedAt: '2026-01-01', case: { enc: env }, keys: [{ userId: ME, wrappedKey: 'QUJD' }, { userId: B, wrappedKey: 'QUJD' }],
+    interviews: [{ id: 'i1', enc: env }], assessments: [], documents: [{ id: 'd1', enc: env }, { id: 'd2', enc: env }], ...over,
+  });
+  const have = { interviews: ['i1'], assessments: [], documents: ['d2', 'd1'] };
+  assert.doesNotThrow(() => checkRotation(body(), ME, have));
+  assert.equal(code(() => checkRotation(body({ documents: [{ id: 'd1', enc: env }] }), ME, have)), 'rotation-incomplete');
+  assert.equal(code(() => checkRotation(body(), ME, { ...have, assessments: ['a1'] })), 'rotation-incomplete');
+  assert.equal(code(() => checkRotation(body({ keys: [{ userId: B, wrappedKey: 'QUJD' }] }), ME, have)), 'rotation-incomplete');
+  assert.equal(code(() => checkRotation(body({ keys: [{ userId: ME, wrappedKey: 'QUJD' }, { userId: ME, wrappedKey: 'QUJD' }] }), ME, have)), 'rotation-incomplete');
+  assert.equal(code(() => checkRotation(body({ keys: [{ userId: 'x', wrappedKey: 'QUJD' }] }), ME, have)), 'invalid-key');
+  assert.equal(code(() => checkRotation(body({ interviews: [{ id: 'i1', enc: { v: 1, iv: '<', ct: 'x' } }] }), ME, have)), 'invalid-envelope');
+  assert.equal(code(() => checkRotation({ ...body(), expectedUpdatedAt: undefined }, ME, have)), 'rotation-incomplete');
 });

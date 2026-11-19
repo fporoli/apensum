@@ -4,7 +4,7 @@ import type { CaseInterview } from '../shared/cases';
 import { useT } from '@worktime3/web/plugin';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 import { openInterview, sealedBody } from '../shared/caseVault';
-import { openBytes, sealBytes } from './caseVaultClient';
+import { openFile, sealFile } from './caseVaultClient';
 
 export async function interviewResponse(res: Response) {
   const data = await res.json();
@@ -120,7 +120,8 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     if (!res.ok) await interviewResponse(res);
     const key = getKey ? await getKey() : null;
     if (!key) return res.blob();
-    return new Blob([await openBytes(key, 'audio', interview.id, await res.arrayBuffer())], { type: interview.audio_mime || 'audio/webm' });
+    if (!interview.audio_key) throw new Error('no-case-key');
+    return new Blob([await openFile(interview.audio_key, 'audio', interview.id, await res.arrayBuffer())], { type: interview.audio_mime || 'audio/webm' });
   };
 
   const uploadAudio = async (chosen: File): Promise<CaseInterview> => {
@@ -129,10 +130,12 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     const key = getKey ? await getKey() : null;
     if (key) {
       // Sealed: the audio as ciphertext, and its type in the interview's `enc` (re-sealed with the saved texts).
+      const sealedAudio = await sealFile('audio', interview.id, await chosen.arrayBuffer());
       form.append('enc', JSON.stringify((await sealedBody(key, 'interview', interview.id, {
-        interviewee_name: interview.interviewee_name, transcript_text: interview.transcript_text, summary: interview.summary, tags: interview.tags, audio_mime: chosen.type || null,
+        interviewee_name: interview.interviewee_name, transcript_text: interview.transcript_text, summary: interview.summary, tags: interview.tags,
+        audio_mime: chosen.type || null, audio_key: sealedAudio.fileKey,
       })).enc));
-      form.append('file', await sealBytes(key, 'audio', interview.id, await chosen.arrayBuffer()), 'interview-audio.bin');
+      form.append('file', sealedAudio.blob, 'interview-audio.bin');
     } else form.append('file', chosen);
     const { interview: saved } = await request('/audio', 'PUT', form);
     const next = key ? await openInterview(key, saved) : saved;
@@ -166,7 +169,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     const key = getKey ? await getKey() : null;
     form.append('data', JSON.stringify(key
       ? { revision: interview.revision, ...(await sealedBody(key, 'interview', interview.id, {
-          interviewee_name: interview.interviewee_name, transcript_text: transcript, summary: summary.trim() ? summary : null, tags: interview.tags, audio_mime: interview.audio_mime ?? null,
+          interviewee_name: interview.interviewee_name, transcript_text: transcript, summary: summary.trim() ? summary : null, tags: interview.tags, audio_mime: interview.audio_mime ?? null, audio_key: interview.audio_key ?? null,
         })) }
       : { revision: interview.revision,
         ...(transcriptDirty ? { transcript_text: transcript } : {}),

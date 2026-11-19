@@ -211,3 +211,28 @@ test('cases service: generateAssessmentPdf renders valid PDF buffer with Swiss c
   assert.ok(pdfBuffer.length > 500);
   assert.equal(pdfBuffer.subarray(0, 5).toString('ascii'), '%PDF-');
 });
+
+test('custom field definitions and values are validated', async () => {
+  const { validateCustomFieldDefs, validateCustomValues } = await import('../shared/cases');
+  const ok = validateCustomFieldDefs([
+    { key: 'court', target: 'case', label: 'Court', type: 'text' },
+    { key: 'risk', target: 'assessment', label: 'Risk', type: 'select', options: ['low', 'high'] },
+    { key: 'hearing', target: 'case', label: 'Hearing', type: 'date' },
+    { key: 'n', target: 'case', label: 'Number', type: 'number' },
+  ]);
+  assert.ok(ok.ok);
+  if (!ok.ok) return;
+  assert.equal(validateCustomFieldDefs([{ key: 'Bad Key', target: 'case', label: 'x', type: 'text' }]).ok, false);
+  assert.equal(validateCustomFieldDefs([{ key: 'a', target: 'case', label: 'x', type: 'select', options: [] }]).ok, false);
+  assert.deepEqual(validateCustomFieldDefs([{ key: 'a', target: 'case', label: 'x', type: 'text' }, { key: 'a', target: 'case', label: 'y', type: 'text' }]), { ok: false, error: 'custom-fields-duplicate' });
+  // the same key may exist for a case and an assessment
+  assert.ok(validateCustomFieldDefs([{ key: 'a', target: 'case', label: 'x', type: 'text' }, { key: 'a', target: 'assessment', label: 'y', type: 'text' }]).ok);
+  const d = ok.value;
+  assert.equal(validateCustomValues(d, 'case', { court: 'Bern', hearing: '2026-05-01', n: 3 }), null);
+  assert.equal(validateCustomValues(d, 'case', { court: '', hearing: null }), null);
+  assert.equal(validateCustomValues(d, 'case', { unknown: 'x' }), 'invalid-custom');
+  assert.equal(validateCustomValues(d, 'case', { risk: 'low' }), 'invalid-custom'); // an assessment field, not a case one
+  assert.equal(validateCustomValues(d, 'assessment', { risk: 'medium' }), 'invalid-custom');
+  assert.equal(validateCustomValues(d, 'case', { n: '3' }), 'invalid-custom');
+  assert.equal(validateCustomValues(d, 'case', { hearing: '1.5.2026' }), 'invalid-custom');
+});

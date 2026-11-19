@@ -168,8 +168,7 @@ export async function shareCaseKey(orgId: string, headers: Headers, caseId: stri
   await call(orgId, headers, `cases/${caseId}/keys/${userId}`, 'PUT', { wrappedKey: await wrapCaseKey(key, publicKey) });
 }
 
-export async function revokeCaseKey(orgId: string, headers: Headers, caseId: string, userId: string) {
-  await call(orgId, headers, `cases/${caseId}/keys/${userId}`, 'DELETE');
-}
+/** Remembers a case's new key after a rotation, so the page keeps reading it without another unwrap. */
+export const rememberCaseKey = (caseId: string, key: CryptoKey) => void caseKeys.set(caseId, key);
 
 export { WrongPassphraseError };
