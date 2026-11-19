@@ -8,7 +8,6 @@ import {
   FormControlLabel,
   IconButton,
   MenuItem,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -25,6 +24,7 @@ import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber, swissLocale } 
 import { formatHm } from './WorkSchedulePanel';
 import { ChevronLeftIcon, ChevronRightIcon, DeleteIcon } from './icons';
 import { TableEmptyRow } from './components';
+import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -184,11 +184,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
   const notObserved = rows.filter((r) => !r.observed);
 
   return (
-    <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
-      <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('workTimeSettings.title')}</Typography>
-        <Typography variant="body2" color="text.secondary">{t('workTimeSettings.subtitle')}</Typography>
-      </Box>
+    <SectionPaper title={t('workTimeSettings.title')} subtitle={t('workTimeSettings.subtitle')}>
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
@@ -413,7 +409,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
         </Box>
       )}
       <Typography variant="caption" color="text.secondary">{t('workTimeSettings.disclaimer')}</Typography>
-    </Paper>
+    </SectionPaper>
   );
 }
 

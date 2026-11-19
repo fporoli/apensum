@@ -14,13 +14,15 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
 import dayjs from 'dayjs';
 import { EXPENSE_FORM, validateFields } from '@worktime3/shared/fields';
+import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '@worktime3/shared/expenses';
 import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber } from './localeFormat';
+import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber } from './localeFormat';
 import { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField';
 import { FieldDesignScope, useFormTemplate } from './designMode';
 import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
@@ -73,6 +75,8 @@ export interface ExpenseRow {
   expense_report_id: string | null;
   expense_report_status: string | null;
   document_id: string | null;
+  exchange_rate?: string | null;
+  unit_rate?: string | null;
   data?: Record<string, unknown> | null;
 }
 
@@ -100,7 +104,13 @@ function toNumber(v: string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * The form from a stored expense. Older expenses have no receipt amount: their booked amount and
+ * currency become the receipt amount, so saving one in another currency books it with today's
+ * rates instead of reading foreign money as the reporting currency.
+ */
 function formFromRow(row: ExpenseRow): ExpenseValues {
+  const hasOriginal = row.original_value !== null && row.original_value !== '';
   return {
     ...(row.data ?? {}),
     expenseDate: row.expense_date.slice(0, 10),
@@ -111,8 +121,8 @@ function formFromRow(row: ExpenseRow): ExpenseValues {
     value: toNumber(row.value) ?? 0,
     currency: row.currency,
     comment: row.comment ?? '',
-    originalValue: toNumber(row.original_value),
-    originalCurrency: row.original_currency ?? '',
+    originalValue: row.category === MILEAGE_CATEGORY ? null : hasOriginal ? toNumber(row.original_value) : toNumber(row.value),
+    originalCurrency: row.category === MILEAGE_CATEGORY ? '' : hasOriginal ? (row.original_currency ?? '') : row.currency,
     quantity: toNumber(row.quantity),
   };
 }
@@ -125,6 +135,14 @@ const ERROR_MESSAGES: Record<string, (t: (key: string) => string) => string> = {
   'expense-mapped': (t) => t('expenses.mappedCannotDelete'),
   'forbidden': (t) => t('expenses.forbidden'),
 };
+
+/** Text for an expense API error: a known message, else `expenses.error.<code>`, else the generic one. */
+function expenseErrorText(code: unknown, t: (key: string, vars?: Record<string, string>) => string): string {
+  const c = typeof code === 'string' ? code : '';
+  if (ERROR_MESSAGES[c]) return ERROR_MESSAGES[c](t);
+  for (const key of [`expenses.error.${c}`, `cases.ai.error.${c}`]) if (c && t(key) !== key) return t(key);
+  return t('expenses.saveFailed', { error: c || 'unknown error' });
+}
 
 interface ExpensesProps {
   orgId: string;
@@ -162,6 +180,13 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const draft = useAttachmentDraft(onDraftError, { max: 1 });
   const addDraftFiles = draft.add;
   const addReceiptFile = useCallback((file: File) => addDraftFiles([file]), [addDraftFiles]);
+  // Booking: the org's exchange rates and rate per km (the API books with the same rules, packages/shared/src/expenses.ts).
+  const [rates, setRates] = useState<ExchangeRate[]>([]);
+  const [mileageRates, setMileageRates] = useState<Record<string, unknown>>({});
+  // Receipt recognition (Azure, offered when the instance has it).
+  const [scanAvailable, setScanAvailable] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
 
   async function reload() {
     setLoading(true);
@@ -192,7 +217,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   }
 
   function categoryLabel(key: string): string {
-    return categoryTranslations[locale]?.[key] ?? categories[key] ?? key;
+    return categoryTranslations[locale]?.[key] ?? categories[key] ?? (key === MILEAGE_CATEGORY ? t('expenses.mileage') : key);
   }
 
   function translatedSubCategoryLabel(category: string, subCategory: string | null): string | null {
@@ -209,6 +234,57 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       setDefaultCurrency(currency);
       if (currency) setValues((prev) => (prev.originalCurrency ? prev : { ...prev, originalCurrency: currency, currency }));
     } catch { /* offline fallback */ }
+  }
+
+  async function loadBooking() {
+    try {
+      const headers = await authHeaders();
+      const [ratesRes, scanRes] = await Promise.all([
+        fetch(`${API}/organizations/${orgId}/exchange-rates`, { headers }),
+        fetch(`${API}/organizations/${orgId}/expenses/scan-receipt`, { headers }),
+      ]);
+      const data = await ratesRes.json();
+      setRates(Array.isArray(data?.rates) ? data.rates : []);
+      setMileageRates(data?.mileageRates && typeof data.mileageRates === 'object' ? data.mileageRates : {});
+      setScanAvailable((await scanRes.json())?.available === true);
+    } catch { /* offline fallback */ }
+  }
+
+  /** Sends the attached receipt to the AI and fills the form with what it read; the person checks and saves. */
+  async function scanReceipt() {
+    const file = draft.files[0];
+    if (!file) return;
+    setError(null);
+    setSuccess(null);
+    setScanNotice(null);
+    setScanning(true);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const res = await fetch(`${API}/organizations/${orgId}/expenses/scan-receipt`, { method: 'POST', headers: await authHeaders(), body });
+      const data = await res.json();
+      if (!data?.ok || !data.suggestion) {
+        setError(expenseErrorText(data?.error, t));
+        return;
+      }
+      const sg = data.suggestion as { expenseDate: string | null; originalValue: number | null; originalCurrency: string | null; merchant: string | null; category: string | null };
+      setValues((prev) => {
+        const next: ExpenseValues = { ...prev };
+        if (sg.expenseDate) next.expenseDate = sg.expenseDate;
+        if (sg.originalValue !== null) next.originalValue = sg.originalValue;
+        if (sg.originalCurrency) next.originalCurrency = sg.originalCurrency;
+        if (sg.category && sg.category !== prev.category) { next.category = sg.category; next.subCategory = ''; }
+        if (sg.merchant && !String(prev.comment ?? '').trim()) next.comment = sg.merchant;
+        if (next.category === MILEAGE_CATEGORY) next.category = '';
+        return next;
+      });
+      setFieldErrors({});
+      setScanNotice(t('expenses.scan.done'));
+    } catch {
+      setError(t('expenses.saveFailedOffline'));
+    } finally {
+      setScanning(false);
+    }
   }
 
   async function reloadProjects() {
@@ -233,6 +309,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     void reloadStaticData();
     void reloadProjects();
     void loadDefaultCurrency();
+    void loadBooking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, userId]);
 
@@ -264,12 +341,15 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     setValues(emptyForm(String(values.currency ?? '')));
     setFieldErrors({});
     setShowAdditional(false);
+    setScanNotice(null);
   }
 
   async function save() {
     setError(null);
     setSuccess(null);
     const checked = validateFields(savedForm, values);
+    // Same rule as the API: the receipt amount (or the km) is what the booked amount comes from.
+    if (computed && !hasBasis) checked.errors.push({ field: mileage ? 'quantity' : 'originalValue', rule: 'required' });
     if (checked.errors.length > 0) {
       showFieldErrors(checked.errors);
       return;
@@ -285,7 +365,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       const data = await res.json();
       if (!data.ok) {
         if (data.error === 'invalid-field' && Array.isArray(data.fields)) showFieldErrors(data.fields);
-        else setError(ERROR_MESSAGES[data.error]?.(t) ?? t('expenses.saveFailed', { error: data.error ?? 'unknown error' }));
+        else setError(expenseErrorText(data.error, t));
         return;
       }
       const savedId: string = editingId ?? data.id;
@@ -408,7 +488,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const subprojects = subprojectsByProject[projectId] ?? [];
   const options = useMemo<Record<string, FieldOption[]>>(
     () => ({
-      categories: Object.keys(categories).map((key) => ({ value: key, label: categoryLabel(key) })),
+      // Mileage is offered by the form itself, after the org's own categories.
+      categories: [...Object.keys(categories).filter((key) => key !== MILEAGE_CATEGORY).map((key) => ({ value: key, label: categoryLabel(key) })),
+        { value: MILEAGE_CATEGORY, label: t('expenses.mileage') }],
       subCategories: subCategoryOptions(subCategories, category).map(({ key }) => ({ value: key, label: translatedSubCategoryLabel(category, key) ?? key })),
       projects: projects.map((p) => ({ value: p.id, label: p.name })),
       subprojects: subprojects.map((sp) => ({ value: sp.id, label: sp.name })),
@@ -417,8 +499,36 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [categories, subCategories, categoryTranslations, subCategoryTranslations, projects, subprojects, category, locale, currencies, currencyTranslations, defaultCurrency, values.currency, values.originalCurrency],
   );
-  const disabledKeys = [...(category ? [] : ['subCategory']), ...(projectId && subprojects.length > 0 ? [] : ['subprojectId'])];
-  const groupProps = { form, values, editing: true, onChange: updateField, options, errors: fieldErrors, disabledKeys };
+  const mileage = category === MILEAGE_CATEGORY;
+  const originalValue = typeof values.originalValue === 'number' ? values.originalValue : null;
+  // The booked amount as the API will work it out (receipt x rate in force, km x rate per km, or as entered).
+  const booking = useMemo(() => bookExpense({
+    category,
+    expenseDate: String(values.expenseDate ?? ''),
+    originalValue: mileage ? null : originalValue,
+    originalCurrency: mileage ? null : String(values.originalCurrency ?? '') || null,
+    value: typeof values.value === 'number' ? values.value : null,
+    quantity: typeof values.quantity === 'number' ? values.quantity : null,
+  }, defaultCurrency, rates, mileageRates), [category, mileage, originalValue, values.expenseDate, values.originalCurrency, values.value, values.quantity, defaultCurrency, rates, mileageRates]);
+  // With the receipt amount on the form (the default) the booked amount is always worked out; only a
+  // template that hides the receipt amount lets people enter the booked amount directly.
+  const receiptAmountShown = form.fields.some((f) => f.key === 'originalValue' && !f.hidden && !f.retired);
+  const computed = mileage || receiptAmountShown;
+  const hasBasis = mileage ? typeof values.quantity === 'number' : originalValue !== null;
+  const shownValues = computed
+    ? { ...values, value: booking.ok && hasBasis ? booking.booking.value : null, currency: defaultCurrency || values.currency }
+    : { ...values, currency: defaultCurrency || values.currency };
+  const disabledKeys = [
+    ...(category && !mileage ? [] : ['subCategory']),
+    ...(projectId && subprojects.length > 0 ? [] : ['subprojectId']),
+    ...(defaultCurrency ? ['currency'] : []),
+    ...(computed ? ['value'] : []),
+    ...(mileage ? ['originalValue', 'originalCurrency'] : []),
+  ];
+  const groupProps = { form, values: shownValues, editing: true, onChange: updateField, options, errors: fieldErrors, disabledKeys };
+  const kmText = typeof values.quantity === 'number' ? String(values.quantity) : '';
+  const [kmInput, setKmInput] = useState('');
+  useEffect(() => { setKmInput(kmText); }, [kmText, editingId]);
   const editingRow = editingId ? entries.find((e) => e.id === editingId) : undefined;
   const editingLocked = editingRow ? isRowLocked(editingRow) : false;
   // Newest first: the expense just added appears at the top.
@@ -449,6 +559,41 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
           <Box sx={{ mt: 1.5 }}>
             <ConfigFieldGroup group="expense" {...groupProps} />
           </Box>
+          {mileage && (
+            <Box sx={{ mt: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+              <TextField size="small" label={t('expenses.km')} value={kmInput} sx={{ width: 140 }} inputProps={{ inputMode: 'decimal' }}
+                error={!!fieldErrors.quantity}
+                onChange={(e) => {
+                  setKmInput(e.target.value);
+                  const n = parseLocaleNumber(e.target.value, locale);
+                  updateField('quantity', typeof n === 'number' && Number.isFinite(n) ? n : null);
+                }} />
+              {booking.ok && booking.booking.unitRate !== null && (
+                <Typography variant="body2" color="text.secondary">
+                  {t('expenses.mileageCalc', {
+                    km: formatLocaleNumber(Number(values.quantity), locale),
+                    rate: formatLocaleNumber(booking.booking.unitRate, locale),
+                    value: formatLocaleNumber(booking.booking.value, locale),
+                    currency: defaultCurrency,
+                  })}
+                </Typography>
+              )}
+            </Box>
+          )}
+          {!mileage && booking.ok && booking.booking.exchangeRate !== null && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {t('expenses.conversion', {
+                original: `${formatLocaleNumber(originalValue ?? 0, locale)} ${String(values.originalCurrency ?? '')}`,
+                rate: formatLocaleNumber(booking.booking.exchangeRate, locale),
+                value: `${formatLocaleNumber(booking.booking.value, locale)} ${defaultCurrency}`,
+              })}
+            </Typography>
+          )}
+          {!booking.ok && (booking.error === 'exchange-rate-missing' || booking.error === 'mileage-rate-missing') && (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>
+              {t(`expenses.error.${booking.error}`, { currency: String(values.originalCurrency ?? ''), date: formatLocaleDate(String(values.expenseDate ?? ''), locale) })}
+            </Alert>
+          )}
 
           <Button
             type="button"
@@ -491,6 +636,15 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                     {receipt && editingId ? t('expenses.receipt.replaceHint') : t('expenses.receipt.hint')}
                   </Typography>
                 </Box>
+                {scanAvailable && draft.files.length > 0 && !mileage && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <Button size="small" variant="outlined" disabled={scanning || saving} onClick={() => void scanReceipt()}>
+                      {scanning ? t('expenses.scan.running') : t('expenses.scan.button')}
+                    </Button>
+                    <Typography variant="caption" color="text.secondary">{t('expenses.scan.hint')}</Typography>
+                  </Box>
+                )}
+                {scanNotice && <Alert severity="info" onClose={() => setScanNotice(null)}>{scanNotice}</Alert>}
               </Box>
             </DropZone>
           </Box>
@@ -525,7 +679,24 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                     <TableRow key={row.id} hover>
                       <TableCell>{formatLocaleDate(row.expense_date, locale)}</TableCell>
                       <TableCell>{categoryLabel(row.category)}{row.sub_category ? ` / ${translatedSubCategoryLabel(row.category, row.sub_category) ?? row.sub_category}` : ''}</TableCell>
-                      <TableCell align="right">{formattedVal} {row.currency}</TableCell>
+                      <TableCell align="right">
+                        {formattedVal} {row.currency}
+                        {row.original_value && row.original_currency && row.original_currency !== row.currency && (
+                          <Typography variant="caption" color="text.secondary" component="div">
+                            {formatLocaleNumber(Number(row.original_value), locale)} {row.original_currency}
+                          </Typography>
+                        )}
+                        {row.category === MILEAGE_CATEGORY && row.quantity && (
+                          <Typography variant="caption" color="text.secondary" component="div">
+                            {formatLocaleNumber(Number(row.quantity), locale)} km
+                          </Typography>
+                        )}
+                        {isUnconverted(row, defaultCurrency) && (
+                          <Tooltip title={t('expenses.unconvertedHint')}>
+                            <Chip size="small" color="warning" variant="outlined" label={t('expenses.unconverted')} sx={{ ml: 0.5 }} />
+                          </Tooltip>
+                        )}
+                      </TableCell>
                       <TableCell>{row.project_name ?? '—'}</TableCell>
                       <TableCell>{row.subproject_name ?? '—'}</TableCell>
                       <TableCell>

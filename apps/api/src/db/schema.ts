@@ -1,4 +1,4 @@
-import { pgTable, pgSchema, index, foreignKey, check, uuid, text, numeric, integer, timestamp, unique, jsonb, date, varchar, boolean, char, uniqueIndex, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, pgSchema, index, foreignKey, check, uuid, text, numeric, integer, timestamp, unique, char, date, varchar, jsonb, boolean, uniqueIndex, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -55,8 +55,83 @@ export const ai_usageInCases = cases.table("ai_usage", {
 			foreignColumns: [casesInCases.id],
 			name: "ai_usage_case_id_fkey"
 		}).onDelete("set null"),
-	check("chk_ai_usage_kind", sql`kind = ANY (ARRAY['transcribe'::text, 'summarize'::text, 'draft'::text])`),
 	check("chk_ai_usage_status", sql`status = ANY (ARRAY['pending'::text, 'ok'::text, 'failed'::text])`),
+	check("chk_ai_usage_kind", sql`kind = ANY (ARRAY['transcribe'::text, 'summarize'::text, 'draft'::text, 'receipt'::text])`),
+]);
+
+export const exchange_rates = pgTable("exchange_rates", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	currency: char({ length: 3 }).notNull(),
+	target_currency: char({ length: 3 }).notNull(),
+	valid_from: date().notNull(),
+	rate: numeric({ precision: 18, scale:  8 }).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "exchange_rates_organization_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_exchange_rates").on(table.organization_id, table.currency, table.target_currency, table.valid_from),
+	check("chk_exchange_rates_currency", sql`currency ~ '^[A-Z]{3}$'::text`),
+	check("chk_exchange_rates_target", sql`(target_currency ~ '^[A-Z]{3}$'::text) AND (target_currency <> currency)`),
+	check("chk_exchange_rates_rate", sql`rate > (0)::numeric`),
+]);
+
+export const expenses = pgTable("expenses", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	user_id: uuid().notNull(),
+	organization_id: uuid().notNull(),
+	project_id: uuid(),
+	subproject_id: uuid(),
+	expense_date: date().notNull(),
+	category: varchar({ length: 128 }).notNull(),
+	sub_category: varchar({ length: 128 }),
+	original_value: numeric({ precision: 12, scale:  2 }),
+	original_currency: char({ length: 3 }),
+	currency: char({ length: 3 }).notNull(),
+	quantity: numeric({ precision: 10, scale:  2 }),
+	comment: text(),
+	value: numeric({ precision: 12, scale:  2 }).default('0').notNull(),
+	document_id: uuid(),
+	data: jsonb().default({}).notNull(),
+	exchange_rate: numeric({ precision: 18, scale:  8 }),
+	unit_rate: numeric({ precision: 10, scale:  4 }),
+}, (table) => [
+	index("idx_expenses_org_date").using("btree", table.organization_id.asc().nullsLast(), table.expense_date.asc().nullsLast()),
+	index("idx_expenses_project").using("btree", table.project_id.asc().nullsLast()),
+	index("idx_expenses_user_date").using("btree", table.user_id.asc().nullsLast(), table.expense_date.asc().nullsLast()),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "expenses_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "expenses_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.project_id],
+			foreignColumns: [projects.id],
+			name: "expenses_project_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.subproject_id],
+			foreignColumns: [subprojects.id],
+			name: "expenses_subproject_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.document_id],
+			foreignColumns: [documents.id],
+			name: "expenses_document_id_fkey"
+		}).onDelete("set null"),
+	check("chk_expenses_exchange_rate", sql`(exchange_rate IS NULL) OR (exchange_rate > (0)::numeric)`),
+	check("chk_expenses_unit_rate", sql`(unit_rate IS NULL) OR (unit_rate > (0)::numeric)`),
+	check("chk_expenses_currency_format", sql`currency ~ '^[A-Z]{3}$'::text`),
+	check("chk_expenses_original_value_positive", sql`(original_value IS NULL) OR (original_value > (0)::numeric)`),
+	check("chk_expenses_original_currency_format", sql`(original_currency IS NULL) OR (original_currency ~ '^[A-Z]{3}$'::text)`),
+	check("chk_expenses_quantity_non_negative", sql`(quantity IS NULL) OR (quantity >= (0)::numeric)`),
 ]);
 
 export const basicdata_versions = pgTable("basicdata_versions", {
@@ -121,58 +196,6 @@ export const absences = pgTable("absences", {
 		}).onDelete("set null"),
 	check("chk_absence_order", sql`date_end >= date_start`),
 	check("chk_absence_half_day_single_day", sql`(NOT half_day) OR (date_start = date_end)`),
-]);
-
-export const expenses = pgTable("expenses", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	user_id: uuid().notNull(),
-	organization_id: uuid().notNull(),
-	project_id: uuid(),
-	subproject_id: uuid(),
-	expense_date: date().notNull(),
-	category: varchar({ length: 128 }).notNull(),
-	sub_category: varchar({ length: 128 }),
-	original_value: numeric({ precision: 12, scale:  2 }),
-	original_currency: char({ length: 3 }),
-	currency: char({ length: 3 }).notNull(),
-	quantity: numeric({ precision: 10, scale:  2 }),
-	comment: text(),
-	value: numeric({ precision: 12, scale:  2 }).default('0').notNull(),
-	document_id: uuid(),
-	data: jsonb().default({}).notNull(),
-}, (table) => [
-	index("idx_expenses_org_date").using("btree", table.organization_id.asc().nullsLast(), table.expense_date.asc().nullsLast()),
-	index("idx_expenses_project").using("btree", table.project_id.asc().nullsLast()),
-	index("idx_expenses_user_date").using("btree", table.user_id.asc().nullsLast(), table.expense_date.asc().nullsLast()),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "expenses_user_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "expenses_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.project_id],
-			foreignColumns: [projects.id],
-			name: "expenses_project_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.subproject_id],
-			foreignColumns: [subprojects.id],
-			name: "expenses_subproject_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.document_id],
-			foreignColumns: [documents.id],
-			name: "expenses_document_id_fkey"
-		}).onDelete("set null"),
-	check("chk_expenses_currency_format", sql`currency ~ '^[A-Z]{3}$'::text`),
-	check("chk_expenses_original_value_positive", sql`(original_value IS NULL) OR (original_value > (0)::numeric)`),
-	check("chk_expenses_original_currency_format", sql`(original_currency IS NULL) OR (original_currency ~ '^[A-Z]{3}$'::text)`),
-	check("chk_expenses_quantity_non_negative", sql`(quantity IS NULL) OR (quantity >= (0)::numeric)`),
 ]);
 
 export const field_config = pgTable("field_config", {

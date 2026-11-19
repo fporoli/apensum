@@ -90,7 +90,8 @@ function createInsertDb() {
 }
 
 const memberReq = { user: { kind: 'local', sub: 'user-1' } } as unknown as AuthenticatedRequest;
-const validBody = { expenseDate: '2026-11-02', category: 'travel', value: 42.5, currency: ' chf ', comment: '', projectId: '' };
+// The receipt amount is what the booked amount comes from (expenses.ts bookExpense); same currency = taken as is.
+const validBody = { expenseDate: '2026-11-02', category: 'travel', originalValue: 42.5, originalCurrency: 'CHF', value: 0, currency: ' chf ', comment: '', projectId: '' };
 
 test('expenseColumns maps registry keys to columns, numbers to strings and empty values to NULL', () => {
   assert.deepEqual(expenseColumns({ value: 12.5, currency: 'CHF', projectId: '', quantity: null }), {
@@ -107,7 +108,8 @@ test('ExpensesController.create stores normalized values', async () => {
   const result = await controller.create('org-1', validBody as any, memberReq);
   assert.deepEqual(result, { ok: true, id: 'expense-1' });
   assert.equal(inserted[0].currency, 'CHF');
-  assert.equal(inserted[0].value, '42.5');
+  assert.equal(inserted[0].value, '42.50', 'booked by the API from the receipt amount, not the client value');
+  assert.equal(inserted[0].exchange_rate, null);
   assert.equal(inserted[0].project_id, null);
   assert.equal(inserted[0].user_id, 'user-1');
 });

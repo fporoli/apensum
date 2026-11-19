@@ -546,16 +546,19 @@ export class CasesController {
   // ---------------------------------------------------------------------------
 
   /**
-   * The organization's AI choices, what this instance offers and this month's Azure spend.
-   * Everyone who sees Cases sees it; only a superdeveloper may change it (canConfigure) and sees
+   * The organization's AI choices, what this instance offers and this month's Azure spend
+   * (Organization settings -> AI and costs). Who sees Organization settings or Cases sees it; only a superdeveloper may change it (canConfigure) and sees
    * the whole instance's spend, since the instance owner pays the Azure bill.
    */
   @Get('case-ai-settings')
   @Header('Cache-Control', privateCache)
   async getAiSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const callerId = await this.requireCallerId(req);
-    await this.checkSeeAccess(orgId, callerId);
+    // Shown in Organization settings (AI and costs): whoever sees those or Cases, and superdevelopers.
     const superdeveloper = await isSuperDeveloper(this.db, callerId);
+    if (!superdeveloper && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see')) && !(await can(this.db, orgId, callerId, 'nav.cases', 'see'))) {
+      throw new ForbiddenException('forbidden');
+    }
     const [providers, totals] = await Promise.all([this.caseAi.providers(orgId), this.aiBudget.totals(orgId)]);
     return {
       ok: true,

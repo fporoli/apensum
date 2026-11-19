@@ -28,7 +28,6 @@ import {
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
-import { CaseAiSettingsPanel } from './CaseAiSettingsPanel';
 import { CaseInterviewEditor, caseErrorText, interviewError, interviewResponse, type InterviewAiProviders } from './CaseInterviewEditor';
 import { PageHeader, EmptyState } from './components';
 import {
@@ -587,7 +586,6 @@ export function AssessmentTemplates({ orgId, authHeaders, canEdit }: {
 }) {
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
-      <CaseAiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
       <CaseTemplatesTab orgId={orgId} authHeaders={authHeaders} canEdit={canEdit} />
     </Box>
   );

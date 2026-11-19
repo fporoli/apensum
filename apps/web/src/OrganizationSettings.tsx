@@ -8,7 +8,6 @@ import {
   FormControlLabel,
   LinearProgress,
   MenuItem,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -16,7 +15,6 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Typography,
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { currencyOptions, type CurrencyOption } from './currencyOptions';
@@ -27,6 +25,9 @@ import BrandingSettings from './BrandingSettings';
 import WorkTimeSettings from './WorkTimeSettings';
 import DepartmentSettings from './DepartmentSettings';
 import ModuleSettings from './ModuleSettings';
+import ExchangeRateSettings from './ExchangeRateSettings';
+import { CaseAiSettingsPanel } from './CaseAiSettingsPanel';
+import { SettingsSection } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -229,19 +230,16 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
       {loading && <LinearProgress />}
 
-      <Paper
+      <SettingsSection id="org.profile" title={t('orgSettings.profile')} defaultExpanded
+        end={org && <Chip label={t('orgSettings.slugLabel', { slug: org.slug })} size="small" variant="outlined" />}>
+      <Box
         component="form"
         onSubmit={(e) => {
           e.preventDefault();
           void handleSaveOrg();
         }}
-        sx={{ p: 2 }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('orgSettings.profile')}</Typography>
-          {org && <Chip label={t('orgSettings.slugLabel', { slug: org.slug })} size="small" variant="outlined" />}
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'flex-start', pt: 1 }}>
           <TextField label={t('orgSettings.name')} value={orgName} onChange={(e) => setOrgName(e.target.value)} size="small" sx={{ minWidth: 220 }} />
           <TextField
             select
@@ -260,18 +258,35 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
             {t('common.save')}
           </Button>
         </Box>
-      </Paper>
+      </Box>
+      </SettingsSection>
 
-      <ModuleSettings orgId={orgId} authHeaders={authHeaders} onChanged={onModulesChanged} />
+      <SettingsSection id="org.modules" title={t('modules.title')} subtitle={t('modules.subtitle')}>
+        <ModuleSettings orgId={orgId} authHeaders={authHeaders} onChanged={onModulesChanged} />
+      </SettingsSection>
 
-      <BrandingSettings orgId={orgId} authHeaders={authHeaders} />
+      <SettingsSection id="org.branding" title={t('branding.title')} subtitle={t('branding.subtitle')}>
+        <BrandingSettings orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
 
-      <DepartmentSettings orgId={orgId} authHeaders={authHeaders} />
+      <SettingsSection id="org.departments" title={t('departments.title')} subtitle={t('departments.subtitle')}>
+        <DepartmentSettings orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
 
-      <WorkTimeSettings orgId={orgId} authHeaders={authHeaders} />
+      <SettingsSection id="org.workTime" title={t('workTimeSettings.title')} subtitle={t('workTimeSettings.subtitle')}>
+        <WorkTimeSettings orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
 
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>{t('orgSettings.domains')}</Typography>
+      <SettingsSection id="org.exchangeRates" title={t('exchangeRates.title')} subtitle={t('exchangeRates.subtitle', { currency: savedCurrency || '—' })}>
+        <ExchangeRateSettings orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
+
+      <SettingsSection id="org.ai" title={t('cases.ai.settings.title')} subtitle={t('cases.ai.settings.intro')}>
+        <CaseAiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
+
+      <SettingsSection id="org.domains" title={t('orgSettings.domains')}>
+      <Box>
         <TableContainer sx={{ mb: 1.5 }}>
           <Table size="small">
             <TableHead>
@@ -310,21 +325,19 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
           />
           <Button type="submit" variant="outlined" size="small" disabled={!newDomain.trim()}>{t('common.add')}</Button>
         </Box>
-      </Paper>
+      </Box>
+      </SettingsSection>
 
-      <Paper
+      <SettingsSection id="org.sso" title={t('orgSettings.sso')}
+        end={sso && <Chip label={sso.is_active ? t('orgSettings.active') : t('orgSettings.inactive')} size="small" color={sso.is_active ? 'success' : 'default'} />}>
+      <Box
         component="form"
         onSubmit={(e) => {
           e.preventDefault();
           void handleSaveSso();
         }}
-        sx={{ p: 2 }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('orgSettings.sso')}</Typography>
-          {sso && <Chip label={sso.is_active ? t('orgSettings.active') : t('orgSettings.inactive')} size="small" color={sso.is_active ? 'success' : 'default'} />}
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', pt: 1 }}>
           <TextField select label={t('orgSettings.protocol')} value={ssoProtocol} onChange={(e) => setSsoProtocol(e.target.value as 'saml2' | 'oidc')} size="small" sx={{ minWidth: 120 }}>
             <MenuItem value="saml2">SAML 2.0</MenuItem>
             <MenuItem value="oidc">OIDC</MenuItem>
@@ -333,7 +346,8 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
           <TextField label={t('orgSettings.idpSsoUrl')} value={ssoUrl} onChange={(e) => setSsoUrl(e.target.value)} size="small" sx={{ minWidth: 260 }} />
           <Button type="submit" variant="outlined" size="small" disabled={!ssoEntityId.trim() || !ssoUrl.trim()}>{t('common.save')}</Button>
         </Box>
-      </Paper>
+      </Box>
+      </SettingsSection>
     </Box>
   );
 }

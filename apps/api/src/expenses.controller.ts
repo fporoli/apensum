@@ -1,16 +1,19 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpException, Param, Patch, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { and, asc, eq, getTableColumns, gte, lt, sql, type SQL } from 'drizzle-orm';
 import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { VersionsService } from './versions.service';
-import { callerUserId, canSeeUserData, isOrgMember, reachesAll } from './access';
+import { callerUserId, can, canSeeUserData, isOrgMember, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { expenses, expense_report_items, expense_reports, projects, subprojects } from './db/schema';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 import { FieldsService } from './fields.service';
 import { EXPENSE_FORM, mergeForm, validateFields, type ResolvedForm } from '@worktime3/shared/fields';
+import { BOOKING_COLUMNS, bookColumns, bookingContext } from './expense-booking';
+import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
+import { ExpenseReceiptService } from './expense-receipt.service';
 
 type ExpenseColumns = Partial<typeof expenses.$inferInsert>;
 
@@ -53,6 +56,13 @@ function pickFields(form: ResolvedForm, body: Record<string, unknown>, all: bool
   return out;
 }
 
+/** A non-mileage expense without receipt amount while the form shows that field: the field error, else null. */
+export function missingReceiptAmount(row: Record<string, unknown>, receiptShown: boolean) {
+  if (!receiptShown || row.category === MILEAGE_CATEGORY) return null;
+  if (row.original_value !== null && row.original_value !== undefined && row.original_value !== '') return null;
+  return { ok: false as const, error: 'invalid-field', fields: [{ field: 'originalValue', rule: 'required' }] };
+}
+
 @Controller()
 export class ExpensesController {
   constructor(
@@ -60,7 +70,46 @@ export class ExpensesController {
     private readonly versions: VersionsService,
     private readonly documents: DocumentsService,
     private readonly fields: FieldsService,
+    private readonly receipts: ExpenseReceiptService,
   ) {}
+
+  /** Whether receipt recognition is offered (the instance has Azure OpenAI); the form shows the button then. */
+  @Get('organizations/:orgId/expenses/scan-receipt')
+  async scanAvailable(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    const callerId = db && req.user ? await callerUserId(db, req.user) : null;
+    if (!db || !callerId || !(await can(db, orgId, callerId, 'nav.expenses', 'see'))) return { ok: true, available: false };
+    return { ok: true, available: this.receipts.available() };
+  }
+
+  /**
+   * Reads a receipt (photo or PDF) and returns a suggestion for the form: date, amount, currency,
+   * merchant, category. Nothing is stored; the person checks and saves the form as usual.
+   * Errors are returned like every other expense error ({ ok: false, error }).
+   */
+  @Post('organizations/:orgId/expenses/scan-receipt')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1 } }))
+  async scanReceipt(@Param('orgId') orgId: string, @UploadedFile() file: Express.Multer.File, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId) return { ok: false, error: 'unknown-user' };
+    if (!(await can(db, orgId, callerId, 'nav.expenses', 'see'))) return { ok: false, error: 'forbidden' };
+    if (!file?.buffer?.length) return { ok: false, error: 'file-required' };
+    const rows = await db.execute(sql`
+      SELECT "values" FROM static_data
+      WHERE entity = 'expenses' AND enum_name = 'expense_category' AND (organization_id = ${orgId}::uuid OR organization_id IS NULL)
+      ORDER BY organization_id NULLS LAST LIMIT 1
+    `);
+    const categories = ((rows.rows[0] as { values?: Record<string, string> } | undefined)?.values) ?? {};
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });
+    try {
+      return { ok: true, suggestion: await this.receipts.scan(orgId, callerId, file.buffer, categories, today) };
+    } catch (error) {
+      if (error instanceof HttpException) return { ok: false, error: String(error.message) };
+      throw error;
+    }
+  }
 
   /**
    * Checks the body against the org's merged expense template (code fields and custom fields);
@@ -70,7 +119,10 @@ export class ExpensesController {
     const form = (await this.fields.resolved(orgId, EXPENSE_FORM.id)) ?? mergeForm(EXPENSE_FORM);
     const { errors, values } = validateFields(form, pickFields(form, body, all));
     if (errors.length > 0) return { ok: false as const, error: 'invalid-field', fields: errors };
-    return { ok: true as const, columns: expenseColumns(values), data: expenseCustomData(form, values) };
+    // The receipt amount is what the booked amount is worked out from: required while the form shows it
+    // (a template that hides it lets people enter the booked amount directly), never for mileage.
+    const receiptShown = form.fields.some((f) => f.key === 'originalValue' && !f.hidden && !f.retired);
+    return { ok: true as const, columns: expenseColumns(values), data: expenseCustomData(form, values), receiptShown };
   }
 
   @Post('organizations/:orgId/expenses')
@@ -100,8 +152,14 @@ export class ExpensesController {
     if (!(await isOrgMember(db, orgId, userId))) return { ok: false, error: 'forbidden' };
     const checked = await this.validate(orgId, body ?? {}, true);
     if (!checked.ok) return checked;
+    const missing = missingReceiptAmount(checked.columns as Record<string, unknown>, checked.receiptShown);
+    if (missing) return missing;
+    // The booked amount in the reporting currency (receipt x exchange rate, or km x rate), never the client's.
+    const booked = bookColumns(checked.columns as Record<string, unknown>, await bookingContext(db, orgId));
+    if (!booked.ok) return booked;
     const values = {
       ...checked.columns,
+      ...booked.columns,
       data: checked.data,
       user_id: userId,
       organization_id: orgId,
@@ -187,6 +245,15 @@ export class ExpensesController {
     const checked = await this.validate(owned.entry.organization_id as string, body ?? {}, false);
     if (!checked.ok) return checked;
     const delta: Record<string, unknown> = { ...checked.columns };
+    // Rebooked when anything that decides the amount changes (an older, unconverted expense in another
+    // currency stays as it is until then); otherwise left exactly as booked.
+    if (BOOKING_COLUMNS.some((c) => c in delta)) {
+      const missing = missingReceiptAmount({ ...owned.entry, ...delta }, checked.receiptShown);
+      if (missing) return missing;
+      const booked = bookColumns({ ...owned.entry, ...delta }, await bookingContext(db, owned.entry.organization_id as string));
+      if (!booked.ok) return booked;
+      Object.assign(delta, booked.columns);
+    }
     const hasData = Object.keys(checked.data).length > 0;
     if (Object.keys(delta).length === 0 && !hasData) return { ok: true };
     // Custom values merge into `data` key by key; the history records only what changed.

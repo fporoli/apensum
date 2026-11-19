@@ -32,6 +32,7 @@ import type { ExpenseRow } from './Expenses';
 import { PageHeader, TableEmptyRow } from './components';
 import { CheckCircleIcon, DownloadIcon, MailIcon, SearchIcon } from './icons';
 import ForwardMailDialog from './ForwardMailDialog';
+import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -423,7 +424,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
   }
 
   function categoryLabel(row: ExpenseRow): string {
-    const cat = catTranslations[locale]?.[row.category] ?? categories[row.category] ?? row.category;
+    const cat = catTranslations[locale]?.[row.category] ?? categories[row.category] ?? (row.category === MILEAGE_CATEGORY ? t('expenses.mileage') : row.category);
     if (!row.sub_category) return cat;
     const subKey = `${row.category}$${row.sub_category}`;
     const sub = subCatTranslations[locale]?.[subKey] ?? subCategories[subKey] ?? row.sub_category;

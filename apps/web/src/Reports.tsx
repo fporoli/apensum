@@ -37,6 +37,7 @@ import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { DeleteIcon, DownloadIcon, SaveIcon, ScheduleIcon } from './icons';
 import { formatLocaleDate, formatLocaleDateTime, swissLocale } from './localeFormat';
 import { roleLabel, type OrgRole } from './roleLabel';
+import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -202,6 +203,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
         absenceTypes: { translation: absenceLabels },
         categories: categoryLabels,
         fallback: (dim, v) => {
+          if (v === MILEAGE_CATEGORY) return t('expenses.mileage');
           const key = `absences.type.${v}`;
           return dim === 'type' && t(key) !== key ? t(key) : undefined;
         },

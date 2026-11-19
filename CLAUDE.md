@@ -182,7 +182,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   OpenAI's compatible endpoint, with tool-calling. Each tool must run the same
   authorization as its REST equivalent, using the caller's real identity.
 - Cases AI per organization (`organizations.settings.cases.ai`, `packages/shared/src/cases.ts`, set only by a
-  superdeveloper under Cases -> Assessment templates, `CaseAiSettingsPanel.tsx`, `GET/PUT case-ai-settings`):
+  superdeveloper under Organization settings -> AI and costs, `CaseAiSettingsPanel.tsx`, `GET/PUT case-ai-settings`):
   transcription Whisper on the server or Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland), summary key sentences / instance provider / Azure OpenAI, AI draft
   instance provider or Azure OpenAI. Default: nothing goes to Azure. `case-ai.service.ts` picks the provider
   (a chosen but unconfigured one is an error, never a silent fallback); every Azure call goes through
@@ -336,6 +336,19 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone
   opens `#/receipt/<token>` (`PhoneUpload.tsx`, rendered by `main.tsx` without login, token = credential)
   and sends the photo; the PC polls, takes the file into the form and uploads it as usual.
+- Expense booking (077, `packages/shared/src/expenses.ts` `bookExpense`, used by the form's preview and by
+  `expense-booking.ts` on create/update): people enter the receipt's amount and currency; the API books `value`
+  in the org's reporting currency (`settings.defaultCurrency`, else CHF) with the hand-kept exchange rate in force
+  on the date (`exchange_rates`, Organization settings, `exchange-rates.controller.ts`) and stores it in
+  `expenses.exchange_rate`; no rate = `exchange-rate-missing`. Mileage is category `mileage` (offered by the form,
+  in no category list): `quantity` = km x the rate per km in force (static_data `expenses`/`mileage_rate`, key =
+  valid from, global 0.70, org copy overrides), stored in `unit_rate`. Booked expenses never change with later
+  rates; older ones in another currency stay as they are ("not converted") until edited. Never trust a client `value`.
+  Receipt recognition (`expense-receipt.ts`, `ExpenseReceiptService`, `POST expenses/scan-receipt`): photo or PDF text
+  to Azure OpenAI (Switzerland) only, for every org with expenses when the instance has it, through `AiBudgetService`
+  (kind `receipt`, the org's AI monthly limit); returns a suggestion, stores nothing.
+- Organization settings sections are collapsible (`SettingsSection.tsx`; a card uses `SectionPaper` so it shows its own
+  title only outside a section). AI and costs (`CaseAiSettingsPanel`) lives there, not on the Cases pages.
 - Reports (module `reports`, `nav.reports`, 063; `reports.controller.ts`, `Reports.tsx`): the catalogue, grouping and
   totals are `packages/shared/src/reports.ts` (a `balance` measure is each person's last month, summed over people).
   Each report shows `listableUserIds` of its page object (project hours `nav.time`, attendance `nav.workTime`,

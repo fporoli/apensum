@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import {
   CASE_AI_DRAFT,
   CASE_AI_SUMMARY,
@@ -9,6 +9,7 @@ import {
 import { useI18n } from './i18n';
 import { swissLocale } from './localeFormat';
 import { caseErrorText } from './CaseInterviewEditor';
+import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -54,7 +55,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
 
   useEffect(() => { void load(); }, [load]);
 
-  if (!data || !form) return error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null;
+  if (!data || !form) return error ? <Alert severity="error">{error}</Alert> : null;
 
   const { available, canConfigure, usage } = data;
   const instanceLabel = available.instance
@@ -99,17 +100,18 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
   );
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-      <Typography variant="h6" gutterBottom>{t('cases.ai.settings.title')}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{t('cases.ai.settings.intro')}</Typography>
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }} flexWrap="wrap" useFlexGap>
+    <SectionPaper title={t('cases.ai.settings.title')} subtitle={t('cases.ai.settings.intro')}>
+      <Typography variant="subtitle2" sx={{ pt: 1 }}>{t('cases.ai.settings.casesGroup')}</Typography>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} flexWrap="wrap" useFlexGap>
         {select('transcription', t('cases.ai.settings.transcription'), CASE_AI_TRANSCRIPTION, usableTranscription)}
         {select('summary', t('cases.ai.settings.summary'), CASE_AI_SUMMARY, usableText)}
         {select('draft', t('cases.ai.settings.draft'), CASE_AI_DRAFT, usableText)}
-        <TextField size="small" label={t('cases.ai.settings.limit')} value={limitText} disabled={!canConfigure || saving}
-          onChange={(e) => setLimitText(e.target.value)} inputProps={{ inputMode: 'decimal' }} sx={{ width: 160 }} />
       </Stack>
-      <Stack spacing={0.5} sx={{ mb: canConfigure ? 2 : 0 }}>
+      <Typography variant="subtitle2" sx={{ pt: 1 }}>{t('cases.ai.settings.costGroup')}</Typography>
+      <TextField size="small" label={t('cases.ai.settings.limit')} value={limitText} disabled={!canConfigure || saving}
+        onChange={(e) => setLimitText(e.target.value)} inputProps={{ inputMode: 'decimal' }} sx={{ width: 220 }}
+        helperText={t('cases.ai.settings.limitHelp')} />
+      <Stack spacing={0.5}>
         <Typography variant="body2">
           {t('cases.ai.settings.orgUsage', { spent: chf(usage.orgSpentChf), limit: chf(form.monthlyLimitChf), calls: String(usage.orgCalls) })}
         </Typography>
@@ -120,8 +122,8 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
         )}
         {!canConfigure && <Typography variant="caption" color="text.secondary">{t('cases.ai.settings.readOnly')}</Typography>}
       </Stack>
-      {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
-      {notice && <Alert severity="success" sx={{ mb: 1 }}>{notice}</Alert>}
+      {error && <Alert severity="error">{error}</Alert>}
+      {notice && <Alert severity="success">{notice}</Alert>}
       {canConfigure && (
         <Box>
           <Button variant="contained" disabled={saving || !Number.isFinite(limit) || limitText.trim() === ''} onClick={() => void save()}>
@@ -129,6 +131,6 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
           </Button>
         </Box>
       )}
-    </Paper>
+    </SectionPaper>
   );
 }

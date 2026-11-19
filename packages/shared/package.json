@@ -71,6 +71,11 @@
       "source": "./src/xlsx.ts",
       "types": "./dist/xlsx.d.ts",
       "default": "./dist/xlsx.js"
+    },
+    "./expenses": {
+      "source": "./src/expenses.ts",
+      "types": "./dist/expenses.d.ts",
+      "default": "./dist/expenses.js"
     }
   }
 }

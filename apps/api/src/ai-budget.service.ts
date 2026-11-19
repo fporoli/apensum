@@ -86,7 +86,7 @@ export function budgetRefusal(s: BudgetState): string | null {
   return null;
 }
 
-export type AiUsageKind = 'transcribe' | 'summarize' | 'draft';
+export type AiUsageKind = 'transcribe' | 'summarize' | 'draft' | 'receipt';
 
 const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 /** Start of the current calendar month in Zurich, as a SQL timestamptz expression. */

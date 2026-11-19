@@ -65,6 +65,8 @@ import { CasesController } from './cases.controller';
 import { CasesService } from './cases.service';
 import { CaseAiService } from './case-ai.service';
 import { AiBudgetService } from './ai-budget.service';
+import { ExpenseReceiptService } from './expense-receipt.service';
+import { ExchangeRatesController } from './exchange-rates.controller';
 
 @Module({
   controllers: [
@@ -108,12 +110,14 @@ import { AiBudgetService } from './ai-budget.service';
     ImportExportController,
     CalendarFeedController,
     CasesController,
+    ExchangeRatesController,
   ],
   providers: [
     DbService,
     CasesService,
     CaseAiService,
     AiBudgetService,
+    ExpenseReceiptService,
     ImportExportService,
     CalendarFeedService,
     ProjectTimeService,

@@ -6,7 +6,6 @@ import {
   Chip,
   IconButton,
   MenuItem,
-  Paper,
   Switch,
   Table,
   TableBody,
@@ -21,6 +20,7 @@ import {
 import { useT } from './i18n';
 import { ConfirmDialog, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, CheckIcon, CloseIcon, DeleteIcon, EditIcon } from './icons';
+import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -129,11 +129,7 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
   );
 
   return (
-    <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
-      <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('departments.title')}</Typography>
-        <Typography variant="body2" color="text.secondary">{t('departments.subtitle')}</Typography>
-      </Box>
+    <SectionPaper title={t('departments.title')} subtitle={t('departments.subtitle')}>
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
 
@@ -240,6 +236,6 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
           if (d) await send(`/organizations/${orgId}/departments/${d.id}`, 'DELETE');
         }}
       />
-    </Paper>
+    </SectionPaper>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, FormControlLabel, Paper, Switch, Typography } from '@mui/material';
+import { Alert, Box, FormControlLabel, Switch, Typography } from '@mui/material';
 import { useT } from './i18n';
+import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -66,11 +67,7 @@ export default function ModuleSettings({
   }
 
   return (
-    <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
-      <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('modules.title')}</Typography>
-        <Typography variant="body2" color="text.secondary">{t('modules.subtitle')}</Typography>
-      </Box>
+    <SectionPaper title={t('modules.title')} subtitle={t('modules.subtitle')}>
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {catalogue.map((m) => (
         <FormControlLabel
@@ -85,6 +82,6 @@ export default function ModuleSettings({
           }
         />
       ))}
-    </Paper>
+    </SectionPaper>
   );
 }

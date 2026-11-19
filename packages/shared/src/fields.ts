@@ -230,14 +230,18 @@ export const EXPENSE_FORM: FormDef = {
     expensesColumn('subCategory', 'sub_category', 'expenses.subCategory', 'expense', 30, { type: 'select', options: 'subCategories' }),
     expensesColumn('projectId', 'project_id', 'time.project', 'expense', 40, { type: 'select', options: 'projects' }),
     expensesColumn('subprojectId', 'subproject_id', 'time.subproject', 'expense', 50, { type: 'select', options: 'subprojects' }),
-    expensesColumn('value', 'value', 'expenses.value', 'expense', 60, { type: 'number', width: 's', newRow: true, optional: false, required: true, min: 0, locked: ['type', 'required', 'min'] }),
+    // The receipt's amount and currency (expenses.ts bookExpense): the booked `value` in the org's
+    // reporting `currency` is worked out from them with the exchange rate in force on the date.
+    // Without a receipt amount (an org template may hide it) `value` is entered directly.
+    expensesColumn('originalValue', 'original_value', 'expenses.originalValue', 'expense', 60, { type: 'number', width: 's', newRow: true, min: 0.01, locked: ['type', 'min'] }),
     // Currencies are a dropdown of the org's list (static_data expenses/currency).
-    expensesColumn('currency', 'currency', 'expenses.currency', 'expense', 70, { type: 'select', options: 'currencies', width: 'm', optional: false, required: true, validator: 'currency', locked: ['type', 'required', 'validator'] }),
+    expensesColumn('originalCurrency', 'original_currency', 'expenses.originalCurrency', 'expense', 64, { type: 'select', options: 'currencies', width: 'm', validator: 'currency', locked: ['type', 'validator'] }),
+    // Booked amount in the reporting currency: computed by the API (the form shows the preview).
+    expensesColumn('value', 'value', 'expenses.value', 'expense', 66, { type: 'number', width: 's', optional: false, min: 0, locked: ['type', 'required', 'min'] }),
+    expensesColumn('currency', 'currency', 'expenses.currency', 'expense', 68, { type: 'select', options: 'currencies', width: 'm', optional: false, required: true, validator: 'currency', locked: ['type', 'required', 'validator'] }),
     expensesColumn('comment', 'comment', 'time.comment', 'expense', 80, { width: 'full', height: 2, newRow: true }),
 
-    // The receipt's own amount and currency: optional, but valid when given (DB checks value > 0).
-    expensesColumn('originalValue', 'original_value', 'expenses.originalValue', 'additional', 10, { type: 'number', width: 's', min: 0.01, locked: ['type', 'min'] }),
-    expensesColumn('originalCurrency', 'original_currency', 'expenses.originalCurrency', 'additional', 20, { type: 'select', options: 'currencies', width: 'm', validator: 'currency', locked: ['type', 'validator'] }),
+    // km of a mileage expense; otherwise an optional quantity.
     expensesColumn('quantity', 'quantity', 'expenses.quantity', 'additional', 30, { type: 'number', width: 's', min: 0, locked: ['type', 'min'] }),
   ],
 };

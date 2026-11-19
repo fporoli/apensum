@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, IconButton, Paper, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
 import { darken } from '@mui/material/styles';
 import {
   BRANDING_COLOR_KEYS,
@@ -15,6 +15,7 @@ import { useT } from './i18n';
 import { DEFAULT_BRANDING_COLORS, useBranding } from './theme';
 import { ApensumMark } from './ApensumMark';
 import { CloseIcon } from './icons';
+import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -169,9 +170,7 @@ export default function BrandingSettings({ orgId, authHeaders }: BrandingSetting
   const sidebarText = isDarkColor(sidebar) ? contrastTextColor(sidebar) : undefined;
 
   return (
-    <Paper sx={{ p: 2 }}>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('branding.title')}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{t('branding.subtitle')}</Typography>
+    <SectionPaper title={t('branding.title')} subtitle={t('branding.subtitle')}>
 
       {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 1.5 }}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)} sx={{ mb: 1.5 }}>{success}</Alert>}
@@ -297,6 +296,6 @@ export default function BrandingSettings({ orgId, authHeaders }: BrandingSetting
         </Button>
         <Button variant="contained" disabled={busy || !dirty} onClick={() => void save()}>{t('common.save')}</Button>
       </Box>
-    </Paper>
+    </SectionPaper>
   );
 }
