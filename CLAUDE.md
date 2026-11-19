@@ -365,15 +365,16 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Tables a plugin lists in `apensum.tables` are introspected into its own `api/db/schema.ts`, not the core's
   (expenses: expenses, expense_reports, expense_report_items, exchange_rates; their old changesets and the rows
   035/037/049 made stay in the core's changelogs).
-- Expenses (plugin `plugins/expenses`, module `expenses`, default on; the core keeps the tables, Approvals, reports,
-  documents, team overview and the expense form's field registry; the Workflow page's expense report review is the
-  plugin's `workflowKinds`): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
+- Expenses (plugin `plugins/expenses`, module `expenses`, default on; everything expense-specific is in the plugin:
+  tables (`api/db/schema.ts`), changelog, form (`shared/form.ts`, registered via `ApiPlugin.forms`), booking
+  (`shared/booking.ts`), report, team views, documents, payroll/backup, workflow, Home quick action (`homeAction`);
+  the core only keeps the organization's currency list under static_data `expenses`/`currency` and the old changesets): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
   shown there when editing; the list is newest first. `receiptCapture.tsx` adds a photo (phone camera via
   `capture`, webcam dialog on a computer), a screen area (`getDisplayMedia` + crop) and a QR code: the PC
   creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone
   opens `#/receipt/<token>` (`PhoneUpload.tsx`, rendered by `main.tsx` without login, token = credential)
   and sends the photo; the PC polls, takes the file into the form and uploads it as usual.
-- Expense booking (077, `packages/shared/src/expenses.ts` `bookExpense`, used by the form's preview and by
+- Expense booking (077, `plugins/expenses/shared/booking.ts` `bookExpense`, used by the form's preview and by
   `expense-booking.ts` on create/update): people enter the receipt's amount and currency; the API books `value`
   in the org's reporting currency (`settings.defaultCurrency`, else CHF) with the hand-kept exchange rate in force
   on the date (`exchange_rates`, Organization settings, `exchange-rates.controller.ts`) and stores it in

@@ -6,9 +6,10 @@ import type { Response } from 'express';
 import { DbService, type Db, VersionsService, callerUserId, can, canSeeUserData, isOrgMember, reachesAll, type AuthenticatedRequest, DocumentsService, MAX_DOCUMENT_BYTES, FieldsService } from '@worktime3/api/plugin';
 import { projects, subprojects } from '@worktime3/api/schema';
 import { expenses, expense_report_items, expense_reports } from './db/schema';
-import { EXPENSE_FORM, mergeForm, validateFields, type ResolvedForm } from '@worktime3/shared/fields';
+import { mergeForm, validateFields, type ResolvedForm } from '@worktime3/shared/fields';
+import { EXPENSE_FORM } from '../shared/form';
 import { BOOKING_COLUMNS, bookColumns, bookingContext } from './expense-booking';
-import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
+import { MILEAGE_CATEGORY } from '../shared/booking';
 import { ExpenseReceiptService } from './expense-receipt.service';
 
 type ExpenseColumns = Partial<typeof expenses.$inferInsert>;

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BASICDATA_FORM, EXPENSE_FORM, ENTRY_TYPES, GROUPS_KEY, VALIDATORS, WIDTHS, formFields, mergeForm } from '@worktime3/shared/fields';
+import { BASICDATA_FORM, ENTRY_TYPES, GROUPS_KEY, VALIDATORS, WIDTHS, formFields, mergeForm } from '@worktime3/shared/fields';
 import {
   addCustomField,
   changedKeys,
@@ -21,6 +21,15 @@ import {
 import { DICTIONARIES } from './dictionaries.ts';
 
 const form = mergeForm(BASICDATA_FORM);
+
+// A second form, as a plugin registers one (the expenses plugin's expense form): no self-service fields.
+const PLAIN_FORM = {
+  id: 'plain',
+  customStorage: { table: 'plain', column: 'data' },
+  groups: [{ key: 'expense', caption: 'Expense', order: 10 }],
+  fields: [],
+};
+
 const keysOf = (f, group) => formFields(f, group).map((x) => x.key);
 
 test('setFieldProp and setFieldText add and remove, dropping empty configs', () => {
@@ -130,8 +139,8 @@ test('checkLayers: custom keys must be free, captions present, saved types chang
 test('designDef: in the org scope, a global custom field plays the code default', () => {
   const global = addCustomField(form, emptyLayer(), 'costCenter', 'text', 'expense', 'Cost centre');
   const layers = { global: setFieldProp(global, 'costCenter', 'required', true), org: emptyLayer() };
-  const def = designDef(EXPENSE_FORM, layers, layers, 'org', 'costCenter');
+  const def = designDef(PLAIN_FORM, layers, layers, 'org', 'costCenter');
   assert.equal(def.required, true);
   const loosened = { global: layers.global, org: setFieldProp(emptyLayer(), 'costCenter', 'required', false) };
-  assert.deepEqual(checkLayers(EXPENSE_FORM, layers, loosened).map((e) => e.reason), ['loosens-code']);
+  assert.deepEqual(checkLayers(PLAIN_FORM, layers, loosened).map((e) => e.reason), ['loosens-code']);
 });

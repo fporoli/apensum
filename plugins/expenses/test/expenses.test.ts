@@ -6,7 +6,8 @@ import type { VersionsService } from '@worktime3/api/plugin';
 import type { DocumentsService } from '@worktime3/api/plugin';
 import type { AuthenticatedRequest } from '@worktime3/api/plugin';
 import type { FieldsService } from '@worktime3/api/plugin';
-import { EXPENSE_FORM, mergeForm, type FormLayer } from '@worktime3/shared/fields';
+import { mergeForm, type FormLayer } from '@worktime3/shared/fields';
+import { EXPENSE_FORM } from '../shared/form';
 import { expenseColumns } from '../api/expenses.controller';
 
 function createMockDb(executeHandler: (query: unknown) => Promise<{ rows: any[] }>) {

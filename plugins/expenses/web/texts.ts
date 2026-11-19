@@ -1,14 +1,25 @@
 /**
  * The expenses plugin's UI texts (merged into the app's dictionaries at startup, apps/web/src/plugins.ts).
  * Every language has the same keys and {{placeholders}} as English; test/texts.test.mjs checks it.
- * Keys the core still shows itself (expense form captions, mileage) stay in
- * apps/web/src/dictionaries.ts.
+ * Keys the core shows itself stay in apps/web/src/dictionaries.ts (e.g. `expenses.currency` for the
+ * organization's reporting currency).
  */
 import type { Locale } from '@worktime3/web/plugin';
 
 // prettier-ignore
 export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
   en: {
+    'expenses.category': 'Category',
+    'expenses.subCategory': 'Sub-category',
+    'expenses.originalValue': "Amount (receipt)",
+    'expenses.originalCurrency': 'Currency (receipt)',
+    'expenses.value': "Booked amount",
+    'expenses.quantity': 'Quantity',
+    'expenses.mileage': "Mileage",
+    'expenses.additionalData': 'Additional data',
+    'expenses.section.expense': 'Expense',
+    'dashboard.addExpense': 'Add expense',
+    'importExport.backup.badgeExpenses': 'Expenses',
     'importExport.payroll.colExpenses': 'Expenses (CHF)',
     'expenseReports.status.in_preparation': 'In preparation',
     'expenseReports.status.submitted': 'Submitted',
@@ -144,6 +155,17 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Expense report ({{date}})',
   },
   de: {
+    'expenses.category': 'Kategorie',
+    'expenses.subCategory': 'Unterkategorie',
+    'expenses.originalValue': "Betrag (Beleg)",
+    'expenses.originalCurrency': 'Währung (Beleg)',
+    'expenses.value': "Betrag gebucht",
+    'expenses.quantity': 'Menge',
+    'expenses.mileage': "Kilometer",
+    'expenses.additionalData': 'Zusätzliche Angaben',
+    'expenses.section.expense': 'Spesen',
+    'dashboard.addExpense': 'Spesen erfassen',
+    'importExport.backup.badgeExpenses': 'Spesen',
     'importExport.payroll.colExpenses': 'Spesen (CHF)',
     'expenseReports.status.in_preparation': 'In Vorbereitung',
     'expenseReports.status.submitted': 'Eingereicht',
@@ -279,6 +301,17 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Spesenbericht ({{date}})',
   },
   fr: {
+    'expenses.category': 'Catégorie',
+    'expenses.subCategory': 'Sous-catégorie',
+    'expenses.originalValue': "Montant (reçu)",
+    'expenses.originalCurrency': 'Devise (reçu)',
+    'expenses.value': "Montant comptabilisé",
+    'expenses.quantity': 'Quantité',
+    'expenses.mileage': "Kilomètres",
+    'expenses.additionalData': 'Données supplémentaires',
+    'expenses.section.expense': 'Frais',
+    'dashboard.addExpense': 'Ajouter une dépense',
+    'importExport.backup.badgeExpenses': 'Frais',
     'importExport.payroll.colExpenses': 'Notes de frais (CHF)',
     'expenseReports.status.in_preparation': 'En préparation',
     'expenseReports.status.submitted': 'Soumis',
@@ -414,6 +447,17 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Note de frais ({{date}})',
   },
   it: {
+    'expenses.category': 'Categoria',
+    'expenses.subCategory': 'Sottocategoria',
+    'expenses.originalValue': "Importo (ricevuta)",
+    'expenses.originalCurrency': 'Valuta (ricevuta)',
+    'expenses.value': "Importo contabilizzato",
+    'expenses.quantity': 'Quantità',
+    'expenses.mileage': "Chilometri",
+    'expenses.additionalData': 'Dati aggiuntivi',
+    'expenses.section.expense': 'Spesa',
+    'dashboard.addExpense': 'Aggiungi spesa',
+    'importExport.backup.badgeExpenses': 'Spese',
     'importExport.payroll.colExpenses': 'Spese (CHF)',
     'expenseReports.status.in_preparation': 'In preparazione',
     'expenseReports.status.submitted': 'Inviata',

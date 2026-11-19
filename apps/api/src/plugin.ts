@@ -12,6 +12,7 @@ import type { Provider, Type } from '@nestjs/common';
 import type { ApiReport } from './report-sources';
 import type { ApiTeamView } from './team-overview.controller';
 import type { ApiBackup, ApiPayrollItem } from './import-export.service';
+import type { FormDef } from '@worktime3/shared/fields';
 import type { Db } from './db.service';
 import type { AuditService } from './audit.service';
 import type { VersionsService } from './versions.service';
@@ -63,6 +64,11 @@ export interface ApiPlugin {
   backup?: ApiBackup;
   /** Approvals: workflow actions, source tables and manager routing. */
   workflows?: ApiPluginWorkflows;
+  /**
+   * Configurable forms (docs/FIELD_CONFIG.md): their templates (field_config, by form id) then work as
+   * the core's do. The web part renders them with useFormTemplate and the same definition.
+   */
+  forms?: FormDef[];
   /** A person's own documents on the Documents page, by category (e.g. `expense` receipts). */
   documents?: Record<string, PersonalDocumentSource>;
 }

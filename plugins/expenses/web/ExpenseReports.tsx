@@ -25,7 +25,7 @@ import {
   useI18n, formatLocaleDate, formatMoney, PageHeader, TableEmptyRow, AddIcon, DeleteIcon, DownloadIcon, FolderCopyIcon, ReceiptLongIcon, VisibilityIcon,
 } from '@worktime3/web/plugin';
 import type { ExpenseRow } from './expenseRows';
-import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
+import { MILEAGE_CATEGORY } from '../shared/booking';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 

@@ -147,6 +147,17 @@ A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab f
   returns the columns (`headers`, `cells(userId)`) and the expanded `details(userId)`; `StatusChip`,
   `TeamDetailTable` and `totalsByCurrency` from the contract keep it looking like the core's tables.
 
+## Forms and the Home page
+
+- **Configurable forms** (docs/FIELD_CONFIG.md): `forms: [MY_FORM]` in `defineApiPlugin` registers the
+  form (`registerForm`, checked by `formDefinitionProblems`), so its org templates (field_config) work as
+  the core's; the web part renders it with `useFormTemplate(orgId, MY_FORM, ...)`. Keep the definition in
+  `shared/` (expenses: `shared/form.ts`).
+- **Home quick action:** `homeAction: { label, icon, after }` on a page adds a button to the Home page for
+  whoever may open the page (`after`: `time`, `absences`, `timesheet` or another page's section).
+- **Backup counts:** `backupCounts: { expenses: 'importExport.backup.badgeExpenses' }` labels the counts the
+  API part's backup adds, in the restore preview and summary.
+
 ## Import/Export
 
 - **Payroll export:** `payroll: [{ key, caption, amounts, abacus, columns }]` in `defineApiPlugin`.

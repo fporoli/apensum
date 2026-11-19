@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import { lazy, type ReactNode } from 'react';
 import { grantedScopes, holdsAny, holdsBeyondOwn, isBasicDataReviewer, seesOthersBasicData } from '@worktime3/shared/permissions';
 import type { Session } from './Login';
 import type { PluginPage, PluginPageContext } from './plugin';
@@ -74,6 +74,8 @@ export interface CorePageContext extends PluginPageContext {
   liveNotification: unknown;
   /** An organization's modules changed: permissions and navbar reload. */
   onModulesChanged: () => void;
+  /** The plugin pages' Home quick actions the person may use (PluginPage.homeAction), labels translated. */
+  homeActions: { section: string; label: string; icon: ReactNode; after?: string }[];
 }
 
 export type AppPage = PluginPage<CorePageContext>;
@@ -117,6 +119,7 @@ export const CORE_PAGES: AppPage[] = [
         isHrOrAdmin={c.isReviewer}
         authHeaders={c.authHeaders}
         onNavigate={(target) => c.navigate(target)}
+        pluginActions={c.homeActions}
         onWorkTimeChanged={c.onWorkTimeChanged}
         onReviewResolved={c.onBadgesChanged}
       />

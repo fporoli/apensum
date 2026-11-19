@@ -36,6 +36,8 @@ import {
   CheckIcon,
 } from './icons';
 
+import { PLUGIN_BACKUP_COUNTS } from './plugins';
+
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 interface PayrollPreviewRow {
@@ -539,7 +541,7 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
         if (r.users) summaryParts.push(`${r.users} users`);
         if (r.workTimes) summaryParts.push(`${r.workTimes} work times`);
         if (r.absences) summaryParts.push(`${r.absences} absences`);
-        if (r.expenses) summaryParts.push(`${r.expenses} expenses`);
+        for (const [key, label] of Object.entries(PLUGIN_BACKUP_COUNTS)) if (r[key]) summaryParts.push(`${r[key]} ${t(label)}`);
         if (r.projects) summaryParts.push(`${r.projects} projects`);
         if (r.documents) summaryParts.push(`${r.documents} documents`);
         const summaryText = summaryParts.length > 0 ? summaryParts.join(', ') : 'All collections merged';
@@ -1308,7 +1310,9 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
                             <Chip size="small" label={`${t('importExport.backup.badgeWorkTimes')}: ${backupPreviewData.manifest.counts.workTimes ?? 0}`} />
                             <Chip size="small" label={`${t('importExport.backup.badgeSchedules')}: ${backupPreviewData.manifest.counts.workSchedules ?? 0}`} />
                             <Chip size="small" label={`${t('importExport.backup.badgeAbsences')}: ${backupPreviewData.manifest.counts.absences ?? 0}`} />
-                            <Chip size="small" label={`${t('importExport.backup.badgeExpenses')}: ${backupPreviewData.manifest.counts.expenses ?? 0}`} />
+                            {Object.entries(PLUGIN_BACKUP_COUNTS).map(([key, label]) => (
+                              <Chip key={key} size="small" label={`${t(label)}: ${backupPreviewData.manifest.counts[key] ?? 0}`} />
+                            ))}
                             <Chip size="small" label={`${t('importExport.backup.badgeProjects')}: ${backupPreviewData.manifest.counts.projects ?? 0}`} />
                           </>
                         )}

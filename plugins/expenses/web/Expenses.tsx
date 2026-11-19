@@ -21,8 +21,9 @@ import {
   Typography,
 } from '@mui/material';
 import dayjs from 'dayjs';
-import { EXPENSE_FORM, validateFields } from '@worktime3/shared/fields';
-import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '@worktime3/shared/expenses';
+import { validateFields } from '@worktime3/shared/fields';
+import { EXPENSE_FORM } from '../shared/form';
+import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '../shared/booking';
 import {
   useI18n, formatLocaleDate, formatLocaleNumber, formatMoney, parseLocaleNumber, ConfigFieldGroup, useGroupTitle, type FieldOption, FieldDesignScope, useFormTemplate, DESIGN_PANEL_WIDTH, FormDesignPanel, ConfirmDialog, PageHeader, TableEmptyRow, DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon, AttachmentView, DropZone, useAttachmentDraft, type Attachment, currencyOptions,
 } from '@worktime3/web/plugin';

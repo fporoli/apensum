@@ -26,6 +26,15 @@ export interface PluginPageContext {
   navigate: (section: string) => void;
 }
 
+/** A quick action on the Home page that opens the page (e.g. "Add expense"). */
+export interface PageHomeAction {
+  /** i18n key of the button text. */
+  label: string;
+  icon: ReactNode;
+  /** The quick action it follows ('time', 'absences', 'timesheet' or another page's section); at the end when unset. */
+  after?: string;
+}
+
 /** What a navbar count (`PageNav.badge`) is loaded with. */
 export interface PluginBadgeContext<R extends PluginRoles = PluginRoles> {
   orgId: string;
@@ -65,6 +74,8 @@ export interface PluginPage<C extends PluginPageContext = PluginPageContext> {
   /** Who may open it before permissions have loaded or when the API is offline; default everyone. */
   allowedByRole?: (roles: C['roles']) => boolean;
   nav?: PageNav<C['roles']>;
+  /** A quick action on the Home page, shown to whoever may open the page. */
+  homeAction?: PageHomeAction;
   render: (ctx: C) => ReactNode;
 }
 
@@ -208,6 +219,11 @@ export interface WebPlugin {
   teamViews?: PluginTeamView[];
   /** Document categories on the Documents page. */
   documentCategories?: PluginDocumentCategory[];
+  /**
+   * Counts in a backup's manifest the plugin adds (its ApiBackup `counts`), with the text key of each:
+   * shown in the restore preview and summary on Import/Export.
+   */
+  backupCounts?: Record<string, string>;
   /** Reports on the Reports page. */
   reports?: PluginReport[];
   /** A notification's source_table -> the section its click opens. */

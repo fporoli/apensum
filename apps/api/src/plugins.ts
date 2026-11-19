@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Logger, type Provider, type Type } from '@nestjs/common';
 import { registerModule, type ModuleDefinition } from '@worktime3/shared/modules';
+import { registerForm } from '@worktime3/shared/fields';
 import { registerPermissionObjects, type PermissionObject } from '@worktime3/shared/permissions';
 import { namespaceMismatch, pluginApiMismatch, type PluginName } from '@worktime3/shared/pluginApi';
 import type { ApiPlugin } from './plugin';
@@ -85,6 +86,7 @@ export function pluginNames(manifest: PluginManifest, plugin: ApiPlugin | undefi
   for (const c of Object.keys(plugin?.documents ?? {})) names.push({ kind: 'document category', name: c });
   for (const a of Object.keys(plugin?.workflows?.actions ?? {})) names.push({ kind: 'workflow action', name: a });
   for (const t of Object.keys(plugin?.workflows?.sources ?? {})) names.push({ kind: 'workflow source table', name: t });
+  for (const f of plugin?.forms ?? []) names.push({ kind: 'form', name: f.id });
   return names;
 }
 
@@ -115,6 +117,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       for (const view of plugin.teamViews ?? []) registerTeamView(view);
       for (const item of plugin.payroll ?? []) registerPayrollItem(item);
       if (plugin.backup) registerBackup(plugin.backup);
+      for (const form of plugin.forms ?? []) registerForm(form);
     }
     loaded.ids.push(manifest.id);
   }

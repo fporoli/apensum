@@ -6,6 +6,7 @@ import { EXPENSE_TEAM_VIEWS } from './team-views';
 import { EXPENSES_BACKUP, EXPENSES_PAYROLL } from './import-export';
 import { expenseReceipts } from './documents';
 import { EXPENSE_WORKFLOWS } from './workflow';
+import { EXPENSE_FORM } from '../shared/form';
 import { ExpenseReportsController } from './expense-reports.controller';
 import { ExpensesController } from './expenses.controller';
 import { ReceiptHandoffController } from './receipt-handoff.controller';
@@ -21,4 +22,5 @@ export default defineApiPlugin({
   backup: EXPENSES_BACKUP,
   workflows: EXPENSE_WORKFLOWS,
   documents: { expense: expenseReceipts },
+  forms: [EXPENSE_FORM],
 });

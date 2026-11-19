@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { MILEAGE_CATEGORY, bookExpense, exchangeRateOn, isUnconverted, mileageRateOn, roundMoney, validateExchangeRate } from './expenses.ts';
+import { MILEAGE_CATEGORY, bookExpense, exchangeRateOn, isUnconverted, mileageRateOn, roundMoney, validateExchangeRate } from '../shared/booking.ts';
 
 const rates = [
   { currency: 'EUR', targetCurrency: 'CHF', validFrom: '2026-01-01', rate: 0.94 },

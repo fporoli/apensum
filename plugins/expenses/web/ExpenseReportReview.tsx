@@ -3,7 +3,7 @@ import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Typography,
 } from '@mui/material';
-import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
+import { MILEAGE_CATEGORY } from '../shared/booking';
 import { formatLocaleDate, formatMoney, useI18n, type PluginWorkflowInspectProps } from '@worktime3/web/plugin';
 import type { ExpenseRow } from './expenseRows';
 

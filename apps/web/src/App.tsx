@@ -467,6 +467,12 @@ export default function App() {
         requestFocus,
         liveNotification,
         onModulesChanged: () => setPermissionsVersion((v) => v + 1),
+        homeActions: PAGES.filter((p) => p.homeAction && allowed(p.section)).map((p) => ({
+          section: p.section,
+          label: t(p.homeAction!.label),
+          icon: p.homeAction!.icon,
+          after: p.homeAction!.after,
+        })),
       }
     : null;
   const currentPage = pageContext && allowed(section) ? pageOf(section) : undefined;

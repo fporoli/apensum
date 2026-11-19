@@ -23,6 +23,7 @@ export default defineWebPlugin({
       hash: '#/expenses',
       object: 'nav.expenses',
       nav: { group: 'expenses', label: 'nav.expenses', icon: <ReceiptLongIcon fontSize="small" /> },
+      homeAction: { label: 'dashboard.addExpense', icon: <ReceiptLongIcon fontSize="small" />, after: 'absences' },
       render: ({ orgId, userId, authHeaders }) => (
         <TeamView orgId={orgId} kind="expenses" authHeaders={authHeaders} renderOwn={() => <Expenses orgId={orgId} userId={userId} authHeaders={authHeaders} />} />
       ),
@@ -97,6 +98,7 @@ export default defineWebPlugin({
     },
   ],
   teamViews: EXPENSE_TEAM_VIEWS,
+  backupCounts: { expenses: 'importExport.backup.badgeExpenses' },
   reports: [EXPENSES_REPORT],
   notificationSections: { expense_reports: 'expenseReports' },
 });

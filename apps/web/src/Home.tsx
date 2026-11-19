@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
@@ -31,7 +31,6 @@ import {
   CalendarMonthIcon,
   CheckCircleIcon,
   PlayArrowIcon,
-  ReceiptLongIcon,
   ScheduleIcon,
   StopIcon,
   TimerIcon,
@@ -74,7 +73,10 @@ export interface HomeProps {
   canManage: boolean;
   isHrOrAdmin: boolean;
   authHeaders: () => Promise<Record<string, string>>;
-  onNavigate: (section: 'time' | 'timesheet' | 'workTime' | 'absences' | 'expenses' | 'approvals' | 'myData') => void;
+  /** Opens a page by its section id. */
+  onNavigate: (section: string) => void;
+  /** The plugins' quick actions the person may use (PluginPage.homeAction), labels translated. */
+  pluginActions?: { section: string; label: string; icon: ReactNode; after?: string }[];
   onWorkTimeChanged?: () => void;
   onReviewResolved?: () => void;
 }
@@ -94,10 +96,24 @@ export default function Home({
   isHrOrAdmin,
   authHeaders,
   onNavigate,
+  pluginActions = [],
   onWorkTimeChanged,
   onReviewResolved,
 }: HomeProps) {
   const { t, locale } = useI18n();
+
+  const quickActions = useMemo(() => {
+    const list: { section: string; label: string; icon: ReactNode }[] = [
+      { section: 'time', label: t('dashboard.logTime'), icon: <ScheduleIcon fontSize="small" /> },
+      { section: 'absences', label: t('dashboard.requestAbsence'), icon: <BeachAccessIcon fontSize="small" /> },
+      { section: 'timesheet', label: t('dashboard.openTimesheet'), icon: <CalendarMonthIcon fontSize="small" /> },
+    ];
+    for (const a of pluginActions) {
+      const at = a.after ? list.findIndex((x) => x.section === a.after) : -1;
+      list.splice(at >= 0 ? at + 1 : list.length, 0, a);
+    }
+    return list;
+  }, [t, pluginActions]);
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -240,76 +256,28 @@ export default function Home({
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {loading && <LinearProgress />}
 
-      {/* Quick Actions */}
+      {/* Quick Actions: the core's, with the plugins' put in after the action they name. */}
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<ScheduleIcon fontSize="small" />}
-          onClick={() => onNavigate('time')}
-          sx={{
-            borderRadius: 6,
-            px: 1.5,
-            bgcolor: 'background.paper',
-            borderColor: 'divider',
-            color: 'text.primary',
-            fontWeight: 500,
-            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
-          }}
-        >
-          {t('dashboard.logTime')}
-        </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<BeachAccessIcon fontSize="small" />}
-          onClick={() => onNavigate('absences')}
-          sx={{
-            borderRadius: 6,
-            px: 1.5,
-            bgcolor: 'background.paper',
-            borderColor: 'divider',
-            color: 'text.primary',
-            fontWeight: 500,
-            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
-          }}
-        >
-          {t('dashboard.requestAbsence')}
-        </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<ReceiptLongIcon fontSize="small" />}
-          onClick={() => onNavigate('expenses')}
-          sx={{
-            borderRadius: 6,
-            px: 1.5,
-            bgcolor: 'background.paper',
-            borderColor: 'divider',
-            color: 'text.primary',
-            fontWeight: 500,
-            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
-          }}
-        >
-          {t('dashboard.addExpense')}
-        </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<CalendarMonthIcon fontSize="small" />}
-          onClick={() => onNavigate('timesheet')}
-          sx={{
-            borderRadius: 6,
-            px: 1.5,
-            bgcolor: 'background.paper',
-            borderColor: 'divider',
-            color: 'text.primary',
-            fontWeight: 500,
-            '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
-          }}
-        >
-          {t('dashboard.openTimesheet')}
-        </Button>
+        {quickActions.map((a) => (
+          <Button
+            key={a.section}
+            size="small"
+            variant="outlined"
+            startIcon={a.icon}
+            onClick={() => onNavigate(a.section)}
+            sx={{
+              borderRadius: 6,
+              px: 1.5,
+              bgcolor: 'background.paper',
+              borderColor: 'divider',
+              color: 'text.primary',
+              fontWeight: 500,
+              '&:hover': { bgcolor: (th) => alpha(th.palette.primary.main, 0.05), borderColor: 'primary.main' },
+            }}
+          >
+            {a.label}
+          </Button>
+        ))}
       </Box>
 
       {/* KPI Cards */}

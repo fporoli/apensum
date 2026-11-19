@@ -96,7 +96,7 @@ export interface FormDef {
 // Basic data (Home page "My Data", and the Users page's basic-data dialog)
 // ---------------------------------------------------------------------------
 
-type FieldExtras = Partial<Omit<FieldDef, 'key' | 'storage' | 'caption' | 'group' | 'order'>>;
+export type FieldExtras = Partial<Omit<FieldDef, 'key' | 'storage' | 'caption' | 'group' | 'order'>>;
 
 /** A field stored as a key in users.basicdata. */
 function basicdataJson(key: string, group: string, order: number, extras: FieldExtras = {}): FieldDef {
@@ -194,62 +194,51 @@ export const BASICDATA_FORM: FormDef = {
   ],
 };
 
-// ---------------------------------------------------------------------------
-// Expenses (the Expenses page's log/edit form)
-// ---------------------------------------------------------------------------
-
-/** A field stored in a real column of `expenses`. Field keys match the API's request body. */
-function expensesColumn(key: string, column: string, caption: string, group: string, order: number, extras: FieldExtras = {}): FieldDef {
-  return {
-    key,
-    storage: { kind: 'column', table: 'expenses', column },
-    type: 'text',
-    caption,
-    group,
-    order,
-    width: 'm',
-    optional: true,
-    editableBy: 'self',
-    ...extras,
-  };
-}
-
-export const EXPENSE_FORM: FormDef = {
-  id: 'expense',
-  customStorage: { table: 'expenses', column: 'data' },
-  reservedKeys: ['orgs'],
-  groups: [
-    { key: 'expense', caption: 'expenses.section.expense', order: 10 },
-    // Shown collapsed under "Additional data" until opened.
-    { key: 'additional', caption: 'expenses.additionalData', order: 20 },
-  ],
-  fields: [
-    // NOT NULL columns: always required, never hidden.
-    expensesColumn('expenseDate', 'expense_date', 'time.date', 'expense', 10, { type: 'date', optional: false, required: true, locked: ['type', 'required'] }),
-    expensesColumn('category', 'category', 'expenses.category', 'expense', 20, { type: 'select', options: 'categories', optional: false, required: true, locked: ['required'] }),
-    expensesColumn('subCategory', 'sub_category', 'expenses.subCategory', 'expense', 30, { type: 'select', options: 'subCategories' }),
-    expensesColumn('projectId', 'project_id', 'time.project', 'expense', 40, { type: 'select', options: 'projects' }),
-    expensesColumn('subprojectId', 'subproject_id', 'time.subproject', 'expense', 50, { type: 'select', options: 'subprojects' }),
-    // The receipt's amount and currency (expenses.ts bookExpense): the booked `value` in the org's
-    // reporting `currency` is worked out from them with the exchange rate in force on the date.
-    // Without a receipt amount (an org template may hide it) `value` is entered directly.
-    expensesColumn('originalValue', 'original_value', 'expenses.originalValue', 'expense', 60, { type: 'number', width: 's', newRow: true, min: 0.01, locked: ['type', 'min'] }),
-    // Currencies are a dropdown of the org's list (static_data expenses/currency).
-    expensesColumn('originalCurrency', 'original_currency', 'expenses.originalCurrency', 'expense', 64, { type: 'select', options: 'currencies', width: 'm', validator: 'currency', locked: ['type', 'validator'] }),
-    // Booked amount in the reporting currency: computed by the API (the form shows the preview).
-    expensesColumn('value', 'value', 'expenses.value', 'expense', 66, { type: 'number', width: 's', optional: false, min: 0, locked: ['type', 'required', 'min'] }),
-    expensesColumn('currency', 'currency', 'expenses.currency', 'expense', 68, { type: 'select', options: 'currencies', width: 'm', optional: false, required: true, validator: 'currency', locked: ['type', 'required', 'validator'] }),
-    expensesColumn('comment', 'comment', 'time.comment', 'expense', 80, { width: 'full', height: 2, newRow: true }),
-
-    // km of a mileage expense; otherwise an optional quantity.
-    expensesColumn('quantity', 'quantity', 'expenses.quantity', 'additional', 30, { type: 'number', width: 's', min: 0, locked: ['type', 'min'] }),
-  ],
-};
-
+/** The configurable forms: the core's, then the plugins' (registerForm; expenses: its expense form). */
 export const FORMS: Record<string, FormDef> = {
   [BASICDATA_FORM.id]: BASICDATA_FORM,
-  [EXPENSE_FORM.id]: EXPENSE_FORM,
 };
+
+/** Adds a plugin's configurable form (ApiPlugin.forms); its templates then work like the core's. */
+export function registerForm(form: FormDef): void {
+  const existing = FORMS[form.id];
+  if (existing && existing !== form) throw new Error(`Form ${form.id} is already defined`);
+  const problems = formDefinitionProblems(form);
+  if (problems.length) throw new Error(`Form ${form.id}: ${problems.join('; ')}`);
+  FORMS[form.id] = form;
+}
+
+/**
+ * What is wrong with a form definition (empty when nothing): unique keys, every field in a declared
+ * group with a unique order there, valid types, widths and storage, a caption, and no two fields
+ * writing the same place. The core's tests check its forms with it, a plugin's tests its own.
+ */
+export function formDefinitionProblems(form: FormDef): string[] {
+  const out: string[] = [];
+  const fieldTypes: readonly string[] = [...ENTRY_TYPES, 'select'];
+  const keys = form.fields.map((f) => f.key);
+  for (const k of keys.filter((k, i) => keys.indexOf(k) !== i)) out.push(`duplicate key ${k}`);
+  const groups = new Set(form.groups.map((g) => g.key));
+  for (const f of form.fields) if (!groups.has(f.group)) out.push(`${f.key}: unknown group ${f.group}`);
+  for (const g of form.groups) {
+    const orders = formFields(form, g.key).map((f) => f.order);
+    if (new Set(orders).size !== orders.length) out.push(`${g.key}: duplicate order`);
+  }
+  for (const f of form.fields) {
+    if (!fieldTypes.includes(f.type)) out.push(`${f.key}: type ${f.type}`);
+    for (const t of f.allowedTypes ?? []) if (!fieldTypes.includes(t)) out.push(`${f.key}: allowed type ${t}`);
+    if (!(WIDTHS as readonly string[]).includes(f.width)) out.push(`${f.key}: width ${f.width}`);
+    if (f.height !== undefined && !(f.height >= 1 && f.height <= 6)) out.push(`${f.key}: height ${f.height}`);
+    if (f.type === 'select' && !f.options) out.push(`${f.key}: select without options`);
+    if (f.storage.kind === 'json' && !f.storage.key) out.push(`${f.key}: json storage without key`);
+    if (!f.caption) out.push(`${f.key}: no caption`);
+  }
+  const places = form.fields
+    .filter((f) => !f.readOnly)
+    .map((f) => (f.storage.kind === 'json' ? `${f.storage.table}.${f.storage.column}.${f.storage.key}` : `${f.storage.table}.${f.storage.column}`));
+  for (const p of places.filter((p, i) => places.indexOf(p) !== i)) out.push(`two fields write ${p}`);
+  return out;
+}
 
 /** The form's fields, optionally only one group's, in display order. */
 export function formFields<F extends FieldDef>(form: { fields: F[] }, group?: string): F[] {

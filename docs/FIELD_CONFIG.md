@@ -374,7 +374,8 @@ menu. When it is on:
    hidden fields show faded. The draft logic is in `formDesign.ts`, tested
    by `formDesign.test.mjs`. Save sends one request per changed field; what
    fails stays in the draft with its reason.
-5. Done: the expense form (`EXPENSE_FORM`, form id `expense`, sections
+5. Done: the expense form (`EXPENSE_FORM` in `plugins/expenses/shared/form.ts`, registered by the
+   plugin through `ApiPlugin.forms` / `registerForm`, form id `expense`, sections
    `expense` and `additional`) renders through `ConfigFieldGroup` on the
    Expenses page, with design mode. Its field keys match the API body;
    `plugins/expenses/api/expenses.controller.ts` validates create (all fields, so required ones are

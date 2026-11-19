@@ -8,11 +8,11 @@ import {
   mergeForm,
   resolveText,
   validateFields,
-  EXPENSE_FORM,
   checkCustomField,
   checkCustomKey,
   editableKeys,
   orgCustomKeys,
+  type FormDef,
 } from '@worktime3/shared/fields';
 import { FieldsController } from '../../apps/api/src/fields.controller';
 import { FieldsService } from '../../apps/api/src/fields.service';
@@ -26,6 +26,14 @@ import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
 // ---------------------------------------------------------------------------
 // Merging layers
 // ---------------------------------------------------------------------------
+
+// A second form, as a plugin registers one (the expenses plugin's expense form): no self-service fields.
+const PLAIN_FORM: FormDef = {
+  id: 'plain',
+  customStorage: { table: 'plain', column: 'data' },
+  groups: [{ key: 'expense', caption: 'Expense', order: 10 }],
+  fields: [],
+};
 
 test('mergeForm: org beats global beats code; texts merge per language', () => {
   const form = mergeForm(
@@ -329,7 +337,7 @@ test('checkCustomField: needs a type, an English caption and a section; type cha
   assert.deepEqual(checkCustomField(BASICDATA_FORM, 'x', { ...placeOfBirth, type: 'select' }), { ok: false, reason: 'invalid-value', property: 'type' });
   assert.deepEqual(checkCustomField(BASICDATA_FORM, 'x', { ...placeOfBirth, group: undefined }), { ok: false, reason: 'unknown-group', property: 'group' });
   assert.equal(checkCustomField(BASICDATA_FORM, 'x', { ...placeOfBirth, editableBy: 'self' }).ok, true);
-  assert.deepEqual(checkCustomField(EXPENSE_FORM, 'x', { ...placeOfBirth, group: 'expense', editableBy: 'self' }), { ok: false, reason: 'invalid-value', property: 'editableBy' });
+  assert.deepEqual(checkCustomField(PLAIN_FORM, 'x', { ...placeOfBirth, group: 'expense', editableBy: 'self' }), { ok: false, reason: 'invalid-value', property: 'editableBy' });
   assert.equal(checkCustomField(BASICDATA_FORM, 'x', { ...placeOfBirth, type: 'datetime' }, { ...placeOfBirth, type: 'date' }).ok, true);
   assert.deepEqual(checkCustomField(BASICDATA_FORM, 'x', { ...placeOfBirth, type: 'number' }, placeOfBirth), { ok: false, reason: 'type-not-allowed', property: 'type' });
   assert.deepEqual(checkCustomField(BASICDATA_FORM, 'x', { ...placeOfBirth, hidden: 'yes' }), { ok: false, reason: 'invalid-value', property: 'hidden' });
