@@ -137,6 +137,8 @@ export class ExpensesController {
       originalCurrency?: string;
       currency: string;
       value?: number;
+      /** The booked amount of a foreign receipt was entered by hand (expenses.ts bookExpense). */
+      valueOverride?: boolean;
       quantity?: number;
       comment?: string;
       projectId?: string;
@@ -155,7 +157,7 @@ export class ExpensesController {
     const missing = missingReceiptAmount(checked.columns as Record<string, unknown>, checked.receiptShown);
     if (missing) return missing;
     // The booked amount in the reporting currency (receipt x exchange rate, or km x rate), never the client's.
-    const booked = bookColumns(checked.columns as Record<string, unknown>, await bookingContext(db, orgId));
+    const booked = bookColumns(checked.columns as Record<string, unknown>, await bookingContext(db, orgId), body?.valueOverride === true);
     if (!booked.ok) return booked;
     const values = {
       ...checked.columns,
@@ -232,6 +234,7 @@ export class ExpensesController {
       originalCurrency?: string | null;
       currency?: string;
       value?: number;
+      valueOverride?: boolean;
       quantity?: number | null;
       comment?: string;
     },
@@ -250,7 +253,7 @@ export class ExpensesController {
     if (BOOKING_COLUMNS.some((c) => c in delta)) {
       const missing = missingReceiptAmount({ ...owned.entry, ...delta }, checked.receiptShown);
       if (missing) return missing;
-      const booked = bookColumns({ ...owned.entry, ...delta }, await bookingContext(db, owned.entry.organization_id as string));
+      const booked = bookColumns({ ...owned.entry, ...delta }, await bookingContext(db, owned.entry.organization_id as string), body?.valueOverride === true);
       if (!booked.ok) return booked;
       Object.assign(delta, booked.columns);
     }

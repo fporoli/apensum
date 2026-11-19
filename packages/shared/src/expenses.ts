@@ -4,6 +4,8 @@
  *   - a receipt in the reporting currency: the amount as is;
  *   - a receipt in another currency: amount x the organization's exchange rate in force on the
  *     expense date (exchange_rates, kept by hand with history); none = the expense is refused;
+ *     unless the person overrides the booked amount (valueOverride): then that amount, with the
+ *     effective rate (amount / receipt amount) kept;
  *   - mileage (category MILEAGE_CATEGORY): km x the rate per km in force on that date (static_data
  *     expenses/mileage_rate: key = valid from, value = rate; global default, org copy overrides).
  * The rate used is stored with the expense, so later rate changes never change booked expenses.
@@ -65,6 +67,11 @@ export interface BookingInput {
   value: number | null;
   /** km for a mileage expense. */
   quantity: number | null;
+  /**
+   * A receipt in another currency whose booked amount the person entered by hand (e.g. from the card
+   * statement) instead of taking the rate: `value` is booked, the effective rate is stored with it.
+   */
+  valueOverride?: boolean;
 }
 
 export interface Booking {
@@ -96,6 +103,11 @@ export function bookExpense(
   if (input.originalValue !== null && input.originalCurrency) {
     if (input.originalCurrency === reportingCurrency) {
       return { ok: true, booking: { value: roundMoney(input.originalValue), currency: reportingCurrency, exchangeRate: null, unitRate: null } };
+    }
+    if (input.valueOverride) {
+      if (input.value === null || !Number.isFinite(input.value) || input.value <= 0 || input.originalValue <= 0) return { ok: false, error: 'amount-required' };
+      const value = roundMoney(input.value);
+      return { ok: true, booking: { value, currency: reportingCurrency, exchangeRate: Math.round((value / input.originalValue) * 1e8) / 1e8, unitRate: null } };
     }
     const rate = exchangeRateOn(rates, input.originalCurrency, reportingCurrency, input.expenseDate);
     if (rate === null) return { ok: false, error: 'exchange-rate-missing' };

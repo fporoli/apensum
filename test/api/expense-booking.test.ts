@@ -87,3 +87,11 @@ test('receipt scan: unreadable formats are refused before anything is reserved o
     process.env = saved;
   }
 });
+
+test('booking columns: a receipt amount without currency is in the reporting currency; an override is booked as entered', () => {
+  const row = { category: 'meals', expense_date: '2026-11-15', original_value: '18.40', original_currency: null, value: '999', quantity: null };
+  assert.deepEqual(bookColumns(row, ctx), { ok: true, columns: { value: '18.40', currency: 'CHF', exchange_rate: null, unit_rate: null, original_currency: 'CHF' } });
+  const card = { ...row, original_value: '50', original_currency: 'USD', value: '44.15' };
+  assert.deepEqual(bookColumns(card, ctx), { ok: false, error: 'exchange-rate-missing' });
+  assert.deepEqual(bookColumns(card, ctx, true), { ok: true, columns: { value: '44.15', currency: 'CHF', exchange_rate: '0.883', unit_rate: null } });
+});

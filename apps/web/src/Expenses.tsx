@@ -15,6 +15,8 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Checkbox,
+  FormControlLabel,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -187,6 +189,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const [scanAvailable, setScanAvailable] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanNotice, setScanNotice] = useState<string | null>(null);
+  // Receipt in another currency (checkbox): then its currency is chosen and the booked amount may be overridden.
+  const [foreign, setForeign] = useState(false);
+  const [override, setOverride] = useState(false);
 
   async function reload() {
     setLoading(true);
@@ -278,6 +283,10 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
         if (next.category === MILEAGE_CATEGORY) next.category = '';
         return next;
       });
+      if (sg.originalCurrency) {
+        setForeign(sg.originalCurrency !== defaultCurrency);
+        setOverride(false);
+      }
       setFieldErrors({});
       setScanNotice(t('expenses.scan.done'));
     } catch {
@@ -314,6 +323,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   }, [orgId, userId]);
 
   function updateField(key: string, value: unknown) {
+    // Typing the booked amount of a foreign receipt overrides the rate (e.g. the card statement's amount).
+    if (key === 'value') setOverride(true);
     setValues((prev) => {
       const next = { ...prev, [key]: value };
       if (key === 'category') next.subCategory = '';
@@ -342,6 +353,18 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     setFieldErrors({});
     setShowAdditional(false);
     setScanNotice(null);
+    setForeign(false);
+    setOverride(false);
+  }
+
+  /** Foreign currency on/off: off books the receipt in the reporting currency again. */
+  function toggleForeign(on: boolean) {
+    setForeign(on);
+    setOverride(false);
+    setValues((prev) => ({
+      ...prev,
+      originalCurrency: on ? (prev.originalCurrency && prev.originalCurrency !== defaultCurrency ? prev.originalCurrency : '') : defaultCurrency,
+    }));
   }
 
   async function save() {
@@ -350,6 +373,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     const checked = validateFields(savedForm, values);
     // Same rule as the API: the receipt amount (or the km) is what the booked amount comes from.
     if (computed && !hasBasis) checked.errors.push({ field: mileage ? 'quantity' : 'originalValue', rule: 'required' });
+    if (foreignReceipt && !values.originalCurrency) checked.errors.push({ field: 'originalCurrency', rule: 'required' });
     if (checked.errors.length > 0) {
       showFieldErrors(checked.errors);
       return;
@@ -360,7 +384,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       const res = await fetch(editingId ? `${API}/expenses/${editingId}` : `${API}/organizations/${orgId}/expenses`, {
         method: editingId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify(checked.values),
+        body: JSON.stringify({ ...checked.values, valueOverride: foreign && override }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -477,7 +501,16 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     draft.clear();
     setReceipt(null);
     if (row.document_id) void loadReceipt(row.id);
-    setValues(formFromRow(row));
+    const next = formFromRow(row);
+    setValues(next);
+    // A foreign receipt whose stored amount differs from what today's rates give was overridden by hand: keep it.
+    const isForeign = row.category !== MILEAGE_CATEGORY && !!next.originalCurrency && next.originalCurrency !== defaultCurrency;
+    setForeign(isForeign);
+    const recomputed = bookExpense({
+      category: row.category, expenseDate: String(next.expenseDate), originalValue: typeof next.originalValue === 'number' ? next.originalValue : null,
+      originalCurrency: String(next.originalCurrency ?? '') || null, value: null, quantity: null,
+    }, defaultCurrency, rates, mileageRates);
+    setOverride(isForeign && (!recomputed.ok || recomputed.booking.value !== Number(row.value)));
     setFieldErrors({});
     setShowAdditional(true);
     if (row.project_id) void loadSubprojects(row.project_id);
@@ -509,23 +542,36 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     originalCurrency: mileage ? null : String(values.originalCurrency ?? '') || null,
     value: typeof values.value === 'number' ? values.value : null,
     quantity: typeof values.quantity === 'number' ? values.quantity : null,
-  }, defaultCurrency, rates, mileageRates), [category, mileage, originalValue, values.expenseDate, values.originalCurrency, values.value, values.quantity, defaultCurrency, rates, mileageRates]);
+    valueOverride: foreign && override,
+  }, defaultCurrency, rates, mileageRates), [category, mileage, originalValue, values.expenseDate, values.originalCurrency, values.value, values.quantity, defaultCurrency, rates, mileageRates, foreign, override]);
   // With the receipt amount on the form (the default) the booked amount is always worked out; only a
   // template that hides the receipt amount lets people enter the booked amount directly.
   const receiptAmountShown = form.fields.some((f) => f.key === 'originalValue' && !f.hidden && !f.retired);
   const computed = mileage || receiptAmountShown;
   const hasBasis = mileage ? typeof values.quantity === 'number' : originalValue !== null;
-  const shownValues = computed
+  const foreignReceipt = foreign && !mileage && receiptAmountShown;
+  const shownValues = computed && !(foreignReceipt && override)
     ? { ...values, value: booking.ok && hasBasis ? booking.booking.value : null, currency: defaultCurrency || values.currency }
     : { ...values, currency: defaultCurrency || values.currency };
-  const disabledKeys = [
-    ...(category && !mileage ? [] : ['subCategory']),
-    ...(projectId && subprojects.length > 0 ? [] : ['subprojectId']),
-    ...(defaultCurrency ? ['currency'] : []),
-    ...(computed ? ['value'] : []),
-    ...(mileage ? ['originalValue', 'originalCurrency'] : []),
+  // Fewer fields: sub-lists only when there is something to choose; receipt currency and booked amount only
+  // for a foreign receipt (or when a template hides the receipt amount); mileage shows km instead.
+  const hiddenKeys = [
+    ...(mileage || options.subCategories.length === 0 ? ['subCategory'] : []),
+    ...(subprojects.length === 0 ? ['subprojectId'] : []),
+    ...(mileage ? ['originalValue', 'originalCurrency', 'value'] : receiptAmountShown && !foreign ? ['originalCurrency', 'value'] : []),
   ];
-  const groupProps = { form, values: shownValues, editing: true, onChange: updateField, options, errors: fieldErrors, disabledKeys };
+  const disabledKeys = [
+    ...(defaultCurrency ? ['currency'] : []),
+    ...(computed && !foreignReceipt ? ['value'] : []),
+  ];
+  const foreignBox = !mileage && receiptAmountShown ? (
+    <FormControlLabel
+      sx={{ alignSelf: 'center', ml: 0 }}
+      control={<Checkbox size="small" checked={foreign} onChange={(e) => toggleForeign(e.target.checked)} />}
+      label={t('expenses.foreignCurrency')}
+    />
+  ) : null;
+  const groupProps = { form, values: shownValues, editing: true, onChange: updateField, options, errors: fieldErrors, disabledKeys, hiddenKeys, after: { currency: foreignBox } };
   const kmText = typeof values.quantity === 'number' ? String(values.quantity) : '';
   const [kmInput, setKmInput] = useState('');
   useEffect(() => { setKmInput(kmText); }, [kmText, editingId]);
@@ -580,18 +626,22 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
               )}
             </Box>
           )}
-          {!mileage && booking.ok && booking.booking.exchangeRate !== null && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {t('expenses.conversion', {
-                original: `${formatLocaleNumber(originalValue ?? 0, locale)} ${String(values.originalCurrency ?? '')}`,
-                rate: formatLocaleNumber(booking.booking.exchangeRate, locale),
-                value: `${formatLocaleNumber(booking.booking.value, locale)} ${defaultCurrency}`,
-              })}
-            </Typography>
+          {foreignReceipt && booking.ok && booking.booking.exchangeRate !== null && (
+            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Typography variant="body2" color="text.secondary">
+                {t(override ? 'expenses.conversionManual' : 'expenses.conversion', {
+                  original: `${formatLocaleNumber(originalValue ?? 0, locale)} ${String(values.originalCurrency ?? '')}`,
+                  rate: formatLocaleNumber(booking.booking.exchangeRate, locale),
+                  value: `${formatLocaleNumber(booking.booking.value, locale)} ${defaultCurrency}`,
+                })}
+              </Typography>
+              {override && <Button size="small" onClick={() => setOverride(false)}>{t('expenses.useRate')}</Button>}
+            </Box>
           )}
           {!booking.ok && (booking.error === 'exchange-rate-missing' || booking.error === 'mileage-rate-missing') && (
             <Alert severity="warning" sx={{ mt: 1.5 }}>
               {t(`expenses.error.${booking.error}`, { currency: String(values.originalCurrency ?? ''), date: formatLocaleDate(String(values.expenseDate ?? ''), locale) })}
+              {booking.error === 'exchange-rate-missing' && ` ${t('expenses.orEnterBooked', { currency: defaultCurrency })}`}
             </Alert>
           )}
 

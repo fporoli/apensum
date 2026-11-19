@@ -46,17 +46,23 @@ function num(v: unknown): number | null {
 export const BOOKING_COLUMNS = ['category', 'expense_date', 'original_value', 'original_currency', 'value', 'quantity', 'currency'] as const;
 
 /**
- * Books an expense from its (merged) column values: returns the columns to write on top
+ * Books an expense from its (merged) column values (`valueOverride`: the person's booked amount for a
+ * receipt in another currency, see bookExpense): returns the columns to write on top
  * (value, currency, exchange_rate, unit_rate, and for mileage the receipt amount cleared), or the error.
  */
-export function bookColumns(row: Record<string, unknown>, ctx: BookingContext): { ok: true; columns: Record<string, unknown> } | { ok: false; error: string } {
+export function bookColumns(row: Record<string, unknown>, ctx: BookingContext, valueOverride = false): { ok: true; columns: Record<string, unknown> } | { ok: false; error: string } {
+  // A receipt amount without currency is in the reporting currency (the form's default; a template may hide the currency).
+  const originalValue = num(row.original_value);
+  const givenCurrency = typeof row.original_currency === 'string' && row.original_currency ? row.original_currency : null;
+  const originalCurrency = givenCurrency ?? (originalValue !== null ? ctx.reportingCurrency : null);
   const result: BookingResult = bookExpense({
     category: typeof row.category === 'string' ? row.category : null,
     expenseDate: String(row.expense_date ?? '').slice(0, 10),
-    originalValue: num(row.original_value),
-    originalCurrency: typeof row.original_currency === 'string' && row.original_currency ? row.original_currency : null,
+    originalValue,
+    originalCurrency,
     value: num(row.value),
     quantity: num(row.quantity),
+    valueOverride,
   }, ctx.reportingCurrency, ctx.rates, ctx.mileageRates);
   if (!result.ok) return result;
   const b = result.booking;
@@ -67,5 +73,6 @@ export function bookColumns(row: Record<string, unknown>, ctx: BookingContext): 
     unit_rate: b.unitRate === null ? null : String(b.unitRate),
   };
   if (row.category === MILEAGE_CATEGORY) Object.assign(columns, { original_value: null, original_currency: null });
+  else if (originalValue !== null && !givenCurrency) columns.original_currency = originalCurrency;
   return { ok: true, columns };
 }

@@ -285,6 +285,10 @@ export interface ConfigFieldGroupProps {
   readOnlyKeys?: readonly string[];
   /** Fields shown as disabled entries while editing. */
   disabledKeys?: readonly string[];
+  /** Fields left out for now (e.g. a subproject list when the project has none); still shown while designing. */
+  hiddenKeys?: readonly string[];
+  /** Extra content placed right after a field (by key), e.g. a checkbox that belongs to it. */
+  after?: Readonly<Record<string, ReactNode>>;
 }
 
 /** The group's title from the template, else the dictionary. */
@@ -295,10 +299,10 @@ export function useGroupTitle(form: ResolvedForm, group: string): string {
 }
 
 /** A group's visible fields in their configured order, wrapping like the hand-written forms did. */
-export function ConfigFieldGroup({ form, group, values, editing, onChange, options, errors, readOnlyKeys, disabledKeys }: ConfigFieldGroupProps) {
+export function ConfigFieldGroup({ form, group, values, editing, onChange, options, errors, readOnlyKeys, disabledKeys, hiddenKeys, after }: ConfigFieldGroupProps) {
   const design = useFieldDesign();
   // While designing, hidden and retired fields stay visible (faded) so they can be selected.
-  const fields = formFields(form, group).filter((f) => design || (!f.hidden && !f.retired));
+  const fields = formFields(form, group).filter((f) => design || (!f.hidden && !f.retired && !hiddenKeys?.includes(f.key)));
   return (
     <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-start' }}>
       {fields.map((field) => {
@@ -347,6 +351,7 @@ export function ConfigFieldGroup({ form, group, values, editing, onChange, optio
             ) : (
               entry
             )}
+            {after?.[field.key]}
           </Box>
         );
       })}

@@ -67,3 +67,12 @@ test('exchange rate entry validation', () => {
   assert.deepEqual(validateExchangeRate({ currency: 'EUR', validFrom: '2026-11-01', rate: 0 }, 'CHF'), { ok: false, error: 'exchange-rate-rate' });
   assert.deepEqual(validateExchangeRate({ currency: 'EUR', validFrom: '2026-11-01', rate: '0.9' }, 'CHF'), { ok: false, error: 'exchange-rate-rate' });
 });
+
+test('booking: a foreign receipt with the booked amount entered by hand keeps the effective rate, even without a rate', () => {
+  const card = { ...base, originalValue: 120, originalCurrency: 'GBP', value: 139.9, valueOverride: true };
+  assert.deepEqual(bookExpense(card, 'CHF', rates, mileage), { ok: true, booking: { value: 139.9, currency: 'CHF', exchangeRate: 1.16583333, unitRate: null } });
+  assert.deepEqual(bookExpense({ ...card, value: 0 }, 'CHF', rates, mileage), { ok: false, error: 'amount-required' });
+  // In the reporting currency there is nothing to override: the receipt amount is booked.
+  assert.deepEqual(bookExpense({ ...card, originalCurrency: 'CHF' }, 'CHF', rates, mileage),
+    { ok: true, booking: { value: 120, currency: 'CHF', exchangeRate: null, unitRate: null } });
+});
