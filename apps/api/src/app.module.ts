@@ -58,6 +58,7 @@ import { ImportExportService } from './import-export.service';
 import { CalendarFeedController } from './calendar-feed.controller';
 import { CalendarFeedService } from './calendar-feed.service';
 import { CasesController } from './cases.controller';
+import { AiSettingsController } from './ai-settings.controller';
 import { CasesService } from './cases.service';
 import { CaseAiService } from './case-ai.service';
 import { AiBudgetService } from './ai-budget.service';
@@ -106,6 +107,7 @@ const plugins = loadApiPlugins();
     ImportExportController,
     CalendarFeedController,
     CasesController,
+    AiSettingsController,
     ...plugins.controllers,
   ],
   providers: [

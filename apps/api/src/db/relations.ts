@@ -1,23 +1,19 @@
 import { relations } from "drizzle-orm/relations";
-import { organizations, ai_usageInCases, users, casesInCases, basicdata_versions, absences, documents, field_config, work_schedules, org_holidays, balance_adjustments, vacation_entitlements, project_time_periods, projects, work_time_months, timesheet_periods, departments, employee_assignments, user_identities, organization_domains, roles, teams, organization_memberships, organization_invitations, audit_logs, subprojects, project_times, static_data, versions, workflow_definitions, workflows, notifications, work_times, work_time_balance_entries, requests, request_messages, timesheet_documents, report_schedules, saved_reports, personnel_documents, report_runs, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases, role_permissions, permissions, request_message_documents, project_teams, team_members, membership_roles, work_time_balances } from "./schema";
+import { organizations, ai_usage, users, basicdata_versions, absences, documents, field_config, work_schedules, org_holidays, balance_adjustments, vacation_entitlements, project_time_periods, projects, work_time_months, timesheet_periods, departments, employee_assignments, user_identities, organization_domains, roles, teams, organization_memberships, organization_invitations, audit_logs, subprojects, project_times, static_data, versions, workflow_definitions, workflows, notifications, work_times, work_time_balance_entries, requests, request_messages, timesheet_documents, report_schedules, saved_reports, personnel_documents, report_runs, casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases, role_permissions, permissions, request_message_documents, project_teams, team_members, membership_roles, work_time_balances } from "./schema";
 
-export const ai_usageInCasesRelations = relations(ai_usageInCases, ({one}) => ({
+export const ai_usageRelations = relations(ai_usage, ({one}) => ({
 	organization: one(organizations, {
-		fields: [ai_usageInCases.organization_id],
+		fields: [ai_usage.organization_id],
 		references: [organizations.id]
 	}),
 	user: one(users, {
-		fields: [ai_usageInCases.user_id],
+		fields: [ai_usage.user_id],
 		references: [users.id]
-	}),
-	casesInCase: one(casesInCases, {
-		fields: [ai_usageInCases.case_id],
-		references: [casesInCases.id]
 	}),
 }));
 
 export const organizationsRelations = relations(organizations, ({one, many}) => ({
-	ai_usageInCases: many(ai_usageInCases),
+	ai_usages: many(ai_usage),
 	absences: many(absences),
 	field_configs: many(field_config),
 	work_schedules: many(work_schedules),
@@ -68,7 +64,7 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 }));
 
 export const usersRelations = relations(users, ({many}) => ({
-	ai_usageInCases: many(ai_usageInCases),
+	ai_usages: many(ai_usage),
 	basicdata_versions_user_id: many(basicdata_versions, {
 		relationName: "basicdata_versions_user_id_users_id"
 	}),
@@ -159,21 +155,6 @@ export const usersRelations = relations(users, ({many}) => ({
 	assessmentsInCases: many(assessmentsInCases),
 	membership_roles: many(membership_roles),
 	work_time_balances: many(work_time_balances),
-}));
-
-export const casesInCasesRelations = relations(casesInCases, ({one, many}) => ({
-	ai_usageInCases: many(ai_usageInCases),
-	organization: one(organizations, {
-		fields: [casesInCases.organization_id],
-		references: [organizations.id]
-	}),
-	user: one(users, {
-		fields: [casesInCases.lead_user_id],
-		references: [users.id]
-	}),
-	case_documentsInCases: many(case_documentsInCases),
-	case_interviewsInCases: many(case_interviewsInCases),
-	assessmentsInCases: many(assessmentsInCases),
 }));
 
 export const basicdata_versionsRelations = relations(basicdata_versions, ({one}) => ({
@@ -703,6 +684,20 @@ export const report_runsRelations = relations(report_runs, ({one}) => ({
 		fields: [report_runs.document_id],
 		references: [documents.id]
 	}),
+}));
+
+export const casesInCasesRelations = relations(casesInCases, ({one, many}) => ({
+	organization: one(organizations, {
+		fields: [casesInCases.organization_id],
+		references: [organizations.id]
+	}),
+	user: one(users, {
+		fields: [casesInCases.lead_user_id],
+		references: [users.id]
+	}),
+	case_documentsInCases: many(case_documentsInCases),
+	case_interviewsInCases: many(case_interviewsInCases),
+	assessmentsInCases: many(assessmentsInCases),
 }));
 
 export const case_documentsInCasesRelations = relations(case_documentsInCases, ({one}) => ({

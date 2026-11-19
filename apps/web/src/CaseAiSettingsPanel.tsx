@@ -7,9 +7,7 @@ import {
   type CaseAiSettings,
 } from '@worktime3/shared/cases';
 import { useI18n } from './i18n';
-import { swissLocale } from './localeFormat';
 import { caseErrorText } from './CaseInterviewEditor';
-import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -17,25 +15,22 @@ interface AiSettingsResponse {
   settings: CaseAiSettings;
   available: { whisper: boolean; azureTranscription: boolean; azureOpenai: boolean; instance: 'gemini' | 'openai' | null };
   canConfigure: boolean;
-  usage: { orgSpentChf: number; orgCalls: number; instanceSpentChf?: number; instanceBudgetChf?: number | null };
 }
 
 /**
- * Cases -> Assessment templates: which providers transcribe, summarize and draft for this
- * organization, and this month's Azure spend against its limit. Everyone with Cases sees it;
- * only a superdeveloper changes it (the instance owner pays Azure), and only they see the
- * whole server's spend.
+ * Organization settings -> AI and costs, the Cases part: which providers transcribe, summarize and
+ * draft for this organization. Everyone with Cases or Organization settings sees it; only a
+ * superdeveloper changes it (the instance owner pays Azure). The monthly limit and spend are the
+ * core's (AiSettingsPanel).
  */
 export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [data, setData] = useState<AiSettingsResponse | null>(null);
   const [form, setForm] = useState<CaseAiSettings | null>(null);
-  const [limitText, setLimitText] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
   const url = `${API}/organizations/${orgId}/case-ai-settings`;
-  const chf = (n: number) => new Intl.NumberFormat(swissLocale(locale), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
   const errorText = (code: unknown) => caseErrorText(typeof code === 'string' ? code : '', t, 'cases.ai.error.') ?? t('cases.interviews.operationFailed');
 
   const load = useCallback(async () => {
@@ -45,7 +40,6 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
       if (!res.ok || !body?.ok) throw new Error(body?.message ?? body?.error);
       setData(body);
       setForm(body.settings);
-      setLimitText(String(body.settings.monthlyLimitChf));
     } catch (e) {
       setError(errorText(e instanceof Error ? e.message : ''));
     }
@@ -57,7 +51,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
 
   if (!data || !form) return error ? <Alert severity="error">{error}</Alert> : null;
 
-  const { available, canConfigure, usage } = data;
+  const { available, canConfigure } = data;
   const instanceLabel = available.instance
     ? t('cases.ai.settings.instance', { provider: t(`cases.ai.provider.${available.instance}`) })
     : t('cases.ai.settings.instanceNone');
@@ -67,7 +61,6 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
   };
   const usableTranscription = (v: string) => (v === 'azure' ? available.azureTranscription : available.whisper);
   const usableText = (v: string) => (v === 'azure' ? available.azureOpenai : v === 'instance' ? available.instance !== null : true);
-  const limit = Number(limitText.replace(',', '.'));
 
   const save = async () => {
     setSaving(true);
@@ -77,7 +70,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
       const res = await fetch(url, {
         method: 'PUT',
         headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, monthlyLimitChf: limit }),
+        body: JSON.stringify(form),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok || !body?.ok) throw new Error(body?.message ?? body?.error);
@@ -100,37 +93,23 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
   );
 
   return (
-    <SectionPaper title={t('cases.ai.settings.title')} subtitle={t('cases.ai.settings.intro')}>
+    <Stack spacing={1.5}>
       <Typography variant="subtitle2" sx={{ pt: 1 }}>{t('cases.ai.settings.casesGroup')}</Typography>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} flexWrap="wrap" useFlexGap>
         {select('transcription', t('cases.ai.settings.transcription'), CASE_AI_TRANSCRIPTION, usableTranscription)}
         {select('summary', t('cases.ai.settings.summary'), CASE_AI_SUMMARY, usableText)}
         {select('draft', t('cases.ai.settings.draft'), CASE_AI_DRAFT, usableText)}
       </Stack>
-      <Typography variant="subtitle2" sx={{ pt: 1 }}>{t('cases.ai.settings.costGroup')}</Typography>
-      <TextField id="case-ai-limit" size="small" label={t('cases.ai.settings.limit')} value={limitText} disabled={!canConfigure || saving}
-        onChange={(e) => setLimitText(e.target.value)} inputProps={{ inputMode: 'decimal' }} sx={{ width: 220 }}
-        helperText={t('cases.ai.settings.limitHelp')} />
-      <Stack spacing={0.5}>
-        <Typography variant="body2">
-          {t('cases.ai.settings.orgUsage', { spent: chf(usage.orgSpentChf), limit: chf(form.monthlyLimitChf), calls: String(usage.orgCalls) })}
-        </Typography>
-        {usage.instanceSpentChf !== undefined && usage.instanceBudgetChf && (
-          <Typography variant="body2" color="text.secondary">
-            {t('cases.ai.settings.instanceUsage', { spent: chf(usage.instanceSpentChf), budget: chf(usage.instanceBudgetChf) })}
-          </Typography>
-        )}
-        {!canConfigure && <Typography variant="caption" color="text.secondary">{t('cases.ai.settings.readOnly')}</Typography>}
-      </Stack>
+      {!canConfigure && <Typography variant="caption" color="text.secondary">{t('cases.ai.settings.readOnly')}</Typography>}
       {error && <Alert severity="error">{error}</Alert>}
       {notice && <Alert severity="success">{notice}</Alert>}
       {canConfigure && (
         <Box>
-          <Button variant="contained" disabled={saving || !Number.isFinite(limit) || limitText.trim() === ''} onClick={() => void save()}>
+          <Button variant="contained" disabled={saving} onClick={() => void save()}>
             {t('common.save')}
           </Button>
         </Box>
       )}
-    </SectionPaper>
+    </Stack>
   );
 }

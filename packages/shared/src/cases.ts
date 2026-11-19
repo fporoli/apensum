@@ -229,7 +229,7 @@ export function isValidAssessmentStatus(s: string): s is AssessmentStatus {
 
 // AI providers per organization (organizations.settings.cases.ai), set by a superdeveloper only.
 // Azure calls are paid and go through the API's budget (ai-budget.service.ts): the instance's
-// AI_MONTHLY_BUDGET_CHF and this organization's monthlyLimitChf, both per calendar month.
+// AI_MONTHLY_BUDGET_CHF and the organization's limit (settings.ai, packages/shared/src/ai.ts).
 
 /** Who transcribes interview audio: the server's own Whisper, or Azure AI Speech. */
 export const CASE_AI_TRANSCRIPTION = ['whisper', 'azure'] as const;
@@ -240,26 +240,17 @@ export type CaseAiSummary = (typeof CASE_AI_SUMMARY)[number];
 /** Who writes an assessment's AI draft (the template must still allow it): the instance's provider or Azure OpenAI. */
 export const CASE_AI_DRAFT = ['instance', 'azure'] as const;
 export type CaseAiDraft = (typeof CASE_AI_DRAFT)[number];
-/** Largest per-organization monthly limit that can be set, in CHF. */
-export const CASE_AI_MAX_MONTHLY_LIMIT_CHF = 1000;
-
 export interface CaseAiSettings {
   transcription: CaseAiTranscription;
   summary: CaseAiSummary;
   draft: CaseAiDraft;
-  /** Azure spend allowed per calendar month for this organization, CHF. */
-  monthlyLimitChf: number;
 }
 
 /** What an organization gets until a superdeveloper changes it: nothing leaves the server for Azure. */
-export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'whisper', summary: 'local', draft: 'instance', monthlyLimitChf: 10 };
+export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'whisper', summary: 'local', draft: 'instance' };
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
-}
-
-function isLimit(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= CASE_AI_MAX_MONTHLY_LIMIT_CHF;
 }
 
 /** The stored settings with defaults for anything missing or invalid (reading never fails). */
@@ -269,7 +260,6 @@ export function parseCaseAiSettings(raw: unknown): CaseAiSettings {
     transcription: isOneOf(CASE_AI_TRANSCRIPTION, o.transcription) ? o.transcription : DEFAULT_CASE_AI_SETTINGS.transcription,
     summary: isOneOf(CASE_AI_SUMMARY, o.summary) ? o.summary : DEFAULT_CASE_AI_SETTINGS.summary,
     draft: isOneOf(CASE_AI_DRAFT, o.draft) ? o.draft : DEFAULT_CASE_AI_SETTINGS.draft,
-    monthlyLimitChf: isLimit(o.monthlyLimitChf) ? o.monthlyLimitChf : DEFAULT_CASE_AI_SETTINGS.monthlyLimitChf,
   };
 }
 
@@ -280,6 +270,5 @@ export function validateCaseAiSettings(raw: unknown): { ok: true; value: CaseAiS
   if (!isOneOf(CASE_AI_TRANSCRIPTION, o.transcription)) return { ok: false, error: 'ai-settings-invalid' };
   if (!isOneOf(CASE_AI_SUMMARY, o.summary)) return { ok: false, error: 'ai-settings-invalid' };
   if (!isOneOf(CASE_AI_DRAFT, o.draft)) return { ok: false, error: 'ai-settings-invalid' };
-  if (!isLimit(o.monthlyLimitChf)) return { ok: false, error: 'ai-settings-limit' };
-  return { ok: true, value: { transcription: o.transcription, summary: o.summary, draft: o.draft, monthlyLimitChf: Math.round(o.monthlyLimitChf * 100) / 100 } };
+  return { ok: true, value: { transcription: o.transcription, summary: o.summary, draft: o.draft } };
 }

@@ -187,10 +187,12 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   superdeveloper under Organization settings -> AI and costs, `CaseAiSettingsPanel.tsx`, `GET/PUT case-ai-settings`):
   transcription Whisper on the server or Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland), summary key sentences / instance provider / Azure OpenAI, AI draft
   instance provider or Azure OpenAI. Default: nothing goes to Azure. `case-ai.service.ts` picks the provider
-  (a chosen but unconfigured one is an error, never a silent fallback); every Azure call goes through
-  `AiBudgetService` (`cases.ai_usage` 076): it reserves the estimated CHF under an advisory lock and refuses
-  beyond `AI_MONTHLY_BUDGET_CHF` (instance, unset = Azure off), the org's `monthlyLimitChf` (default 10), one
-  running call per user and 20 per hour; prices come from env (`AZURE_*_CHF_*`), `AI_AZURE_ENABLED=false` is
+  (a chosen but unconfigured one is an error, never a silent fallback). The AI budget is the core's, for every
+  module and plugin: every Azure call goes through `AiBudgetService` (`ai_usage` 078, with an optional
+  `subject_table`/`subject_id` and any lowercase `kind`): it reserves the estimated CHF under an advisory lock and
+  refuses beyond `AI_MONTHLY_BUDGET_CHF` (instance, unset = Azure off), the org's limit (`organizations.settings.ai
+  .monthlyLimitChf`, `packages/shared/src/ai.ts`, default 10; `GET/PUT ai-settings`, `AiSettingsPanel.tsx`, superdeveloper
+  only), one running call per user and 20 per hour; prices come from env (`AZURE_*_CHF_*`), `AI_AZURE_ENABLED=false` is
   the kill switch, no retries against Azure. Azure resources (shared by all environments, Switzerland North,
   "Standard" deployments only, resource group `apensum-ai`) are `infra/azure/ai-provision.sh`
   (`resources|github|local|rotate`); budgets per environment are GitHub Environment variables, keys repo-level.

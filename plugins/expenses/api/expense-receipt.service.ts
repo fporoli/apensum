@@ -42,7 +42,7 @@ export class ExpenseReceiptService {
     const inputChars = (receipt.text?.length ?? 0) + (receipt.imageDataUrl ? RECEIPT_IMAGE_ESTIMATE_CHARS : 0) + 2_000;
     const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const id = await this.budget.reserve({
-      orgId, userId, caseId: null, kind: 'receipt', provider: 'azure-openai',
+      orgId, userId, kind: 'receipt', provider: 'azure-openai',
       estimateChf: estimateChatChf(inputChars, RECEIPT_MAX_TOKENS, prices), orgLimitChf,
     });
     this.logger.log(`Receipt scan: org ${orgId}, user ${userId}, ${receipt.imageDataUrl ? mime : 'pdf text'}, ${file.length} bytes`);

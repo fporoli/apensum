@@ -29,7 +29,6 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { CasesService } from './cases.service';
 import { extractPdfText, isPdf, tidyExtractedText } from './case-document-text';
 import { CaseAiService, caseAiAvailability } from './case-ai.service';
-import { AiBudgetService, instanceBudgetChf } from './ai-budget.service';
 import { VersionsService } from './versions.service';
 import { validateCaseAiSettings } from '@worktime3/shared/cases';
 import type {
@@ -70,7 +69,6 @@ export class CasesController {
     private readonly casesService: CasesService,
     private readonly documentsService: DocumentsService,
     private readonly caseAi: CaseAiService,
-    private readonly aiBudget: AiBudgetService,
     private readonly versions: VersionsService,
   ) {}
 
@@ -542,13 +540,13 @@ export class CasesController {
   }
 
   // ---------------------------------------------------------------------------
-  // AI providers and cost limits (organizations.settings.cases.ai)
+  // AI providers of Cases (organizations.settings.cases.ai); the limit and spend: ai-settings.controller.ts
   // ---------------------------------------------------------------------------
 
   /**
-   * The organization's AI choices, what this instance offers and this month's Azure spend
-   * (Organization settings -> AI and costs). Who sees Organization settings or Cases sees it; only a superdeveloper may change it (canConfigure) and sees
-   * the whole instance's spend, since the instance owner pays the Azure bill.
+   * Which providers transcribe, summarize and draft for Cases in this organization, and what this
+   * instance offers (Organization settings -> AI and costs). Who sees Organization settings or Cases
+   * sees it; only a superdeveloper may change it (canConfigure), since the instance owner pays Azure.
    */
   @Get('case-ai-settings')
   @Header('Cache-Control', privateCache)
@@ -559,18 +557,13 @@ export class CasesController {
     if (!superdeveloper && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see')) && !(await can(this.db, orgId, callerId, 'nav.cases', 'see'))) {
       throw new ForbiddenException('forbidden');
     }
-    const [providers, totals] = await Promise.all([this.caseAi.providers(orgId), this.aiBudget.totals(orgId)]);
+    const providers = await this.caseAi.providers(orgId);
     return {
       ok: true,
       settings: providers.settings,
       providers: { transcription: providers.transcription, summary: providers.summary, draft: providers.draft },
       available: caseAiAvailability(),
       canConfigure: superdeveloper,
-      usage: {
-        orgSpentChf: totals.orgSpentChf,
-        orgCalls: totals.orgCalls,
-        ...(superdeveloper ? { instanceSpentChf: totals.instanceSpentChf, instanceBudgetChf: instanceBudgetChf() } : {}),
-      },
     };
   }
 

@@ -19,18 +19,17 @@ const PRICED = {
 const prices = azurePrices(PRICED)!;
 
 test('org AI settings: defaults keep everything on the server; reading never fails', () => {
-  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'whisper', summary: 'local', draft: 'instance', monthlyLimitChf: 10 });
+  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'whisper', summary: 'local', draft: 'instance' });
   assert.deepEqual(parseCaseAiSettings(undefined), DEFAULT_CASE_AI_SETTINGS);
-  assert.deepEqual(parseCaseAiSettings({ transcription: 'azure', summary: 'bogus', monthlyLimitChf: -1 }),
+  assert.deepEqual(parseCaseAiSettings({ transcription: 'azure', summary: 'bogus', monthlyLimitChf: 10 }),
     { ...DEFAULT_CASE_AI_SETTINGS, transcription: 'azure' });
 });
 
 test('org AI settings: validation of what the browser sends', () => {
-  const ok = { transcription: 'azure', summary: 'azure', draft: 'azure', monthlyLimitChf: 12.345 };
-  assert.deepEqual(validateCaseAiSettings(ok), { ok: true, value: { ...ok, monthlyLimitChf: 12.35 } });
+  const ok = { transcription: 'azure', summary: 'azure', draft: 'azure' };
+  // The monthly limit is the core's (packages/shared/src/ai.ts); a stray one is dropped.
+  assert.deepEqual(validateCaseAiSettings({ ...ok, monthlyLimitChf: 12 }), { ok: true, value: ok });
   assert.deepEqual(validateCaseAiSettings({ ...ok, draft: 'local' }), { ok: false, error: 'ai-settings-invalid' });
-  assert.deepEqual(validateCaseAiSettings({ ...ok, monthlyLimitChf: 1001 }), { ok: false, error: 'ai-settings-limit' });
-  assert.deepEqual(validateCaseAiSettings({ ...ok, monthlyLimitChf: '5' }), { ok: false, error: 'ai-settings-limit' });
   assert.deepEqual(validateCaseAiSettings(null), { ok: false, error: 'ai-settings-invalid' });
 });
 
@@ -133,7 +132,7 @@ test('AI summary: transcript in, bullet text out', () => {
 test('providers: an unavailable choice is null (never silently another provider)', () => {
   const none = { whisper: false, azureTranscription: false, azureOpenai: false, instance: null };
   const all = { whisper: true, azureTranscription: true, azureOpenai: true, instance: 'gemini' as const };
-  const azure = { transcription: 'azure', summary: 'azure', draft: 'azure', monthlyLimitChf: 10 } as const;
+  const azure = { transcription: 'azure', summary: 'azure', draft: 'azure' } as const;
   assert.equal(transcriptionProviderFor(azure, { ...all, azureTranscription: false }), null);
   assert.equal(transcriptionProviderFor(azure, all), 'azure');
   assert.equal(transcriptionProviderFor(DEFAULT_CASE_AI_SETTINGS, none), null);
@@ -150,10 +149,11 @@ test('CaseAiService: Azure Whisper transcription reserves, calls Azure once and 
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async () => new Response(JSON.stringify({ text: 'Text', duration: 90 }), { status: 200 })) as typeof fetch;
   try {
-    const db = { execute: async () => ({ rows: [{ ai: { transcription: 'azure', summary: 'local', draft: 'instance', monthlyLimitChf: 10 } }] }) };
+    const db = { execute: async () => ({ rows: [{ ai: { transcription: 'azure', summary: 'local', draft: 'instance' } }] }) };
     const reserved: unknown[] = [];
     const finished: { result: { ok: boolean; audioSeconds?: number; actualChf: number | null } }[] = [];
     const budget = {
+      orgMonthlyLimitChf: async () => 10,
       reserve: async (input: unknown) => { reserved.push(input); return 'usage-1'; },
       finish: async (_id: string, result: { ok: boolean; audioSeconds?: number; actualChf: number | null }) => { finished.push({ result }); },
     };
@@ -161,6 +161,7 @@ test('CaseAiService: Azure Whisper transcription reserves, calls Azure once and 
     assert.equal(await service.transcribe('org', 'user', 'case', MP3), 'Text');
     assert.equal(reserved.length, 1);
     assert.equal((reserved[0] as { orgLimitChf: number }).orgLimitChf, 10);
+    assert.deepEqual((reserved[0] as { subject: unknown }).subject, { table: 'cases.cases', id: 'case' });
     assert.equal(finished[0].result.ok, true);
     assert.equal(finished[0].result.audioSeconds, 90);
     assert.ok(Math.abs((finished[0].result.actualChf ?? 0) - 0.025) < 1e-9);
@@ -168,7 +169,7 @@ test('CaseAiService: Azure Whisper transcription reserves, calls Azure once and 
     // A refused reservation means nothing is sent.
     let sent = false;
     globalThis.fetch = (async () => { sent = true; return new Response('{}'); }) as typeof fetch;
-    const refusing = new CaseAiService({ getDb: () => db } as never, { reserve: async () => { throw new Error('ai-budget-exhausted'); } } as never);
+    const refusing = new CaseAiService({ getDb: () => db } as never, { orgMonthlyLimitChf: async () => 10, reserve: async () => { throw new Error('ai-budget-exhausted'); } } as never);
     await assert.rejects(refusing.transcribe('org', 'user', 'case', MP3), /ai-budget-exhausted/);
     assert.equal(sent, false);
   } finally {

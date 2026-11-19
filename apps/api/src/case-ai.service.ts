@@ -81,12 +81,13 @@ export class CaseAiService {
 
     const prices = azurePrices()!;
     const config = azureTranscribeConfig()!;
+    const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const id = await this.budget.reserve({
-      orgId, userId, caseId, kind: 'transcribe', provider: 'azure-whisper',
-      estimateChf: estimateTranscribeChf(audio.length, prices), orgLimitChf: settings.monthlyLimitChf,
+      orgId, userId, subject: { table: 'cases.cases', id: caseId }, kind: 'transcribe', provider: 'azure-whisper',
+      estimateChf: estimateTranscribeChf(audio.length, prices), orgLimitChf,
     });
     this.logger.log(`Azure transcription: org ${orgId}, case ${caseId}, user ${userId}, ${audio.length} bytes`);
-    const context = { orgId, orgLimitChf: settings.monthlyLimitChf };
+    const context = { orgId, orgLimitChf };
     try {
       const { text, seconds } = await azureTranscribe(audio, config);
       await this.budget.finish(id, { ok: true, audioSeconds: seconds, actualChf: transcribeChf(seconds, prices) }, context);
@@ -152,12 +153,13 @@ export class CaseAiService {
     const prices = azurePrices()!;
     const config = azureOpenAiConfig()!;
     const inputChars = messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0);
+    const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const id = await this.budget.reserve({
-      orgId, userId, caseId, kind, provider: 'azure-openai',
-      estimateChf: estimateChatChf(inputChars, maxTokens, prices), orgLimitChf: settings.monthlyLimitChf,
+      orgId, userId, subject: { table: 'cases.cases', id: caseId }, kind, provider: 'azure-openai',
+      estimateChf: estimateChatChf(inputChars, maxTokens, prices), orgLimitChf,
     });
     this.logger.log(`Azure ${kind}: org ${orgId}, case ${caseId}, user ${userId}, ${inputChars} chars`);
-    const context = { orgId, orgLimitChf: settings.monthlyLimitChf };
+    const context = { orgId, orgLimitChf };
     try {
       const client = azureOpenAiClient(config);
       const completion = await retryStaleConnection(() => client.chat.completions.create({

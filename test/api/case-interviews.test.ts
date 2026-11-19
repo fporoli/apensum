@@ -17,7 +17,7 @@ const req = { user: { kind: 'local', sub: 'caller' } } as AuthenticatedRequest;
 function controller(services: object, permission: string, lead = 'caller') {
   const db = { getDb: () => ({ execute: async () => ({ rows: [{ name: 'member', permission_id: permission, modules: { cases: true } }] }) }) };
   // The organization's AI settings read from the same mock (no `ai` column = defaults: Whisper, key sentences).
-  return new CasesController(db as any, { getCase: async () => ({ lead_user_id: lead }), ...services } as any, {} as any, new CaseAiService(db as any, {} as any), {} as any, {} as any);
+  return new CasesController(db as any, { getCase: async () => ({ lead_user_id: lead }), ...services } as any, {} as any, new CaseAiService(db as any, {} as any), {} as any);
 }
 
 test('interview playback and replacement authorize the case before accessing audio', async () => {

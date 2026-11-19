@@ -1,15 +1,16 @@
 import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { parseCaseAiSettings } from '@worktime3/shared/cases';
+import { parseAiSettings } from '@worktime3/shared/ai';
 import { azureOpenAiConfig } from './ai-client';
 import { DbService, type Db } from './db.service';
 import { sendMail } from './mailer';
 
 /**
- * Cost barriers for paid cloud AI calls (Azure) of the Cases module. Every such call reserves its
- * estimated cost in cases.ai_usage before anything is sent and is refused when it would exceed:
+ * Cost barriers for paid cloud AI calls (Azure) of every module and plugin (Cases, receipt reading,
+ * ...). Every such call reserves its estimated cost in ai_usage (078) before anything is sent and is
+ * refused when it would exceed:
  *   - the instance's monthly budget, AI_MONTHLY_BUDGET_CHF (unset or 0 = Azure is off: fail closed),
- *   - the organization's monthly limit (organizations.settings.cases.ai.monthlyLimitChf),
+ *   - the organization's monthly limit (organizations.settings.ai.monthlyLimitChf, packages/shared/src/ai.ts),
  *   - one running call per user, USER_CALLS_PER_HOUR calls per user and hour.
  * AI_AZURE_ENABLED=false switches Azure off for the whole instance at once. Prices come from the env
  * (the Azure price sheet, in CHF), never from code; without them Azure stays off as well.
@@ -93,7 +94,8 @@ export function budgetRefusal(s: BudgetState): string | null {
   return null;
 }
 
-export type AiUsageKind = 'transcribe' | 'summarize' | 'draft' | 'receipt';
+/** What a call does, e.g. 'transcribe', 'summarize', 'draft', 'receipt': any lowercase name (ai_usage.kind). */
+export type AiUsageKind = string;
 
 const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 /** Start of the current calendar month in Zurich, as a SQL timestamptz expression. */
@@ -114,20 +116,20 @@ export class AiBudgetService {
   }
 
   /**
-   * The organization's monthly limit for every paid AI call (Cases, receipt recognition, ...). It is
-   * kept with the Cases AI settings (organizations.settings.cases.ai.monthlyLimitChf, set by a
-   * superdeveloper under Organization settings -> AI and costs).
+   * The organization's monthly limit for every paid AI call (organizations.settings.ai.monthlyLimitChf,
+   * set by a superdeveloper under Organization settings -> AI and costs).
    */
   async orgMonthlyLimitChf(orgId: string): Promise<number> {
-    const rows = await this.db.execute(sql`SELECT settings->'cases'->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
-    return parseCaseAiSettings((rows.rows[0] as { ai?: unknown } | undefined)?.ai).monthlyLimitChf;
+    const rows = await this.db.execute(sql`SELECT settings->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
+    return parseAiSettings((rows.rows[0] as { ai?: unknown } | undefined)?.ai).monthlyLimitChf;
   }
 
   /** Reserves the estimated cost or throws the refusal. Returns the usage row's id for finish(). */
   async reserve(input: {
     orgId: string;
     userId: string;
-    caseId: string | null;
+    /** The record the call is about (e.g. `{ table: 'cases.cases', id }`), kept with the usage row; none for receipt reading. */
+    subject?: { table: string; id: string } | null;
     kind: AiUsageKind;
     provider: string;
     estimateChf: number;
@@ -137,7 +139,7 @@ export class AiBudgetService {
     if (!azureAllowed() || budget === null) throw new ServiceUnavailableException('ai-provider-not-configured');
     const estimate = round4(input.estimateChf);
     const outcome = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('cases.ai_usage'))`);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('ai_usage'))`);
       const spent = await tx.execute(sql`
         SELECT
           COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START}), 0) AS instance_spent,
@@ -145,7 +147,7 @@ export class AiBudgetService {
           COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND created_at > now() - interval '1 hour') AS user_calls,
           COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND status = 'pending'
                              AND created_at > now() - make_interval(mins => ${PENDING_BLOCKS_MINUTES})) AS user_pending
-        FROM cases.ai_usage
+        FROM ai_usage
         WHERE created_at >= LEAST(${MONTH_START}, now() - interval '1 hour')
       `);
       const row = spent.rows[0] as Record<string, unknown>;
@@ -161,8 +163,9 @@ export class AiBudgetService {
       const refusal = budgetRefusal(state);
       if (refusal) return { refusal, state };
       const inserted = await tx.execute(sql`
-        INSERT INTO cases.ai_usage (organization_id, user_id, case_id, kind, provider, estimated_chf)
-        VALUES (${input.orgId}::uuid, ${input.userId}::uuid, ${input.caseId}::uuid, ${input.kind}, ${input.provider}, ${estimate})
+        INSERT INTO ai_usage (organization_id, user_id, subject_table, subject_id, kind, provider, estimated_chf)
+        VALUES (${input.orgId}::uuid, ${input.userId}::uuid, ${input.subject?.table ?? null}, ${input.subject?.id ?? null}::uuid,
+                ${input.kind}, ${input.provider}, ${estimate})
         RETURNING id
       `);
       return { id: String((inserted.rows[0] as { id: string }).id), state };
@@ -189,7 +192,7 @@ export class AiBudgetService {
   ): Promise<void> {
     try {
       await this.db.execute(sql`
-        UPDATE cases.ai_usage SET
+        UPDATE ai_usage SET
           status = ${result.ok ? 'ok' : 'failed'},
           error = ${result.error ?? null},
           audio_seconds = ${result.audioSeconds === undefined ? null : Math.round(result.audioSeconds * 10) / 10},
@@ -220,7 +223,7 @@ export class AiBudgetService {
         COALESCE(SUM(COALESCE(actual_chf, estimated_chf)), 0) AS instance_spent,
         COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE organization_id = ${orgId}::uuid), 0) AS org_spent,
         COUNT(*) FILTER (WHERE organization_id = ${orgId}::uuid) AS org_calls
-      FROM cases.ai_usage
+      FROM ai_usage
       WHERE created_at >= ${MONTH_START}
     `);
     const row = result.rows[0] as Record<string, unknown>;

@@ -1,4 +1,4 @@
-import { pgTable, pgSchema, index, foreignKey, check, uuid, text, numeric, integer, timestamp, unique, jsonb, date, varchar, boolean, uniqueIndex, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, check, uuid, text, numeric, integer, timestamp, unique, jsonb, date, varchar, boolean, uniqueIndex, inet, pgSchema, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -20,11 +20,12 @@ export const timesheet_status = pgEnum("timesheet_status", ['open', 'submitted',
 export const user_status = pgEnum("user_status", ['active', 'suspended', 'deactivated'])
 
 
-export const ai_usageInCases = cases.table("ai_usage", {
+export const ai_usage = pgTable("ai_usage", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
 	user_id: uuid(),
-	case_id: uuid(),
+	subject_table: text(),
+	subject_id: uuid(),
 	kind: text().notNull(),
 	provider: text().notNull(),
 	status: text().default('pending').notNull(),
@@ -50,13 +51,9 @@ export const ai_usageInCases = cases.table("ai_usage", {
 			foreignColumns: [users.id],
 			name: "ai_usage_user_id_fkey"
 		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.case_id],
-			foreignColumns: [casesInCases.id],
-			name: "ai_usage_case_id_fkey"
-		}).onDelete("set null"),
+	check("chk_ai_usage_kind", sql`kind ~ '^[a-z][a-z0-9_.-]*$'::text`),
 	check("chk_ai_usage_status", sql`status = ANY (ARRAY['pending'::text, 'ok'::text, 'failed'::text])`),
-	check("chk_ai_usage_kind", sql`kind = ANY (ARRAY['transcribe'::text, 'summarize'::text, 'draft'::text, 'receipt'::text])`),
+	check("chk_ai_usage_subject", sql`(subject_table IS NULL) = (subject_id IS NULL)`),
 ]);
 
 export const basicdata_versions = pgTable("basicdata_versions", {

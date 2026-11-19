@@ -27,6 +27,7 @@ import DepartmentSettings from './DepartmentSettings';
 import ModuleSettings from './ModuleSettings';
 import { PLUGIN_ORG_SETTINGS } from './plugins';
 import { CaseAiSettingsPanel } from './CaseAiSettingsPanel';
+import { AiSettingsPanel } from './AiSettingsPanel';
 import { SettingsSection } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -283,7 +284,8 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
         </SettingsSection>
       ))}
 
-      <SettingsSection id="org.ai" title={t('cases.ai.settings.title')} subtitle={t('cases.ai.settings.intro')}>
+      <SettingsSection id="org.ai" title={t('ai.settings.title')} subtitle={t('ai.settings.intro')}>
+        <AiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
         <CaseAiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
