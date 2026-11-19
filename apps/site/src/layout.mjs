@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'pricing', 'security', 'law', 'about', 'contact', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'cases', 'expenses', 'pricing', 'security', 'law', 'about', 'contact', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -67,7 +67,7 @@ export function context(dicts, lang, page, config, assets) {
 
 function header(ctx) {
   const { t, link, lang, page, dicts, config } = ctx;
-  const nav = ['features', 'pricing', 'security', 'about', 'contact']
+  const nav = ['features', 'cases', 'expenses', 'pricing', 'security', 'about', 'contact']
     // The Working Hours Act page lives under Security (its slug and its place in the menu).
     .map((p) => `<a href="${link(p)}"${p === page || (p === 'security' && page === 'law') ? ' aria-current="page"' : ''}>${t(`nav.${p}`)}</a>`)
     .join('');
@@ -108,6 +108,8 @@ function footer(ctx) {
     <nav aria-label="${t('footer.product')}">
       <h2>${t('footer.product')}</h2>
       <a href="${link('features')}">${t('nav.features')}</a>
+      <a href="${link('cases')}">${t('nav.cases')}</a>
+      <a href="${link('expenses')}">${t('nav.expenses')}</a>
       <a href="${link('pricing')}">${t('nav.pricing')}</a>
       <a href="${link('security')}">${t('nav.security')}</a>
       <a href="${link('law')}">${t('nav.law')}</a>
