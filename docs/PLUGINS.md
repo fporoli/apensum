@@ -158,6 +158,17 @@ A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab f
 - **Backup counts:** `backupCounts: { expenses: 'importExport.backup.badgeExpenses' }` labels the counts the
   API part's backup adds, in the restore preview and summary.
 
+## Seed (demo data)
+
+A plugin's `seed.sql` (in its folder) runs after the core's `infra/postgres/seeds/seed.sql`, in the same
+psql session and transaction: Acme, its people and projects exist, and the core's `pg_temp.seed_*`
+helpers (deterministic ids and random values, working days, managers) can be used. Same rules as the
+core's seed: fixed or md5-derived ids, `ON CONFLICT DO NOTHING`, re-runnable.
+
+- `npm run dev:seed` / `db:seed` (`infra/postgres/run-seed.mjs`) adds every plugin's seed.
+- The VPS and Azure seeders get them staged (`node scripts/plugins.mjs stage-seeds`, into
+  `infra/postgres/seeds/plugins`) by the `vps` and `build-push` workflows.
+
 ## Import/Export
 
 - **Payroll export:** `payroll: [{ key, caption, amounts, abacus, columns }]` in `defineApiPlugin`.

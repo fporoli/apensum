@@ -67,7 +67,8 @@ Alice manages Admin and Adam; Adam manages Marta, Marco and Uma; Marta manages U
 come from the global `static_data` row `login`/`demo_accounts` via public
 `GET auth/demo-accounts`; each value is a JSON string `{name, user, password}`.
 The end of `seed.sql` generates each Acme member's history from their start date to yesterday
-(absences, attendance, project time, approved timesheets, expenses and reports). It is
+(absences, attendance, project time, approved timesheets); a plugin's `seed.sql` (expenses: expenses and
+reports) runs after it in the same transaction and may use its `pg_temp.seed_*` helpers. It is
 deterministic (`pg_temp.seed_rnd`/`seed_id` hash a key), so re-seeding adds only newly passed days.
 Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in step with
 `worktime.ts` if Acme's region changes.

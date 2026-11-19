@@ -200,13 +200,25 @@ deploy() {
   caddy_reload
 }
 
-# Loads seed.sql in one transaction. It is additive (fixed keys, ON CONFLICT DO NOTHING), so
-# running it on a populated database only adds the demo rows that are missing.
+# Loads seed.sql, then each plugin's seed (infra/postgres/seeds/plugins/<id>.sql, staged by the
+# workflow), in one transaction. It is additive (fixed keys, ON CONFLICT DO NOTHING), so running it
+# on a populated database only adds the demo rows that are missing.
 load_seed() {
-  local seed_file="/tmp/$PREFIX-seed-$(date -u +%Y%m%dT%H%M%SZ).sql"
-  docker cp "$ROOT/infra/postgres/seeds/seed.sql" "$PG:$seed_file"
-  docker exec "$PG" psql -U worktime -d worktime --no-psqlrc --set=ON_ERROR_STOP=1 --single-transaction -f "$seed_file"
-  docker exec "$PG" rm -f "$seed_file"
+  local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  local files=("$ROOT/infra/postgres/seeds/seed.sql")
+  local plugin
+  for plugin in "$ROOT"/infra/postgres/seeds/plugins/*.sql; do
+    [ -f "$plugin" ] && files+=("$plugin")
+  done
+  local args=() copied=() f target
+  for f in "${files[@]}"; do
+    target="/tmp/$PREFIX-seed-$stamp-$(basename "$f")"
+    docker cp "$f" "$PG:$target"
+    copied+=("$target")
+    args+=(-f "$target")
+  done
+  docker exec "$PG" psql -U worktime -d worktime --no-psqlrc --set=ON_ERROR_STOP=1 --single-transaction "${args[@]}"
+  docker exec "$PG" rm -f "${copied[@]}"
 }
 
 # Non-destructive: needs a deployed (migrated) instance; no backup, no restart.

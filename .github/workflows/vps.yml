@@ -80,10 +80,10 @@ jobs:
         run: echo "Destroy not run. Type DESTROY followed by the environment name." && exit 1
       - uses: actions/checkout@v7
       # The server builds the migrate image from infra/liquibase, plugin changelogs included.
-      - name: Stage plugin changelogs
-        run: node scripts/plugins.mjs stage-changelogs
+      - name: Stage plugin changelogs and seeds
+        run: node scripts/plugins.mjs stage-changelogs && node scripts/plugins.mjs stage-seeds
       - name: Package deploy files
-        run: tar czf release.tgz compose/docker-compose.vps.yml infra/liquibase infra/keycloak infra/postgres/seeds/seed.sql infra/caddy/edge infra/portainer infra/whisper infra/vps
+        run: tar czf release.tgz compose/docker-compose.vps.yml infra/liquibase infra/keycloak infra/postgres/seeds/seed.sql infra/postgres/seeds/plugins infra/caddy/edge infra/portainer infra/whisper infra/vps
       - name: Upload to VPS
         uses: appleboy/scp-action@v1
         with:

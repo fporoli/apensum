@@ -169,3 +169,6 @@ infra/liquibase/plugins/*
 
 # drizzle-kit scratch output and per-plugin configs (apps/api/scripts/plugin-schemas.mjs)
 apps/api/.drizzle-*
+# Plugin seeds staged for the VPS and Azure seeders (scripts/plugins.mjs stage-seeds).
+infra/postgres/seeds/plugins/*
+!infra/postgres/seeds/plugins/.gitkeep

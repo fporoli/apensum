@@ -120,6 +120,9 @@ jobs:
           tags: |
             type=raw,value=${{ steps.release.outputs.image_tag }}
             type=sha
+      # The seed image carries the plugins' seeds (plugins/<id>/seed.sql) next to the core's.
+      - name: Stage plugin seeds
+        run: node scripts/plugins.mjs stage-seeds
       - name: Build and push seed
         uses: docker/build-push-action@v7
         with:

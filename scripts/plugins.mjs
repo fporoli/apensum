@@ -13,6 +13,10 @@
 //                                    copies each plugin's changelog/ to <dest>/<id>/changelog
 //                                    (default infra/liquibase/plugins), so the migrate image carries
 //                                    them; the Azure and VPS workflows run it before building it
+//   node scripts/plugins.mjs stage-seeds [dest]
+//                                    copies each plugin's seed.sql to <dest>/<id>.sql (default
+//                                    infra/postgres/seeds/plugins) for the VPS and Azure seeders,
+//                                    which run them after seed.sql in the same transaction
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,7 +82,17 @@ if (command === 'list') {
     cpSync(changelog, join(dest, p.manifest.id, 'changelog'), { recursive: true });
     console.log(`plugin ${p.manifest.id}: changelog staged in ${join(dest, p.manifest.id)}`);
   }
+} else if (command === 'stage-seeds') {
+  const dest = resolve(process.argv[3] ?? join(root, 'infra/postgres/seeds/plugins'));
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(dest)) if (entry !== '.gitkeep') rmSync(join(dest, entry), { recursive: true, force: true });
+  for (const p of list) {
+    const seed = join(p.dir, 'seed.sql');
+    if (!existsSync(seed)) continue;
+    cpSync(seed, join(dest, `${p.manifest.id}.sql`));
+    console.log(`plugin ${p.manifest.id}: seed staged in ${join(dest, `${p.manifest.id}.sql`)}`);
+  }
 } else {
-  console.error(`Unknown command "${command}" (list, build, test or stage-changelogs).`);
+  console.error(`Unknown command "${command}" (list, build, test, stage-changelogs or stage-seeds).`);
   process.exit(2);
 }
