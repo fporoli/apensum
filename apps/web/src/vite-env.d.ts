@@ -7,3 +7,10 @@ interface ImportMetaEnv {
   /** The product website ("More about Apensum"); default https://www.apensum.ch. */
   readonly VITE_INFO_URL?: string;
 }
+
+/** The installed plugins' web entries (vite.config.ts, apensumPlugins). */
+declare module 'virtual:apensum-plugins' {
+  import type { WebPlugin } from './plugin';
+  const plugins: WebPlugin[];
+  export default plugins;
+}

@@ -24,11 +24,10 @@ import {
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
-import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleNumber, formatSignedMinutes, swissLocale } from './localeFormat';
+import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatMoney, formatSignedMinutes, swissLocale } from './localeFormat';
 import { getSourceTitle } from './Timesheet';
-import { getExpenseReportTitle } from './ExpenseReports';
+import { getExpenseReportTitle, type ExpenseRow } from './expenseRows';
 import { getAbsenceTitle } from './Absences';
-import type { ExpenseRow } from './Expenses';
 import { PageHeader, TableEmptyRow } from './components';
 import { CheckCircleIcon, DownloadIcon, MailIcon, SearchIcon } from './icons';
 import ForwardMailDialog from './ForwardMailDialog';
@@ -439,7 +438,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
       totals.set(e.currency, (totals.get(e.currency) ?? 0) + v);
     }
     return [...totals.entries()]
-      .map(([currency, sum]) => `${formatLocaleNumber(Math.round(sum * 100) / 100, locale)} ${currency}`)
+      .map(([currency, sum]) => `${formatMoney(sum, locale)} ${currency}`)
       .join(' + ');
   }, [inspectingExpenses, locale]);
 
@@ -826,7 +825,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                     <TableRow key={e.id}>
                       <TableCell>{formatLocaleDate(e.expense_date, locale)}</TableCell>
                       <TableCell>{categoryLabel(e)}</TableCell>
-                      <TableCell align="right">{formatLocaleNumber(Number(e.value), locale)} {e.currency}</TableCell>
+                      <TableCell align="right">{formatMoney(Number(e.value), locale)} {e.currency}</TableCell>
                       <TableCell>{e.project_name ?? '—'}</TableCell>
                       <TableCell>{e.subproject_name ?? '—'}</TableCell>
                       <TableCell>{e.comment ?? '—'}</TableCell>

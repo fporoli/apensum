@@ -160,7 +160,7 @@ and tables:
 | Calendar feeds | RFC 5545 iCalendar / WebCal live subscriptions (Apple, Outlook, Google) with capability tokens, scope filtering (`personal`, `team`, `all`) and cantonal holidays | `calendar-feed.*` |
 | Project time | Hours booked against projects and subprojects, independent of attendance | `project-time.*`, `projects.controller.ts` |
 | Project timesheet | Each person's monthly hours per project, approved by the project's owner (for billing) | `project-timesheets.controller.ts` |
-| Expenses | Expense items and expense reports | `expenses.controller.ts`, `expense-reports.controller.ts` |
+| Expenses | Expense items and expense reports (bundled plugin) | `plugins/expenses/api/*` |
 | Import & Export / Backups | Swiss payroll exports (Abacus AbaSalary Lohnarten CSV, Bexio, Generic XLSX), dry-run bulk employee CSV import, and full organization backup ZIP + disaster-recovery restore | `import-export.*` |
 | Basic data | Personal data with an HR change-request/approval history | `basicdata.*` |
 | Static data | Admin-editable dropdown vocabularies | `static-data.controller.ts` |

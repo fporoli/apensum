@@ -3,12 +3,9 @@ import {
   Alert, Box, Button, IconButton, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
 import dayjs from 'dayjs';
-import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber } from './localeFormat';
-import { currencyOptions } from './currencyOptions';
-import { TableEmptyRow } from './components';
-import { DeleteIcon } from './icons';
-import { SectionPaper } from './SettingsSection';
+import {
+  useI18n, formatLocaleDate, formatLocaleNumber, parseLocaleNumber, currencyOptions, TableEmptyRow, DeleteIcon, SectionPaper,
+} from '@worktime3/web/plugin';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 

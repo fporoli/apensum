@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
-import { AiBudgetService, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
-import { CaseAiService, caseAiAvailability } from './case-ai.service';
-import { extractPdfText, isPdf } from './case-document-text';
+import {
+  AiBudgetService, azureOpenAiAvailable, azureOpenAiClient, azureOpenAiConfig, azurePrices, chatChf, chatErrorCode, estimateChatChf,
+  extractPdfText, isPdf, retryStaleConnection,
+} from '@worktime3/api/plugin';
 import {
   RECEIPT_IMAGE_ESTIMATE_CHARS, RECEIPT_MAX_TOKENS, buildReceiptMessages, isHeic, parseReceiptAnswer, receiptImageMime, type ReceiptSuggestion,
 } from './expense-receipt';
@@ -17,13 +17,10 @@ import {
 export class ExpenseReceiptService {
   private readonly logger = new Logger('ExpenseReceipt');
 
-  constructor(
-    private readonly budget: AiBudgetService,
-    private readonly caseAi: CaseAiService,
-  ) {}
+  constructor(private readonly budget: AiBudgetService) {}
 
   available(): boolean {
-    return caseAiAvailability().azureOpenai;
+    return azureOpenAiAvailable();
   }
 
   async scan(orgId: string, userId: string, file: Buffer, categories: Record<string, string>, today: string): Promise<ReceiptSuggestion> {
@@ -43,7 +40,7 @@ export class ExpenseReceiptService {
     const config = azureOpenAiConfig()!;
     const messages = buildReceiptMessages(receipt, categories);
     const inputChars = (receipt.text?.length ?? 0) + (receipt.imageDataUrl ? RECEIPT_IMAGE_ESTIMATE_CHARS : 0) + 2_000;
-    const orgLimitChf = (await this.caseAi.settings(orgId)).monthlyLimitChf;
+    const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const id = await this.budget.reserve({
       orgId, userId, caseId: null, kind: 'receipt', provider: 'azure-openai',
       estimateChf: estimateChatChf(inputChars, RECEIPT_MAX_TOKENS, prices), orgLimitChf,

@@ -1,0 +1,18 @@
+{
+  "name": "@worktime3/expenses",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "description": "Expenses, expense reports, exchange rates, mileage and receipt recognition (bundled Apensum plugin)",
+  "apensum": {
+    "id": "expenses",
+    "module": {
+      "id": "expenses",
+      "caption": "modules.expenses",
+      "defaultEnabled": true,
+      "objects": ["nav.expenses", "nav.expenseReports", "nav.expenseProcessing"]
+    },
+    "api": "dist/api/index.js",
+    "web": "web/index.tsx"
+  }
+}

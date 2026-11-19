@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { MILEAGE_CATEGORY, bookExpense, type BookingResult, type ExchangeRate } from '@worktime3/shared/expenses';
-import type { Db } from './db.service';
+import type { Db } from '@worktime3/api/plugin';
 
 /** Reporting currency when an org has no `settings.defaultCurrency` (same fallback as orgs.controller.ts). */
 export const FALLBACK_REPORTING_CURRENCY = 'CHF';

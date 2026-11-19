@@ -32,6 +32,9 @@ import { DesignModeNotice, DesignModeProvider, useDesignAccess } from './designM
 import NotificationBell from './NotificationBell';
 import { useNotifications, type Notification } from './useNotifications';
 import { formatDurationMinutes } from './localeFormat';
+import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES, pluginPage } from './plugins';
+import type { PluginPage } from './plugin';
+import type { TFunction } from './i18n';
 import { grantedScopes, holdsAny, holdsBeyondOwn, isBasicDataReviewer, seesOthersBasicData } from '@worktime3/shared/permissions';
 import { ApensumMark } from './ApensumMark';
 import {
@@ -49,11 +52,9 @@ import {
   HistoryIcon,
   MailIcon,
   MenuIcon,
-  PaymentsIcon,
   PeopleIcon,
   PersonIcon,
   PushPinIcon,
-  ReceiptLongIcon,
   ScheduleIcon,
   SettingsIcon,
   TimerIcon,
@@ -78,9 +79,6 @@ const Timesheet = lazy(() => import('./Timesheet'));
 const WorkTime = lazy(() => import('./WorkTime'));
 const Absences = lazy(() => import('./Absences'));
 const Approvals = lazy(() => import('./Approvals'));
-const Expenses = lazy(() => import('./Expenses'));
-const ExpenseReports = lazy(() => import('./ExpenseReports'));
-const ExpenseProcessing = lazy(() => import('./ExpenseProcessing'));
 const Assistant = lazy(() => import('./Assistant'));
 const TeamHours = lazy(() => import('./TeamHours'));
 const Reports = lazy(() => import('./Reports'));
@@ -99,7 +97,8 @@ const AssessmentTemplates = lazy(() => import('./Cases').then((m) => ({ default:
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DRAWER_WIDTH = 240;
 
-type Section =
+/** The core's pages; plugins add theirs (plugins.ts, PLUGIN_PAGES). */
+type CoreSection =
   | 'home'
   | 'myData'
   | 'time'
@@ -107,8 +106,6 @@ type Section =
   | 'timesheet'
   | 'workTime'
   | 'absences'
-  | 'expenses'
-  | 'expenseReports'
   | 'management'
   | 'managementProjects'
   | 'hours'
@@ -123,13 +120,15 @@ type Section =
   | 'admin'
   | 'adminRoles'
   | 'orgSettings'
-  | 'expenseProcessing'
   | 'reports'
   | 'importExport'
   | 'cases'
   | 'assessmentTemplates';
 
-const SECTION_TO_HASH: Record<Section, string> = {
+/** A core page or a plugin's section id. */
+type Section = CoreSection | (string & {});
+
+const CORE_SECTION_TO_HASH: Record<CoreSection, string> = {
   home: '#/home',
   myData: '#/my-data',
   time: '#/time',
@@ -137,8 +136,6 @@ const SECTION_TO_HASH: Record<Section, string> = {
   timesheet: '#/timesheet',
   workTime: '#/work-time',
   absences: '#/absences',
-  expenses: '#/expenses',
-  expenseReports: '#/expense-reports',
   hours: '#/team-hours',
   balances: '#/balances',
   approvals: '#/approvals',
@@ -151,7 +148,6 @@ const SECTION_TO_HASH: Record<Section, string> = {
   managementProjects: '#/projects',
   orgSettings: '#/org-settings',
   audit: '#/audit',
-  expenseProcessing: '#/expense-processing',
   admin: '#/admin',
   adminRoles: '#/admin/roles',
   reports: '#/reports',
@@ -159,6 +155,15 @@ const SECTION_TO_HASH: Record<Section, string> = {
   cases: '#/cases',
   assessmentTemplates: '#/assessment-templates',
 };
+
+const SECTION_TO_HASH: Record<string, string> = {
+  ...CORE_SECTION_TO_HASH,
+  ...Object.fromEntries(PLUGIN_PAGES.map((p) => [p.section, p.hash])),
+};
+
+function isCoreSection(sec: string): sec is CoreSection {
+  return Object.prototype.hasOwnProperty.call(CORE_SECTION_TO_HASH, sec);
+}
 
 const HASH_TO_SECTION = Object.fromEntries(
   Object.entries(SECTION_TO_HASH).map(([sec, hash]) => [hash, sec as Section]),
@@ -168,6 +173,28 @@ function sectionFromHash(): Section {
   if (typeof window === 'undefined') return 'home';
   const clean = window.location.hash.split('?')[0];
   return HASH_TO_SECTION[clean] ?? 'home';
+}
+
+/** Adds the plugins' navbar groups (after the group they name) and their pages' entries. */
+function addPluginNav<I extends { id: string }>(
+  groups: { id: string; header: string; items: I[] }[],
+  toItem: (page: PluginPage) => I,
+  t: TFunction,
+): void {
+  for (const g of PLUGIN_NAV_GROUPS) {
+    if (groups.some((x) => x.id === g.id)) continue;
+    const at = groups.findIndex((x) => x.id === g.after);
+    const group = { id: g.id, header: t(g.header), items: [] as I[] };
+    if (at >= 0) groups.splice(at + 1, 0, group);
+    else groups.push(group);
+  }
+  for (const page of PLUGIN_PAGES) {
+    const group = page.nav && groups.find((x) => x.id === page.nav!.group);
+    if (!group) continue;
+    const after = page.nav!.after ? group.items.findIndex((i) => i.id === page.nav!.after) : -1;
+    if (after >= 0) group.items.splice(after + 1, 0, toItem(page));
+    else group.items.push(toItem(page));
+  }
 }
 
 const ASSISTANT_TAB_WIDTH = 40;
@@ -182,7 +209,6 @@ interface RoleFlags {
   isBillingAdmin: boolean;
   canManage: boolean;
   canSeeUsers: boolean;
-  canProcessExpenses: boolean;
   displayRole: 'admin' | 'manager' | 'user';
 }
 
@@ -201,21 +227,18 @@ function resolveRoleFlags(session: Session | null, orgId: string | null): RoleFl
     isBillingAdmin,
     canManage,
     canSeeUsers: canManage || isHr,
-    canProcessExpenses: isAdmin || isBillingAdmin,
     displayRole: isAdmin ? 'admin' : isManager ? 'manager' : 'user',
   };
 }
 
 /** The permission object (packages/shared/src/permissions.ts) behind each page; `home` is always allowed. */
-const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
+const SECTION_NAV_OBJECT: Record<Exclude<CoreSection, 'home'>, string> = {
   myData: 'nav.myData',
   time: 'nav.time',
   projectTimesheet: 'nav.projectTimesheet',
   timesheet: 'nav.timesheet',
   workTime: 'nav.workTime',
   absences: 'nav.absences',
-  expenses: 'nav.expenses',
-  expenseReports: 'nav.expenseReports',
   management: 'nav.management',
   managementProjects: 'nav.management',
   hours: 'nav.teamHours',
@@ -230,7 +253,6 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
   admin: 'nav.admin',
   adminRoles: 'section.admin.roles',
   orgSettings: 'nav.orgSettings',
-  expenseProcessing: 'nav.expenseProcessing',
   reports: 'nav.reports',
   importExport: 'nav.importExport',
   cases: 'nav.cases',
@@ -245,11 +267,17 @@ const SECTION_NAV_OBJECT: Record<Exclude<Section, 'home'>, string> = {
  */
 function isSectionAllowed(sec: Section, flags: RoleFlags, permissions: Set<string> | null): boolean {
   if (sec === 'home') return true;
-  if (permissions) return holdsAny(permissions, SECTION_NAV_OBJECT[sec]);
+  if (!isCoreSection(sec)) {
+    const page = pluginPage(sec);
+    if (!page) return false;
+    if (permissions) return holdsAny(permissions, page.object);
+    return page.allowedByRole ? page.allowedByRole(flags) : true;
+  }
+  if (permissions) return holdsAny(permissions, SECTION_NAV_OBJECT[sec as Exclude<CoreSection, 'home'>]);
   return isSectionAllowedByRole(sec, flags);
 }
 
-function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
+function isSectionAllowedByRole(sec: CoreSection, flags: RoleFlags): boolean {
   switch (sec) {
     case 'home':
     case 'myData':
@@ -258,8 +286,6 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
     case 'timesheet':
     case 'workTime':
     case 'absences':
-    case 'expenses':
-    case 'expenseReports':
     case 'requests':
     case 'documents':
     case 'directory':
@@ -267,8 +293,6 @@ function isSectionAllowedByRole(sec: Section, flags: RoleFlags): boolean {
       return true;
     case 'users':
       return flags.canSeeUsers;
-    case 'expenseProcessing':
-      return flags.canProcessExpenses;
     case 'admin':
     case 'adminRoles':
     case 'audit':
@@ -564,7 +588,8 @@ export default function App() {
       navigate('requests');
       return;
     }
-    if (n.source_table === 'expense_reports') navigate('expenseReports');
+    const pluginSection = PLUGIN_NOTIFICATION_SECTIONS[n.source_table];
+    if (pluginSection) navigate(pluginSection);
     else if (n.source_table === 'timesheet_periods') navigate('timesheet');
     else if (n.source_table === 'absences') navigate('absences');
     else if (n.source_table === 'basicdata' || n.source_table === 'users') navigate('myData');
@@ -691,14 +716,6 @@ export default function App() {
       ],
     },
     {
-      id: 'expenses',
-      header: t('nav.expensesGroup'),
-      items: [
-        { id: 'expenses', section: 'expenses', label: t('nav.expenses'), icon: <ReceiptLongIcon fontSize="small" />, visible: allowed('expenses') },
-        { id: 'expenseReports', section: 'expenseReports', label: t('nav.expenseReports'), icon: <FolderCopyIcon fontSize="small" />, visible: allowed('expenseReports') },
-      ],
-    },
-    {
       id: 'cases',
       header: t('nav.casesGroup'),
       items: [
@@ -769,7 +786,6 @@ export default function App() {
         { id: 'orgSettings', section: 'orgSettings', label: t('nav.organizationSettings'), icon: <SettingsIcon fontSize="small" />, visible: allowed('orgSettings') },
         { id: 'importExport', section: 'importExport', label: t('nav.importExport'), icon: <ImportExportIcon fontSize="small" />, visible: allowed('importExport') },
         { id: 'audit', section: 'audit', label: t('nav.auditLog'), icon: <HistoryIcon fontSize="small" />, visible: allowed('audit') },
-        { id: 'expenseProcessing', section: 'expenseProcessing', label: t('nav.expenseProcessing'), icon: <PaymentsIcon fontSize="small" />, visible: allowed('expenseProcessing') },
         {
           id: 'admin',
           section: 'admin',
@@ -805,6 +821,7 @@ export default function App() {
       ],
     },
   ];
+  addPluginNav(NAV_GROUPS, (p) => ({ id: p.section, section: p.section, label: t(p.nav!.label), icon: p.nav!.icon, visible: allowed(p.section) }), t);
 
   const navList = (
     <List dense>
@@ -1190,12 +1207,6 @@ export default function App() {
               {section === 'absences' && allowed('absences') && orgId && (
                 <TeamView orgId={orgId} kind="absences" authHeaders={authHeaders} renderOwn={() => <Absences orgId={orgId} userId={session.userId} authHeaders={authHeaders} />} />
               )}
-              {section === 'expenses' && allowed('expenses') && orgId && (
-                <TeamView orgId={orgId} kind="expenses" authHeaders={authHeaders} renderOwn={() => <Expenses orgId={orgId} userId={session.userId} authHeaders={authHeaders} />} />
-              )}
-              {section === 'expenseReports' && allowed('expenseReports') && orgId && (
-                <TeamView orgId={orgId} kind="expenseReports" authHeaders={authHeaders} renderOwn={() => <ExpenseReports orgId={orgId} userId={session.userId} authHeaders={authHeaders} />} />
-              )}
               {(section === 'management' || section === 'managementProjects') && allowed(section) && orgId && (
                 <Management
                   session={session}
@@ -1265,9 +1276,6 @@ export default function App() {
               {section === 'orgSettings' && allowed('orgSettings') && orgId && (
                 <OrganizationSettings orgId={orgId} authHeaders={authHeaders} onModulesChanged={() => setPermissionsVersion((v) => v + 1)} />
               )}
-              {section === 'expenseProcessing' && allowed('expenseProcessing') && orgId && (
-                <ExpenseProcessing orgId={orgId} authHeaders={authHeaders} />
-              )}
               {section === 'importExport' && allowed('importExport') && orgId && (
                 <ImportExport orgId={orgId} isAdmin={flags.isAdmin} isHr={flags.isHr} authHeaders={authHeaders} />
               )}
@@ -1285,6 +1293,14 @@ export default function App() {
                   canEdit={flags.isAdmin || flags.isManager || (permissions ? holdsAny(permissions, 'nav.cases') : true)}
                 />
               )}
+              {orgId && allowed(section) && pluginPage(section)?.render({
+                orgId,
+                userId: session.userId,
+                authHeaders,
+                permissions,
+                roles: flags,
+                navigate,
+              })}
             </Suspense>
           </Container>
           {isMobile && orgId && (

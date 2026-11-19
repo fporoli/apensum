@@ -23,16 +23,11 @@ import {
 import dayjs from 'dayjs';
 import { EXPENSE_FORM, validateFields } from '@worktime3/shared/fields';
 import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '@worktime3/shared/expenses';
-import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber, formatMoney, parseLocaleNumber } from './localeFormat';
-import { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField';
-import { FieldDesignScope, useFormTemplate } from './designMode';
-import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
-import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon } from './icons';
-import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
+import {
+  useI18n, formatLocaleDate, formatLocaleNumber, formatMoney, parseLocaleNumber, ConfigFieldGroup, useGroupTitle, type FieldOption, FieldDesignScope, useFormTemplate, DESIGN_PANEL_WIDTH, FormDesignPanel, ConfirmDialog, PageHeader, TableEmptyRow, DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon, AttachmentView, DropZone, useAttachmentDraft, type Attachment, currencyOptions,
+  type ExpenseRow,
+} from '@worktime3/web/plugin';
 import { ReceiptCaptureButtons } from './receiptCapture';
-import { currencyOptions } from './currencyOptions';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -59,28 +54,7 @@ export function subCategoryLabel(subCategories: Record<string, string>, category
   return subCategories[`${category}$${subCategory}`] ?? subCategory;
 }
 
-export interface ExpenseRow {
-  id: string;
-  expense_date: string;
-  category: string;
-  sub_category: string | null;
-  original_value: string | null;
-  original_currency: string | null;
-  currency: string;
-  value: string;
-  quantity: string | null;
-  comment: string | null;
-  project_id: string | null;
-  subproject_id: string | null;
-  project_name: string | null;
-  subproject_name: string | null;
-  expense_report_id: string | null;
-  expense_report_status: string | null;
-  document_id: string | null;
-  exchange_rate?: string | null;
-  unit_rate?: string | null;
-  data?: Record<string, unknown> | null;
-}
+export type { ExpenseRow };
 
 type ExpenseValues = Record<string, unknown>;
 

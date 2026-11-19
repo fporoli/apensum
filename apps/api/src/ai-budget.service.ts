@@ -1,5 +1,7 @@
 import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
+import { parseCaseAiSettings } from '@worktime3/shared/cases';
+import { azureOpenAiConfig } from './ai-client';
 import { DbService, type Db } from './db.service';
 import { sendMail } from './mailer';
 
@@ -41,6 +43,11 @@ export function instanceBudgetChf(env: NodeJS.ProcessEnv = process.env): number 
 /** Azure may be used at all: not switched off, a budget and prices set. */
 export function azureAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.AI_AZURE_ENABLED?.trim().toLowerCase() !== 'false' && instanceBudgetChf(env) !== null && azurePrices(env) !== null;
+}
+
+/** Azure OpenAI chat can be called: allowed (budget, prices, kill switch) and configured. */
+export function azureOpenAiAvailable(env: NodeJS.ProcessEnv = process.env): boolean {
+  return azureAllowed(env) && azureOpenAiConfig(env) !== null;
 }
 
 /** Audio length is unknown before Azure answers: assume a low bitrate (32 kbit/s), so the estimate is high. */
@@ -104,6 +111,16 @@ export class AiBudgetService {
     const d = this.dbService.getDb();
     if (!d) throw new ServiceUnavailableException('db-unavailable');
     return d;
+  }
+
+  /**
+   * The organization's monthly limit for every paid AI call (Cases, receipt recognition, ...). It is
+   * kept with the Cases AI settings (organizations.settings.cases.ai.monthlyLimitChf, set by a
+   * superdeveloper under Organization settings -> AI and costs).
+   */
+  async orgMonthlyLimitChf(orgId: string): Promise<number> {
+    const rows = await this.db.execute(sql`SELECT settings->'cases'->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
+    return parseCaseAiSettings((rows.rows[0] as { ai?: unknown } | undefined)?.ai).monthlyLimitChf;
   }
 
   /** Reserves the estimated cost or throws the refusal. Returns the usage row's id for finish(). */

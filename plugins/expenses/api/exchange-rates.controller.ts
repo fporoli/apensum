@@ -1,10 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { validateExchangeRate } from '@worktime3/shared/expenses';
-import { DbService } from './db.service';
-import { VersionsService } from './versions.service';
-import { callerUserId, can, isOrgMember } from './access';
-import type { AuthenticatedRequest } from './jwt.guard';
+import { DbService, VersionsService, callerUserId, can, isOrgMember, type AuthenticatedRequest } from '@worktime3/api/plugin';
 import { bookingContext } from './expense-booking';
 
 /**

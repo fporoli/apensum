@@ -15,10 +15,9 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useI18n, type TFunction } from './i18n';
-import { formatLocaleDate } from './localeFormat';
-import { PageHeader, TableEmptyRow } from './components';
-import { PaymentsIcon } from './icons';
+import {
+  useI18n, type TFunction, formatLocaleDate, PageHeader, TableEmptyRow, PaymentsIcon,
+} from '@worktime3/web/plugin';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 

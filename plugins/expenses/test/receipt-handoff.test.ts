@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { HANDOFF_TTL_MS, MAX_OPEN_HANDOFFS_PER_USER, ReceiptHandoffService, safeName } from '../../apps/api/src/receipt-handoff.service';
-import { ReceiptHandoffController } from '../../apps/api/src/receipt-handoff.controller';
-import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
+import { HANDOFF_TTL_MS, MAX_OPEN_HANDOFFS_PER_USER, ReceiptHandoffService, safeName } from '../api/receipt-handoff.service';
+import { ReceiptHandoffController } from '../api/receipt-handoff.controller';
+import type { AuthenticatedRequest } from '@worktime3/api/plugin';
 
 const photo = (name = 'image.jpg', mimeType = 'image/jpeg') => ({ name, mimeType, buffer: Buffer.from('jpeg bytes') });
 

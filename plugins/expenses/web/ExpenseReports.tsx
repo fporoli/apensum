@@ -21,11 +21,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber } from './localeFormat';
-import { PageHeader, TableEmptyRow } from './components';
-import { AddIcon, DeleteIcon, DownloadIcon, FolderCopyIcon, ReceiptLongIcon, VisibilityIcon } from './icons';
-import type { ExpenseRow } from './Expenses';
+import {
+  useI18n, formatLocaleDate, formatMoney, PageHeader, TableEmptyRow, AddIcon, DeleteIcon, DownloadIcon, FolderCopyIcon, ReceiptLongIcon, VisibilityIcon,
+  type ExpenseRow,
+} from '@worktime3/web/plugin';
 import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -62,14 +61,6 @@ const STATUS_COLOR: Record<Status, 'default' | 'warning' | 'success' | 'error' |
   finished: 'success',
 };
 
-function toDisplayDate(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split('-');
-  return `${d}.${m}.${y}`;
-}
-
-export function getExpenseReportTitle(report: { date_submitted: string | null }): string {
-  return report.date_submitted ? toDisplayDate(report.date_submitted) : '—';
-}
 
 function totalsByCurrency(rows: ExpenseRow[], locale: string): string {
   const totals = new Map<string, number>();
@@ -79,7 +70,7 @@ function totalsByCurrency(rows: ExpenseRow[], locale: string): string {
     totals.set(r.currency, (totals.get(r.currency) ?? 0) + val);
   }
   return [...totals.entries()]
-    .map(([currency, sum]) => `${formatLocaleNumber(Math.round(sum * 100) / 100, locale)} ${currency}`)
+    .map(([currency, sum]) => `${formatMoney(sum, locale)} ${currency}`)
     .join(' + ');
 }
 
@@ -316,7 +307,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
                     <TableRow key={e.id} hover>
                       <TableCell>{formatLocaleDate(e.expense_date, locale)}</TableCell>
                       <TableCell>{categoryLabel(e)}</TableCell>
-                      <TableCell align="right">{formatLocaleNumber(Number(e.value), locale)} {e.currency}</TableCell>
+                      <TableCell align="right">{formatMoney(Number(e.value), locale)} {e.currency}</TableCell>
                       <TableCell align="right">
                         <Tooltip title={t('expenseReports.remove')}>
                           <IconButton size="small" color="error" aria-label={t('expenseReports.remove')} onClick={() => void detach(e.id)}>
@@ -349,7 +340,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
                     <TableRow key={e.id} hover>
                       <TableCell>{formatLocaleDate(e.expense_date, locale)}</TableCell>
                       <TableCell>{categoryLabel(e)}</TableCell>
-                      <TableCell align="right">{formatLocaleNumber(Number(e.value), locale)} {e.currency}</TableCell>
+                      <TableCell align="right">{formatMoney(Number(e.value), locale)} {e.currency}</TableCell>
                       <TableCell align="right">
                         <Button size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => void attach(e.id)}>{t('expenseReports.add')}</Button>
                       </TableCell>
@@ -440,7 +431,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
                   <TableRow key={e.id}>
                     <TableCell>{formatLocaleDate(e.expense_date, locale)}</TableCell>
                     <TableCell>{categoryLabel(e)}</TableCell>
-                    <TableCell align="right">{formatLocaleNumber(Number(e.value), locale)} {e.currency}</TableCell>
+                    <TableCell align="right">{formatMoney(Number(e.value), locale)} {e.currency}</TableCell>
                     <TableCell>{e.project_name ?? '—'}</TableCell>
                     <TableCell>{e.comment ?? '—'}</TableCell>
                     <TableCell align="right">

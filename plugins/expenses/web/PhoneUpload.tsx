@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material';
-import { LOCALES, useI18n } from './i18n';
-import { AttachFileIcon, CheckCircleIcon, PhotoCameraIcon, UploadIcon } from './icons';
+import {
+  LOCALES, useI18n, AttachFileIcon, CheckCircleIcon, PhotoCameraIcon, UploadIcon, formatFileSize,
+} from '@worktime3/web/plugin';
 import { shrinkPhoto } from './receiptCapture';
-import { formatFileSize } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 

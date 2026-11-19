@@ -1,0 +1,12 @@
+{
+  // Editor and tests (tsx): the API part and its tests, with the core's TypeScript sources
+  // (`source` condition). The build uses tsconfig.api.json; web/ has its own tsconfig.json.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "node20",
+    "moduleResolution": "node16",
+    "customConditions": ["source"],
+    "noEmit": true
+  },
+  "include": ["api/**/*.ts", "test/**/*.ts"]
+}

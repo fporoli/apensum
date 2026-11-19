@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -25,7 +25,7 @@ import BrandingSettings from './BrandingSettings';
 import WorkTimeSettings from './WorkTimeSettings';
 import DepartmentSettings from './DepartmentSettings';
 import ModuleSettings from './ModuleSettings';
-import ExchangeRateSettings from './ExchangeRateSettings';
+import { PLUGIN_ORG_SETTINGS } from './plugins';
 import { CaseAiSettingsPanel } from './CaseAiSettingsPanel';
 import { SettingsSection } from './SettingsSection';
 
@@ -277,9 +277,11 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
         <WorkTimeSettings orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
-      <SettingsSection id="org.exchangeRates" title={t('exchangeRates.title')} subtitle={t('exchangeRates.subtitle', { currency: savedCurrency || '—' })}>
-        <ExchangeRateSettings orgId={orgId} authHeaders={authHeaders} />
-      </SettingsSection>
+      {PLUGIN_ORG_SETTINGS.map((section) => (
+        <SettingsSection key={section.id} id={section.id} title={section.title(t)} subtitle={section.subtitle?.(t, { defaultCurrency: savedCurrency })}>
+          <Suspense fallback={<LinearProgress />}>{section.render({ orgId, authHeaders })}</Suspense>
+        </SettingsSection>
+      ))}
 
       <SettingsSection id="org.ai" title={t('cases.ai.settings.title')} subtitle={t('cases.ai.settings.intro')}>
         <CaseAiSettingsPanel orgId={orgId} authHeaders={authHeaders} />

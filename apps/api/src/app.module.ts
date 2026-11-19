@@ -39,11 +39,7 @@ import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
-import { ExpensesController } from './expenses.controller';
-import { ReceiptHandoffController } from './receipt-handoff.controller';
-import { ReceiptHandoffService } from './receipt-handoff.service';
 import { SiteContactController } from './site-contact.controller';
-import { ExpenseReportsController } from './expense-reports.controller';
 import { WorkflowsController } from './workflows.controller';
 import { StaticDataController } from './static-data.controller';
 import { AuditController } from './audit.controller';
@@ -65,8 +61,10 @@ import { CasesController } from './cases.controller';
 import { CasesService } from './cases.service';
 import { CaseAiService } from './case-ai.service';
 import { AiBudgetService } from './ai-budget.service';
-import { ExpenseReceiptService } from './expense-receipt.service';
-import { ExchangeRatesController } from './exchange-rates.controller';
+import { loadApiPlugins } from './plugins';
+
+// Plugins (plugins/<id>, docs/PLUGINS.md): their controllers and providers join the core's.
+const plugins = loadApiPlugins();
 
 @Module({
   controllers: [
@@ -98,10 +96,7 @@ import { ExchangeRatesController } from './exchange-rates.controller';
     PersonnelDocumentsController,
     TimesheetsController,
     ProjectTimesheetsController,
-    ExpensesController,
-    ReceiptHandoffController,
     SiteContactController,
-    ExpenseReportsController,
     WorkflowsController,
     StaticDataController,
     AuditController,
@@ -110,14 +105,13 @@ import { ExchangeRatesController } from './exchange-rates.controller';
     ImportExportController,
     CalendarFeedController,
     CasesController,
-    ExchangeRatesController,
+    ...plugins.controllers,
   ],
   providers: [
     DbService,
     CasesService,
     CaseAiService,
     AiBudgetService,
-    ExpenseReceiptService,
     ImportExportService,
     CalendarFeedService,
     ProjectTimeService,
@@ -127,7 +121,6 @@ import { ExchangeRatesController } from './exchange-rates.controller';
     ReportSchedulesService,
     WorkTimeModelService,
     DocumentsService,
-    ReceiptHandoffService,
     TimesheetDocumentsService,
     ForwardMailService,
     RbacService,
@@ -139,6 +132,7 @@ import { ExchangeRatesController } from './exchange-rates.controller';
     NotificationsGateway,
     BasicDataService,
     FieldsService,
+    ...plugins.providers,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })

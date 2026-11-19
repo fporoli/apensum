@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { nextPipelineStage } from '../../apps/api/src/expense-reports.controller';
+import { nextPipelineStage } from '../api/expense-reports.controller';
 
 test('nextPipelineStage walks the finance pipeline forward one step at a time', () => {
   assert.equal(nextPipelineStage('approved'), 'submitted_processing');

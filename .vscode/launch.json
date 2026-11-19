@@ -9,7 +9,7 @@
       "program": "${workspaceFolder}/apps/api/dist/main.js",
       "envFile": "${workspaceFolder}/.env.dev",
       "preLaunchTask": "api: prepare",
-      "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js"],
+      "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js", "${workspaceFolder}/plugins/*/dist/**/*.js"],
       "sourceMaps": true,
       "skipFiles": ["<node_internals>/**"],
       // Output in the Debug Console: no extra terminal, and the process ends with the session.

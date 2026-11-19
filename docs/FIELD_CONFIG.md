@@ -377,7 +377,7 @@ menu. When it is on:
 5. Done: the expense form (`EXPENSE_FORM`, form id `expense`, sections
    `expense` and `additional`) renders through `ConfigFieldGroup` on the
    Expenses page, with design mode. Its field keys match the API body;
-   `expenses.controller.ts` validates create (all fields, so required ones are
+   `plugins/expenses/api/expenses.controller.ts` validates create (all fields, so required ones are
    checked) and update (the fields sent) against the org's template and maps
    values to columns with `expenseColumns`. NOT NULL columns (date, category,
    value, currency) are required and cannot be hidden. New validator

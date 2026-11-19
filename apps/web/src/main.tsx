@@ -6,12 +6,11 @@ import { I18nProvider } from './i18n';
 import { BrandingContext, createAppTheme, DEFAULT_BRANDING_COLORS, ThemeModeContext, type ThemeMode } from './theme';
 import type { OrgBranding } from '@worktime3/shared/branding';
 import { DatePickerLocalization } from './ConfigField';
-import { parseReceiptHash } from './receiptHash';
 import { parseResetHash } from './resetHash';
+import { PLUGIN_PUBLIC_ROUTES } from './plugins';
 
-const PhoneUpload = lazy(() => import('./PhoneUpload'));
-// A phone that scanned the expense form's QR code gets the receipt page alone, without signing in.
-const receiptHandoff = parseReceiptHash(window.location.hash);
+// A plugin's page opened without signing in (e.g. the expenses plugin's phone upload for a QR code).
+const publicRoute = PLUGIN_PUBLIC_ROUTES.map((r) => ({ route: r, match: r.match(window.location.hash) })).find((r) => r.match);
 const ResetPassword = lazy(() => import('./ResetPassword'));
 // The link in a password-reset e-mail opens the page that sets the new password, without signing in.
 const passwordReset = parseResetHash(window.location.hash);
@@ -58,10 +57,8 @@ function Root() {
           <CssBaseline />
           <I18nProvider>
             <DatePickerLocalization>
-              {receiptHandoff ? (
-                <Suspense fallback={null}>
-                  <PhoneUpload token={receiptHandoff.token} lang={receiptHandoff.lang} />
-                </Suspense>
+              {publicRoute ? (
+                <Suspense fallback={null}>{publicRoute.route.render(publicRoute.match)}</Suspense>
               ) : passwordReset ? (
                 <Suspense fallback={null}>
                   <ResetPassword token={passwordReset.token} lang={passwordReset.lang} />

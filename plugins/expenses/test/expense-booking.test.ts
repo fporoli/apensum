@@ -1,9 +1,9 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { bookColumns, BOOKING_COLUMNS, type BookingContext } from '../../apps/api/src/expense-booking';
-import { missingReceiptAmount } from '../../apps/api/src/expenses.controller';
-import { buildReceiptMessages, isHeic, parseReceiptAnswer, receiptImageMime } from '../../apps/api/src/expense-receipt';
-import { ExpenseReceiptService } from '../../apps/api/src/expense-receipt.service';
+import { bookColumns, BOOKING_COLUMNS, type BookingContext } from '../api/expense-booking';
+import { missingReceiptAmount } from '../api/expenses.controller';
+import { buildReceiptMessages, isHeic, parseReceiptAnswer, receiptImageMime } from '../api/expense-receipt';
+import { ExpenseReceiptService } from '../api/expense-receipt.service';
 
 const ctx: BookingContext = {
   reportingCurrency: 'CHF',
@@ -75,7 +75,7 @@ test('receipt scan: unreadable formats are refused before anything is reserved o
   delete process.env.AI_AZURE_ENABLED;
   try {
     let reserved = 0;
-    const service = new ExpenseReceiptService({ reserve: async () => { reserved++; return 'x'; } } as never, { settings: async () => ({ monthlyLimitChf: 10 }) } as never);
+    const service = new ExpenseReceiptService({ reserve: async () => { reserved++; return 'x'; }, orgMonthlyLimitChf: async () => 10 } as never);
     assert.equal(service.available(), true);
     await assert.rejects(service.scan('o', 'u', Buffer.from('\0\0\0\x18ftypheic\0\0'), {}, '2026-11-19'), /receipt-heic/);
     await assert.rejects(service.scan('o', 'u', Buffer.from('plain text'), {}, '2026-11-19'), /receipt-format/);

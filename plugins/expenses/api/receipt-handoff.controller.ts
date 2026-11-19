@@ -1,10 +1,7 @@
 import { Controller, Delete, Get, Param, Post, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { DbService } from './db.service';
-import { callerUserId, isOrgMember } from './access';
-import { Public, type AuthenticatedRequest } from './jwt.guard';
-import { MAX_DOCUMENT_BYTES } from './documents.service';
+import { DbService, callerUserId, isOrgMember, Public, type AuthenticatedRequest, MAX_DOCUMENT_BYTES } from '@worktime3/api/plugin';
 import { ReceiptHandoffService } from './receipt-handoff.service';
 
 /**

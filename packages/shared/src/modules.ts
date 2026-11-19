@@ -18,7 +18,8 @@ export interface ModuleDefinition {
   objects: readonly string[];
 }
 
-export const MODULES: readonly ModuleDefinition[] = [
+/** The core's modules, then the plugins' (registerModule). */
+export const MODULES: ModuleDefinition[] = [
   // Requests: tickets to one's line manager or a department (HR, ...), with a message thread.
   { id: 'requests', caption: 'modules.requests', defaultEnabled: true, objects: ['nav.requests'] },
   // Reports: project hours, attendance and overtime, absences, with filters, chart and export.
@@ -26,6 +27,22 @@ export const MODULES: readonly ModuleDefinition[] = [
   // Cases & Assessments: Dossier management, interviews/transcripts and standardized assessments for KESB, forensic experts and police.
   { id: 'cases', caption: 'modules.cases', defaultEnabled: false, objects: ['nav.cases'] },
 ];
+
+/**
+ * Adds a plugin's module (its package.json `apensum.module`): the API's plugin loader and the web
+ * app's plugin registry call it once at startup, before anything reads MODULES. Registering an id
+ * again replaces it (tests, hot reload).
+ */
+export function registerModule(def: ModuleDefinition): void {
+  if (!def || typeof def.id !== 'string' || !/^[a-z][a-zA-Z0-9]*$/.test(def.id)) throw new Error(`invalid module id: ${String(def?.id)}`);
+  if (typeof def.caption !== 'string' || typeof def.defaultEnabled !== 'boolean' || !Array.isArray(def.objects)) {
+    throw new Error(`invalid module definition: ${def.id}`);
+  }
+  const at = MODULES.findIndex((m) => m.id === def.id);
+  const copy: ModuleDefinition = { id: def.id, caption: def.caption, defaultEnabled: def.defaultEnabled, objects: [...def.objects] };
+  if (at >= 0) MODULES[at] = copy;
+  else MODULES.push(copy);
+}
 
 export type ModuleSettings = Record<string, boolean>;
 

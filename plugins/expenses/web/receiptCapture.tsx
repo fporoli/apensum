@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Tooltip, Typography } from '@mui/material';
 import QRCode from 'qrcode';
-import { useI18n } from './i18n';
-import { CropIcon, PhotoCameraIcon, QrCodeIcon } from './icons';
-import { MAX_ATTACHMENT_BYTES } from './attachments';
+import {
+  useI18n, CropIcon, PhotoCameraIcon, QrCodeIcon, MAX_ATTACHMENT_BYTES, swissLocale,
+} from '@worktime3/web/plugin';
 import { handoffLink } from './receiptHash';
-import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 

@@ -1,8 +1,42 @@
-import { defineConfig, defaultClientConditions } from 'vite';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { defineConfig, defaultClientConditions, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
+/**
+ * `virtual:apensum-plugins`: imports the web entry (package.json `apensum.web`) of every plugin
+ * under <repo>/plugins/<id> and exports them as an array (apps/web/src/plugins.ts reads it).
+ * A plugin is part of the bundle when its folder is there at build time; docs/PLUGINS.md.
+ */
+function apensumPlugins(): Plugin {
+  const id = 'virtual:apensum-plugins';
+  const resolved = `\0${id}`;
+  const dir = resolve(import.meta.dirname, process.env.APENSUM_PLUGINS_DIR?.trim() || '../../plugins');
+  const entries = () => {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => (e.isDirectory() || e.isSymbolicLink()) && existsSync(join(dir, e.name, 'package.json')))
+      .map((e) => ({ name: e.name, manifest: JSON.parse(readFileSync(join(dir, e.name, 'package.json'), 'utf8')).apensum }))
+      .filter((p) => p.manifest?.web)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => join(dir, p.name, p.manifest.web));
+  };
+  return {
+    name: 'apensum-plugins',
+    resolveId: (source) => (source === id ? resolved : undefined),
+    load(source) {
+      if (source !== resolved) return undefined;
+      const files = entries();
+      return [
+        ...files.map((f, i) => `import plugin${i} from ${JSON.stringify(f)};`),
+        `export default [${files.map((_, i) => `plugin${i}`).join(', ')}];`,
+      ].join('\n');
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), apensumPlugins()],
   // `source` makes @worktime3/shared resolve to its TypeScript sources, so the web build never needs it built first.
   resolve: { conditions: ['source', ...defaultClientConditions] },
   server: { port: 3001, proxy: { '/api': 'http://localhost:8001' } },

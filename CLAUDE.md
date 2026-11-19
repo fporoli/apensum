@@ -330,7 +330,20 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `personnel-documents.controller.ts`, `PersonnelDocumentsPanel.tsx` on the Users page): HR's documents per
   person, each shared with the person (listed on their Documents page, notified) or HR only. Access is the
   grant alone, not the reporting line; a person never edits their own file.
-- Expenses: the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
+- Plugins (`plugins/<id>`, docs/PLUGINS.md): a folder with a package.json `apensum` manifest (`id` = folder name,
+  optional `module` registered via `registerModule`, `api` = built entry, `web` = TS entry). Not npm workspaces and
+  no dependencies of their own (everything resolves from the root `node_modules`), so a private plugin cloned into
+  the folder (gitignored except the bundled `plugins/expenses`) changes neither the lockfile nor `npm ci`. A plugin
+  imports the core only through the contracts `@worktime3/api/plugin` (+ `@worktime3/api/schema`) and
+  `@worktime3/web/plugin`; extend those files, never import other core files from a plugin. API: `plugins.ts` loads
+  them in `app.module.ts` (an unbuilt plugin stops the start); `npm run build --workspace=@worktime3/api` compiles them
+  (`scripts/plugins.mjs build`, after the API's declarations). Web: Vite's `virtual:apensum-plugins`
+  (`vite.config.ts`) bundles them; `plugins.ts` merges their texts into the dictionaries and App.tsx /
+  main.tsx / OrganizationSettings.tsx show their pages, nav groups, settings sections and public routes.
+  Tests: `plugins/<id>/test` (`*.test.ts` via tsx, `*.test.mjs` via node), run by `npm test` (`scripts/plugins.mjs test`).
+  Not yet: plugin-owned Liquibase changelogs (expense tables stay in the core's changelogs and schema).
+- Expenses (plugin `plugins/expenses`, module `expenses`, default on; the core keeps the tables, Approvals, reports,
+  documents, team overview, the expense form's field registry and `expenseRows.ts`): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
   shown there when editing; the list is newest first. `receiptCapture.tsx` adds a photo (phone camera via
   `capture`, webcam dialog on a computer), a screen area (`getDisplayMedia` + crop) and a QR code: the PC
   creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone
@@ -346,7 +359,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   rates; older ones in another currency stay as they are ("not converted") until edited. Never trust a client `value`.
   Receipt recognition (`expense-receipt.ts`, `ExpenseReceiptService`, `POST expenses/scan-receipt`): photo or PDF text
   to Azure OpenAI (Switzerland) only, for every org with expenses when the instance has it, through `AiBudgetService`
-  (kind `receipt`, the org's AI monthly limit); returns a suggestion, stores nothing.
+  (kind `receipt`, the org's AI monthly limit, `orgMonthlyLimitChf`); returns a suggestion, stores nothing.
+  The expense API/web files named here live in `plugins/expenses/{api,web}`.
 - Organization settings sections are collapsible (`SettingsSection.tsx`; a card uses `SectionPaper` so it shows its own
   title only outside a section). AI and costs (`CaseAiSettingsPanel`) lives there, not on the Cases pages.
 - Reports (module `reports`, `nav.reports`, 063; `reports.controller.ts`, `Reports.tsx`): the catalogue, grouping and

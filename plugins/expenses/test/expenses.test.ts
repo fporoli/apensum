@@ -1,13 +1,13 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { ExpensesController } from '../../apps/api/src/expenses.controller';
-import type { DbService } from '../../apps/api/src/db.service';
-import type { VersionsService } from '../../apps/api/src/versions.service';
-import type { DocumentsService } from '../../apps/api/src/documents.service';
-import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
-import type { FieldsService } from '../../apps/api/src/fields.service';
+import { ExpensesController } from '../api/expenses.controller';
+import type { DbService } from '@worktime3/api/plugin';
+import type { VersionsService } from '@worktime3/api/plugin';
+import type { DocumentsService } from '@worktime3/api/plugin';
+import type { AuthenticatedRequest } from '@worktime3/api/plugin';
+import type { FieldsService } from '@worktime3/api/plugin';
 import { EXPENSE_FORM, mergeForm, type FormLayer } from '@worktime3/shared/fields';
-import { expenseColumns } from '../../apps/api/src/expenses.controller';
+import { expenseColumns } from '../api/expenses.controller';
 
 function createMockDb(executeHandler: (query: unknown) => Promise<{ rows: any[] }>) {
   const db = {
