@@ -8,8 +8,8 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, write
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import baseConfig, { REQUIRED_OPERATOR_FIELDS } from './site.config.mjs';
-import { LANGS, LANG_NAMES, PAGES, context, esc, pagePath, translator } from './src/layout.mjs';
-import { RENDER, contactResult, contactResultPath } from './src/pages.mjs';
+import { LANGS, LANG_NAMES, NEWS_RESULTS, PAGES, context, esc, newsResultPath, pagePath, translator } from './src/layout.mjs';
+import { RENDER, contactResult, contactResultPath, newsResult } from './src/pages.mjs';
 import { logoMark } from './src/icons.mjs';
 import de from './src/i18n/de.mjs';
 import fr from './src/i18n/fr.mjs';
@@ -103,6 +103,12 @@ export function build({ outDir = join(ROOT, 'dist'), strict = false, config = ba
     // Where the contact form's server sends the visitor back to (not in the sitemap).
     for (const kind of ['thanks', 'failed']) {
       write(join(contactResultPath(DICTS, lang, kind), 'index.html'), contactResult(context(DICTS, lang, 'contact', config, assets), kind));
+    }
+    // The same for the news forms (site-newsletter.controller.ts), only when there is an API to post to.
+    if (config.contactUrl) {
+      for (const kind of Object.keys(NEWS_RESULTS)) {
+        write(join(newsResultPath(DICTS, lang, kind), 'index.html'), newsResult(context(DICTS, lang, 'news', config, assets), kind));
+      }
     }
   }
 

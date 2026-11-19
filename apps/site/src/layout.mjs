@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'cases', 'expenses', 'plugins', 'pricing', 'security', 'law', 'about', 'contact', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'cases', 'expenses', 'plugins', 'pricing', 'security', 'law', 'about', 'contact', 'news', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -59,6 +59,11 @@ export function context(dicts, lang, page, config, assets) {
     number: (n, opts) => new Intl.NumberFormat(locale, opts).format(n),
     /** The contact page's form with a topic preselected (CONTACT_TOPICS); no mailto: links anywhere. */
     contactLink: (topic = 'general') => `${pagePath(dicts, lang, 'contact')}?topic=${topic}#contact-form`,
+    /**
+     * The news forms' targets on the same API as the contact form (public/newsletter/...); null
+     * without a contact URL, and then no news forms are shown.
+     */
+    newsletterUrl: (action) => (config.contactUrl ? `${config.contactUrl.replace(/\/contact\/?$/, '')}/newsletter/${action}` : null),
     /** The address as plain text: one click selects it for copying. */
     email: `<span class="email">${esc(config.email)}</span>`,
     dicts,
@@ -103,6 +108,37 @@ function header(ctx) {
 </header>`;
 }
 
+/** Where the news forms' server sends the visitor back to: /de/news/pruefen/ and the like (not in the sitemap). */
+export const NEWS_RESULTS = { sent: 'slug.newsSent', unsubscribeSent: 'slug.newsUnsubscribeSent', failed: 'slug.newsFailed' };
+export function newsResultPath(dicts, lang, kind) {
+  return `${pagePath(dicts, lang, 'news')}${dicts[lang][NEWS_RESULTS[kind]]}/`;
+}
+
+/**
+ * The news forms: a plain HTML post to the API (public/newsletter/subscribe or unsubscribe-request),
+ * which mails a link and redirects back to a result page. `website` is a honeypot (hidden from people).
+ * Nothing without a contact URL (no API to post to). `compact`: the footer's one-line form.
+ */
+export function newsletterForm(ctx, kind, compact = false) {
+  const { t, lang, dicts } = ctx;
+  const action = ctx.newsletterUrl(kind === 'subscribe' ? 'subscribe' : 'unsubscribe-request');
+  if (!action) return '';
+  const ok = newsResultPath(dicts, lang, kind === 'subscribe' ? 'sent' : 'unsubscribeSent');
+  const id = `news-${kind}${compact ? '-footer' : ''}`;
+  return `<form class="news-form${compact ? ' compact' : ''}" method="post" action="${esc(action)}">
+        <label for="${id}">${t(`news.${kind}.label`)}</label>
+        <div class="news-row">
+          <input id="${id}" type="email" name="email" required maxlength="200" autocomplete="email" placeholder="${t('news.placeholder')}">
+          <button class="btn ${kind === 'subscribe' ? 'btn-primary' : 'btn-ghost'} btn-sm" type="submit">${t(`news.${kind}.button`)}</button>
+        </div>
+        <input type="hidden" name="lang" value="${lang}">
+        <input type="hidden" name="ok" value="${ok}">
+        <input type="hidden" name="fail" value="${newsResultPath(dicts, lang, 'failed')}">
+        <label class="hp" aria-hidden="true">${t('contact.form.honeypot')}<input name="website" tabindex="-1" autocomplete="off"></label>
+        ${compact ? `<small><a href="${ctx.link('news')}">${t('news.more')}</a></small>` : ''}
+      </form>`;
+}
+
 function footer(ctx) {
   const { t, link, config } = ctx;
   const year = new Date().getFullYear();
@@ -111,6 +147,7 @@ function footer(ctx) {
     <div>
       <a class="brand" href="${link('home')}">${logoMark(26)}<span class="wordmark">a<b>pensum</b></span></a>
       <p class="muted">${t('footer.tagline')}</p>
+      ${newsletterForm(ctx, 'subscribe', true)}
     </div>
     <nav aria-label="${t('footer.product')}">
       <h2>${t('footer.product')}</h2>
@@ -130,6 +167,7 @@ function footer(ctx) {
       <h2>${t('footer.company')}</h2>
       <a href="${link('about')}">${t('nav.about')}</a>
       <a href="${link('contact')}">${t('nav.contact')}</a>
+      ${ctx.newsletterUrl('subscribe') ? `<a href="${link('news')}">${t('nav.news')}</a>` : ''}
       <a href="${link('impressum')}">${t('nav.impressum')}</a>
       <a href="${link('privacy')}">${t('nav.privacy')}</a>
     </nav>

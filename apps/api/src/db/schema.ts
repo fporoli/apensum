@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, check, uuid, text, numeric, integer, timestamp, unique, jsonb, date, varchar, boolean, uniqueIndex, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, check, uuid, text, numeric, integer, timestamp, uniqueIndex, unique, jsonb, date, varchar, boolean, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -53,6 +53,24 @@ export const ai_usage = pgTable("ai_usage", {
 	check("chk_ai_usage_kind", sql`kind ~ '^[a-z][a-z0-9_.-]*$'::text`),
 	check("chk_ai_usage_status", sql`status = ANY (ARRAY['pending'::text, 'ok'::text, 'failed'::text])`),
 	check("chk_ai_usage_subject", sql`(subject_table IS NULL) = (subject_id IS NULL)`),
+]);
+
+export const newsletter_subscribers = pgTable("newsletter_subscribers", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	email: citext("email").notNull(),
+	lang: text().default('de').notNull(),
+	status: text().default('pending').notNull(),
+	token_hash: text().notNull(),
+	site_origin: text().notNull(),
+	requested_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	confirmed_at: timestamp({ withTimezone: true, mode: 'string' }),
+	unsubscribed_at: timestamp({ withTimezone: true, mode: 'string' }),
+	last_mail_at: timestamp({ withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("uq_newsletter_token").using("btree", table.token_hash.asc().nullsLast()),
+	unique("newsletter_subscribers_email_key").on(table.email),
+	check("chk_newsletter_lang", sql`lang = ANY (ARRAY['de'::text, 'fr'::text, 'it'::text, 'en'::text])`),
+	check("chk_newsletter_status", sql`status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'unsubscribed'::text])`),
 ]);
 
 export const basicdata_versions = pgTable("basicdata_versions", {

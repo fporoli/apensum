@@ -94,6 +94,7 @@
     <include file="076-case-ai-usage.sql" relativeToChangelogFile="true"/>
     <include file="077-expense-conversion-mileage.sql" relativeToChangelogFile="true"/>
     <include file="078-ai-usage-core.sql" relativeToChangelogFile="true"/>
+    <include file="079-newsletter-subscribers.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

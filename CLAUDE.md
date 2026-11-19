@@ -479,3 +479,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   the instance's SMTP and redirects to `/<lang>/<contact>/<thanks|error>/`. `remote.sh` puts the API's
   origin into the CSP `form-action`. The menu groups the module pages (Cases, Expenses, "build your own module" = `plugins`, its steps true to
   docs/PLUGINS.md) under "Modules" (`MODULE_PAGES` in `layout.mjs`, CSS-only submenu). The app links back to the site ("More about Apensum", `infoUrl.ts`).
+  News by e-mail (page `news`, a one-line form in every footer; only with `SITE_CONTACT_URL`): the forms post to the same
+  API (`public/newsletter/subscribe` / `unsubscribe-request`, `site-newsletter.controller.ts`, table
+  `newsletter_subscribers` 079 with the consent timestamps). Double opt-in: the mail's link opens a small API page with a
+  button (GET shows, POST acts, so mail scanners change nothing); unsubscribing by form mails a link, and no answer tells
+  whether an address is subscribed; one mail per address per 10 minutes, per-IP and daily limits. Sending news is not built.

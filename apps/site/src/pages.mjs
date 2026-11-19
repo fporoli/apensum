@@ -1,6 +1,6 @@
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
 import { githubMark, icon } from './icons.mjs';
-import { esc, layout, pagePath } from './layout.mjs';
+import { esc, layout, newsletterForm, pagePath } from './layout.mjs';
 
 /** The canton each language's holiday example shows. */
 const EXAMPLE_CANTON = { de: 'ZH', fr: 'VD', it: 'TI', en: 'BE' };
@@ -641,13 +641,13 @@ export function impressum(ctx) {
   return layout(ctx, { title: t('impressum.meta.title'), description: t('impressum.meta.description'), body, reveal: true });
 }
 
-export const PRIVACY_SECTIONS = ['controller', 'visit', 'contact', 'app', 'rights', 'changes'];
+export const PRIVACY_SECTIONS = ['controller', 'visit', 'contact', 'newsletter', 'app', 'rights', 'changes'];
 
 export function privacy(ctx) {
   const { t, config, locale } = ctx;
   const updated = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 10, 15)));
   const sections = PRIVACY_SECTIONS.map(
-    (s) => `<h2>${t(`privacy.${s}.title`)}</h2>
+    (s) => `<h2 id="${s}">${t(`privacy.${s}.title`)}</h2>
     ${t.list(`privacy.${s}.text`).map((p) => `<p>${p.replace('{{email}}', ctx.email)}</p>`).join('\n    ')}`,
   ).join('\n    ');
   const body = `
@@ -1066,4 +1066,57 @@ ${ctaBand(ctx)}`;
 }
 
 
-export const RENDER = { home, features, cases, expenses, plugins, pricing, security, law, about, contact, impressum, privacy };
+/**
+ * News: subscribe (a confirmation link by e-mail; only a confirmed address counts) and unsubscribe
+ * (a link by e-mail). The forms post to the API (site-newsletter.controller.ts); without a contact
+ * URL there is no API, and the page says how to ask by e-mail instead.
+ */
+export function news(ctx) {
+  const { t } = ctx;
+  const forms = ctx.newsletterUrl('subscribe')
+    ? `<div class="grid grid-2">
+      <div class="card">
+        <h2>${t('news.subscribe.title')}</h2>
+        <p class="muted">${t('news.subscribe.text')}</p>
+        ${newsletterForm(ctx, 'subscribe')}
+      </div>
+      <div class="card">
+        <h2>${t('news.unsubscribe.title')}</h2>
+        <p class="muted">${t('news.unsubscribe.text')}</p>
+        ${newsletterForm(ctx, 'unsubscribe')}
+      </div>
+    </div>`
+    : `<div class="card"><p>${t('news.noForm', { email: ctx.email })}</p></div>`;
+  const body = `
+<section class="page-head">
+  <div class="wrap narrow">
+    <p class="eyebrow">${icon('mail')}${t('nav.news')}</p>
+    <h1>${t('news.title')}</h1>
+    <p class="lead">${t('news.lead')}</p>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap">
+    ${forms}
+    <p class="muted news-privacy">${t('news.privacy')} <a href="${ctx.link('privacy')}#newsletter">${t('nav.privacy')}</a></p>
+  </div>
+</section>`;
+  return layout(ctx, { title: t('news.meta.title'), description: t('news.meta.description'), body });
+}
+
+/** Where the news forms send the visitor back to: check your inbox, unsubscribe link sent, or an error. */
+export function newsResult(ctx, kind) {
+  const { t } = ctx;
+  const body = `
+<section class="page-head">
+  <div class="wrap narrow">
+    <p class="eyebrow">${t('nav.news')}</p>
+    <h1>${t(`news.${kind}.title`)}</h1>
+    <p class="lead">${t(`news.${kind}.text`, { email: ctx.email })}</p>
+    <p class="actions">${kind === 'failed' ? `<a class="btn btn-primary" href="${ctx.link('news')}">${t('contact.retry')}</a>` : ''}<a class="btn btn-ghost" href="${ctx.link('home')}">${t('contact.back')}</a></p>
+  </div>
+</section>`;
+  return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
+}
+
+export const RENDER = { home, features, cases, expenses, plugins, pricing, security, law, about, contact, news, impressum, privacy };

@@ -70,6 +70,16 @@ test('builds every page; internal links resolve; nothing loads from third partie
         assert.ok(existsSync(target), `${file}: broken link ${url}`);
       }
     }
+    // News: the forms post to the same API as the contact form and come back to their result pages.
+    const newsApi = fullConfig.contactUrl.replace(/\/contact$/, '/newsletter');
+    const news = readFileSync(join(out, 'de', 'news', 'index.html'), 'utf8');
+    assert.match(news, new RegExp(`action="${newsApi}/subscribe"`));
+    assert.match(news, new RegExp(`action="${newsApi}/unsubscribe-request"`));
+    assert.match(news, /name="ok" value="\/de\/news\/pruefen\/"/);
+    assert.match(news, /name="website"/, 'honeypot');
+    for (const kind of ['pruefen', 'abmelden', 'fehler']) assert.ok(existsSync(join(out, 'de', 'news', kind, 'index.html')), kind);
+    assert.match(readFileSync(join(out, 'fr', 'contact', 'index.html'), 'utf8'), new RegExp(`class="news-form compact" method="post" action="${newsApi}/subscribe"`), 'the footer form on every page');
+    assert.match(readFileSync(join(out, 'de', 'datenschutz', 'index.html'), 'utf8'), /<h2 id="newsletter">/);
     const home = readFileSync(join(out, 'de', 'index.html'), 'utf8');
     assert.match(home, /<html lang="de">/);
     for (const lang of LANGS) assert.match(home, new RegExp(`hreflang="${lang}" href="https://${fullConfig.domain}/${lang}/"`));

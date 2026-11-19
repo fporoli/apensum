@@ -169,7 +169,7 @@ export class SiteContactController {
 }
 
 /** Behind the edge Caddy, which sets X-Forwarded-For to the client it saw. */
-function clientIp(req: Request): string {
+export function clientIp(req: Request): string {
   const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
   return forwarded || req.socket?.remoteAddress || 'unknown';
 }

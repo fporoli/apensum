@@ -40,6 +40,7 @@ import { BalancesService } from './balances.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
 import { SiteContactController } from './site-contact.controller';
+import { SiteNewsletterController } from './site-newsletter.controller';
 import { WorkflowsController } from './workflows.controller';
 import { StaticDataController } from './static-data.controller';
 import { AuditController } from './audit.controller';
@@ -96,6 +97,7 @@ const plugins = loadApiPlugins();
     TimesheetsController,
     ProjectTimesheetsController,
     SiteContactController,
+    SiteNewsletterController,
     WorkflowsController,
     StaticDataController,
     AuditController,
