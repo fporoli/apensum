@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ImportExportService, type PayrollRow, type RawEmployeeImportRow } from '../../apps/api/src/import-export.service';
+import { ImportExportService, registerPayrollItem, type PayrollRow, type RawEmployeeImportRow } from '../../apps/api/src/import-export.service';
+
+// A plugin's payroll item, as the expenses plugin registers it (plugins/expenses/api/import-export.ts).
+registerPayrollItem({
+  key: 'expenses',
+  caption: 'importExport.payroll.colExpenses',
+  abacus: { wageType: '3000', label: 'Spesenverguetung', unit: 'Pauschal' },
+  columns: { bexio: 'Spesen_Betrag', csv: 'Spesen_CHF', xlsx: 'Spesen (CHF)' },
+  amounts: async () => new Map(),
+});
 
 const dummyBalances = {} as any;
 const dummyAudit = {} as any;
@@ -36,8 +45,7 @@ const sampleRows: PayrollRow[] = [
     vacationDaysTaken: 1.0,
     unpaidLeaveHours: 0,
     sickLeaveHours: 0,
-    expenseTotal: 42.5,
-    expenseCurrency: 'CHF',
+    items: { expenses: { amount: 42.5, currency: 'CHF' } },
   },
 ];
 
@@ -52,7 +60,7 @@ test('formatAbacusCsv generates semicolon CSV with wage types', () => {
 
 test('formatBexioCsv generates Bexio summary format', () => {
   const csv = svc.formatBexioCsv('2026-11', sampleRows);
-  assert.ok(csv.includes('Mitarbeiter_Email;Name;Periode;Sollstunden;Iststunden'));
+  assert.ok(csv.includes('Mitarbeiter_Email;Name;Periode;Sollstunden;Iststunden;Gleitzeit_Saldo;Ueberstunden_Auszahlung;Ferientage_Bezogen;Spesen_Betrag;Abteilung'));
   assert.ok(csv.includes('marta@acme.com;Marta Muster;2026-11;168;175.5;24;5;1;42.5;Engineering'));
 });
 
@@ -60,6 +68,8 @@ test('formatGenericCsv generates comprehensive payroll summary', () => {
   const csv = svc.formatGenericCsv('2026-11', sampleRows);
   assert.ok(csv.includes('Personalnummer;Name;Email;Abteilung'));
   assert.ok(csv.includes('101;Marta Muster;marta@acme.com;Engineering;Developer;2026-11'));
+  assert.ok(csv.split('\n')[0].trim().endsWith('Krankheit_Std;Spesen_CHF'));
+  assert.ok(csv.split('\n')[1].trim().endsWith(';0;0;42.5'));
 });
 
 test('previewEmployeeImport identifies invalid emails and dates', async () => {

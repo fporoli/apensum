@@ -9,6 +9,7 @@ import type { Locale } from '@worktime3/web/plugin';
 // prettier-ignore
 export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
   en: {
+    'importExport.payroll.colExpenses': 'Expenses (CHF)',
     'expenseReports.status.in_preparation': 'In preparation',
     'expenseReports.status.submitted': 'Submitted',
     'expenseReports.status.approved': 'Approved',
@@ -143,6 +144,7 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Expense report ({{date}})',
   },
   de: {
+    'importExport.payroll.colExpenses': 'Spesen (CHF)',
     'expenseReports.status.in_preparation': 'In Vorbereitung',
     'expenseReports.status.submitted': 'Eingereicht',
     'expenseReports.status.approved': 'Genehmigt',
@@ -277,6 +279,7 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Spesenbericht ({{date}})',
   },
   fr: {
+    'importExport.payroll.colExpenses': 'Notes de frais (CHF)',
     'expenseReports.status.in_preparation': 'En préparation',
     'expenseReports.status.submitted': 'Soumis',
     'expenseReports.status.approved': 'Approuvé',
@@ -411,6 +414,7 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Note de frais ({{date}})',
   },
   it: {
+    'importExport.payroll.colExpenses': 'Spese (CHF)',
     'expenseReports.status.in_preparation': 'In preparazione',
     'expenseReports.status.submitted': 'Inviata',
     'expenseReports.status.approved': 'Approvata',

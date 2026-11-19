@@ -6,6 +6,7 @@ import { registerPermissionObjects, type PermissionObject } from '@worktime3/sha
 import type { ApiPlugin } from './plugin';
 import { registerApiReport } from './report-sources';
 import { registerTeamView } from './team-overview.controller';
+import { registerBackup, registerPayrollItem } from './import-export.service';
 
 /**
  * Finds the plugins under <repo>/plugins/<id> (a folder with a package.json that has an `apensum`
@@ -77,6 +78,8 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       loaded.providers.push(...(plugin.providers ?? []));
       for (const report of plugin.reports ?? []) registerApiReport(report);
       for (const view of plugin.teamViews ?? []) registerTeamView(view);
+      for (const item of plugin.payroll ?? []) registerPayrollItem(item);
+      if (plugin.backup) registerBackup(plugin.backup);
     }
     loaded.ids.push(manifest.id);
   }

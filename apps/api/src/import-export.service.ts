@@ -10,9 +10,6 @@ import {
   departments,
   documents,
   employee_assignments,
-  expense_report_items,
-  expense_reports,
-  expenses,
   field_config,
   membership_roles,
   notifications,
@@ -88,8 +85,64 @@ export interface PayrollRow {
   vacationDaysTaken: number;
   unpaidLeaveHours: number;
   sickLeaveHours: number;
-  expenseTotal: number;
-  expenseCurrency: string;
+  /** The plugins' payroll items (ApiPlugin.payroll) by key, e.g. `expenses`: the month's amount, rounded to cents. */
+  items: Record<string, { amount: number; currency: string }>;
+}
+
+/**
+ * A plugin's amount on the payroll export (ApiPlugin.payroll), one per person and month (the
+ * expenses plugin's approved expenses). The core adds it to every format: an Abacus line with its
+ * wage type when it is above zero, a column in the Bexio, generic CSV and Excel files, and a column
+ * in the page's preview.
+ */
+export interface ApiPayrollItem {
+  key: string;
+  /** i18n key of the preview column. */
+  caption: string;
+  /** The month's amounts per person (user id); `from`/`to` are its first and last day. */
+  amounts: (db: Db, ctx: { orgId: string; from: string; to: string }) => Promise<Map<string, { amount: number; currency: string }>>;
+  abacus: { wageType: string; label: string; unit: string };
+  /** Column headers in the Bexio CSV (before `Abteilung`), the generic CSV and the Excel file (at the end). */
+  columns: { bexio: string; csv: string; xlsx: string };
+}
+
+/** What a plugin's restore gets: the backup's files and the new ids of what the core restored. */
+export interface BackupRestoreContext {
+  targetOrgId: string;
+  /** A file the plugin's export wrote (e.g. 'expenses.json'); [] when missing. */
+  read: (file: string) => any[];
+  userIds: ReadonlyMap<string, string>;
+  projectIds: ReadonlyMap<string, string>;
+  subprojectIds: ReadonlyMap<string, string>;
+}
+
+/**
+ * A plugin's part of an organization's backup (ApiPlugin.backup): its tables as JSON files under
+ * `database/`, with counts for the manifest, and how to restore them (after the core's users,
+ * documents and projects, so its rows can point at them). Returns what it restored, by name.
+ */
+export interface ApiBackup {
+  export: (db: Db, orgId: string) => Promise<{ files: Record<string, unknown[]>; counts: Record<string, number> }>;
+  restore: (db: Db, ctx: BackupRestoreContext) => Promise<Record<string, number>>;
+}
+
+const PAYROLL_ITEMS: ApiPayrollItem[] = [];
+const BACKUPS: ApiBackup[] = [];
+
+/** Adds a plugin's payroll item (plugins.ts). */
+export function registerPayrollItem(item: ApiPayrollItem): void {
+  if (PAYROLL_ITEMS.some((i) => i.key === item.key)) throw new Error(`Payroll item ${item.key} is already registered`);
+  PAYROLL_ITEMS.push(item);
+}
+
+/** The registered payroll items (the preview shows their columns). */
+export function payrollItems(): readonly ApiPayrollItem[] {
+  return PAYROLL_ITEMS;
+}
+
+/** Adds a plugin's part of the backup (plugins.ts). */
+export function registerBackup(backup: ApiBackup): void {
+  BACKUPS.push(backup);
 }
 
 export interface RawEmployeeImportRow {
@@ -194,7 +247,8 @@ export class ImportExportService {
   ) {}
 
   /**
-   * Aggregates monthly payroll data (hours, overtime, absences, expenses) for all active members.
+   * Aggregates monthly payroll data (hours, overtime, absences, and the plugins' items such as
+   * expenses) for all active members.
    */
   async getPayrollData(db: Db, orgId: string, month: string): Promise<PayrollRow[]> {
     if (!MONTH_RE.test(month)) return [];
@@ -242,33 +296,8 @@ export class ImportExportService {
       });
     }
 
-    // 4. Fetch approved expenses in this month
-    const approvedExpenses = await db
-      .select({
-        userId: expenses.user_id,
-        value: expenses.value,
-        currency: expenses.currency,
-      })
-      .from(expenses)
-      .leftJoin(expense_report_items, eq(expense_report_items.expense_id, expenses.id))
-      .leftJoin(expense_reports, eq(expense_reports.id, expense_report_items.expense_report_id))
-      .where(
-        and(
-          eq(expenses.organization_id, orgId),
-          sql`${expenses.expense_date} >= ${periodStart} AND ${expenses.expense_date} <= ${periodEnd}`,
-          sql`(${expense_reports.status} IS NULL OR ${expense_reports.status} IN ('approved', 'submitted_processing', 'processing_finished', 'request_payment', 'finished'))`,
-        ),
-      );
-
-    const expenseTotals = new Map<string, { total: number; currency: string }>();
-    for (const exp of approvedExpenses) {
-      const current = expenseTotals.get(exp.userId) ?? { total: 0, currency: exp.currency || 'CHF' };
-      const val = Number(exp.value);
-      if (Number.isFinite(val)) {
-        current.total += val;
-      }
-      expenseTotals.set(exp.userId, current);
-    }
+    // 4. The plugins' amounts for this month (e.g. approved expenses), per item and person.
+    const itemAmounts = await Promise.all(PAYROLL_ITEMS.map(async (item) => [item.key, await item.amounts(db, { orgId, from: periodStart, to: periodEnd })] as const));
 
     const rows: PayrollRow[] = [];
 
@@ -317,8 +346,11 @@ export class ImportExportService {
       const legalOvertimeHours = Math.round((legalOvertimeMinutes / 60) * 100) / 100;
 
       const assigned = assignmentMap.get(member.userId);
-      const exp = expenseTotals.get(member.userId) ?? { total: 0, currency: 'CHF' };
-      const expTotal = Number.isFinite(exp.total) ? Math.round(exp.total * 100) / 100 : 0;
+      const items: PayrollRow['items'] = {};
+      for (const [key, amounts] of itemAmounts) {
+        const a = amounts.get(member.userId) ?? { amount: 0, currency: 'CHF' };
+        items[key] = { amount: Number.isFinite(a.amount) ? Math.round(a.amount * 100) / 100 : 0, currency: a.currency || 'CHF' };
+      }
       const name = member.displayName || member.email;
       const dept = assigned?.department ?? '';
 
@@ -351,8 +383,7 @@ export class ImportExportService {
         vacationDaysTaken,
         unpaidLeaveHours,
         sickLeaveHours,
-        expenseTotal: expTotal,
-        expenseCurrency: exp.currency || 'CHF',
+        items,
       });
     }
 
@@ -405,9 +436,10 @@ export class ImportExportService {
         lines.push([persNr, name, period, '2050', 'Krankheit / Unfall', r.sickLeaveHours, 'Std', '', '', kst]);
       }
 
-      // 3000 Spesenvergütung
-      if (r.expenseTotal > 0) {
-        lines.push([persNr, name, period, '3000', 'Spesenverguetung', 1, 'Pauschal', '', r.expenseTotal, kst]);
+      // The plugins' items (e.g. 3000 Spesenvergütung), each above zero as one line with its wage type.
+      for (const item of PAYROLL_ITEMS) {
+        const amount = r.items[item.key]?.amount ?? 0;
+        if (amount > 0) lines.push([persNr, name, period, item.abacus.wageType, item.abacus.label, 1, item.abacus.unit, '', amount, kst]);
       }
     }
 
@@ -425,7 +457,7 @@ export class ImportExportService {
       'Gleitzeit_Saldo',
       'Ueberstunden_Auszahlung',
       'Ferientage_Bezogen',
-      'Spesen_Betrag',
+      ...PAYROLL_ITEMS.map((i) => i.columns.bexio),
       'Abteilung',
     ];
 
@@ -438,7 +470,7 @@ export class ImportExportService {
       r.overtimeBalanceHours,
       r.overtimePayoutHours,
       r.vacationDaysTaken,
-      r.expenseTotal,
+      ...PAYROLL_ITEMS.map((i) => r.items[i.key]?.amount ?? 0),
       r.department,
     ]);
 
@@ -463,7 +495,7 @@ export class ImportExportService {
       'Ferientage',
       'Unbezahlt_Std',
       'Krankheit_Std',
-      'Spesen_CHF',
+      ...PAYROLL_ITEMS.map((i) => i.columns.csv),
     ];
 
     const lines: (string | number | null)[][] = rows.map((r) => [
@@ -482,7 +514,7 @@ export class ImportExportService {
       r.vacationDaysTaken,
       r.unpaidLeaveHours,
       r.sickLeaveHours,
-      r.expenseTotal,
+      ...PAYROLL_ITEMS.map((i) => r.items[i.key]?.amount ?? 0),
     ]);
 
     return buildCsv(header, lines);
@@ -505,7 +537,7 @@ export class ImportExportService {
       { header: 'Ferien (Tg)', kind: 'number', width: 12 },
       { header: 'Unbezahlt (h)', kind: 'number', width: 12 },
       { header: 'Krankheit (h)', kind: 'number', width: 12 },
-      { header: 'Spesen (CHF)', kind: 'number', width: 14 },
+      ...PAYROLL_ITEMS.map((i): SheetColumn => ({ header: i.columns.xlsx, kind: 'number', width: 14 })),
     ];
 
     const lines: Cell[][] = rows.map((r) => [
@@ -523,7 +555,7 @@ export class ImportExportService {
       r.vacationDaysTaken,
       r.unpaidLeaveHours,
       r.sickLeaveHours,
-      r.expenseTotal,
+      ...PAYROLL_ITEMS.map((i) => r.items[i.key]?.amount ?? 0),
     ]);
 
     const totals: Cell[] = [
@@ -541,7 +573,7 @@ export class ImportExportService {
       Math.round(rows.reduce((s, r) => s + r.vacationDaysTaken, 0) * 100) / 100,
       Math.round(rows.reduce((s, r) => s + r.unpaidLeaveHours, 0) * 100) / 100,
       Math.round(rows.reduce((s, r) => s + r.sickLeaveHours, 0) * 100) / 100,
-      Math.round(rows.reduce((s, r) => s + r.expenseTotal, 0) * 100) / 100,
+      ...PAYROLL_ITEMS.map((i) => Math.round(rows.reduce((s, r) => s + (r.items[i.key]?.amount ?? 0), 0) * 100) / 100),
     ];
 
     return buildXlsx(`Payroll_${month}`, columns, lines, totals);
@@ -950,10 +982,8 @@ export class ImportExportService {
     const projectTimesData = await db.select().from(project_times).where(eq(project_times.organization_id, orgId));
     const projectTimePeriodsData = await db.select().from(project_time_periods).where(eq(project_time_periods.organization_id, orgId));
 
-    const expensesData = await db.select().from(expenses).where(eq(expenses.organization_id, orgId));
-    const expenseReportsData = await db.select().from(expense_reports).where(eq(expense_reports.organization_id, orgId));
-    const expReportIds = expenseReportsData.map((r) => r.id);
-    const expenseReportItemsData = expReportIds.length > 0 ? await db.select().from(expense_report_items).where(inArray(expense_report_items.expense_report_id, expReportIds)) : [];
+    // The plugins' tables (e.g. expenses), as files under database/ with counts for the manifest.
+    const pluginBackups = await Promise.all(BACKUPS.map((b) => b.export(db, orgId)));
 
     const requestsData = await db.select().from(requests).where(eq(requests.organization_id, orgId));
     const reqIds = requestsData.map((r) => r.id);
@@ -1049,8 +1079,7 @@ export class ImportExportService {
       timesheetPeriods: timesheetPeriods.length,
       absences: absencesData.length,
       projects: projectsData.length,
-      expenses: expensesData.length,
-      expenseReports: expenseReportsData.length,
+      ...Object.assign({}, ...pluginBackups.map((b) => b.counts)),
       requests: requestsData.length,
       personnelDocuments: personnelDocs.length,
       documents: docsData.length,
@@ -1105,9 +1134,7 @@ export class ImportExportService {
       jsonFile('database/project_teams.json', projectTeamsData),
       jsonFile('database/project_times.json', projectTimesData),
       jsonFile('database/project_time_periods.json', projectTimePeriodsData),
-      jsonFile('database/expenses.json', expensesData),
-      jsonFile('database/expense_reports.json', expenseReportsData),
-      jsonFile('database/expense_report_items.json', expenseReportItemsData),
+      ...pluginBackups.flatMap((b) => Object.entries(b.files).map(([file, rows]) => jsonFile(`database/${file}`, rows))),
       jsonFile('database/requests.json', requestsData),
       jsonFile('database/request_messages.json', requestMessagesData),
       jsonFile('database/request_message_documents.json', reqMsgDocs),
@@ -1803,79 +1830,16 @@ export class ImportExportService {
       restored.projectTimes = (restored.projectTimes || 0) + 1;
     }
 
-    // 17. Expenses, Expense Reports & Items
-    const expensesList = readJson<any>('database/expenses.json');
-    for (const exp of expensesList) {
-      const uId = userIdMap.get(exp.user_id);
-      if (!uId) continue;
-      await db
-        .insert(expenses)
-        .values({
-          id: exp.id,
-          organization_id: targetOrgId,
-          user_id: uId,
-          project_id: exp.project_id ? projectIdMap.get(exp.project_id) ?? null : null,
-          subproject_id: exp.subproject_id ? subprojectIdMap.get(exp.subproject_id) ?? null : null,
-          expense_date: exp.expense_date,
-          category: exp.category || 'other',
-          sub_category: exp.sub_category || null,
-          value: String(exp.value ?? '0'),
-          original_value: exp.original_value ? String(exp.original_value) : null,
-          currency: exp.currency || 'CHF',
-          original_currency: exp.original_currency || null,
-          quantity: exp.quantity ? String(exp.quantity) : null,
-          comment: exp.comment || null,
-          document_id: exp.document_id || null,
-          data: exp.data || {},
-        })
-        .onConflictDoUpdate({
-          target: expenses.id,
-          set: {
-            value: String(exp.value ?? '0'),
-            category: exp.category || 'other',
-            comment: exp.comment || null,
-          },
-        });
-      restored.expenses = (restored.expenses || 0) + 1;
-    }
-
-    const expReportsList = readJson<any>('database/expense_reports.json');
-    for (const er of expReportsList) {
-      const uId = userIdMap.get(er.user_id);
-      if (!uId) continue;
-      await db
-        .insert(expense_reports)
-        .values({
-          id: er.id,
-          organization_id: targetOrgId,
-          user_id: uId,
-          status: er.status || 'in_preparation',
-          date_submitted: er.date_submitted || null,
-          reviewed_by_user_id: er.reviewed_by_user_id ? userIdMap.get(er.reviewed_by_user_id) ?? null : null,
-          reviewed_at: er.reviewed_at || null,
-          review_note: er.review_note || null,
-          data: er.data || {},
-        })
-        .onConflictDoUpdate({
-          target: expense_reports.id,
-          set: {
-            status: er.status || 'in_preparation',
-            review_note: er.review_note || null,
-          },
-        });
-    }
-
-    const expItemsList = readJson<any>('database/expense_report_items.json');
-    for (const eri of expItemsList) {
-      await db
-        .insert(expense_report_items)
-        .values({
-          id: eri.id,
-          expense_report_id: eri.expense_report_id,
-          expense_id: eri.expense_id,
-          organization_id: targetOrgId,
-        })
-        .onConflictDoNothing();
+    // 17. The plugins' tables (e.g. expenses), after the users, documents and projects they point at.
+    for (const backup of BACKUPS) {
+      const counts = await backup.restore(db, {
+        targetOrgId,
+        read: (file) => readJson<any>(`database/${file}`),
+        userIds: userIdMap,
+        projectIds: projectIdMap,
+        subprojectIds: subprojectIdMap,
+      });
+      for (const [key, n] of Object.entries(counts)) restored[key] = (restored[key] || 0) + n;
     }
 
     // 18. Requests, Messages & Documents

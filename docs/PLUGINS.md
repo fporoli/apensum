@@ -120,6 +120,20 @@ A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab f
   returns the columns (`headers`, `cells(userId)`) and the expanded `details(userId)`; `StatusChip`,
   `TeamDetailTable` and `totalsByCurrency` from the contract keep it looking like the core's tables.
 
+## Import/Export
+
+- **Payroll export:** `payroll: [{ key, caption, amounts, abacus, columns }]` in `defineApiPlugin`.
+  `amounts(db, { orgId, from, to })` gives each person's amount for the month; the core rounds it and
+  adds an Abacus line (`abacus.wageType`, when above zero), a column in the Bexio CSV (before
+  `Abteilung`), the generic CSV and the Excel file (at the end), and a preview column (`caption`).
+- **Backup and restore:** `backup: { export, restore }`. `export(db, orgId)` returns the plugin's
+  tables as files under `database/` plus counts for the manifest; `restore(db, ctx)` writes them back
+  after the core's users, documents and projects, with `ctx.userIds` / `projectIds` / `subprojectIds`
+  mapping old ids to new ones, and returns what it restored.
+
+The expenses plugin's `api/import-export.ts` adds the expenses (wage type 3000) and backs up its
+tables, exchange rates included.
+
 ## Approvals (Workflow page)
 
 An approval a plugin owns is a workflow like the core's (`WorkflowsService`: `ensureDefinition`, `start`,
@@ -203,5 +217,3 @@ npm test                                    # core tests, then each plugin's tes
 
 - **The plugin's own drizzle schema.** Plugin tables are introspected into the core's
   `apps/api/src/db/schema.ts`, so a private plugin's tables show up in the core's generated files.
-- **Plugin parts of core pages.**
-  - Import/Export still reads expense data itself (payroll export, backup and restore).

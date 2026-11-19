@@ -243,7 +243,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   (`TeamView.tsx`, `GET organizations/:orgId/team-overview?kind=&month=`): one row per person they may
   see (`listableUserIds`, caller excluded), opening that person's page or their entries; Absences adds a
   month calendar with the org's holidays. HR's read access to absences and expenses is 049. Plugins add team
-  tables (`ApiPlugin.teamViews` rows, web `teamViews` columns; the expenses plugin's two).
+  tables (`ApiPlugin.teamViews` rows, web `teamViews` columns; the expenses plugin's two). Import/Export: plugins
+  add payroll items (`ApiPlugin.payroll`, e.g. Abacus wage type 3000 for expenses) and their tables to the backup
+  (`ApiPlugin.backup`, restored after the core's users, documents and projects).
   The work schedule is HR's alone (048); every basic-data section, Personalien included, is
   requested by the employee and approved by HR.
 

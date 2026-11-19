@@ -25,7 +25,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { useI18n } from './i18n';
-import { formatDurationMinutes, formatSignedMinutes, swissLocale } from './localeFormat';
+import { formatDurationMinutes, formatMoney, formatSignedMinutes, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader } from './components';
 import {
   DownloadIcon,
@@ -59,8 +59,14 @@ interface PayrollPreviewRow {
   overtimePayoutHours?: number;
   legalOvertimeHours?: number;
   vacationDaysTaken?: number;
-  expenseTotal?: number;
-  approvedExpensesCents?: number;
+  /** The plugins' payroll items by key (e.g. expenses). */
+  items?: Record<string, { amount: number; currency: string }>;
+}
+
+/** A plugin's payroll column (the API's `items`): its key in each row's `items` and the caption's text key. */
+interface PayrollItemColumn {
+  key: string;
+  caption: string;
 }
 
 function normalizeDateStr(raw?: string): string | undefined {
@@ -138,6 +144,7 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const [payrollRows, setPayrollRows] = useState<PayrollPreviewRow[]>([]);
+  const [payrollItems, setPayrollItems] = useState<PayrollItemColumn[]>([]);
   const [payrollLoading, setPayrollLoading] = useState(false);
   const [payrollError, setPayrollError] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] = useState<string | null>(null);
@@ -152,6 +159,7 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
       const data = await res.json();
       if (data.ok) {
         setPayrollRows(data.rows ?? []);
+        setPayrollItems(Array.isArray(data.items) ? data.items : []);
       } else {
         setPayrollError(data.error ?? 'Failed to load payroll data');
       }
@@ -713,13 +721,15 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
                     <TableCell align="right" sx={{ fontWeight: 700 }}>{t('importExport.payroll.colOvertimeBalance')}</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700 }}>{t('importExport.payroll.colAdjustmentPayout')}</TableCell>
                     <TableCell align="right" sx={{ fontWeight: 700 }}>{t('importExport.payroll.colVacationDays')}</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 700 }}>{t('importExport.payroll.colExpenses')}</TableCell>
+                    {payrollItems.map((item) => (
+                      <TableCell key={item.key} align="right" sx={{ fontWeight: 700 }}>{t(item.caption)}</TableCell>
+                    ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {payrollRows.length === 0 && !payrollLoading ? (
                     <TableRow>
-                      <TableCell colSpan={9} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      <TableCell colSpan={8 + payrollItems.length} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                         {t('importExport.payroll.noData')}
                       </TableCell>
                     </TableRow>
@@ -737,18 +747,6 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
                           : deltaMin < 0
                             ? theme.palette.error.main
                             : 'inherit';
-
-                      const expAmount =
-                        typeof row.expenseTotal === 'number' && Number.isFinite(row.expenseTotal)
-                          ? row.expenseTotal
-                          : typeof row.approvedExpensesCents === 'number' && Number.isFinite(row.approvedExpensesCents)
-                            ? row.approvedExpensesCents / 100
-                            : 0;
-
-                      const expensesFormatted = expAmount.toLocaleString(
-                        swissLocale(locale),
-                        { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-                      );
 
                       const vacationDays =
                         typeof row.vacationDaysTaken === 'number' && Number.isFinite(row.vacationDaysTaken)
@@ -795,9 +793,15 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
                               maximumFractionDigits: 1,
                             })}
                           </TableCell>
-                          <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                            CHF {expensesFormatted}
-                          </TableCell>
+                          {payrollItems.map((item) => {
+                            const value = row.items?.[item.key];
+                            const amount = value && Number.isFinite(value.amount) ? value.amount : 0;
+                            return (
+                              <TableCell key={item.key} align="right" sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                                {value?.currency ?? 'CHF'} {formatMoney(amount, locale)}
+                              </TableCell>
+                            );
+                          })}
                         </TableRow>
                       );
                     })

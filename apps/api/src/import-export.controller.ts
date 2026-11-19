@@ -4,7 +4,7 @@ import type { Response } from 'express';
 import { DbService } from './db.service';
 import { callerUserId, can, isOrgMember, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { ImportExportService, type RawEmployeeImportRow } from './import-export.service';
+import { ImportExportService, payrollItems, type RawEmployeeImportRow } from './import-export.service';
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -40,7 +40,9 @@ export class ImportExportController {
 
     const selectedMonth = month && MONTH_RE.test(month) ? month : new Date().toISOString().slice(0, 7);
     const rows = await this.importExport.getPayrollData(db, orgId, selectedMonth);
-    return { ok: true, month: selectedMonth, rows };
+    // The plugins' columns (e.g. expenses): each row has their amounts under `items`.
+    const items = payrollItems().map((i) => ({ key: i.key, caption: i.caption }));
+    return { ok: true, month: selectedMonth, rows, items };
   }
 
   /**

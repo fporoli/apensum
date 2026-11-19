@@ -11,6 +11,7 @@
 import type { Provider, Type } from '@nestjs/common';
 import type { ApiReport } from './report-sources';
 import type { ApiTeamView } from './team-overview.controller';
+import type { ApiBackup, ApiPayrollItem } from './import-export.service';
 
 export interface ApiPlugin {
   /** The plugin's id, as in its package.json `apensum.id`. */
@@ -29,6 +30,10 @@ export interface ApiPlugin {
    * decides, the core checks it; the rows come from here.
    */
   teamViews?: ApiTeamView[];
+  /** Amounts on the payroll export (Import/Export), per person and month: e.g. approved expenses. */
+  payroll?: ApiPayrollItem[];
+  /** The plugin's tables in an organization's backup and restore (Import/Export). */
+  backup?: ApiBackup;
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
@@ -37,6 +42,9 @@ export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
 
 // Team tables
 export type { ApiTeamView } from './team-overview.controller';
+
+// Import/Export
+export type { ApiBackup, ApiPayrollItem, BackupRestoreContext } from './import-export.service';
 
 // Reports
 export type { ApiReport, ReportRowsContext } from './report-sources';
