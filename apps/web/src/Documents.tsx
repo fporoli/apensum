@@ -26,10 +26,24 @@ import { EmptyState, PageHeader } from './components';
 import { DescriptionIcon, DownloadIcon, SearchIcon, VisibilityIcon } from './icons';
 import { formatFileSize, formatLocaleDate, swissLocale } from './localeFormat';
 
+import { PLUGIN_DOCUMENT_CATEGORIES } from './plugins';
+
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-type Category = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel' | 'report';
-const CATEGORIES: Category[] = ['personnel', 'timesheet', 'project_timesheet', 'report', 'absence', 'expense', 'request'];
+/** A core category or a plugin's (PLUGIN_DOCUMENT_CATEGORIES). */
+type Category = string;
+type ChipColor = 'primary' | 'secondary' | 'info' | 'success' | 'warning';
+
+/** The filter chips' order: the core's, with the plugins' put in after the category they name. */
+const CATEGORIES: Category[] = (() => {
+  const out = ['personnel', 'timesheet', 'project_timesheet', 'report', 'absence', 'request'];
+  for (const p of PLUGIN_DOCUMENT_CATEGORIES) {
+    const at = p.after ? out.indexOf(p.after) : -1;
+    if (at >= 0) out.splice(at + 1, 0, p.category);
+    else out.push(p.category);
+  }
+  return out;
+})();
 
 interface PersonalDocument {
   documentId: string;
@@ -44,20 +58,20 @@ interface PersonalDocument {
   context: Record<string, string | number | null>;
 }
 
-const CATEGORY_COLOR: Record<Category, 'primary' | 'secondary' | 'info' | 'success' | 'warning'> = {
+const CATEGORY_COLOR: Record<Category, ChipColor> = {
   timesheet: 'primary',
   project_timesheet: 'secondary',
   absence: 'info',
-  expense: 'success',
   request: 'warning',
   personnel: 'secondary',
   report: 'primary',
+  ...Object.fromEntries(PLUGIN_DOCUMENT_CATEGORIES.map((p) => [p.category, p.color])),
 };
 
 /**
  * Documents: everything that concerns the signed-in person, in one list (API documents.controller.ts):
- * the PDFs of their approved timesheets and monthly project reports, their absences' and expenses'
- * evidence, their requests' attachments and the scheduled reports sent to them. Only their own; there is no person picker.
+ * the PDFs of their approved timesheets and monthly project reports, their absences' evidence, their
+ * requests' attachments, the scheduled reports sent to them, and the plugins' documents (expense receipts). Only their own; there is no person picker.
  */
 export default function Documents({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const { t, locale } = useI18n();
@@ -90,19 +104,24 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
     void load();
   }, [load]);
 
-  // Expense category labels (static data, translated per language) for the expense lines.
-  const [expenseCategories, setExpenseCategories] = useState<{ values: Record<string, string>; translation: Record<string, Record<string, string>> }>({ values: {}, translation: {} });
+  // Static data the plugins' categories describe their documents with (e.g. expense categories), per category.
+  const [pluginLabels, setPluginLabels] = useState<Record<string, { values: Record<string, string>; translation: Record<string, Record<string, string>> }>>({});
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch(`${API}/organizations/${orgId}/static-data/expenses`, { headers: await authHeaders() });
-        const rows = await res.json();
-        const row = Array.isArray(rows) ? rows.find((r: { enum_name?: string }) => r.enum_name === 'expense_category') : undefined;
-        if (!cancelled && row) setExpenseCategories({ values: row.values ?? {}, translation: row.translation ?? {} });
-      } catch {
-        /* the raw key is shown instead */
+      const out: typeof pluginLabels = {};
+      for (const p of PLUGIN_DOCUMENT_CATEGORIES) {
+        if (!p.staticData) continue;
+        try {
+          const res = await fetch(`${API}/organizations/${orgId}/static-data/${p.staticData.entity}`, { headers: await authHeaders() });
+          const rows = await res.json();
+          const row = Array.isArray(rows) ? rows.find((r: { enum_name?: string }) => r.enum_name === p.staticData!.enum) : undefined;
+          if (row) out[p.category] = { values: row.values ?? {}, translation: row.translation ?? {} };
+        } catch {
+          /* the raw key is shown instead */
+        }
       }
+      if (!cancelled) setPluginLabels(out);
     })();
     return () => {
       cancelled = true;
@@ -143,15 +162,6 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
           const end = c.dateEnd && c.dateEnd !== d.date ? ` – ${formatLocaleDate(String(c.dateEnd), locale)}` : '';
           return [label, `${formatLocaleDate(d.date, locale)}${end}`].filter(Boolean).join(' · ');
         }
-        case 'expense': {
-          const amount =
-            c.value != null && c.value !== ''
-              ? `${new Intl.NumberFormat(swissLocale(locale), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(c.value))} ${c.currency ?? ''}`.trim()
-              : '';
-          const key = String(c.category ?? '');
-          const label = key ? (expenseCategories.translation[locale]?.[key] ?? expenseCategories.values[key] ?? key) : '';
-          return [label, amount, c.comment, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
-        }
         case 'request':
           return [c.subject, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         case 'personnel':
@@ -163,8 +173,13 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
           return [c.title, period, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         }
       }
+      const plugin = PLUGIN_DOCUMENT_CATEGORIES.find((p) => p.category === d.category);
+      if (!plugin) return formatLocaleDate(d.date, locale);
+      const labels = pluginLabels[d.category];
+      const staticLabel = (key: string) => labels?.translation[locale]?.[key] ?? labels?.values[key] ?? key;
+      return plugin.describe(d, { t, locale, staticLabel });
     },
-    [locale, monthLabel, translated, t, expenseCategories],
+    [locale, monthLabel, translated, t, pluginLabels],
   );
 
   const years = useMemo(() => [...new Set((docs ?? []).map((d) => d.date.slice(0, 4)))].sort().reverse(), [docs]);

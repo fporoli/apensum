@@ -46,7 +46,7 @@ export {
 } from './access';
 
 // Documents, form templates, approval workflows
-export { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
+export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type PersonalDocumentSource } from './documents.service';
 export { FieldsService } from './fields.service';
 export { WorkflowsService, type SourceRecordLoader, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 

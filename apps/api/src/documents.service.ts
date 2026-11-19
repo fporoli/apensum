@@ -9,6 +9,28 @@ import { documents } from './db/schema';
 import { currentMasterKey, decryptDocument, encryptDocument, masterKeys } from './document-crypto';
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
+/** One line of a person's Documents page (documents.controller.ts). */
+export interface PersonalDocument {
+  /** The `documents` row. */
+  documentId: string;
+  /** The core's ('timesheet', 'project_timesheet', 'absence', 'request', 'personnel', 'report') or a plugin's. */
+  category: string;
+  /** The record it belongs to (timesheet period, absence, request, ...; the month for a project report). */
+  sourceId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** The date the document is about (month, absence start, message day, ...). */
+  date: string;
+  addedAt: string;
+  superseded: boolean;
+  /** Context for the list: absence type and end, request subject, ... (the web part describes it). */
+  context: Record<string, string | number | null>;
+}
+
+/** A plugin's documents of one person (DocumentsService.registerPersonalDocuments). */
+export type PersonalDocumentSource = (db: Db, orgId: string, userId: string) => Promise<PersonalDocument[]>;
 // Resolved relative to this compiled file (dist/documents.service.js), so storage location
 // doesn't depend on the process's working directory. Override with DOCUMENTS_DIR.
 export const DOCUMENTS_ROOT = process.env.DOCUMENTS_DIR ?? join(__dirname, '..', 'data', 'documents');
@@ -24,6 +46,20 @@ export const DOCUMENTS_ROOT = process.env.DOCUMENTS_DIR ?? join(__dirname, '..',
  */
 @Injectable()
 export class DocumentsService {
+  private readonly personalSources = new Map<string, PersonalDocumentSource>();
+
+  /**
+   * Adds a plugin's documents to every person's Documents page (and so to what they may download
+   * there): `list` returns that person's own documents of `category`, nobody else's.
+   */
+  registerPersonalDocuments(category: string, list: PersonalDocumentSource): void {
+    this.personalSources.set(category, list);
+  }
+
+  /** The registered plugin sources (documents.controller.ts merges them into the list). */
+  personalDocumentSources(): ReadonlyMap<string, PersonalDocumentSource> {
+    return this.personalSources;
+  }
   /**
    * Writes the file to disk and inserts its metadata row; returns the new document id.
    * `sourceTable`/`sourceTableId` are a diagnostic-only reverse pointer to whatever row this

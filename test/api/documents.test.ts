@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { hm, pdfFileName, pdfLang, renderProjectReportPdf, renderTimesheetPdf } from '../../apps/api/src/timesheet-documents.service';
-import { DocumentsController } from '../../apps/api/src/documents.controller';
+import { DocumentsController, mergeDocuments } from '../../apps/api/src/documents.controller';
 
 test('hm formats signed hours and minutes', () => {
   assert.equal(hm(0), '0:00');
@@ -74,4 +74,13 @@ test('documents list and downloads need nav.documents', async () => {
   const res = await ctrl.list('org', { user: { sub: 'u1' } } as never);
   assert.equal(res.ok, false);
   assert.deepEqual(res.documents, []);
+});
+
+test("mergeDocuments puts a plugin's documents into the core's list by date, then time added, then name", () => {
+  const doc = (documentId: string, date: string, addedAt: string, fileName = documentId) =>
+    ({ documentId, category: 'x', sourceId: documentId, fileName, mimeType: 'application/pdf', sizeBytes: 1, date, addedAt, superseded: false, context: {} });
+  const core = [doc('c1', '2026-11-01', '2026-11-02T10:00:00Z'), doc('c2', '2026-10-01', '2026-10-05T10:00:00Z'), doc('c3', '2026-09-01', '2026-09-02T10:00:00Z')];
+  const added = [doc('p3', '2026-08-01', '2026-08-01T00:00:00Z'), doc('p1', '2026-12-01', '2026-12-01T00:00:00Z'), doc('p2', '2026-10-01', '2026-10-06T00:00:00Z'), doc('p4', '2026-10-01', '2026-10-05T10:00:00Z', 'a')];
+  assert.deepEqual(mergeDocuments(core, added).map((d) => d.documentId), ['p1', 'c1', 'p2', 'p4', 'c2', 'c3', 'p3']);
+  assert.deepEqual(mergeDocuments(core, []).map((d) => d.documentId), ['c1', 'c2', 'c3']);
 });

@@ -99,6 +99,16 @@ defineWebPlugin({ ..., reports: [MY_REPORT] });
   core already has with another text is refused.
 - A saved report of a plugin that is no longer installed fails with `unknown-report`.
 
+## Documents page
+
+A plugin's files that belong to a person (expenses: receipts) appear on that person's Documents page:
+
+- API, in a provider's `onModuleInit`: `documents.registerPersonalDocuments('<category>', (db, orgId, userId) => ...)`
+  returns that person's own documents (`PersonalDocument`: document id, source id, file, date, context).
+  The page lists them with the core's, and a download is allowed only for what the list holds.
+- Web: `documentCategories: [{ category, color, after, staticData?, describe }]`; `describe` turns the
+  context into the line under the file name; its name is the text `documents.category.<category>`.
+
 ## Approvals (Workflow page)
 
 An approval a plugin owns is a workflow like the core's (`WorkflowsService`: `ensureDefinition`, `start`,
@@ -183,5 +193,5 @@ npm test                                    # core tests, then each plugin's tes
 - **The plugin's own drizzle schema.** Plugin tables are introspected into the core's
   `apps/api/src/db/schema.ts`, so a private plugin's tables show up in the core's generated files.
 - **Plugin parts of core pages.**
-  - Documents, Team overview and Import/Export still show expense data themselves (the tables are
-    core). Each needs its own extension point.
+  - Team overview and Import/Export still show expense data themselves (the tables are core). Each
+    needs its own extension point.

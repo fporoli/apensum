@@ -9,6 +9,7 @@ import type { Locale } from '@worktime3/web/plugin';
 // prettier-ignore
 export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
   en: {
+    'documents.category.expense': "Expense",
     'nav.expenses': 'Expenses',
     'nav.expenseReports': 'Expense Reports',
     'nav.expenseProcessing': 'Expense Processing',
@@ -130,6 +131,7 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Expense report ({{date}})',
   },
   de: {
+    'documents.category.expense': "Spesen",
     'nav.expenses': 'Spesen',
     'nav.expenseReports': 'Spesenabrechnungen',
     'nav.expenseProcessing': 'Spesenverarbeitung',
@@ -251,6 +253,7 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Spesenbericht ({{date}})',
   },
   fr: {
+    'documents.category.expense': "Frais",
     'nav.expenses': 'Notes de frais',
     'nav.expenseReports': 'Rapports de frais',
     'nav.expenseProcessing': 'Traitement des frais',
@@ -372,6 +375,7 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Note de frais ({{date}})',
   },
   it: {
+    'documents.category.expense': "Spesa",
     'nav.expenses': 'Spese',
     'nav.expenseReports': 'Note spese',
     'nav.expenseProcessing': 'Elaborazione spese',

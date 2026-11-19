@@ -137,6 +137,31 @@ export interface PluginReport {
   texts?: Partial<Record<Locale, Record<string, string>>>;
 }
 
+/** A line of the Documents page, as GET organizations/:orgId/documents returns it. */
+export interface PluginPersonalDocument {
+  documentId: string;
+  category: string;
+  sourceId: string;
+  fileName: string;
+  date: string;
+  context: Record<string, string | number | null>;
+}
+
+/**
+ * A document category on the Documents page, for the documents the plugin's API part registers
+ * (DocumentsService.registerPersonalDocuments). Its name is the text `documents.category.<category>`.
+ */
+export interface PluginDocumentCategory {
+  category: string;
+  color: 'primary' | 'secondary' | 'info' | 'success' | 'warning';
+  /** The category it follows in the filter chips; at the end when unset or unknown. */
+  after?: string;
+  /** Static data the description needs (its labels come as `staticLabel`). */
+  staticData?: { entity: string; enum: string };
+  /** What the document is about, in one line. */
+  describe: (doc: PluginPersonalDocument, ctx: { t: TFunction; locale: Locale; staticLabel: (key: string) => string }) => string;
+}
+
 export interface WebPlugin {
   id: string;
   /** The plugin's UI texts per language; every language the same keys (the plugin's tests check it). */
@@ -148,6 +173,8 @@ export interface WebPlugin {
   publicRoutes?: PluginPublicRoute[];
   /** Approval kinds the plugin owns on the Workflow page. */
   workflowKinds?: PluginWorkflowKind[];
+  /** Document categories on the Documents page. */
+  documentCategories?: PluginDocumentCategory[];
   /** Reports on the Reports page. */
   reports?: PluginReport[];
   /** A notification's source_table -> the section its click opens. */

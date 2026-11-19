@@ -2,37 +2,21 @@ import { Controller, Get, Param, Req, Res } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
-import { DocumentsService } from './documents.service';
+import { DocumentsService, type PersonalDocument } from './documents.service';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 
-export type DocumentCategory = 'timesheet' | 'project_timesheet' | 'absence' | 'expense' | 'request' | 'personnel' | 'report';
-
-export interface PersonalDocument {
-  /** The `documents` row. */
-  documentId: string;
-  category: DocumentCategory;
-  /** The record it belongs to (timesheet period, absence, expense, request; the month for a project report). */
-  sourceId: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  /** The date the document is about (month, absence start, expense date, message day). */
-  date: string;
-  addedAt: string;
-  superseded: boolean;
-  /** Context for the list: absence type and end, expense category/amount, request subject. */
-  context: Record<string, string | number | null>;
-}
+export type { PersonalDocument } from './documents.service';
 
 const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`);
 
 /**
  * Documents (nav.documents): every document that concerns the caller, in one list. The PDFs of
  * their approved timesheets and monthly project reports (timesheet-documents.service.ts), the
- * evidence of their absences and expenses, the attachments of the requests they sent, the
- * personnel-file documents HR shared with them and the scheduled reports sent to them. Strictly
+ * evidence of their absences, the attachments of the requests they sent, the personnel-file
+ * documents HR shared with them, the scheduled reports sent to them, and what plugins add
+ * (DocumentsService.registerPersonalDocuments, e.g. expense receipts). Strictly
  * the caller's own: no person picker, and a download is checked against the same list. Opening the
  * list first issues the current year's missing PDFs (months approved before PDFs existed).
  */
@@ -111,13 +95,6 @@ export class DocumentsController {
         FROM absences a JOIN documents d ON d.id = a.document_id
         WHERE a.organization_id = ${orgId} AND a.user_id = ${userId}
         UNION ALL
-        -- Expense receipts.
-        SELECT d.id, 'expense', e.id::text, d.file_name, d.mime_type, d.size_bytes, to_char(e.expense_date, 'YYYY-MM-DD'),
-               ${iso('d.created_at')}, false,
-               jsonb_build_object('category', e.category, 'value', e.value, 'currency', e.currency, 'comment', e.comment)
-        FROM expenses e JOIN documents d ON d.id = e.document_id
-        WHERE e.organization_id = ${orgId} AND e.user_id = ${userId}
-        UNION ALL
         -- Attachments of the requests the person sent (theirs and the handlers' answers).
         SELECT d.id, 'request', r.id::text, d.file_name, d.mime_type, d.size_bytes, to_char(m.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
                ${iso('d.created_at')}, false, jsonb_build_object('subject', r.subject)
@@ -128,9 +105,9 @@ export class DocumentsController {
         WHERE r.organization_id = ${orgId} AND r.requester_user_id = ${userId}
       ) docs
       ORDER BY date DESC, added_at DESC, file_name`);
-    return (result.rows as Record<string, unknown>[]).map((r) => ({
+    const core: PersonalDocument[] = (result.rows as Record<string, unknown>[]).map((r) => ({
       documentId: r.document_id as string,
-      category: r.category as DocumentCategory,
+      category: r.category as string,
       sourceId: r.source_id as string,
       fileName: r.file_name as string,
       mimeType: r.mime_type as string,
@@ -140,5 +117,23 @@ export class DocumentsController {
       superseded: r.superseded === true,
       context: (r.context as Record<string, string | number | null>) ?? {},
     }));
+    const sources = [...this.documents.personalDocumentSources()];
+    if (sources.length === 0) return core;
+    const added = (await Promise.all(sources.map(([category, list]) => list(db, orgId, userId).then((rows) => rows.map((d) => ({ ...d, category }))))))
+      .flat();
+    return mergeDocuments(core, added);
   }
+}
+
+/** The core's list (sorted by the database) with the plugins' documents put in, in the same order. */
+export function mergeDocuments(core: readonly PersonalDocument[], added: readonly PersonalDocument[]): PersonalDocument[] {
+  const before = (a: PersonalDocument, b: PersonalDocument) =>
+    a.date !== b.date ? a.date > b.date : a.addedAt !== b.addedAt ? a.addedAt > b.addedAt : a.fileName < b.fileName;
+  const out = [...core];
+  for (const d of [...added].sort((a, b) => (before(a, b) ? -1 : before(b, a) ? 1 : 0))) {
+    let at = out.findIndex((x) => before(d, x));
+    if (at < 0) at = out.length;
+    out.splice(at, 0, d);
+  }
+  return out;
 }

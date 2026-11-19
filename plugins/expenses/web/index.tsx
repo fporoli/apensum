@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { defineWebPlugin, FolderCopyIcon, PaymentsIcon, ReceiptLongIcon, TeamView } from '@worktime3/web/plugin';
+import { defineWebPlugin, FolderCopyIcon, formatLocaleDate, formatMoney, PaymentsIcon, ReceiptLongIcon, TeamView } from '@worktime3/web/plugin';
 import { getExpenseReportTitle } from './expenseRows';
 import { parseReceiptHash } from './receiptHash';
 import { EXPENSE_TEXTS } from './texts';
@@ -78,6 +78,21 @@ export default defineWebPlugin({
           <ExpenseReportReview {...props} />
         </Suspense>
       ),
+    },
+  ],
+  // Receipts on the Documents page (the API part registers them: api/expenses.controller.ts).
+  documentCategories: [
+    {
+      category: 'expense',
+      color: 'success',
+      after: 'absence',
+      staticData: { entity: 'expenses', enum: 'expense_category' },
+      describe: (d, { locale, staticLabel }) => {
+        const c = d.context;
+        const amount = c.value != null && c.value !== '' ? `${formatMoney(Number(c.value), locale)} ${c.currency ?? ''}`.trim() : '';
+        const key = String(c.category ?? '');
+        return [key ? staticLabel(key) : '', amount, c.comment, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
+      },
     },
   ],
   reports: [EXPENSES_REPORT],

@@ -309,7 +309,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   paperclip, drag-and-drop and pasted screenshots (`attachments.tsx`).
 - Documents (`nav.documents`, `documents.controller.ts`, `Documents.tsx`, Personal navbar group): the
   caller's own documents only, as one list built per call: timesheet PDFs, monthly project reports, absence
-  and expense evidence, attachments of requests they sent; downloads are checked against that same list.
+  evidence, attachments of requests they sent, and plugin documents (`DocumentsService.registerPersonalDocuments`,
+  web `documentCategories`: expense receipts); downloads are checked against that same list.
   `timesheet-documents.service.ts` (pdfkit, labels in the person's `users.locale`) issues a working-time
   timesheet PDF when that month is approved, and one project report per person and month (every project
   with its own approval status) whenever one of that month's projects is approved or reopened; the previous
