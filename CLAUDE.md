@@ -183,6 +183,13 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
 - AI assistant (`assistant.service.ts`): OpenAI SDK pointed at Gemini's or
   OpenAI's compatible endpoint, with tool-calling. Each tool must run the same
   authorization as its REST equivalent, using the caller's real identity.
+- Cases encryption (`docs/CASES_ENCRYPTION.md`, `plugins/cases/shared/caseCrypto.ts`, `caseVault.ts`): a case is end-to-end
+  encrypted in the browser (passphrase -> RSA key pair -> a case key per case, wrapped per member in `cases.case_keys`; each
+  file has its own key sealed in its row). Rows carry an `enc` envelope and blanked plaintext columns; the API refuses
+  plaintext writes to an encrypted case (`case-encrypted`) and its server-side AI/PDF/transcription paths. Those jobs run
+  as stateless `compute/*` calls with the decrypted content in the request and store nothing. Never read, log or index
+  an encrypted row's fields on the server, never add a server feature that needs them without a `compute` path, and
+  never store a passphrase or key. A lost passphrase is unrecoverable by design.
 - Cases (plugin `plugins/cases`, module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`;
   tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).
   Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set only by a
