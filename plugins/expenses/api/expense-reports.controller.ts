@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, OnModuleInit, Param, Post, Query, Req } from '@nestjs/common';
 import { and, asc, desc, eq, getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
-import { DbService, callerUserId, can, canSeeUserData, isOrgMember, listableUserIds, membershipManagerId, type AuthenticatedRequest, AuditService, VersionsService, WorkflowsService, APPROVE_EXPENSE_REPORT_WORKFLOW_NAME } from '@worktime3/api/plugin';
+import { DbService, callerUserId, can, canSeeUserData, isOrgMember, listableUserIds, membershipManagerId, type AuthenticatedRequest, AuditService, VersionsService, WorkflowsService } from '@worktime3/api/plugin';
 import { expense_report_items, expense_reports, expenses, projects, subprojects, users } from '@worktime3/api/schema';
 
 const STATUSES = [
@@ -19,6 +19,10 @@ export function nextPipelineStage(status: string): Status | null {
   return PIPELINE[idx + 1];
 }
 
+
+/** A submitted expense report awaiting its owner's manager to approve or reject it (workflow definition name). */
+export const APPROVE_EXPENSE_REPORT_WORKFLOW_NAME = 'approve expense report';
+
 @Controller()
 export class ExpenseReportsController implements OnModuleInit {
   constructor(
@@ -29,10 +33,28 @@ export class ExpenseReportsController implements OnModuleInit {
   ) {}
 
   /**
-   * Expense reports own what "expense.*" workflow actions actually do, and how to resolve an
-   * expense_reports row's organization — WorkflowsService only knows the names, not the behavior.
+   * Expense reports own what "expense.*" workflow actions actually do, how to resolve an
+   * expense_reports row's organization, what the Workflow page shows of a report (`expense_report`,
+   * read by web/ExpenseReportReview.tsx) and that the approval follows the person's manager —
+   * WorkflowsService only knows the names, not the behavior.
    */
   onModuleInit() {
+    this.workflowsSvc.registerManagerRoutedWorkflow(APPROVE_EXPENSE_REPORT_WORKFLOW_NAME);
+    this.workflowsSvc.registerSourceRecords('expense_reports', 'expense_report', (db, ids) =>
+      db
+        .select({
+          id: expense_reports.id,
+          status: expense_reports.status,
+          date_submitted: expense_reports.date_submitted,
+          user_id: expense_reports.user_id,
+          user_display_name: users.display_name,
+          user_email: users.email,
+        })
+        .from(expense_reports)
+        .innerJoin(users, eq(users.id, expense_reports.user_id))
+        .where(inArray(expense_reports.id, ids)),
+    );
+
     this.workflowsSvc.registerSourceOrgResolver('expense_reports', async (db, sourceTableUuid) => {
       const [report] = await db
         .select({ organization_id: expense_reports.organization_id })

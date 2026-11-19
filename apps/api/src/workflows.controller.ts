@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { callerUserId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { workflows, workflow_definitions, timesheet_periods, expense_reports, absences, users } from './db/schema';
+import { workflows, workflow_definitions, timesheet_periods, absences, users } from './db/schema';
 import { WorkflowsService } from './workflows.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 
@@ -63,10 +63,9 @@ export class WorkflowsController {
       return { ...r, source: stepDef?.source ?? null, source_name: stepDef?.source_name ?? null };
     });
 
-    // Enrich timesheet_periods-/expense_reports-sourced rows with the owner's name and what the
-    // record is — generic-shaped rows otherwise, but this covers every workflow type today.
+    // Enrich each row with its record: the owner's name and what the record is. The core's tables
+    // here; the plugins' through their registered loaders (WorkflowsService.registerSourceRecords).
     const periodIds = rows.filter((r) => r.source_table === 'timesheet_periods').map((r) => r.source_table_uuid);
-    const reportIds = rows.filter((r) => r.source_table === 'expense_reports').map((r) => r.source_table_uuid);
     const absenceIds = rows.filter((r) => r.source_table === 'absences').map((r) => r.source_table_uuid);
     const projectPeriodIds = rows.filter((r) => r.source_table === 'project_time_periods').map((r) => r.source_table_uuid);
 
@@ -82,20 +81,6 @@ export class WorkflowsController {
           .from(timesheet_periods)
           .innerJoin(users, eq(users.id, timesheet_periods.user_id))
           .where(inArray(timesheet_periods.id, periodIds))
-      : [];
-    const reportRows = reportIds.length
-      ? await db
-          .select({
-            id: expense_reports.id,
-            status: expense_reports.status,
-            date_submitted: expense_reports.date_submitted,
-            user_id: expense_reports.user_id,
-            user_display_name: users.display_name,
-            user_email: users.email,
-          })
-          .from(expense_reports)
-          .innerJoin(users, eq(users.id, expense_reports.user_id))
-          .where(inArray(expense_reports.id, reportIds))
       : [];
     const absenceRows = absenceIds.length
       ? await db
@@ -140,12 +125,17 @@ export class WorkflowsController {
       : [];
     const projectPeriodById = new Map(projectPeriodRows.map((p) => [p.id, p]));
     const periodById = new Map(periodRows.map((p) => [p.id, p]));
-    const reportById = new Map(reportRows.map((r) => [r.id, r]));
+    const pluginRecords: { sourceTable: string; field: string; byId: Map<string, Record<string, unknown>> }[] = [];
+    for (const [sourceTable, { field, load }] of this.workflowsSvc.sourceRecords()) {
+      const ids = rows.filter((r) => r.source_table === sourceTable).map((r) => r.source_table_uuid);
+      const records = ids.length ? await load(db, ids).catch(() => []) : [];
+      pluginRecords.push({ sourceTable, field, byId: new Map(records.map((x) => [x.id, x])) });
+    }
     const absenceById = new Map(absenceRows.map((a) => [a.id, a]));
     return rows.map((r) => ({
       ...r,
       timesheet_period: r.source_table === 'timesheet_periods' ? (periodById.get(r.source_table_uuid) ?? null) : null,
-      expense_report: r.source_table === 'expense_reports' ? (reportById.get(r.source_table_uuid) ?? null) : null,
+      ...Object.fromEntries(pluginRecords.map((p) => [p.field, r.source_table === p.sourceTable ? (p.byId.get(r.source_table_uuid) ?? null) : null])),
       absence: r.source_table === 'absences' ? (absenceById.get(r.source_table_uuid) ?? null) : null,
       project_time_period: r.source_table === 'project_time_periods' ? (projectPeriodById.get(r.source_table_uuid) ?? null) : null,
     }));

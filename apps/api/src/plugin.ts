@@ -48,7 +48,7 @@ export {
 // Documents, form templates, approval workflows
 export { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 export { FieldsService } from './fields.service';
-export { WorkflowsService, APPROVE_EXPENSE_REPORT_WORKFLOW_NAME } from './workflows.service';
+export { WorkflowsService, type SourceRecordLoader, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 
 // Paid AI calls (Azure, Switzerland): always through AiBudgetService
 export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';

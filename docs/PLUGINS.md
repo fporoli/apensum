@@ -99,6 +99,22 @@ defineWebPlugin({ ..., reports: [MY_REPORT] });
   core already has with another text is refused.
 - A saved report of a plugin that is no longer installed fails with `unknown-report`.
 
+## Approvals (Workflow page)
+
+An approval a plugin owns is a workflow like the core's (`WorkflowsService`: `ensureDefinition`, `start`,
+`findPending`, `resolve`). The plugin registers, in its controller's `onModuleInit`:
+
+- `registerAction('<kind>.approve' | '<kind>.reject', handler)`: what a decision does to its record;
+- `registerSourceOrgResolver('<table>', ...)`: the record's organization (admin override, audit,
+  notifications, rerouting);
+- `registerSourceRecords('<table>', '<field>', loader)`: what `GET workflows/assigned-to-me` puts under
+  `<field>` of each item (`id`, `user_id`, `user_display_name`, `user_email`, ...);
+- `registerManagerRoutedWorkflow('<definition name>')`: the request goes to the person's manager and
+  follows them when the manager changes.
+
+Its web part's `workflowKinds` entry (same `recordField`) gives the item its label, title and Inspect
+dialog. `plugins/expenses/api/expense-reports.controller.ts` and `web/ExpenseReportReview.tsx` do all of it.
+
 ## Database changes
 
 A plugin with `changelog/db.changelog-master.xml` brings its own Liquibase changelog, with the same rules
@@ -167,9 +183,5 @@ npm test                                    # core tests, then each plugin's tes
 - **The plugin's own drizzle schema.** Plugin tables are introspected into the core's
   `apps/api/src/db/schema.ts`, so a private plugin's tables show up in the core's generated files.
 - **Plugin parts of core pages.**
-  - The Workflow page already has an extension point: `workflowKinds` gives an approval kind its label,
-    source, title and Inspect dialog (expenses: the expense report review).
-  - The API side is still in the core: `workflows.service.ts` and `GET workflows/assigned-to-me` join the
-    expense report.
   - Documents, Team overview and Import/Export still show expense data themselves (the tables are
     core). Each needs its own extension point.

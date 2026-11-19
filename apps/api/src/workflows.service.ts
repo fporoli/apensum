@@ -11,18 +11,18 @@ import { NotificationsService } from './notifications.service';
 export const REOPEN_TIMESHEET_WORKFLOW_NAME = 'reopen approved timesheet';
 /** A submitted month awaiting its owner's manager to approve or reject it. */
 export const APPROVE_TIMESHEET_WORKFLOW_NAME = 'approve timesheet';
-/** A submitted expense report awaiting its owner's manager to approve or reject it. */
-export const APPROVE_EXPENSE_REPORT_WORKFLOW_NAME = 'approve expense report';
 /** A vacation request awaiting its owner's manager to approve or reject it. */
 export const APPROVE_ABSENCE_WORKFLOW_NAME = 'approve absence';
 /** A person's month of project time on one project, awaiting that project's owner. */
 export const APPROVE_PROJECT_TIMESHEET_WORKFLOW_NAME = 'approve project timesheet';
 
-/** Workflows that go to the submitter's manager; they follow the manager when it changes. */
+/**
+ * The core's workflows that go to the submitter's manager; they follow the manager when it changes.
+ * Plugins add theirs (WorkflowsService.registerManagerRoutedWorkflow).
+ */
 export const MANAGER_ROUTED_WORKFLOW_NAMES: readonly string[] = [
   REOPEN_TIMESHEET_WORKFLOW_NAME,
   APPROVE_TIMESHEET_WORKFLOW_NAME,
-  APPROVE_EXPENSE_REPORT_WORKFLOW_NAME,
   APPROVE_ABSENCE_WORKFLOW_NAME,
 ];
 
@@ -47,6 +47,12 @@ export interface WorkflowActionContext {
 }
 export type WorkflowActionHandler = (db: Db, ctx: WorkflowActionContext) => Promise<void>;
 export type SourceOrgResolver = (db: Db, sourceTableUuid: string) => Promise<string | null>;
+/**
+ * Loads the records of one source table for the Workflow page (GET workflows/assigned-to-me): one
+ * object per id with at least `id`, `user_id`, `user_display_name`, `user_email`, plus whatever the
+ * page shows of it (the web part's workflow kind reads it from the item's `field`).
+ */
+export type SourceRecordLoader = (db: Db, ids: string[]) => Promise<Array<{ id: string } & Record<string, unknown>>>;
 
 /**
  * Shared engine behind every workflow_definitions-driven approval in the
@@ -69,6 +75,8 @@ export type SourceOrgResolver = (db: Db, sourceTableUuid: string) => Promise<str
 export class WorkflowsService {
   private readonly actionHandlers = new Map<string, WorkflowActionHandler>();
   private readonly sourceOrgResolvers = new Map<string, SourceOrgResolver>();
+  private readonly sourceRecordLoaders = new Map<string, { field: string; load: SourceRecordLoader }>();
+  private readonly managerRouted = new Set<string>(MANAGER_ROUTED_WORKFLOW_NAMES);
 
   constructor(
     private readonly audit: AuditService,
@@ -84,6 +92,21 @@ export class WorkflowsService {
   /** Register how to resolve a source table's owning organization (for the admin-override check and audit log). */
   registerSourceOrgResolver(sourceTable: string, resolver: SourceOrgResolver): void {
     this.sourceOrgResolvers.set(sourceTable, resolver);
+  }
+
+  /** Register how the Workflow page gets a source table's records, and the item field it puts them in (e.g. `expense_report`). */
+  registerSourceRecords(sourceTable: string, field: string, load: SourceRecordLoader): void {
+    this.sourceRecordLoaders.set(sourceTable, { field, load });
+  }
+
+  /** The registered record loaders (WorkflowsController adds their records to each item). */
+  sourceRecords(): ReadonlyMap<string, { field: string; load: SourceRecordLoader }> {
+    return this.sourceRecordLoaders;
+  }
+
+  /** Register a workflow (by definition name) that goes to the submitter's manager and follows it when it changes. */
+  registerManagerRoutedWorkflow(name: string): void {
+    this.managerRouted.add(name);
   }
 
   /** Every team this user belongs to, across whatever memberships they hold — used to resolve team-assigned workflows. */
@@ -218,32 +241,41 @@ export class WorkflowsService {
    * The new manager is notified. Returns how many requests moved.
    */
   async rerouteToCurrentManagers(db: Db): Promise<number> {
-    const names = sql.join(MANAGER_ROUTED_WORKFLOW_NAMES.map((n) => sql`${n}`), sql`, `);
+    const names = sql.join([...this.managerRouted].map((n) => sql`${n}`), sql`, `);
+    const pendingResult = await db.execute(sql`
+      SELECT w.workflow_id, w.source_table, w.source_table_uuid, w.assigned_to_user_id[1] AS assignee,
+             (w.workflow_data->>'submittedByUserId')::uuid AS subject
+      FROM workflows w
+      JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
+      WHERE w.step_status = 'pending' AND d.name IN (${names})
+        AND cardinality(w.assigned_to_user_id) = 1
+        AND jsonb_exists(w.workflow_data, 'submittedByUserId')`);
+    // The organization of each request, from whoever owns its source table (registerSourceOrgResolver).
+    const pending: { workflow_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string; organization_id: string }[] = [];
+    for (const r of pendingResult.rows as { workflow_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string }[]) {
+      const resolve = this.sourceOrgResolvers.get(r.source_table);
+      const organizationId = resolve ? await resolve(db, r.source_table_uuid).catch(() => null) : null;
+      if (organizationId) pending.push({ ...r, organization_id: organizationId });
+    }
+    if (pending.length === 0) return 0;
+    const values = sql.join(
+      pending.map((p) => sql`(${p.workflow_id}::uuid, ${p.organization_id}::uuid, ${p.subject}::uuid, ${p.assignee}::uuid)`),
+      sql`, `,
+    );
     const result = await db.execute(sql`
-      WITH pending AS (
-        SELECT w.workflow_id, w.assigned_to_user_id[1] AS assignee,
-               (w.workflow_data->>'submittedByUserId')::uuid AS subject,
-               COALESCE(tp.organization_id, ab.organization_id, er.organization_id) AS organization_id
-        FROM workflows w
-        JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
-        LEFT JOIN timesheet_periods tp ON w.source_table = 'timesheet_periods' AND tp.id = w.source_table_uuid
-        LEFT JOIN absences ab ON w.source_table = 'absences' AND ab.id = w.source_table_uuid
-        LEFT JOIN expense_reports er ON w.source_table = 'expense_reports' AND er.id = w.source_table_uuid
-        WHERE w.step_status = 'pending' AND d.name IN (${names})
-          AND cardinality(w.assigned_to_user_id) = 1
-          AND jsonb_exists(w.workflow_data, 'submittedByUserId')
-      ), moved AS (
+      WITH pending(workflow_id, organization_id, subject, assignee) AS (VALUES ${values}),
+      moved AS (
         SELECT p.*, (
           SELECT a.manager_user_id FROM employee_assignments a
           WHERE a.organization_id = p.organization_id AND a.user_id = p.subject AND a.valid_from <= CURRENT_DATE
           ORDER BY a.valid_from DESC LIMIT 1
         ) AS manager
         FROM pending p
-        WHERE p.organization_id IS NOT NULL
       )
       UPDATE workflows w SET assigned_to_user_id = ARRAY[m.manager]
       FROM moved m
-      WHERE w.workflow_id = m.workflow_id AND m.manager IS NOT NULL AND m.manager <> m.assignee
+      WHERE w.workflow_id = m.workflow_id AND w.step_status = 'pending' AND w.assigned_to_user_id[1] = m.assignee
+        AND m.manager IS NOT NULL AND m.manager <> m.assignee
         AND EXISTS (
           SELECT 1 FROM employee_assignments ea
           WHERE ea.organization_id = m.organization_id AND ea.user_id = m.subject AND ea.manager_user_id = m.assignee
