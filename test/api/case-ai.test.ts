@@ -176,3 +176,31 @@ test('CaseAiService: Azure Whisper transcription reserves, calls Azure once and 
     process.env = saved;
   }
 });
+
+test('a stale pooled connection is tried once more; a timeout or HTTP error is not', async () => {
+  const { retryStaleConnection, isStaleConnectionError } = await import('../../apps/api/src/ai-client');
+  const OpenAI = (await import('openai')).default;
+  assert.equal(isStaleConnectionError(new OpenAI.APIConnectionError({ message: 'Connection error.' })), true);
+  assert.equal(isStaleConnectionError(new OpenAI.APIConnectionTimeoutError()), false);
+  assert.equal(isStaleConnectionError(Object.assign(new TypeError('fetch failed'), { cause: { message: 'other side closed' } })), true);
+  assert.equal(isStaleConnectionError(new DOMException('timed out', 'TimeoutError')), false);
+  let calls = 0;
+  assert.equal(await retryStaleConnection(async () => { if (++calls === 1) throw new OpenAI.APIConnectionError({ message: 'Connection error.' }); return 'ok'; }), 'ok');
+  assert.equal(calls, 2);
+  calls = 0;
+  await assert.rejects(retryStaleConnection(async () => { calls++; throw new OpenAI.APIConnectionTimeoutError(); }));
+  assert.equal(calls, 1, 'a timeout may have been billed: not repeated');
+  calls = 0;
+  await assert.rejects(retryStaleConnection(async () => { calls++; throw new OpenAI.APIConnectionError({ message: 'down' }); }));
+  assert.equal(calls, 2, 'at most one retry');
+
+  // The Whisper upload: a stale connection, then the answer.
+  const config = azureTranscribeConfig({ ...AZURE, AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT: 'whisper' })!;
+  let attempts = 0;
+  const flaky = (async () => {
+    if (++attempts === 1) throw Object.assign(new TypeError('fetch failed'), { cause: { message: 'other side closed' } });
+    return new Response(JSON.stringify({ text: 'Hallo', duration: 2 }), { status: 200 });
+  }) as unknown as typeof fetch;
+  assert.deepEqual(await azureTranscribe(MP3, config, flaky), { text: 'Hallo', seconds: 2 });
+  assert.equal(attempts, 2);
+});

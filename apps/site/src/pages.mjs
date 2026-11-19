@@ -38,6 +38,7 @@ export const FEATURE_GROUPS = [
   ['importexport', 'sync'],
   ['requests', 'chat'],
   ['documents', 'doc'],
+  ['cases', 'lock'],
   ['admin', 'sliders'],
   ['tenants', 'building'],
   ['access', 'key'],
@@ -46,7 +47,7 @@ export const FEATURE_GROUPS = [
 ];
 /**
  * Screenshots per feature group (media/feature-<shot>-<lang>.jpg, taken by videos/screens.mjs).
- * The languages group shows the dashboard in two other languages; customize has its video.
+ * The languages group shows the dashboard in two other languages; customize and cases have their video.
  */
 export const FEATURE_SHOTS = {
   time: ['time-1', 'time-2'],
@@ -326,18 +327,21 @@ function shot(ctx, id, caption, lang = ctx.lang) {
         </figure>`;
 }
 
+/** Feature groups shown with a demo video (media/demo-<id>.mp4, videos/record.mjs) instead of screenshots. */
+const FEATURE_VIDEOS = { customize: 'developer', cases: 'cases' };
+
 /** The pictures (or the video) of one feature group, between its intro and its list. */
 function featureMedia(ctx, group) {
   const { t, lang, assets } = ctx;
-  if (group === 'customize') {
-    const video = assets.media?.['demo-developer.mp4'];
+  if (FEATURE_VIDEOS[group]) {
+    const video = assets.media?.[`demo-${FEATURE_VIDEOS[group]}.mp4`];
     if (!video) return '';
-    const poster = assets.media['demo-developer.jpg'];
+    const poster = assets.media[`demo-${FEATURE_VIDEOS[group]}.jpg`];
     return `<figure class="shot feature-video">
-          <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('features.customize.video')}">
+          <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t(`features.${group}.video`)}">
             <source src="${video}" type="video/mp4">
           </video>
-          <figcaption>${t('features.customize.video')}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
+          <figcaption>${t(`features.${group}.video`)}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
         </figure>`;
   }
   const figures =

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode } from './ai-client';
+import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
 import { AiBudgetService, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
 import { CaseAiService, caseAiAvailability } from './case-ai.service';
 import { extractPdfText, isPdf } from './case-document-text';
@@ -52,9 +52,10 @@ export class ExpenseReceiptService {
     const context = { orgId, orgLimitChf };
     let answer: string;
     try {
-      const completion = await azureOpenAiClient(config, 60_000).chat.completions.create({
+      const client = azureOpenAiClient(config, 60_000);
+      const completion = await retryStaleConnection(() => client.chat.completions.create({
         model: config.deployment, messages, max_completion_tokens: RECEIPT_MAX_TOKENS, response_format: { type: 'json_object' },
-      });
+      }));
       const usage = completion.usage;
       await this.budget.finish(id, {
         ok: true, inputTokens: usage?.prompt_tokens, outputTokens: usage?.completion_tokens,

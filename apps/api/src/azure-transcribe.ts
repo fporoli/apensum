@@ -1,5 +1,5 @@
 import { HttpException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
-import { azureOpenAiConfig } from './ai-client';
+import { azureOpenAiConfig, retryStaleConnection } from './ai-client';
 import { interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 
 /**
@@ -8,7 +8,7 @@ import { interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-proce
  * fast Speech transcription in Switzerland, hence Whisper; it does not separate speakers and writes
  * Swiss German phonetically. Uses the Azure OpenAI resource (AZURE_OPENAI_ENDPOINT / _KEY) and the
  * deployment AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT. Whisper is served on the classic deployments route,
- * not on /openai/v1. Never retried: every attempt is billed. Paid, so only via CaseAiService (budget).
+ * not on /openai/v1. Not retried (every attempt is billed), except a stale pooled connection. Paid, so only via CaseAiService (budget).
  */
 export const AZURE_TRANSCRIBE_API_VERSION = '2024-06-01';
 
@@ -63,11 +63,12 @@ export async function azureTranscribe(
   form.append('response_format', 'verbose_json');
   let response: Response;
   try {
-    response = await fetchImpl(config.url, {
+    // A fresh signal per attempt; only a stale pooled connection is tried again (ai-client.ts).
+    response = await retryStaleConnection(() => fetchImpl(config.url, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
       headers: { 'api-key': config.key },
       body: form,
-    });
+    }));
   } catch {
     throw new AzureCallError('ai-provider-busy', true);
   }

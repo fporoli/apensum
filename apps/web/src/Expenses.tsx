@@ -24,7 +24,7 @@ import dayjs from 'dayjs';
 import { EXPENSE_FORM, validateFields } from '@worktime3/shared/fields';
 import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '@worktime3/shared/expenses';
 import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber } from './localeFormat';
+import { formatLocaleDate, formatLocaleNumber, formatMoney, parseLocaleNumber } from './localeFormat';
 import { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField';
 import { FieldDesignScope, useFormTemplate } from './designMode';
 import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
@@ -607,7 +607,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
           </Box>
           {mileage && (
             <Box sx={{ mt: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-              <TextField size="small" label={t('expenses.km')} value={kmInput} sx={{ width: 140 }} inputProps={{ inputMode: 'decimal' }}
+              <TextField id="expense-km" size="small" label={t('expenses.km')} value={kmInput} sx={{ width: 140 }} inputProps={{ inputMode: 'decimal' }}
                 error={!!fieldErrors.quantity}
                 onChange={(e) => {
                   setKmInput(e.target.value);
@@ -618,8 +618,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                 <Typography variant="body2" color="text.secondary">
                   {t('expenses.mileageCalc', {
                     km: formatLocaleNumber(Number(values.quantity), locale),
-                    rate: formatLocaleNumber(booking.booking.unitRate, locale),
-                    value: formatLocaleNumber(booking.booking.value, locale),
+                    rate: formatMoney(booking.booking.unitRate, locale),
+                    value: formatMoney(booking.booking.value, locale),
                     currency: defaultCurrency,
                   })}
                 </Typography>
@@ -630,9 +630,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
             <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               <Typography variant="body2" color="text.secondary">
                 {t(override ? 'expenses.conversionManual' : 'expenses.conversion', {
-                  original: `${formatLocaleNumber(originalValue ?? 0, locale)} ${String(values.originalCurrency ?? '')}`,
+                  original: `${formatMoney(originalValue ?? 0, locale)} ${String(values.originalCurrency ?? '')}`,
                   rate: formatLocaleNumber(booking.booking.exchangeRate, locale),
-                  value: `${formatLocaleNumber(booking.booking.value, locale)} ${defaultCurrency}`,
+                  value: `${formatMoney(booking.booking.value, locale)} ${defaultCurrency}`,
                 })}
               </Typography>
               {override && <Button size="small" onClick={() => setOverride(false)}>{t('expenses.useRate')}</Button>}
@@ -724,7 +724,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                 {sortedEntries.map((row) => {
                   const locked = isRowLocked(row);
                   const numVal = Number(row.value);
-                  const formattedVal = Number.isFinite(numVal) ? formatLocaleNumber(numVal, locale) : row.value;
+                  const formattedVal = Number.isFinite(numVal) ? formatMoney(numVal, locale) : row.value;
                   return (
                     <TableRow key={row.id} hover>
                       <TableCell>{formatLocaleDate(row.expense_date, locale)}</TableCell>
@@ -733,7 +733,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                         {formattedVal} {row.currency}
                         {row.original_value && row.original_currency && row.original_currency !== row.currency && (
                           <Typography variant="caption" color="text.secondary" component="div">
-                            {formatLocaleNumber(Number(row.original_value), locale)} {row.original_currency}
+                            {formatMoney(Number(row.original_value), locale)} {row.original_currency}
                           </Typography>
                         )}
                         {row.category === MILEAGE_CATEGORY && row.quantity && (

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import type OpenAI from 'openai';
 import { parseCaseAiSettings, type CaseAiSettings } from '@worktime3/shared/cases';
 import { DbService, type Db } from './db.service';
-import { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient } from './ai-client';
+import { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from './ai-client';
 import { AiBudgetService, azureAllowed, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, transcribeChf, type AiUsageKind } from './ai-budget.service';
 import { AzureCallError, azureTranscribeConfig, azureTranscribe } from './azure-transcribe';
 import { interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from './case-interview-processing';
@@ -159,10 +159,11 @@ export class CaseAiService {
     this.logger.log(`Azure ${kind}: org ${orgId}, case ${caseId}, user ${userId}, ${inputChars} chars`);
     const context = { orgId, orgLimitChf: settings.monthlyLimitChf };
     try {
-      const completion = await azureOpenAiClient(config).chat.completions.create({
+      const client = azureOpenAiClient(config);
+      const completion = await retryStaleConnection(() => client.chat.completions.create({
         model: config.deployment, messages, max_completion_tokens: maxTokens,
         ...(json ? { response_format: { type: 'json_object' as const } } : {}),
-      });
+      }));
       const usage = completion.usage;
       await this.budget.finish(id, {
         ok: true, inputTokens: usage?.prompt_tokens, outputTokens: usage?.completion_tokens,

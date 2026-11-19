@@ -11,7 +11,12 @@
 // `site-media` GitHub release, from which the `site` workflow takes them when it deploys.
 // The scenes run in order: Ueli requests vacation, Marco approves it, Ulla files a review, the
 // admin shows roles, modules and branding; Uma (developer) customizes the basic-data form (her
-// changes are undone before each take). Run them all after a reset, or single ones to retake.
+// changes are undone before each take); Marta works a KESB case (cases). Run them all after a
+// reset, or single ones to retake.
+// The employee (receipt reading) and cases scenes call Azure (Switzerland): .env.dev needs the
+// AZURE_OPENAI_* values and the budget (`infra/azure/ai-provision.sh local`), the API restarted.
+// The cases scene uses the fictitious KESB sample in data-dev/samples/kesb-jonas-meier/
+// (arztbericht-jonas-meier.pdf, interview-laura-meier-ch.mp3; not in git).
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -233,13 +238,19 @@ function reviewPdf() {
 const SCENES = {
   employee: {
     user: 'ueli',
-    // Off camera: a retake starts checked out.
+    // Off camera: a retake starts checked out, without the expenses an earlier take of today added.
     async prepare(page) {
-      const out = page.getByRole('button', { name: 'Ausstempeln' }).first();
-      if (await out.isVisible().catch(() => false)) {
-        await out.click();
-        await sleep(1500);
+      const { call, orgId } = await apiAs('ueli');
+      const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });
+      const { entries = [] } = (await call(`/organizations/${orgId}/expenses`)) ?? {};
+      for (const e of entries) {
+        if (e.expense_date?.slice(0, 10) === today && !e.expense_report_id && /^(Taxi|Kunde in Winterthur)/.test(e.comment ?? '')) await call(`/expenses/${e.id}`, 'DELETE');
       }
+      // An open session from an earlier take is closed (no-op when checked out).
+      await call('/work-time/check-out', 'POST', { acknowledgeLongSession: true });
+      await page.reload();
+      await page.getByRole('button', { name: 'Einstempeln' }).first().waitFor();
+      await sleep(1000);
     },
     async run(s, { browser }) {
       const p = s.page;
@@ -268,16 +279,31 @@ const SCENES = {
       await s.caption('Der Antrag ist eingereicht – Marco wird benachrichtigt', 2000);
 
       await s.nav('Spesen');
-      await s.caption('Spesen erfassen: Kategorie, Betrag und das Foto der Quittung');
-      await s.choose(p.getByRole('combobox', { name: /^Kategorie/ }), 'Reisen');
-      await s.choose(p.getByRole('combobox', { name: /^Unterkategorie/ }), 'Taxi/Fahrdienst');
-      const value = p.getByLabel(/^Wert/);
-      await s.click(value, 150);
-      await value.fill('');
-      await value.pressSequentially('64.50', { delay: 70 });
-      await s.type(p.getByLabel('Kommentar'), 'Taxi zum Flughafen, Kundentermin');
+      await s.caption('Spesen erfassen: Quittung anhängen – die KI liest Datum, Betrag und Kategorie');
       await p.locator('input[type=file]').first().setInputFiles({ name: 'quittung-taxi.png', mimeType: 'image/png', buffer: await receiptPng(browser) });
+      await s.wait(1000);
+      await s.click(p.getByRole('button', { name: 'Beleg auslesen' }), 300);
+      await p.getByText('Vom Beleg übernommen', { exact: false }).waitFor({ timeout: 60000 });
+      await s.wait(600);
+      await s.caption('Ein Vorschlag aus der Quittung, verarbeitet in der Schweiz – kurz prüfen und ergänzen');
+      await s.moveTo(p.getByLabel(/^Betrag \(Beleg\)/));
+      await s.wait(1200);
+      const category = p.getByRole('combobox', { name: /^Kategorie/ });
+      if (!/Reisen/.test(await category.textContent())) await s.choose(category, 'Reisen');
+      await s.choose(p.getByRole('combobox', { name: /^Unterkategorie/ }), 'Taxi/Fahrdienst');
+      const comment = p.getByLabel('Kommentar');
+      await s.click(comment, 150);
+      await comment.fill('');
+      await comment.pressSequentially('Taxi zum Flughafen, Kundentermin', { delay: 55 });
+      await s.wait(400);
+      await s.click(p.getByRole('button', { name: 'Hinzufügen' }), 2000);
+
+      await s.caption('Kilometerspesen: Strecke in km eintragen – der Betrag rechnet sich mit dem Ansatz der Firma');
+      await s.choose(p.getByRole('combobox', { name: /^Kategorie/ }), 'Kilometer');
+      await s.type(p.locator('#expense-km'), '84', 300);
+      await s.moveTo(p.getByText(/km × .* = /).first());
       await s.wait(1400);
+      await s.type(p.getByLabel('Kommentar'), 'Kunde in Winterthur, hin und zurück');
       await s.click(p.getByRole('button', { name: 'Hinzufügen' }), 2000);
 
       await s.nav('Dokumente');
@@ -446,6 +472,143 @@ SCENES.developer = {
     await s.click(panel.getByRole('button', { name: 'Schliessen' }).first().or(panel.locator('button[aria-label]').first()), 1200);
     await s.moveTo(p.getByText('Badge-Nummer', { exact: true }).first());
     await s.caption('Ab sofort im Formular – für Personaldaten, Spesen und mehr', 2600);
+    await s.caption('');
+    await s.wait(600);
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+/** The fictitious KESB sample (not in git): a doctor's letter and the recorded interview with the sister. */
+const SAMPLE = join(ROOT, '..', '..', '..', 'data-dev', 'samples', 'kesb-jonas-meier');
+const CASE_REF = 'KESB-2026-0517';
+
+/** Calls the dev API as the given demo user; returns [json, orgId, token]. */
+async function apiAs(user) {
+  const api = process.env.RECORD_API || 'http://localhost:8001/api/v1';
+  const login = await (await fetch(`${api}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: `${user}@acme.com`, password: user }) })).json();
+  const orgId = login.memberships?.find((m) => /acme/i.test(m.organizationName ?? m.name ?? ''))?.organizationId ?? login.memberships?.[0]?.organizationId;
+  const call = async (path, method = 'GET', body) => {
+    const res = await fetch(`${api}${path}`, { method, headers: { Authorization: `Bearer ${login.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return res.json().catch(() => null);
+  };
+  return { call, orgId };
+}
+
+/**
+ * Off camera, as the admin (superdeveloper): Cases on for Acme, its transcription, summaries and
+ * drafts on Azure (Switzerland), a KESB template that allows AI drafts, and no demo case left
+ * from an earlier take.
+ */
+async function prepareCases() {
+  for (const f of ['arztbericht-jonas-meier.pdf', 'interview-laura-meier-ch.mp3']) {
+    if (!existsSync(join(SAMPLE, f))) throw new Error(`cases scene: ${join(SAMPLE, f)} is missing`);
+  }
+  const { call, orgId } = await apiAs('admin');
+  const org = `/organizations/${orgId}`;
+  await call(`${org}/modules`, 'PUT', { cases: true });
+  const ai = await call(`${org}/case-ai-settings`, 'PUT', { transcription: 'azure', summary: 'azure', draft: 'azure', monthlyLimitChf: 10 });
+  if (!ai?.ok) throw new Error(`cases scene: Azure is not set up on the dev API (${ai?.message ?? ai?.error ?? 'no answer'}); see infra/azure/ai-provision.sh local`);
+  const { templates = [] } = (await call(`${org}/assessment-templates`)) ?? {};
+  if (!templates.some((t) => t.organization_id === orgId && t.domain === 'kesb' && t.ai_allowed)) {
+    const base = templates.find((t) => t.organization_id === null && t.domain === 'kesb');
+    const created = await call(`${org}/assessment-templates`, 'POST', {
+      name: `${base.name} (KI)`, domain: 'kesb', description: base.description, sections: base.sections, ai_allowed: true,
+    });
+    if (!created?.ok) throw new Error(`cases scene: could not create the AI template (${created?.message ?? created?.error})`);
+  }
+  const { cases = [] } = (await call(`${org}/cases?search=${CASE_REF}`)) ?? {};
+  for (const c of cases.filter((c) => c.reference_number === CASE_REF)) await call(`${org}/cases/${c.id}`, 'DELETE');
+}
+
+SCENES.cases = {
+  user: 'marta',
+  async prepare(page) {
+    await prepareCases();
+    await page.reload();
+    await page.locator('.MuiDrawer-root').first().waitFor();
+    await sleep(1500);
+  },
+  async run(s) {
+    const p = s.page;
+    await s.title('Fallführung', 'Eine KESB-Abklärung: von den Akten zum Gutachtenentwurf');
+    await s.nav('Fälle');
+    await s.caption('Ein neues Falldossier: Geschäftsnummer, betroffene Person und Vertraulichkeit');
+    await s.click(p.getByRole('button', { name: 'Neuer Fall' }).first(), 900);
+    const dlg = p.getByRole('dialog');
+    await s.type(dlg.getByLabel(/^Geschäfts-Nr/), CASE_REF, 200);
+    await s.type(dlg.getByLabel('Fallbezeichnung'), 'Gefährdungsmeldung Erwachsenenschutz', 200);
+    await s.type(dlg.getByLabel(/^Betroffene Person/), 'Jonas Meier', 200);
+    await s.choose(dlg.getByRole('combobox', { name: /^Vertraulichkeit/ }), 'Streng vertraulich');
+    await s.click(dlg.getByRole('button', { name: 'Erstellen' }), 2000);
+
+    await s.caption('Der Arztbericht als PDF – sein Text wird automatisch ausgelesen');
+    await s.click(p.getByRole('tab', { name: /^Akten & Beweismittel/ }), 900);
+    await s.click(p.getByRole('button', { name: 'Beweismittel hochladen' }).first(), 900);
+    const up = p.getByRole('dialog');
+    await up.locator('#case-doc-file-input').setInputFiles(join(SAMPLE, 'arztbericht-jonas-meier.pdf'));
+    await s.wait(700);
+    await s.choose(up.getByRole('combobox', { name: /^Kategorie/ }), 'Medizinisch / Psychiatrisch');
+    await s.click(up.getByRole('button', { name: 'Hochladen' }), 2000);
+    await s.click(p.getByRole('button', { name: 'Text anzeigen' }).first(), 1200);
+    await s.wait(2600);
+    await s.click(p.getByRole('dialog').getByRole('button', { name: 'Schliessen' }), 800);
+
+    await s.caption('Die Befragung der Schwester – mit der Tonaufnahme des Gesprächs');
+    await s.click(p.getByRole('tab', { name: /^Einvernahmen/ }), 900);
+    await s.click(p.getByRole('button', { name: 'Einvernahme erfassen' }).first(), 900);
+    const iv = p.getByRole('dialog');
+    await s.type(iv.getByLabel('Name der befragten Person'), 'Laura Meier', 200);
+    await s.choose(iv.getByRole('combobox', { name: /^Rolle im Verfahren/ }), 'Angehörige Person');
+    await iv.locator('input[type=file]').first().setInputFiles(join(SAMPLE, 'interview-laura-meier-ch.mp3'));
+    await s.wait(900);
+    await s.click(iv.getByRole('button', { name: 'Speichern' }), 2200);
+
+    const ed = p.getByRole('dialog');
+    await s.caption('Transkribiert in der Schweiz (Microsoft Azure) – in Sekunden statt Minuten');
+    await s.click(ed.getByRole('button', { name: 'Transkript entwerfen' }), 300);
+    await ed.getByText('Bitte das Transkript prüfen', { exact: false }).waitFor({ timeout: 150000 });
+    await s.wait(800);
+    await s.caption('Ein Entwurf: Die Fachperson prüft ihn und übernimmt ihn erst dann');
+    await s.moveTo(ed.getByRole('textbox').last(), 0.5, 0.3);
+    await s.wait(2200);
+    await s.click(ed.getByRole('button', { name: 'Entwurf ins Eingabefeld übernehmen' }), 900);
+    await s.click(ed.getByRole('button', { name: 'Speichern' }), 1800);
+
+    await s.caption('Die Zusammenfassung: nur Aussagen aus dem Transkript, Unklares bleibt offen');
+    await s.click(ed.getByRole('button', { name: 'Zusammenfassung entwerfen' }), 300);
+    await ed.getByText('Bitte diesen Entwurf vor dem Speichern', { exact: false }).waitFor({ timeout: 90000 });
+    await s.moveTo(ed.getByRole('textbox').last(), 0.5, 0.3);
+    await s.wait(2600);
+    await s.click(ed.getByRole('button', { name: 'Entwurf ins Eingabefeld übernehmen' }), 900);
+    await s.click(ed.getByRole('button', { name: 'Speichern' }), 1600);
+    await s.click(ed.getByRole('button', { name: 'Schliessen' }), 1200);
+
+    await s.caption('Das Gutachten nach der Vorlage der Organisation – als KI-Entwurf aus den Akten');
+    await s.click(p.getByRole('tab', { name: /^Beurteilungen/ }), 900);
+    await s.click(p.getByRole('button', { name: 'Neues Gutachten anlegen' }).first(), 900);
+    const ga = p.getByRole('dialog');
+    await s.choose(ga.getByRole('combobox', { name: /^Gutachten-Vorlage/ }), /\(KI\)/);
+    const title = ga.getByLabel('Titel der Beurteilung');
+    if (!(await title.inputValue())) await s.type(title, 'Abklärungsbericht Jonas Meier', 200);
+    await s.caption('Vor dem Versand sagt Apensum, wohin die Daten gehen – hier: Azure in der Schweiz');
+    await s.moveTo(ga.getByText('Microsoft Azure (Schweiz)', { exact: false }).first());
+    await s.wait(1600);
+    await s.click(ga.getByRole('checkbox', { name: /Versand dieser Daten/ }), 600);
+    await s.click(ga.getByRole('button', { name: 'KI-Entwurf generieren' }), 300);
+    await p.getByRole('button', { name: /Zurück zu Beurteilungen/ }).waitFor({ timeout: 180000 });
+    await s.wait(1000);
+    await s.caption('Die KI gibt nur wieder, was in den Akten steht – mit Quelle; jede Beurteilung bleibt «[Offen]»');
+    await p.mouse.move(720, 500);
+    for (let i = 0; i < 4; i++) {
+      await p.mouse.wheel(0, 320);
+      await s.wait(1300);
+    }
+    const open = p.getByText(/\[Offen/).first();
+    if (await open.count()) await s.moveTo(open);
+    await s.wait(1800);
+    await s.caption('Prüfen, ergänzen, beurteilen – und als PDF exportieren');
+    await s.moveTo(p.getByRole('button', { name: 'PDF exportieren' }).first());
+    await s.wait(2400);
     await s.caption('');
     await s.wait(600);
   },

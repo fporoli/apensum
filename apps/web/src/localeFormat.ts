@@ -60,6 +60,11 @@ export function formatLocaleNumber(value: number, locale: string): string {
   return new Intl.NumberFormat(swissLocale(locale), { maximumFractionDigits: 10 }).format(value);
 }
 
+/** A money amount with exactly two decimals, as the user's language writes it in Switzerland: 1234.5 -> "1'234.50". */
+export function formatMoney(value: number, locale: string): string {
+  return new Intl.NumberFormat(swissLocale(locale), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
 /** A 'YYYY-MM-DD' date in the user's language; anything else is returned unchanged. */
 export function formatLocaleDate(isoDate: string, locale: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);

@@ -32,7 +32,7 @@ export function aiProvider(): 'gemini' | 'openai' | null {
  * AZURE_OPENAI_ENDPOINT is the resource URL (https://<name>.openai.azure.com or
  * https://<name>.cognitiveservices.azure.com), AZURE_OPENAI_KEY its key, AZURE_OPENAI_DEPLOYMENT
  * the deployment (a small pay-as-you-go one; keep its tokens-per-minute quota low).
- * No retries: every attempt is billed.
+ * No automatic retries (every attempt is billed): only retryStaleConnection, below.
  */
 export interface AzureOpenAiConfig { endpoint: string; baseURL: string; key: string; deployment: string }
 
@@ -63,4 +63,28 @@ export function chatErrorCode(status: number | undefined, fallback: string): str
   if (status === 401 || status === 403) return 'ai-provider-unavailable';
   if (status === undefined || status === 408 || status === 429 || status >= 500) return 'ai-provider-busy';
   return fallback;
+}
+
+/**
+ * A call that failed before any answer because the pooled connection was already closed (Azure
+ * drops idle keep-alive connections; the next request on one fails at once with "Connection
+ * error."). That attempt never reached the model, so it is not billed: tried once more. A
+ * timeout is not retried (the model may have worked and billed), nor is any HTTP error.
+ */
+export function isStaleConnectionError(error: unknown): boolean {
+  // By class name as well: the SDK can be loaded twice (CommonJS and ESM), so instanceof alone may miss.
+  const name = (error as { constructor?: { name?: string } } | null)?.constructor?.name;
+  if (error instanceof OpenAI.APIConnectionTimeoutError || name === 'APIConnectionTimeoutError') return false;
+  if (error instanceof OpenAI.APIConnectionError || name === 'APIConnectionError') return true;
+  // fetch() itself (Whisper upload): a TypeError "fetch failed", not an abort/timeout.
+  return error instanceof TypeError && /fetch failed|socket|ECONNRESET|other side closed/i.test(`${error.message} ${(error as { cause?: { message?: string } }).cause?.message ?? ''}`);
+}
+
+export async function retryStaleConnection<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    if (!isStaleConnectionError(error)) throw error;
+    return call();
+  }
 }

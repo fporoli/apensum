@@ -100,11 +100,11 @@ export default function ExchangeRateSettings({ orgId, authHeaders }: { orgId: st
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {editable && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-          <TextField select size="small" label={t('expenses.currency')} value={currency} onChange={(e) => setCurrency(e.target.value)} sx={{ minWidth: 180 }}>
+          <TextField id="exchange-rate-currency" select size="small" label={t('expenses.currency')} value={currency} onChange={(e) => setCurrency(e.target.value)} sx={{ minWidth: 180 }}>
             {foreign.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
           </TextField>
-          <TextField size="small" type="date" label={t('exchangeRates.validFrom')} value={validFrom} onChange={(e) => setValidFrom(e.target.value)} InputLabelProps={{ shrink: true }} />
-          <TextField size="small" label={t('exchangeRates.rate', { currency: currency || '…', target: reporting || '…' })} value={rateText}
+          <TextField id="exchange-rate-valid-from" size="small" type="date" label={t('exchangeRates.validFrom')} value={validFrom} onChange={(e) => setValidFrom(e.target.value)} InputLabelProps={{ shrink: true }} />
+          <TextField id="exchange-rate-rate" size="small" label={t('exchangeRates.rate', { currency: currency || '…', target: reporting || '…' })} value={rateText}
             onChange={(e) => setRateText(e.target.value)} inputProps={{ inputMode: 'decimal' }} sx={{ width: 220 }} />
           <Button variant="contained" disabled={busy || !currency || !validFrom || !rate || rate <= 0} onClick={() => void add()}>{t('common.save')}</Button>
         </Box>

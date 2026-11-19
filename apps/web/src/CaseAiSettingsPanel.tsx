@@ -91,7 +91,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
   };
 
   const select = (field: 'transcription' | 'summary' | 'draft', label: string, values: readonly string[], usable: (v: string) => boolean) => (
-    <TextField select size="small" label={label} value={form[field]} disabled={!canConfigure || saving} sx={{ minWidth: 260 }}
+    <TextField id={`case-ai-${field}`} select size="small" label={label} value={form[field]} disabled={!canConfigure || saving} sx={{ minWidth: 260 }}
       onChange={(e) => setForm({ ...form, [field]: e.target.value } as CaseAiSettings)}>
       {values.map((v) => (
         <MenuItem key={v} value={v} disabled={!usable(v) && form[field] !== v}>{optionLabel(v, usable(v))}</MenuItem>
@@ -108,7 +108,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
         {select('draft', t('cases.ai.settings.draft'), CASE_AI_DRAFT, usableText)}
       </Stack>
       <Typography variant="subtitle2" sx={{ pt: 1 }}>{t('cases.ai.settings.costGroup')}</Typography>
-      <TextField size="small" label={t('cases.ai.settings.limit')} value={limitText} disabled={!canConfigure || saving}
+      <TextField id="case-ai-limit" size="small" label={t('cases.ai.settings.limit')} value={limitText} disabled={!canConfigure || saving}
         onChange={(e) => setLimitText(e.target.value)} inputProps={{ inputMode: 'decimal' }} sx={{ width: 220 }}
         helperText={t('cases.ai.settings.limitHelp')} />
       <Stack spacing={0.5}>
