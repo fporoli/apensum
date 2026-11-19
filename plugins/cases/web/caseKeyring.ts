@@ -121,6 +121,35 @@ export async function caseKeyFor(orgId: string, headers: Headers, caseId: string
   return key;
 }
 
+export const isUnlocked = () => state === 'unlocked';
+
+/** A fresh key for a case about to be created or converted, with its wrapping for the caller; remembered in memory. */
+export async function newCaseKey(caseId: string): Promise<{ key: CryptoKey; wrappedKey: string }> {
+  if (!privateKey || !record) throw new KeyringError('locked');
+  touch();
+  const key = await createCaseKey();
+  caseKeys.set(caseId, key);
+  return { key, wrappedKey: await wrapCaseKey(key, record.publicKey) };
+}
+
+/** Forgets a key whose case was not created after all. */
+export const forgetCaseKey = (caseId: string) => void caseKeys.delete(caseId);
+
+/** The case key from the wrapped copy a list returns, or null when locked / not ours (the case then stays closed). */
+export async function caseKeyFromList(caseId: string, wrapped: string | null | undefined): Promise<CryptoKey | null> {
+  if (!privateKey || !wrapped) return null;
+  const cached = caseKeys.get(caseId);
+  if (cached) return cached;
+  try {
+    const key = await unwrapCaseKey(wrapped, privateKey);
+    caseKeys.set(caseId, key);
+    touch();
+    return key;
+  } catch {
+    return null;
+  }
+}
+
 /** Encrypts a case for the first time: a fresh case key, wrapped for the caller. Returns the key. */
 export async function createCaseKeyFor(orgId: string, headers: Headers, caseId: string, myUserId: string): Promise<CryptoKey> {
   if (!privateKey || !record) throw new KeyringError('locked');

@@ -3,6 +3,7 @@ import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, 
 import type { CaseInterview } from '../shared/cases';
 import { useT } from '@worktime3/web/plugin';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
+import { openInterview, sealedBody } from '../shared/caseVault';
 
 export async function interviewResponse(res: Response) {
   const data = await res.json();
@@ -29,13 +30,15 @@ export interface InterviewAiProviders {
   summary: 'local' | 'gemini' | 'openai' | 'azure' | null;
 }
 
-export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, onChange, onClose }: {
+export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, getKey, onChange, onClose }: {
   interview: CaseInterview;
   url: string;
   authHeaders: () => Promise<Record<string, string>>;
   canEdit: boolean;
   transcriptionEnabled: boolean;
   providers: InterviewAiProviders;
+  /** Set for an encrypted case: the case key. The text is sealed in the browser; audio and server AI are off. */
+  getKey?: () => Promise<CryptoKey | null>;
   onChange: (interview: CaseInterview) => void;
   onClose: () => void;
 }) {
@@ -117,11 +120,17 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
 
   const save = () => run(async () => {
     const form = new FormData();
-    form.append('data', JSON.stringify({ revision: interview.revision,
-      ...(transcriptDirty ? { transcript_text: transcript } : {}),
-      ...(summaryDirty ? { summary: summary.trim() ? summary : null } : {}),
-    }));
-    const { interview: next } = await request('', 'PATCH', form);
+    const key = getKey ? await getKey() : null;
+    form.append('data', JSON.stringify(key
+      ? { revision: interview.revision, ...(await sealedBody(key, 'interview', interview.id, {
+          interviewee_name: interview.interviewee_name, transcript_text: transcript, summary: summary.trim() ? summary : null, tags: interview.tags,
+        })) }
+      : { revision: interview.revision,
+        ...(transcriptDirty ? { transcript_text: transcript } : {}),
+        ...(summaryDirty ? { summary: summary.trim() ? summary : null } : {}),
+      }));
+    const { interview: saved } = await request('', 'PATCH', form);
+    const next = key ? await openInterview(key, saved) : saved;
     onChange(next);
     setTranscript(next.transcript_text);
     setSummary(next.summary ?? '');
@@ -145,7 +154,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
             if (!res.ok) await interviewResponse(res);
             setAudio(await res.blob());
           })}>{t('cases.interviews.playAudio')}</Button>)}
-          {canEdit && <>
+          {canEdit && !getKey && <>
             <CaseInterviewAudioInput file={file} setFile={setFile} disabled={busy} setRecording={setRecording} />
             {file && <Button disabled={locked || transcriptDirty || summaryDirty || !!draft} onClick={() => void run(async () => { await uploadAudio(file); })}>
               {t(interview.has_audio ? 'cases.interviews.replaceAudio' : 'cases.interviews.attachAudio')}
@@ -178,7 +187,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
           <TextField label={t('cases.interviews.summary')} value={summary} multiline minRows={3} maxRows={9}
             onChange={(e) => setSummary(e.target.value)} disabled={busy}
             InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
-          {canEdit && <Stack direction="row" spacing={1} alignItems="center">
+          {canEdit && !getKey && <Stack direction="row" spacing={1} alignItems="center">
             <Button disabled={locked || !!draft || transcriptDirty || interview.transcript_stale || !transcript.trim() || !providers.summary}
               onClick={() => void generate('summary')}>{t('cases.interviews.generateSummary')}</Button>
             <Typography variant="caption" color="text.secondary">

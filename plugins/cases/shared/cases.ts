@@ -1,6 +1,8 @@
 // Cases & Assessments module: Domain models, templates, and validation logic.
 //
-// Keep this file erasable TypeScript (no enums, no imports) so Node tests can load it directly.
+// Keep this file erasable TypeScript (no enums; type-only imports are fine) so Node tests can load it directly.
+
+import type { Envelope } from './caseCrypto';
 
 export const CASE_DOMAINS = ['kesb', 'forensic_psychiatry', 'police', 'social', 'custom'] as const;
 export type CaseDomain = (typeof CASE_DOMAINS)[number];
@@ -73,6 +75,15 @@ export interface Case {
   lead_user_name?: string | null;
   confidentiality: CaseConfidentiality;
   metadata: Record<string, unknown>;
+  /** The organization's own fields (settings.cases.customFields); inside `enc` when the case is encrypted. */
+  custom?: Record<string, unknown>;
+  /** Set when the case is encrypted: the sensitive fields as a sealed envelope (caseVault.ts). */
+  enc?: Envelope | null;
+  encrypted?: boolean;
+  /** The caller's wrapped case key, in lists, so the browser opens every case without a request each. */
+  my_key?: string | null;
+  /** Browser only: an encrypted case that could not be opened (locked or no key). */
+  vault_locked?: boolean;
   created_at: string;
   updated_at: string;
   document_count?: number;
@@ -110,6 +121,7 @@ export interface CaseInterview {
   transcript_text: string;
   summary: string | null;
   tags: string[];
+  enc?: Envelope | null;
   created_at: string;
 }
 
@@ -120,6 +132,8 @@ export interface Assessment {
   title: string;
   status: AssessmentStatus;
   sections_content: Record<string, string>;
+  custom?: Record<string, unknown>;
+  enc?: Envelope | null;
   author_user_id: string | null;
   author_name?: string | null;
   final_document_id: string | null;
@@ -139,6 +153,11 @@ export interface CreateCaseDto {
   lead_user_id?: string | null;
   confidentiality?: CaseConfidentiality;
   metadata?: Record<string, unknown>;
+  custom?: Record<string, unknown>;
+  /** Encrypted case: the client's id (it is part of the sealing), the sealed fields and the first key. */
+  id?: string;
+  enc?: Envelope;
+  wrappedKey?: string;
 }
 
 export interface UpdateCaseDto {
@@ -151,6 +170,8 @@ export interface UpdateCaseDto {
   lead_user_id?: string | null;
   confidentiality?: CaseConfidentiality;
   metadata?: Record<string, unknown>;
+  custom?: Record<string, unknown>;
+  enc?: Envelope;
 }
 
 export interface CreateCaseDocumentDto {
@@ -170,18 +191,25 @@ export interface CreateCaseInterviewDto {
   transcript_text?: string;
   summary?: string | null;
   tags?: string[];
+  id?: string;
+  enc?: Envelope;
 }
 
 export interface CreateAssessmentDto {
   template_id: string;
   title: string;
   sections_content?: Record<string, string>;
+  custom?: Record<string, unknown>;
+  id?: string;
+  enc?: Envelope;
 }
 
 export interface UpdateAssessmentDto {
   title?: string;
   status?: AssessmentStatus;
   sections_content?: Record<string, string>;
+  custom?: Record<string, unknown>;
+  enc?: Envelope;
 }
 
 export interface CreateAssessmentTemplateDto {

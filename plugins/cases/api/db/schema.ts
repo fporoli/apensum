@@ -35,6 +35,8 @@ export const casesInCases = cases.table("cases", {
 	metadata: jsonb().default({}).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	enc: jsonb(),
+	custom: jsonb().default({}).notNull(),
 }, (table) => [
 	index("idx_cases_org_lead").using("btree", table.organization_id.asc().nullsLast(), table.lead_user_id.asc().nullsLast()),
 	index("idx_cases_org_status").using("btree", table.organization_id.asc().nullsLast(), table.status.asc().nullsLast()),
@@ -78,6 +80,43 @@ export const case_documentsInCases = cases.table("case_documents", {
 	check("chk_case_docs_category", sql`category = ANY (ARRAY['court_decree'::text, 'medical'::text, 'police_report'::text, 'evidence'::text, 'correspondence'::text, 'financial'::text, 'other'::text])`),
 ]);
 
+export const case_interviewsInCases = cases.table("case_interviews", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	case_id: uuid().notNull(),
+	interviewee_name: text().notNull(),
+	interviewee_role: text().default('subject').notNull(),
+	interview_date: date().default(sql`CURRENT_DATE`).notNull(),
+	duration_minutes: integer().default(0),
+	interviewer_user_id: uuid(),
+	audio_document_id: uuid(),
+	transcript_text: text().notNull(),
+	summary: text(),
+	tags: text().array().default([""]).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	revision: uuid().default(sql`uuid_generate_v4()`).notNull(),
+	transcript_stale: boolean().default(false).notNull(),
+	summary_stale: boolean().default(false).notNull(),
+	enc: jsonb(),
+}, (table) => [
+	index("idx_case_interviews_case").using("btree", table.case_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.audio_document_id],
+			foreignColumns: [documents.id],
+			name: "case_interviews_audio_document_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.case_id],
+			foreignColumns: [casesInCases.id],
+			name: "case_interviews_case_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.interviewer_user_id],
+			foreignColumns: [users.id],
+			name: "case_interviews_interviewer_user_id_fkey"
+		}).onDelete("set null"),
+	check("chk_case_interviews_role", sql`interviewee_role = ANY (ARRAY['subject'::text, 'witness'::text, 'relative'::text, 'expert'::text, 'officer'::text, 'informant'::text, 'other'::text])`),
+]);
+
 export const assessmentsInCases = cases.table("assessments", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	case_id: uuid().notNull(),
@@ -90,6 +129,8 @@ export const assessmentsInCases = cases.table("assessments", {
 	version: integer().default(1).notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	enc: jsonb(),
+	custom: jsonb().default({}).notNull(),
 }, (table) => [
 	index("idx_assessments_case").using("btree", table.case_id.asc().nullsLast()),
 	foreignKey({
@@ -113,42 +154,6 @@ export const assessmentsInCases = cases.table("assessments", {
 			name: "assessments_template_id_fkey"
 		}).onDelete("restrict"),
 	check("chk_assessments_status", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'final'::text, 'signed'::text])`),
-]);
-
-export const case_interviewsInCases = cases.table("case_interviews", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	case_id: uuid().notNull(),
-	interviewee_name: text().notNull(),
-	interviewee_role: text().default('subject').notNull(),
-	interview_date: date().default(sql`CURRENT_DATE`).notNull(),
-	duration_minutes: integer().default(0),
-	interviewer_user_id: uuid(),
-	audio_document_id: uuid(),
-	transcript_text: text().notNull(),
-	summary: text(),
-	tags: text().array().default([""]).notNull(),
-	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	revision: uuid().default(sql`uuid_generate_v4()`).notNull(),
-	transcript_stale: boolean().default(false).notNull(),
-	summary_stale: boolean().default(false).notNull(),
-}, (table) => [
-	index("idx_case_interviews_case").using("btree", table.case_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.audio_document_id],
-			foreignColumns: [documents.id],
-			name: "case_interviews_audio_document_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.case_id],
-			foreignColumns: [casesInCases.id],
-			name: "case_interviews_case_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.interviewer_user_id],
-			foreignColumns: [users.id],
-			name: "case_interviews_interviewer_user_id_fkey"
-		}).onDelete("set null"),
-	check("chk_case_interviews_role", sql`interviewee_role = ANY (ARRAY['subject'::text, 'witness'::text, 'relative'::text, 'expert'::text, 'officer'::text, 'informant'::text, 'other'::text])`),
 ]);
 
 export const assessment_templatesInCases = cases.table("assessment_templates", {

@@ -8,6 +8,7 @@ import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from
 import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
 import { CaseAiService } from './case-ai.service';
 import { documents, users } from '@worktime3/api/schema';
+import { checkCustom, checkNewEncryptedCase, checkWrite } from './case-encryption';
 import { casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases } from './db/schema';
 import type {
   Case,
@@ -48,7 +49,7 @@ export class CasesService {
   /** List cases for an organization, optionally restricted to those led by callerId. */
   async listCases(
     orgId: string,
-    filter: { onlyLeadUserId?: string | null; domain?: string; status?: string; search?: string },
+    filter: { onlyLeadUserId?: string | null; domain?: string; status?: string; search?: string; callerId?: string },
   ): Promise<Case[]> {
     const conditions: any[] = [sql`c.organization_id = ${orgId}::uuid`];
     if (filter.onlyLeadUserId) {
@@ -63,7 +64,7 @@ export class CasesService {
     if (filter.search?.trim()) {
       const q = `%${filter.search.trim()}%`;
       conditions.push(
-        sql`(c.reference_number ILIKE ${q} OR c.title ILIKE ${q} OR c.subject_name ILIKE ${q})`,
+        sql`(c.enc IS NOT NULL OR c.reference_number ILIKE ${q} OR c.title ILIKE ${q} OR c.subject_name ILIKE ${q})`,
       );
     }
 
@@ -83,6 +84,10 @@ export class CasesService {
         u.display_name AS lead_user_name,
         c.confidentiality,
         c.metadata,
+        c.custom,
+        c.enc,
+        c.enc IS NOT NULL AS encrypted,
+        (SELECT k.wrapped_key FROM cases.case_keys k WHERE k.case_id = c.id AND k.user_id = ${filter.callerId ?? null}::uuid) AS my_key,
         c.created_at::text AS created_at,
         c.updated_at::text AS updated_at,
         (SELECT COUNT(*)::int FROM cases.case_documents cd WHERE cd.case_id = c.id) AS document_count,
@@ -113,6 +118,9 @@ export class CasesService {
         u.display_name AS lead_user_name,
         c.confidentiality,
         c.metadata,
+        c.custom,
+        c.enc,
+        c.enc IS NOT NULL AS encrypted,
         c.created_at::text AS created_at,
         c.updated_at::text AS updated_at,
         (SELECT COUNT(*)::int FROM cases.case_documents cd WHERE cd.case_id = c.id) AS document_count,
@@ -130,6 +138,7 @@ export class CasesService {
 
   /** Create a new case. */
   async createCase(orgId: string, callerId: string, dto: CreateCaseDto): Promise<Case> {
+    if (dto.enc !== undefined) return this.createEncryptedCase(orgId, callerId, dto);
     const ref = dto.reference_number?.trim();
     const title = dto.title?.trim();
     const subject = dto.subject_name?.trim();
@@ -150,15 +159,36 @@ export class CasesService {
         lead_user_id: leadId,
         confidentiality: dto.confidentiality ?? 'standard',
         metadata: dto.metadata ?? {},
+        custom: checkCustom(dto.custom) ?? {},
       })
       .returning();
 
     return this.getCase(orgId, row.id);
   }
 
+  /** A case created encrypted: the browser sealed title, subject and the rest; the case and its first key go in together. */
+  private async createEncryptedCase(orgId: string, callerId: string, dto: CreateCaseDto): Promise<Case> {
+    checkNewEncryptedCase(dto as unknown as Record<string, unknown>);
+    const ref = dto.reference_number?.trim();
+    if (!ref) throw new BadRequestException('missing-required-fields');
+    const id = dto.id as string;
+    await this.db.transaction(async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO cases.cases (id, organization_id, reference_number, title, domain, subject_name, lead_user_id, confidentiality, enc)
+        VALUES (${id}::uuid, ${orgId}::uuid, ${ref}, '', ${dto.domain ?? 'kesb'}, '', ${dto.lead_user_id ?? callerId}::uuid,
+          ${dto.confidentiality ?? 'standard'}, ${JSON.stringify(dto.enc)}::jsonb)`);
+      await tx.execute(sql`
+        INSERT INTO cases.case_keys (case_id, user_id, wrapped_key, granted_by)
+        VALUES (${id}::uuid, ${callerId}::uuid, ${dto.wrappedKey as string}, ${callerId}::uuid)`);
+    });
+    return this.getCase(orgId, id);
+  }
+
   /** Update an existing case. */
   async updateCase(orgId: string, caseId: string, dto: UpdateCaseDto): Promise<Case> {
-    await this.getCase(orgId, caseId);
+    const existing = await this.getCase(orgId, caseId);
+    checkWrite('case', !!existing.encrypted, dto as Record<string, unknown>, { requireEnc: false });
+    const custom = checkCustom(dto.custom);
 
     const dob = dto.subject_dob !== undefined
       ? (dto.subject_dob && String(dto.subject_dob).trim() ? String(dto.subject_dob).trim() : null)
@@ -176,6 +206,8 @@ export class CasesService {
         lead_user_id = CASE WHEN ${dto.lead_user_id !== undefined} THEN ${dto.lead_user_id ?? null}::uuid ELSE lead_user_id END,
         confidentiality = COALESCE(${dto.confidentiality ?? null}, confidentiality),
         metadata = COALESCE(${dto.metadata ? JSON.stringify(dto.metadata) : null}::jsonb, metadata),
+        custom = COALESCE(${custom ? JSON.stringify(custom) : null}::jsonb, custom),
+        enc = COALESCE(${dto.enc ? JSON.stringify(dto.enc) : null}::jsonb, enc),
         updated_at = now()
       WHERE organization_id = ${orgId}::uuid AND id = ${caseId}::uuid
     `);
@@ -262,7 +294,7 @@ export class CasesService {
       SELECT ci.id, ci.case_id, ci.interviewee_name, ci.interviewee_role,
         ci.interview_date::text AS interview_date, ci.duration_minutes, ci.interviewer_user_id,
         u.display_name AS interviewer_name, d.id IS NOT NULL AS has_audio,
-        ci.revision, ci.transcript_stale, ci.summary_stale, ci.transcript_text, ci.summary, ci.tags,
+        ci.revision, ci.transcript_stale, ci.summary_stale, ci.transcript_text, ci.summary, ci.tags, ci.enc,
         ci.created_at::text AS created_at
       FROM cases.case_interviews ci
       JOIN cases.cases c ON c.id = ci.case_id
@@ -281,11 +313,13 @@ export class CasesService {
     return row;
   }
 
-  private async lockInterviewCase(db: Db, orgId: string, caseId: string) {
-    const { rows } = await db.execute(sql`
-      SELECT id FROM cases.cases WHERE organization_id = ${orgId}::uuid AND id = ${caseId}::uuid FOR UPDATE
+  /** Locks the case row and says whether it is encrypted (its rows must then be written sealed). */
+  private async lockInterviewCase(db: Db, orgId: string, caseId: string): Promise<boolean> {
+    const { rows } = await db.execute<{ encrypted: boolean }>(sql`
+      SELECT enc IS NOT NULL AS encrypted FROM cases.cases WHERE organization_id = ${orgId}::uuid AND id = ${caseId}::uuid FOR UPDATE
     `);
     if (!rows.length) throw new NotFoundException('case-not-found');
+    return rows[0].encrypted;
   }
 
   private async storeInterviewAudio(orgId: string, callerId: string, interviewId: string, file: { buffer: Buffer }) {
@@ -330,17 +364,21 @@ export class CasesService {
   }
 
   async createInterview(orgId: string, caseId: string, callerId: string, dto: CreateCaseInterviewDto, file?: { buffer: Buffer }) {
-    if (typeof dto.interviewee_name !== 'string' || !dto.interviewee_name.trim()) throw new BadRequestException('interview-name-required');
+    const sealed = dto.enc !== undefined;
+    if (!sealed && (typeof dto.interviewee_name !== 'string' || !dto.interviewee_name.trim())) throw new BadRequestException('interview-name-required');
+    if (sealed && file) throw new BadRequestException('case-encrypted-files');
     this.validateInterviewText(dto);
-    const id = randomUUID();
+    const id = sealed ? (dto.id as string) : randomUUID();
     const documentId = file ? await this.storeInterviewAudio(orgId, callerId, id, file) : null;
     try {
       return await this.db.transaction(async (tx) => {
-        await this.lockInterviewCase(tx, orgId, caseId);
+        const encrypted = await this.lockInterviewCase(tx, orgId, caseId);
+        checkWrite('interview', encrypted, dto as unknown as Record<string, unknown>, { requireEnc: true, requireId: true });
         await tx.insert(case_interviewsInCases).values({
           id,
           case_id: caseId,
-          interviewee_name: dto.interviewee_name.trim(),
+          enc: sealed ? dto.enc : null,
+          interviewee_name: sealed ? '' : dto.interviewee_name.trim(),
           interviewee_role: dto.interviewee_role ?? 'subject',
           interview_date: dto.interview_date ?? sql`CURRENT_DATE`,
           duration_minutes: dto.duration_minutes ?? 0,
@@ -367,13 +405,23 @@ export class CasesService {
     }
   }
 
-  async updateInterview(orgId: string, caseId: string, interviewId: string, revision: string, dto: { transcript_text?: string; summary?: string | null }) {
+  async updateInterview(orgId: string, caseId: string, interviewId: string, revision: string, dto: { transcript_text?: string; summary?: string | null; enc?: unknown }) {
     this.validateInterviewText(dto);
+    const sealed = (dto as { enc?: unknown }).enc !== undefined;
     const writesTranscript = typeof dto.transcript_text === 'string';
     const writesSummary = dto.summary !== undefined;
-    if (!writesTranscript && !writesSummary) throw new BadRequestException('interview-invalid-data');
+    if (!sealed && !writesTranscript && !writesSummary) throw new BadRequestException('interview-invalid-data');
     return this.db.transaction(async (tx) => {
-      await this.lockInterviewCase(tx, orgId, caseId);
+      const encrypted = await this.lockInterviewCase(tx, orgId, caseId);
+      checkWrite('interview', encrypted, dto as Record<string, unknown>, { requireEnc: true });
+      if (sealed) {
+        const { rows: done } = await tx.execute(sql`
+          UPDATE cases.case_interviews SET enc = ${JSON.stringify((dto as { enc: unknown }).enc)}::jsonb, revision = uuid_generate_v4()
+          WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid AND revision = ${revision} RETURNING id`);
+        if (!done.length) throw new ConflictException('interview-changed');
+        await tx.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+        return this.getInterview(caseId, interviewId, tx);
+      }
       const { rows } = await tx.execute(sql`
         UPDATE cases.case_interviews
         SET transcript_text = COALESCE(${dto.transcript_text ?? null}, transcript_text),
@@ -536,6 +584,8 @@ export class CasesService {
         a.title,
         a.status,
         a.sections_content,
+        a.custom,
+        a.enc,
         a.author_user_id,
         u.display_name AS author_name,
         a.final_document_id,
@@ -562,6 +612,8 @@ export class CasesService {
         a.title,
         a.status,
         a.sections_content,
+        a.custom,
+        a.enc,
         a.author_user_id,
         u.display_name AS author_name,
         a.final_document_id,
@@ -585,8 +637,18 @@ export class CasesService {
     caseId: string,
     callerId: string,
     dto: CreateAssessmentDto,
+    encrypted = false,
   ): Promise<Assessment> {
+    checkWrite('assessment', encrypted, dto as unknown as Record<string, unknown>, { requireEnc: true, requireId: true });
     const template = await this.getTemplate(orgId, dto.template_id);
+    if (encrypted) {
+      await this.db.execute(sql`
+        INSERT INTO cases.assessments (id, case_id, template_id, title, status, sections_content, author_user_id, version, enc)
+        VALUES (${dto.id as string}::uuid, ${caseId}::uuid, ${dto.template_id}::uuid, '', 'draft', '{}'::jsonb, ${callerId}::uuid, 1, ${JSON.stringify(dto.enc)}::jsonb)`);
+      await this.db.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
+      return this.getAssessment(caseId, dto.id as string);
+    }
+    const custom = checkCustom(dto.custom) ?? {};
 
     // Initial section content defaults if not provided
     const initialSections: Record<string, string> = dto.sections_content ?? {};
@@ -604,6 +666,7 @@ export class CasesService {
         title: dto.title.trim(),
         status: 'draft',
         sections_content: initialSections,
+        custom,
         author_user_id: callerId,
         version: 1,
       })
@@ -619,8 +682,11 @@ export class CasesService {
     assessmentId: string,
     callerId: string,
     dto: UpdateAssessmentDto,
+    encrypted = false,
   ): Promise<Assessment> {
     await this.getAssessment(caseId, assessmentId);
+    checkWrite('assessment', encrypted, dto as Record<string, unknown>, { requireEnc: false });
+    const custom = checkCustom(dto.custom);
 
     await this.db.execute(sql`
       UPDATE cases.assessments
@@ -628,6 +694,8 @@ export class CasesService {
         title = COALESCE(${dto.title?.trim() ?? null}, title),
         status = COALESCE(${dto.status ?? null}, status),
         sections_content = CASE WHEN ${dto.sections_content !== undefined} THEN ${JSON.stringify(dto.sections_content)}::jsonb ELSE sections_content END,
+        custom = COALESCE(${custom ? JSON.stringify(custom) : null}::jsonb, custom),
+        enc = COALESCE(${dto.enc ? JSON.stringify(dto.enc) : null}::jsonb, enc),
         version = version + 1,
         updated_at = now()
       WHERE case_id = ${caseId}::uuid AND id = ${assessmentId}::uuid

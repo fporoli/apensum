@@ -84,6 +84,14 @@ export class CasesController {
     return callerId;
   }
 
+  /**
+   * Features that read the plaintext on the server (file upload, transcription, AI, PDF) are not available for an
+   * encrypted case: the server cannot read it. They come back with the browser doing the reading (later phases).
+   */
+  private requirePlain(caseItem: { encrypted?: boolean }): void {
+    if (caseItem.encrypted) throw new BadRequestException('case-encrypted');
+  }
+
   private async checkSeeAccess(orgId: string, callerId: string): Promise<{ onlyLeadUserId: string | null }> {
     const canSee = await can(this.db, orgId, callerId, 'nav.cases', 'see');
     if (!canSee) throw new ForbiddenException('forbidden');
@@ -125,6 +133,7 @@ export class CasesController {
       domain,
       status,
       search,
+      callerId,
     });
     return { ok: true, cases: list };
   }
@@ -221,6 +230,7 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
+    this.requirePlain(caseItem);
 
     let documentId = body.document_id ?? null;
     let extractedText = body.extracted_text ?? null;
@@ -361,7 +371,9 @@ export class CasesController {
     @UploadedFile() file?: Express.Multer.File,
   ) {
     const callerId = await this.requireCallerId(req);
-    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    const caseItem = await this.casesService.getCase(orgId, caseId);
+    await this.checkEditAccess(orgId, callerId, caseItem);
+    this.requirePlain(caseItem);
     if (!file) throw new BadRequestException('interview-audio-not-found');
     const interview = await this.casesService.replaceInterviewAudio(orgId, caseId, interviewId, callerId, interviewRevision(revision), file);
     return { ok: true, interview };
@@ -377,7 +389,9 @@ export class CasesController {
     @Body('revision') revision: string,
   ) {
     const callerId = await this.requireCallerId(req);
-    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    const caseItem = await this.casesService.getCase(orgId, caseId);
+    await this.checkEditAccess(orgId, callerId, caseItem);
+    this.requirePlain(caseItem);
     const { content } = await this.casesService.readInterviewAudio(orgId, caseId, interviewId, interviewRevision(revision));
     const draft = await this.caseAi.transcribe(orgId, callerId, caseId, content);
     await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
@@ -395,7 +409,9 @@ export class CasesController {
     @Body('revision') revision: string,
   ) {
     const callerId = await this.requireCallerId(req);
-    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    const caseItem = await this.casesService.getCase(orgId, caseId);
+    await this.checkEditAccess(orgId, callerId, caseItem);
+    this.requirePlain(caseItem);
     const interview = await this.casesService.getInterview(caseId, interviewId);
     if (interview.revision !== interviewRevision(revision)) throw new ConflictException('interview-changed');
     if (!interview.transcript_text.trim() || interview.transcript_stale) throw new BadRequestException('interview-current-transcript-required');
@@ -449,7 +465,7 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    const assessment = await this.casesService.createAssessment(orgId, caseId, callerId, body);
+    const assessment = await this.casesService.createAssessment(orgId, caseId, callerId, body, !!caseItem.encrypted);
     return { ok: true, assessment };
   }
 
@@ -463,6 +479,7 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
+    this.requirePlain(caseItem);
     const draft = await this.casesService.synthesizeDraft(orgId, caseId, body.template_id, callerId);
     return { ok: true, draft };
   }
@@ -478,6 +495,7 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
+    this.requirePlain(caseItem);
     const draft = await this.casesService.aiDraft(orgId, caseId, body.template_id, callerId);
     return { ok: true, draft };
   }
@@ -510,7 +528,7 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    const updated = await this.casesService.updateAssessment(caseId, assessmentId, callerId, body);
+    const updated = await this.casesService.updateAssessment(caseId, assessmentId, callerId, body, !!caseItem.encrypted);
     return { ok: true, assessment: updated };
   }
 
@@ -528,6 +546,7 @@ export class CasesController {
     if (onlyLeadUserId && caseItem.lead_user_id !== callerId) {
       throw new ForbiddenException('forbidden');
     }
+    this.requirePlain(caseItem);
     const pdfBuffer = await this.casesService.generateAssessmentPdf(orgId, caseId, assessmentId, callerId);
 
     const safeRef = caseItem.reference_number.replace(/[^a-zA-Z0-9_-]/g, '_');
