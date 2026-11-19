@@ -100,7 +100,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   changeset; Liquibase checksums them.
 - Then run `npm run dev:migrate` and `npm run dev:introspect` (drizzle-kit 0.31,
   matching drizzle-orm 0.45), and commit the generated files (also a plugin's `api/db/schema.ts` for the tables
-  its manifest lists in `apensum.tables`; `scripts/plugin-schemas.mjs`). `db:checkschema`
+  its manifest lists in `apensum.tables`, or of the Postgres schema it owns, `apensum.dbSchema`; `scripts/plugin-schemas.mjs`). `db:checkschema`
   (`apps/api/scripts/check-schema.mjs`) introspects into a scratch folder and compares,
   ignoring table/line order (which follows the database's history); `resetdb` runs it after
   migrating and CI fails on a mismatch.

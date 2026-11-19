@@ -30,8 +30,13 @@ export interface PluginManifest {
    * (`changelog/db.changelog-master.xml`, run after the core's; docs/PLUGINS.md).
    */
   permissions?: PermissionObject[];
-  /** Tables the plugin owns (introspected into its api/db/schema.ts, apps/api/scripts/plugin-schemas.mjs). */
+  /** Tables the plugin owns in public (introspected into its api/db/schema.ts, apps/api/scripts/plugin-schemas.mjs). */
   tables?: string[];
+  /**
+   * A Postgres schema the plugin owns with all its tables (created by its changelog), instead of
+   * `tables` in public. Its name starts with the plugin's id.
+   */
+  dbSchema?: string;
   /**
    * Keeps names that do not start with the plugin's id (pluginApi.ts, namespaceMismatch). Only for a
    * plugin carved out of the core with its old names (expenses); a new plugin never sets it.
@@ -80,6 +85,8 @@ export function pluginNames(manifest: PluginManifest, plugin: ApiPlugin | undefi
   if (manifest.module) names.push({ kind: 'module', name: manifest.module.id });
   for (const o of manifest.permissions ?? []) names.push({ kind: 'permission object', name: o.id });
   for (const t of manifest.tables ?? []) names.push({ kind: 'table', name: t });
+  // Tables in the plugin's own schema need no prefix: the schema is the namespace.
+  if (manifest.dbSchema) names.push({ kind: 'database schema', name: manifest.dbSchema });
   for (const r of plugin?.reports ?? []) names.push({ kind: 'report', name: r.definition.id });
   for (const v of plugin?.teamViews ?? []) names.push({ kind: 'team view', name: v.kind });
   for (const p of plugin?.payroll ?? []) names.push({ kind: 'payroll item', name: p.key });
@@ -96,6 +103,12 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
   for (const { dir: pluginDir, manifest } of readPluginManifests(dir)) {
     const mismatch = pluginApiMismatch(manifest.id, manifest.apensumApi);
     if (mismatch) throw new Error(mismatch);
+    if (manifest.dbSchema !== undefined && (manifest.tables?.length ?? 0) > 0) {
+      throw new Error(`Plugin ${manifest.id}: use either apensum.tables (in public) or apensum.dbSchema (its own schema), not both`);
+    }
+    if (manifest.dbSchema !== undefined && (typeof manifest.dbSchema !== 'string' || !/^[a-z][a-z0-9_]*$/.test(manifest.dbSchema) || manifest.dbSchema === 'public')) {
+      throw new Error(`Plugin ${manifest.id}: apensum.dbSchema must be a lowercase Postgres schema name other than public`);
+    }
     let plugin: ApiPlugin | undefined;
     if (manifest.api) {
       const entry = join(pluginDir, manifest.api);

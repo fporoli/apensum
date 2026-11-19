@@ -21,5 +21,5 @@ for (const plugin of pluginsWithTables()) {
   const src = introspectPlugin(plugin);
   mkdirSync(dirname(plugin.schema), { recursive: true });
   writeFileSync(plugin.schema, src);
-  console.log(`introspect: plugin ${plugin.id} -> ${relative(join(apiDir, '../..'), plugin.schema)} (${plugin.tables.length} tables)`);
+  console.log(`introspect: plugin ${plugin.id} -> ${relative(join(apiDir, '../..'), plugin.schema)} (${plugin.dbSchema ? `schema ${plugin.dbSchema}` : `${plugin.tables.length} tables`})`);
 }

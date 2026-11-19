@@ -2,15 +2,18 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig } from 'drizzle-kit';
 
-// Tables a plugin owns (its package.json `apensum.tables`) are left out: they are introspected into
-// the plugin's own api/db/schema.ts (scripts/plugin-schemas.mjs).
+// Tables a plugin owns (its package.json `apensum.tables`) and Postgres schemas it owns
+// (`apensum.dbSchema`) are left out: they are introspected into the plugin's own api/db/schema.ts
+// (scripts/plugin-schemas.mjs).
 const pluginsDir = process.env.APENSUM_PLUGINS_DIR?.trim() ? resolve(process.env.APENSUM_PLUGINS_DIR.trim()) : join(__dirname, '../../plugins');
-const pluginTables: string[] = existsSync(pluginsDir)
+const manifests: { tables?: string[]; dbSchema?: string }[] = existsSync(pluginsDir)
   ? readdirSync(pluginsDir).flatMap((id) => {
       const pkg = join(pluginsDir, id, 'package.json');
-      return existsSync(pkg) ? ((JSON.parse(readFileSync(pkg, 'utf8')).apensum?.tables ?? []) as string[]) : [];
+      return existsSync(pkg) ? [JSON.parse(readFileSync(pkg, 'utf8')).apensum ?? {}] : [];
     })
   : [];
+const pluginTables = manifests.flatMap((m) => m.tables ?? []);
+const pluginSchemas = manifests.flatMap((m) => (m.dbSchema ? [m.dbSchema] : []));
 
 // Drizzle never owns migrations here — Liquibase does (see infra/liquibase).
 // This config exists only for `drizzle-kit introspect`: after applying a
@@ -29,6 +32,6 @@ export default defineConfig({
   introspect: {
     casing: 'preserve',
   },
-  schemaFilter: ['public', 'cases'],
+  schemaFilter: ['public', 'cases'].filter((s) => !pluginSchemas.includes(s)),
   ...(pluginTables.length ? { tablesFilter: pluginTables.map((t) => `!${t}`) } : {}),
 });

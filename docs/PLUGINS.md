@@ -60,6 +60,7 @@ core. For a plugin `cases`:
 | What | Examples |
 |---|---|
 | tables (`apensum.tables`) | `cases`, `cases_documents` |
+| its own Postgres schema (`apensum.dbSchema`) | `cases`, `cases_archive` (its tables: any name) |
 | permission objects | `nav.cases`, `nav.casesTemplates`, `section.cases.notes` |
 | module, report, team view, payroll item, document category | `cases`, `casesArchive` |
 | workflow actions, source tables, record fields | `cases.approve`, `cases_reviews`, `cases_review` |
@@ -231,6 +232,11 @@ changeset. Use the plugin id as changeset author.
   plugin's own `api/db/schema.ts` (generated, never edit; it imports the core's tables it refers to
   from `@worktime3/api/schema`). `db:checkschema` checks both. The plugin imports its tables from
   `./db/schema`, the core's from `@worktime3/api/schema`.
+- **Or a schema of its own** (`"dbSchema": "cases"`, instead of `tables`): the plugin's changelog creates
+  the Postgres schema and its tables; introspection leaves the whole schema out of the core and writes it
+  into the plugin's `api/db/schema.ts` (`export const cases = pgSchema("cases")`, tables named
+  `<table>In<Schema>`). The schema's name starts with the plugin's id; its tables need no prefix.
+  A plugin uses either `tables` or `dbSchema`, not both.
 - **Moving existing tables into a plugin** (as expenses did): the changesets that created them stay
   in the core's changelog, since applied changesets cannot move; new changes go into the plugin's.
   A database without the plugin still has the (empty) tables.
