@@ -5,8 +5,8 @@ import {
   CASE_AI_SUMMARY,
   CASE_AI_TRANSCRIPTION,
   type CaseAiSettings,
-} from '@worktime3/shared/cases';
-import { useI18n } from './i18n';
+} from '../shared/cases';
+import { useI18n } from '@worktime3/web/plugin';
 import { caseErrorText } from './CaseInterviewEditor';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';

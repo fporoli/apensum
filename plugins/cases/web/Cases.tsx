@@ -26,10 +26,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useI18n } from './i18n';
+import { useI18n } from '@worktime3/web/plugin';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 import { CaseInterviewEditor, caseErrorText, interviewError, interviewResponse, type InterviewAiProviders } from './CaseInterviewEditor';
-import { PageHeader, EmptyState } from './components';
+import { PageHeader, EmptyState } from '@worktime3/web/plugin';
 import {
   AddIcon,
   ArticleIcon,
@@ -42,7 +42,7 @@ import {
   SaveIcon,
   SearchIcon,
   UploadIcon,
-} from './icons';
+} from '@worktime3/web/plugin';
 import type {
   Case,
   CaseDocument,
@@ -55,7 +55,7 @@ import type {
   CaseConfidentiality,
   CaseDocumentCategory,
   CaseIntervieweeRole,
-} from '@worktime3/shared/cases';
+} from '../shared/cases';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 

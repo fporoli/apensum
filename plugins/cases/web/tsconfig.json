@@ -1,0 +1,5 @@
+{
+  // Editor: the web part, as apps/web compiles it (apps/web/tsconfig.json includes plugins/*/web).
+  "extends": "../../../apps/web/tsconfig.json",
+  "include": ["./**/*", "../../../apps/web/src/vite-env.d.ts"]
+}

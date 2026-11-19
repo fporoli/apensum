@@ -32,6 +32,7 @@ export default defineConfig({
   introspect: {
     casing: 'preserve',
   },
-  schemaFilter: ['public', 'cases'].filter((s) => !pluginSchemas.includes(s)),
+  // Plugins' own schemas (e.g. cases) are theirs: only public is the core's.
+  schemaFilter: ['public'].filter((s) => !pluginSchemas.includes(s)),
   ...(pluginTables.length ? { tablesFilter: pluginTables.map((t) => `!${t}`) } : {}),
 });

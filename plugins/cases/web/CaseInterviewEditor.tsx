@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Stack, TextField, Typography } from '@mui/material';
-import type { CaseInterview } from '@worktime3/shared/cases';
-import { useT } from './i18n';
+import type { CaseInterview } from '../shared/cases';
+import { useT } from '@worktime3/web/plugin';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 
 export async function interviewResponse(res: Response) {

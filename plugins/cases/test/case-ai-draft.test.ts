@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
-import type { AssessmentTemplateSection } from '@worktime3/shared/cases';
-import { AI_DOC_CHARS, AI_TOTAL_CHARS, buildAiDraftMessages, parseAiDraft, type AiDraftMaterial } from '../../apps/api/src/case-ai-draft';
-import { CasesService } from '../../apps/api/src/cases.service';
-import { CaseAiService } from '../../apps/api/src/case-ai.service';
+import type { AssessmentTemplateSection } from '../shared/cases';
+import { AI_DOC_CHARS, AI_TOTAL_CHARS, buildAiDraftMessages, parseAiDraft, type AiDraftMaterial } from '../api/case-ai-draft';
+import { CasesService } from '../api/cases.service';
+import { CaseAiService } from '../api/case-ai.service';
 
 const sections: AssessmentTemplateSection[] = [
   { key: 'mandate', title: '1. Ausgangslage', isRequired: true, order: 1, promptGuidance: 'Fasse den Auftrag zusammen.' },

@@ -183,8 +183,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
 - AI assistant (`assistant.service.ts`): OpenAI SDK pointed at Gemini's or
   OpenAI's compatible endpoint, with tool-calling. Each tool must run the same
   authorization as its REST equivalent, using the caller's real identity.
-- Cases AI per organization (`organizations.settings.cases.ai`, `packages/shared/src/cases.ts`, set only by a
-  superdeveloper under Organization settings -> AI and costs, `CaseAiSettingsPanel.tsx`, `GET/PUT case-ai-settings`):
+- Cases (plugin `plugins/cases`, module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`;
+  tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).
+  Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set only by a
+  superdeveloper under Organization settings -> AI and costs, the plugin's `CaseAiSettingsPanel` shown there via
+  `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`):
   transcription Whisper on the server or Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland), summary key sentences / instance provider / Azure OpenAI, AI draft
   instance provider or Azure OpenAI. Default: nothing goes to Azure. `case-ai.service.ts` picks the provider
   (a chosen but unconfigured one is an error, never a silent fallback). The AI budget is the core's, for every
@@ -390,7 +393,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   (kind `receipt`, the org's AI monthly limit, `orgMonthlyLimitChf`); returns a suggestion, stores nothing.
   The expense API/web files named here live in `plugins/expenses/{api,web}`.
 - Organization settings sections are collapsible (`SettingsSection.tsx`; a card uses `SectionPaper` so it shows its own
-  title only outside a section). AI and costs (`CaseAiSettingsPanel`) lives there, not on the Cases pages.
+  title only outside a section). AI and costs (`AiSettingsPanel`, plus plugins' parts via `within: 'org.ai'`) lives there.
 - Reports (module `reports`, `nav.reports`, 063; `reports.controller.ts`, `Reports.tsx`): the catalogue, grouping and
   totals are `packages/shared/src/reports.ts` (a `balance` measure is each person's last month, summed over people).
   Each report shows `listableUserIds` of its page object (project hours `nav.time`, attendance `nav.workTime`,

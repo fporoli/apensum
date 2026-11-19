@@ -95,8 +95,8 @@ export { AuditService } from './audit.service';
 // Authentication and authorization (CLAUDE.md: every org-scoped handler authorizes itself)
 export { Public, type AuthenticatedRequest } from './jwt.guard';
 export {
-  callerUserId, can, canSeeUserData, canEditUserData, canEditBeyondOwn, isOrgMember, isManagerOf, listableUserIds,
-  membershipManagerId, reachesAll,
+  callerUserId, can, canSeeUserData, canEditUserData, canEditBeyondOwn, isOrgMember, isManagerOf, isSuperDeveloper,
+  listableUserIds, membershipManagerId, permissionIdsOf, reachesAll,
 } from './access';
 
 // Documents, form templates, approval workflows
@@ -104,7 +104,10 @@ export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type Perso
 export { FieldsService } from './fields.service';
 export { WorkflowsService, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 
-// Paid AI calls (Azure, Switzerland): always through AiBudgetService
-export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
-export { AiBudgetService, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
-export { extractPdfText, isPdf } from './case-document-text';
+// AI: the instance's provider (Gemini/OpenAI) and paid calls (Azure, Switzerland), always through AiBudgetService
+export { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from './ai-client';
+export {
+  AiBudgetService, azureAllowed, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, instanceBudgetChf,
+  transcribeChf, type AiUsageKind, type AzurePrices,
+} from './ai-budget.service';
+export { extractPdfText, isPdf, tidyExtractedText } from './case-document-text';

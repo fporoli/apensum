@@ -24,8 +24,6 @@ export const MODULES: ModuleDefinition[] = [
   { id: 'requests', caption: 'modules.requests', defaultEnabled: true, objects: ['nav.requests'] },
   // Reports: project hours, attendance and overtime, absences, with filters, chart and export.
   { id: 'reports', caption: 'modules.reports', defaultEnabled: true, objects: ['nav.reports'] },
-  // Cases & Assessments: Dossier management, interviews/transcripts and standardized assessments for KESB, forensic experts and police.
-  { id: 'cases', caption: 'modules.cases', defaultEnabled: false, objects: ['nav.cases'] },
 ];
 
 /**

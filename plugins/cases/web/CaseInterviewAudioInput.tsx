@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button, Stack, Typography } from '@mui/material';
-import { useT } from './i18n';
+import { useT } from '@worktime3/web/plugin';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const recordings = [ ['audio/webm;codecs=opus', 'webm'], ['audio/mp4', 'm4a'], ['audio/ogg;codecs=opus', 'ogg'] ];

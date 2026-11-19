@@ -1,14 +1,15 @@
 import { strict as assert } from 'node:assert';
 import { createServer } from 'node:http';
 import { test } from 'node:test';
+import './register';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NextFunction, Request, Response } from 'express';
-import { CasesController } from '../../apps/api/src/cases.controller';
-import { CasesService } from '../../apps/api/src/cases.service';
-import { CaseAiService } from '../../apps/api/src/case-ai.service';
-import { interviewAudioFormat, interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from '../../apps/api/src/case-interview-processing';
-import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
+import { CasesController } from '../api/cases.controller';
+import { CasesService } from '../api/cases.service';
+import { CaseAiService } from '../api/case-ai.service';
+import { interviewAudioFormat, interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from '../api/case-interview-processing';
+import type { AuthenticatedRequest } from '@worktime3/api/plugin';
 
 const testAudio = Buffer.from('RIFF0000WAVE');
 const revision = '00000000-0000-0000-0000-000000000001';
@@ -120,7 +121,7 @@ test('transcription is opt-in and sends synthetic audio only to a local endpoint
 test('interview revisions preserve edits, invalidate downstream text and replace only owned audio', {
   skip: !process.env.CASES_INTERVIEW_SCHEMA_TEST,
 }, async (t) => {
-  const { DbService } = await import('../../apps/api/src/db.service');
+  const { DbService } = await import('@worktime3/api/plugin');
   const { sql } = await import('drizzle-orm');
   const url = new URL(process.env.DATABASE_URL!);
   assert.match(url.hostname, /^(localhost|127\.0\.0\.1)$/);

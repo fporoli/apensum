@@ -119,9 +119,9 @@ test('the migration catalogue matches the shared registry, and default grants us
   }
   // Later changelogs insert permission ids directly: `('<id>', '<description>')`.
   for (const m of sql.matchAll(/\('((?:nav|section)\.[\w.]+:\w+:\w+)', '[^']*'\)/g)) ids.add(m[1]);
-  // The core's changelogs created the expenses objects before expenses became a plugin; the plugin
-  // now declares them (plugins/expenses: package.json permissions, changelog/).
-  const pluginIds = (id: string) => /^nav\.expense(s|Reports|Processing):/.test(id);
+  // The core's changelogs created the expenses and cases objects before they became plugins; the
+  // plugins now declare them (plugins/<id>: package.json permissions, changelog/).
+  const pluginIds = (id: string) => /^nav\.(expense(s|Reports|Processing)|cases):/.test(id);
   assert.deepEqual([...ids].filter((id) => !pluginIds(id)).sort(), allPermissionIds().sort());
 
   const catalogue = new Set(allPermissionIds());

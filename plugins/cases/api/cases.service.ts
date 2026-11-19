@@ -2,20 +2,13 @@ import { Injectable, Logger, NotFoundException, BadRequestException, ConflictExc
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
-import { DbService, type Db } from './db.service';
-import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
+import { DbService, type Db } from '@worktime3/api/plugin';
+import { DocumentsService, MAX_DOCUMENT_BYTES } from '@worktime3/api/plugin';
 import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
 import { CaseAiService } from './case-ai.service';
-import {
-  casesInCases,
-  case_documentsInCases,
-  case_interviewsInCases,
-  assessment_templatesInCases,
-  assessmentsInCases,
-  documents,
-  users,
-} from './db/schema';
+import { documents, users } from '@worktime3/api/schema';
+import { casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases } from './db/schema';
 import type {
   Case,
   CaseDocument,
@@ -31,7 +24,7 @@ import type {
   UpdateAssessmentDto,
   CreateAssessmentTemplateDto,
   UpdateAssessmentTemplateDto,
-} from '@worktime3/shared/cases';
+} from '../shared/cases';
 
 /** Placeholder for every judgement in a rule-based draft: the draft never states findings itself. */
 const OPEN_ASSESSMENT = '[Offen: Beurteilung durch die Fachperson]';

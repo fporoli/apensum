@@ -57,10 +57,7 @@ import { ImportExportController } from './import-export.controller';
 import { ImportExportService } from './import-export.service';
 import { CalendarFeedController } from './calendar-feed.controller';
 import { CalendarFeedService } from './calendar-feed.service';
-import { CasesController } from './cases.controller';
 import { AiSettingsController } from './ai-settings.controller';
-import { CasesService } from './cases.service';
-import { CaseAiService } from './case-ai.service';
 import { AiBudgetService } from './ai-budget.service';
 import { loadApiPlugins } from './plugins';
 import { API_PLUGINS, PluginRegistrar } from './plugin-registrar';
@@ -106,14 +103,11 @@ const plugins = loadApiPlugins();
     NotificationsController,
     ImportExportController,
     CalendarFeedController,
-    CasesController,
     AiSettingsController,
     ...plugins.controllers,
   ],
   providers: [
     DbService,
-    CasesService,
-    CaseAiService,
     AiBudgetService,
     ImportExportService,
     CalendarFeedService,

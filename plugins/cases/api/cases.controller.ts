@@ -21,16 +21,16 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor, NoFilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { DbService, type Db } from './db.service';
-import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
-import { callerUserId, can, isSuperDeveloper, permissionIdsOf } from './access';
+import { DbService, type Db } from '@worktime3/api/plugin';
+import { DocumentsService, MAX_DOCUMENT_BYTES } from '@worktime3/api/plugin';
+import { callerUserId, can, isSuperDeveloper, permissionIdsOf } from '@worktime3/api/plugin';
 import { grantedScopes } from '@worktime3/shared/permissions';
-import type { AuthenticatedRequest } from './jwt.guard';
+import type { AuthenticatedRequest } from '@worktime3/api/plugin';
 import { CasesService } from './cases.service';
-import { extractPdfText, isPdf, tidyExtractedText } from './case-document-text';
+import { extractPdfText, isPdf, tidyExtractedText } from '@worktime3/api/plugin';
 import { CaseAiService, caseAiAvailability } from './case-ai.service';
-import { VersionsService } from './versions.service';
-import { validateCaseAiSettings } from '@worktime3/shared/cases';
+import { VersionsService } from '@worktime3/api/plugin';
+import { validateCaseAiSettings } from '../shared/cases';
 import type {
   CreateCaseDto,
   UpdateCaseDto,
@@ -40,7 +40,7 @@ import type {
   UpdateAssessmentDto,
   CreateAssessmentTemplateDto,
   UpdateAssessmentTemplateDto,
-} from '@worktime3/shared/cases';
+} from '../shared/cases';
 
 const interviewUpload = { limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1, fields: 2, fieldSize: 1_300_000 } };
 const privateCache = 'private, no-store';

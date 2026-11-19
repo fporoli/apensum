@@ -1,10 +1,10 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type OpenAI from 'openai';
-import { parseCaseAiSettings, type CaseAiSettings } from '@worktime3/shared/cases';
-import { DbService, type Db } from './db.service';
-import { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from './ai-client';
-import { AiBudgetService, azureAllowed, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, transcribeChf, type AiUsageKind } from './ai-budget.service';
+import { parseCaseAiSettings, type CaseAiSettings } from '../shared/cases';
+import { DbService, type Db } from '@worktime3/api/plugin';
+import { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from '@worktime3/api/plugin';
+import { AiBudgetService, azureAllowed, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, transcribeChf, type AiUsageKind } from '@worktime3/api/plugin';
 import { AzureCallError, azureTranscribeConfig, azureTranscribe } from './azure-transcribe';
 import { interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from './case-interview-processing';
 import { AI_SUMMARY_MAX_TOKENS, buildAiSummaryMessages, parseAiSummary } from './case-ai-summary';

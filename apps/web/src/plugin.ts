@@ -45,7 +45,7 @@ export interface PluginBadgeContext<R extends PluginRoles = PluginRoles> {
 
 /** A page's navbar entry. */
 export interface PageNav<R extends PluginRoles = PluginRoles> {
-  /** A core group ('myWork', 'projectTracking', 'cases', 'organization', 'administration', 'personal') or one of navGroups. */
+  /** A core group ('myWork', 'projectTracking', 'organization', 'administration', 'personal') or one of navGroups. */
   group: string;
   /** i18n key of the label. */
   label: string;
@@ -90,6 +90,11 @@ export interface PluginNavGroup {
 export interface PluginSettingsSection {
   /** SettingsSection id (remembers whether it is open), e.g. 'org.exchangeRates'. */
   id: string;
+  /**
+   * Shown inside a core section instead of as a section of its own: 'org.ai' (AI and costs, after the
+   * organization's limit; e.g. the Cases providers).
+   */
+  within?: 'org.ai';
   title: (t: TFunction) => string;
   subtitle?: (t: TFunction, org: { defaultCurrency: string }) => string;
   render: (ctx: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) => ReactNode;

@@ -1,11 +1,12 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import './register';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { permissionIdsOf } from '../../apps/api/src/access';
-import { CasesController } from '../../apps/api/src/cases.controller';
-import { CasesService } from '../../apps/api/src/cases.service';
-import type { AssessmentTemplate } from '@worktime3/shared/cases';
+import { permissionIdsOf } from '@worktime3/api/plugin';
+import { CasesController } from '../api/cases.controller';
+import { CasesService } from '../api/cases.service';
+import type { AssessmentTemplate } from '../shared/cases';
 
 test('cases routes reach the controller under the global API prefix', async () => {
   @Module({ controllers: [CasesController] })

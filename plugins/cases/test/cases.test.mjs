@@ -13,7 +13,7 @@ import {
   isValidDocumentCategory,
   isValidIntervieweeRole,
   isValidAssessmentStatus,
-} from './cases.ts';
+} from '../shared/cases.ts';
 
 test('validates case domains correctly', () => {
   for (const d of CASE_DOMAINS) assert.equal(isValidCaseDomain(d), true);

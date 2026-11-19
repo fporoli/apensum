@@ -1,0 +1,23 @@
+{
+  "name": "@worktime3/cases",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "description": "Cases and assessments: case files, interviews with transcription and AI summaries, assessment templates and AI drafts (bundled Apensum plugin)",
+  "apensum": {
+    "id": "cases",
+    "apensumApi": 1,
+    "dbSchema": "cases",
+    "permissions": [
+      { "id": "nav.cases", "kind": "nav", "scopes": ["own", "all"], "caption": "nav.cases" }
+    ],
+    "module": {
+      "id": "cases",
+      "caption": "modules.cases",
+      "defaultEnabled": false,
+      "objects": ["nav.cases"]
+    },
+    "api": "dist/api/index.js",
+    "web": "web/index.tsx"
+  }
+}

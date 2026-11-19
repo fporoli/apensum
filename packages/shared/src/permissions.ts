@@ -72,8 +72,6 @@ export const NAV_OBJECTS: PermissionObject[] = [
   { id: 'nav.audit', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.auditLog' },
   { id: 'nav.admin', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.adminSettings' },
   { id: 'nav.importExport', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.importExport' },
-  // Cases & Assessments module (modules.ts, cases.ts): `own` = cases lead by the caller, `all` = all cases in the org.
-  { id: 'nav.cases', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.cases' },
 ];
 
 /** Personal-details sections live on My data (own) and on the Users page (everyone else). */

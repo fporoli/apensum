@@ -1,5 +1,5 @@
 import { HttpException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
-import { azureOpenAiConfig, retryStaleConnection } from './ai-client';
+import { azureOpenAiConfig, retryStaleConnection } from '@worktime3/api/plugin';
 import { interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 
 /**

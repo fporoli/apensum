@@ -1,4 +1,4 @@
-import type { AssessmentTemplateSection } from '@worktime3/shared/cases';
+import type { AssessmentTemplateSection } from '../shared/cases';
 
 /**
  * AI draft of an assessment (cases.controller.ts `assessments/ai-draft`), allowed per template

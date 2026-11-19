@@ -6,7 +6,6 @@ import type { NavGroupDef } from './navigation';
 import type { RoleFlags } from './roleFlags';
 import {
   AccountBalanceWalletIcon,
-  ArticleIcon,
   BarChartIcon,
   BeachAccessIcon,
   CalendarMonthIcon,
@@ -15,7 +14,6 @@ import {
   DashboardIcon,
   DescriptionIcon,
   FolderCopyIcon,
-  FolderSharedIcon,
   ForumIcon,
   GroupIcon,
   HistoryIcon,
@@ -52,8 +50,6 @@ const Requests = lazy(() => import('./Requests'));
 const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
 const ImportExport = lazy(() => import('./ImportExport'));
-const Cases = lazy(() => import('./Cases'));
-const AssessmentTemplates = lazy(() => import('./Cases').then((m) => ({ default: m.AssessmentTemplates })));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -84,7 +80,6 @@ export type AppPage = PluginPage<CorePageContext>;
 export const CORE_NAV_GROUPS: NavGroupDef[] = [
   { id: 'myWork', header: 'nav.myWork' },
   { id: 'projectTracking', header: 'nav.projectTracking' },
-  { id: 'cases', header: 'nav.casesGroup' },
   { id: 'organization', header: 'nav.organization' },
   { id: 'administration', header: 'nav.administration' },
   { id: 'personal', header: 'nav.personal' },
@@ -93,11 +88,6 @@ export const CORE_NAV_GROUPS: NavGroupDef[] = [
 async function fetchJson(url: string, authHeaders: () => Promise<Record<string, string>>): Promise<unknown> {
   const res = await fetch(url, { headers: await authHeaders() });
   return res.json();
-}
-
-/** Cases' editors: admins and managers, or whoever holds Cases (editing is checked by the API). */
-function canEditCases({ roles, permissions }: CorePageContext): boolean {
-  return roles.isAdmin || roles.isManager || (permissions ? holdsAny(permissions, 'nav.cases') : true);
 }
 
 /**
@@ -206,25 +196,6 @@ export const CORE_PAGES: AppPage[] = [
         )}
       />
     ),
-  },
-
-  // cases
-  {
-    section: 'cases',
-    hash: '#/cases',
-    object: 'nav.cases',
-    allowedByRole: (r) => r.isAdmin || r.isManager,
-    nav: { group: 'cases', label: 'nav.cases', icon: <FolderSharedIcon fontSize="small" /> },
-    render: (c) => <Cases orgId={c.orgId} authHeaders={c.authHeaders} canEdit={canEditCases(c)} />,
-  },
-  {
-    section: 'assessmentTemplates',
-    hash: '#/assessment-templates',
-    // Templates belong to Cases: whoever may open Cases sees them (editing is checked by the API).
-    object: 'nav.cases',
-    allowedByRole: (r) => r.isAdmin || r.isManager,
-    nav: { group: 'cases', label: 'nav.assessmentTemplates', icon: <ArticleIcon fontSize="small" /> },
-    render: (c) => <AssessmentTemplates orgId={c.orgId} authHeaders={c.authHeaders} canEdit={canEditCases(c)} />,
   },
 
   // organization

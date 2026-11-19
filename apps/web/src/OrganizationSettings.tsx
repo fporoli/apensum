@@ -26,7 +26,6 @@ import WorkTimeSettings from './WorkTimeSettings';
 import DepartmentSettings from './DepartmentSettings';
 import ModuleSettings from './ModuleSettings';
 import { PLUGIN_ORG_SETTINGS } from './plugins';
-import { CaseAiSettingsPanel } from './CaseAiSettingsPanel';
 import { AiSettingsPanel } from './AiSettingsPanel';
 import { SettingsSection } from './SettingsSection';
 
@@ -278,7 +277,7 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
         <WorkTimeSettings orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
-      {PLUGIN_ORG_SETTINGS.map((section) => (
+      {PLUGIN_ORG_SETTINGS.filter((section) => !section.within).map((section) => (
         <SettingsSection key={section.id} id={section.id} title={section.title(t)} subtitle={section.subtitle?.(t, { defaultCurrency: savedCurrency })}>
           <Suspense fallback={<LinearProgress />}>{section.render({ orgId, authHeaders })}</Suspense>
         </SettingsSection>
@@ -286,7 +285,9 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
 
       <SettingsSection id="org.ai" title={t('ai.settings.title')} subtitle={t('ai.settings.intro')}>
         <AiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
-        <CaseAiSettingsPanel orgId={orgId} authHeaders={authHeaders} />
+        {PLUGIN_ORG_SETTINGS.filter((section) => section.within === 'org.ai').map((section) => (
+          <Suspense key={section.id} fallback={<LinearProgress />}>{section.render({ orgId, authHeaders })}</Suspense>
+        ))}
       </SettingsSection>
 
       <SettingsSection id="org.domains" title={t('orgSettings.domains')}>
