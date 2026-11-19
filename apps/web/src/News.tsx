@@ -35,6 +35,8 @@ interface Post {
   texts: NewsTexts;
   require_ack: boolean;
   published_at: string | null;
+  /** Product news: from a superdeveloper to every organization's admins. */
+  product: boolean;
   author_user_id: string | null;
   author_name: string | null;
   department_ids: string[];
@@ -51,6 +53,8 @@ interface Department {
 interface ReadRow {
   userId: string;
   name: string;
+  /** Product news: the organizations the person administers. */
+  organizations: string[];
   readAt: string | null;
   acknowledgedAt: string | null;
 }
@@ -60,6 +64,8 @@ interface Draft {
   texts: Record<NewsLang, { title: string; body: string }>;
   departmentIds: string[];
   requireAck: boolean;
+  /** Product news (only when creating; it stays what it is). */
+  product: boolean;
 }
 
 const emptyTexts = () => Object.fromEntries(NEWS_LANGS.map((l) => [l, { title: '', body: '' }])) as Draft['texts'];
@@ -144,6 +150,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
   const { t, locale } = useI18n();
   const [posts, setPosts] = useState<Post[]>([]);
   const [editor, setEditor] = useState(false);
+  const [productEditor, setProductEditor] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +181,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
       ]);
       setPosts(Array.isArray(list?.posts) ? list.posts : []);
       setEditor(list?.editor === true);
+      setProductEditor(list?.productEditor === true);
       setDepartments(Array.isArray(deps?.departments) ? deps.departments : []);
     } catch {
       setError(t('common.cannotReachApi'));
@@ -231,7 +239,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
 
   useEffect(() => {
     setReads(null);
-    if (!editor || !selected?.published_at) return;
+    if (!selected?.published_at || !(selected.product ? productEditor : editor)) return;
     void (async () => {
       try {
         const res = await fetch(`${API}/organizations/${orgId}/news/${selected.id}/reads`, { headers: await authHeaders() });
@@ -241,7 +249,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
         /* the list just stays hidden */
       }
     })();
-  }, [editor, selected, orgId, authHeaders]);
+  }, [editor, productEditor, selected, orgId, authHeaders]);
 
   function open(id: string | null) {
     setSelectedId(id);
@@ -254,7 +262,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
   function startEdit(p: Post | null) {
     const texts = emptyTexts();
     if (p) for (const l of NEWS_LANGS) if (p.texts[l]) texts[l] = { title: p.texts[l]!.title, body: p.texts[l]!.body };
-    setDraft({ id: p?.id ?? null, texts, departmentIds: p?.department_ids ?? [], requireAck: p?.require_ack ?? false });
+    setDraft({ id: p?.id ?? null, texts, departmentIds: p?.department_ids ?? [], requireAck: p?.require_ack ?? false, product: p ? p.product : !editor });
   }
 
   async function acknowledge(p: Post) {
@@ -283,6 +291,16 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
     }
   }
 
+  /** Organization posts are changed by the organization's news writers, product news by a superdeveloper. */
+  const canEdit = (p: Post) => (p.product ? productEditor : editor);
+  const audienceChips = (p: Post) =>
+    p.product ? (
+      <Chip size="small" variant="outlined" label={t('news.product.audience')} />
+    ) : p.department_ids.length > 0 ? (
+      p.department_ids.map((d) => <Chip key={d} size="small" variant="outlined" label={depName(d)} />)
+    ) : (
+      <Chip size="small" variant="outlined" label={t('news.everyone')} />
+    );
   const depName = (id: string) => departments.find((d) => d.id === id)?.name ?? '?';
   const unread = (p: Post) => !!p.published_at && (!p.read_at || (p.require_ack && !p.acknowledged_at));
 
@@ -291,7 +309,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
       title={t('news.title')}
       subtitle={t('news.subtitle')}
       end={
-        editor && !selected ? (
+        (editor || productEditor) && !selected ? (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => startEdit(null)}>
             {t('news.new')}
           </Button>
@@ -319,11 +337,8 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', mb: 1 }}>
                   {!selected.published_at && <Chip size="small" color="warning" label={t('news.draft')} />}
                   {selected.require_ack && <Chip size="small" color="info" variant="outlined" label={t('news.requiresAck')} />}
-                  {selected.department_ids.length > 0 ? (
-                    selected.department_ids.map((d) => <Chip key={d} size="small" variant="outlined" label={depName(d)} />)
-                  ) : (
-                    <Chip size="small" variant="outlined" label={t('news.everyone')} />
-                  )}
+                  {selected.product && <Chip size="small" color="primary" label={t('news.product.label')} />}
+                  {audienceChips(selected)}
                 </Box>
                 <Typography variant="h5" component="h2" lang={text?.lang}>
                   {text?.title}
@@ -352,7 +367,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
             </Box>
           )}
 
-          {editor && (
+          {canEdit(selected) && (
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 3 }}>
               {!selected.published_at && (
                 <Button variant="contained" startIcon={<CampaignIcon />} onClick={() => setPublishing(selected)}>
@@ -368,7 +383,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
             </Box>
           )}
 
-          {editor && reads && (
+          {canEdit(selected) && reads && (
             <Box sx={{ mt: 3 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 {t('news.reads.title', { read: String(reads.filter((r) => r.readAt).length), total: String(reads.length) })}
@@ -385,7 +400,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
                       color={done ? 'success' : 'default'}
                       variant={done ? 'filled' : 'outlined'}
                       icon={done ? <CheckCircleIcon /> : r.readAt ? <VisibilityIcon /> : undefined}
-                      label={r.name}
+                      label={r.organizations.length ? `${r.name} (${r.organizations.join(', ')})` : r.name}
                       title={when ? formatLocaleDateTime(when, locale) : t('news.reads.notYet')}
                     />
                   );
@@ -396,7 +411,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
         </Paper>
       ) : posts.length === 0 && !loading ? (
         <Paper variant="outlined">
-          <EmptyState icon={<CampaignIcon fontSize="inherit" />} title={t('news.empty')} description={editor ? t('news.emptyEditor') : undefined} />
+          <EmptyState icon={<CampaignIcon fontSize="inherit" />} title={t('news.empty')} description={editor || productEditor ? t('news.emptyEditor') : undefined} />
         </Paper>
       ) : (
         <Paper variant="outlined">
@@ -412,6 +427,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
                         <Box component="span" sx={{ fontWeight: unread(p) ? 700 : 500 }} lang={text?.lang}>
                           {text?.title}
                         </Box>
+                        {p.product && <Chip size="small" color="primary" label={t('news.product.label')} />}
                         {!p.published_at && <Chip size="small" color="warning" label={t('news.draft')} />}
                         {p.require_ack && !p.acknowledged_at && p.published_at && <Chip size="small" color="info" variant="outlined" label={t('news.requiresAck')} />}
                       </Box>
@@ -430,6 +446,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
           orgId={orgId}
           draft={draft}
           departments={departments}
+          canChooseProduct={editor && productEditor}
           authHeaders={authHeaders}
           errorText={errorText}
           onClose={() => setDraft(null)}
@@ -474,7 +491,7 @@ function PublishDialog({ post, onClose, onPublish }: { post: Post | null; onClos
       <DialogTitle>{t('news.publish')}</DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 1 }}>
-          {post?.department_ids.length ? t('news.publishTextDepartments') : t('news.publishText')}
+          {post?.product ? t('news.product.publishText') : post?.department_ids.length ? t('news.publishTextDepartments') : t('news.publishText')}
         </Typography>
         <FormControlLabel control={<Checkbox checked={mail} onChange={(e) => setMail(e.target.checked)} />} label={t('news.publishMail')} />
       </DialogContent>
@@ -493,6 +510,7 @@ function PostEditor({
   orgId,
   draft: initial,
   departments,
+  canChooseProduct,
   authHeaders,
   errorText,
   onClose,
@@ -501,6 +519,8 @@ function PostEditor({
   orgId: string;
   draft: Draft;
   departments: Department[];
+  /** A superdeveloper who also writes this organization's news chooses which a new post is. */
+  canChooseProduct: boolean;
   authHeaders: () => Promise<Record<string, string>>;
   errorText: (code: string | undefined) => string;
   onClose: () => void;
@@ -527,7 +547,7 @@ function PostEditor({
       const res = await fetch(`${API}/organizations/${orgId}/news${draft.id ? `/${draft.id}` : ''}`, {
         method: draft.id ? 'PUT' : 'POST',
         headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texts: draft.texts, departmentIds: draft.departmentIds, requireAck: draft.requireAck }),
+        body: JSON.stringify({ texts: draft.texts, departmentIds: draft.product ? [] : draft.departmentIds, requireAck: draft.requireAck, product: draft.product }),
       });
       const data = await res.json();
       if (!data?.ok) {
@@ -634,35 +654,45 @@ function PostEditor({
             helperText={t('news.editor.markdownHint')}
           />
         )}
-        <TextField
-          select
-          label={t('news.editor.audience')}
-          value={draft.departmentIds}
-          onChange={(e) => {
-            const v = e.target.value as unknown as string[];
-            setDraft((d) => ({ ...d, departmentIds: typeof v === 'string' ? [v] : v }));
-          }}
-          SelectProps={{
-            multiple: true,
-            displayEmpty: true,
-            renderValue: (v) => {
-              const ids = v as string[];
-              return ids.length ? ids.map((id) => departments.find((d) => d.id === id)?.name ?? '?').join(', ') : t('news.everyone');
-            },
-          }}
-          InputLabelProps={{ shrink: true }}
-          helperText={t('news.editor.audienceHint')}
-          fullWidth
-        >
-          {departments
-            .filter((d) => d.is_active || draft.departmentIds.includes(d.id))
-            .map((d) => (
-              <MenuItem key={d.id} value={d.id}>
-                <Checkbox size="small" checked={draft.departmentIds.includes(d.id)} sx={{ py: 0 }} />
-                {d.name}
-              </MenuItem>
-            ))}
-        </TextField>
+        {!draft.id && canChooseProduct && (
+          <FormControlLabel
+            control={<Checkbox checked={draft.product} onChange={(e) => setDraft((d) => ({ ...d, product: e.target.checked }))} />}
+            label={t('news.product.choose')}
+          />
+        )}
+        {draft.product ? (
+          <Alert severity="info">{t('news.product.hint')}</Alert>
+        ) : (
+          <TextField
+            select
+            label={t('news.editor.audience')}
+            value={draft.departmentIds}
+            onChange={(e) => {
+              const v = e.target.value as unknown as string[];
+              setDraft((d) => ({ ...d, departmentIds: typeof v === 'string' ? [v] : v }));
+            }}
+            SelectProps={{
+              multiple: true,
+              displayEmpty: true,
+              renderValue: (v) => {
+                const ids = v as string[];
+                return ids.length ? ids.map((id) => departments.find((d) => d.id === id)?.name ?? '?').join(', ') : t('news.everyone');
+              },
+            }}
+            InputLabelProps={{ shrink: true }}
+            helperText={t('news.editor.audienceHint')}
+            fullWidth
+          >
+            {departments
+              .filter((d) => d.is_active || draft.departmentIds.includes(d.id))
+              .map((d) => (
+                <MenuItem key={d.id} value={d.id}>
+                  <Checkbox size="small" checked={draft.departmentIds.includes(d.id)} sx={{ py: 0 }} />
+                  {d.name}
+                </MenuItem>
+              ))}
+          </TextField>
+        )}
         <FormControlLabel
           control={<Checkbox checked={draft.requireAck} onChange={(e) => setDraft((d) => ({ ...d, requireAck: e.target.checked }))} />}
           label={t('news.editor.requireAck')}

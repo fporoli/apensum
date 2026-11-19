@@ -75,13 +75,14 @@ export const newsletter_subscribers = pgTable("newsletter_subscribers", {
 
 export const news_posts = pgTable("news_posts", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
+	organization_id: uuid(),
 	author_user_id: uuid(),
 	texts: jsonb().notNull(),
 	require_ack: boolean().default(false).notNull(),
 	published_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("idx_news_posts_org").using("btree", table.organization_id.asc().nullsLast(), table.published_at.desc().nullsFirst()),
+	index("idx_news_posts_product").using("btree", table.published_at.desc().nullsFirst()).where(sql`(organization_id IS NULL)`),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],

@@ -4,7 +4,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
-import { callerUserId, can, isOrgMember, type Executor } from './access';
+import { callerUserId, can, isOrgMember, isSuperDeveloper, type Executor } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
@@ -19,6 +19,9 @@ import { MAX_NEWS_IMAGES, newsImageId, newsTextFor, validateNewsTexts, type News
  * post's audience reads them. The audience is worked out per call, never stored per person: the
  * post's departments (whoever's assignment in force is in one, and its leaders), or everyone.
  * Publishing notifies the audience and, when asked, mails them a link (best effort).
+ *
+ * Product news (organization_id NULL, 082): a superdeveloper writes it once for the admins
+ * (`nav.admin`) of every organization; it shows in each of their organizations' News page.
  */
 
 /** Pictures a post may show: no SVG (it could carry script when opened on its own). */
@@ -74,10 +77,48 @@ export function cleanDepartmentIds(value: unknown): string[] | null {
 
 interface PostRow {
   id: string;
-  organization_id: string;
+  /** NULL: product news (082). */
+  organization_id: string | null;
   texts: NewsTexts;
   require_ack: boolean;
   published_at: string | null;
+}
+
+export interface NewsCaller {
+  id: string;
+  /** Writes this organization's news (`nav.news:edit`). */
+  editor: boolean;
+  /** An admin of this organization (`nav.admin`): reads product news. */
+  admin: boolean;
+  /** Writes product news for every organization's admins. */
+  superdeveloper: boolean;
+}
+
+/** Who changes a post: the organization's news writers, or for product news a superdeveloper. */
+export function mayEditNews(caller: NewsCaller, post: { organization_id: string | null }): boolean {
+  return post.organization_id === null ? caller.superdeveloper : caller.editor;
+}
+
+/**
+ * SQL condition over `p` (news_posts): the caller sees the post in this organization. The
+ * organization's posts: writers all of them, readers the published ones addressed to them. Product
+ * news: superdevelopers all of it, the organization's admins what is published.
+ */
+function visibleTo(orgId: string, caller: NewsCaller): SQL {
+  const own = caller.editor ? sql`TRUE` : sql`(p.published_at IS NOT NULL AND ${inAudience(orgId, caller.id)})`;
+  const product = caller.superdeveloper ? sql`TRUE` : caller.admin ? sql`p.published_at IS NOT NULL` : sql`FALSE`;
+  return sql`((p.organization_id = ${orgId} AND ${own}) OR (p.organization_id IS NULL AND ${product}))`;
+}
+
+interface Reader {
+  id: string;
+  name: string;
+  email: string;
+  locale: string | null;
+  /** The organization the notification goes to (product news: the first one the person administers). */
+  orgId: string;
+  /** Product news: the organizations the person administers, for the "who read it" list. */
+  orgNames?: string[];
 }
 
 @Controller('organizations/:orgId/news')
@@ -89,33 +130,46 @@ export class NewsController {
     private readonly documents: DocumentsService,
   ) {}
 
-  /** The caller and whether they write news, when they are a member who may read news (the module is on). */
-  private async caller(db: Executor, orgId: string, req: AuthenticatedRequest): Promise<{ id: string; editor: boolean } | null> {
+  /** The caller and what they may do, when they are a member who may read news here (the module is on). */
+  private async caller(db: Executor, orgId: string, req: AuthenticatedRequest): Promise<NewsCaller | null> {
     const id = req.user ? await callerUserId(db, req.user) : null;
     if (!id || !(await isOrgMember(db, orgId, id))) return null;
     if (!(await can(db, orgId, id, 'nav.news', 'see'))) return null;
-    return { id, editor: await can(db, orgId, id, 'nav.news', 'edit') };
+    return {
+      id,
+      editor: await can(db, orgId, id, 'nav.news', 'edit'),
+      admin: await can(db, orgId, id, 'nav.admin', 'see'),
+      superdeveloper: await isSuperDeveloper(db, id),
+    };
   }
 
+  /** The post, when it is this organization's or product news. */
   private async load(db: Executor, orgId: string, id: string): Promise<PostRow | null> {
     const rows = await db.execute(
-      sql`SELECT id, organization_id, texts, require_ack, ${iso('published_at')} AS published_at FROM news_posts WHERE id = ${id} AND organization_id = ${orgId}`,
+      sql`SELECT id, organization_id, texts, require_ack, ${iso('published_at')} AS published_at FROM news_posts
+          WHERE id = ${id} AND (organization_id = ${orgId} OR organization_id IS NULL)`,
     );
     return (rows.rows[0] as unknown as PostRow) ?? null;
   }
 
-  /** The post when the caller may read it: editors every post, readers published ones addressed to them. */
-  private async readable(db: Executor, orgId: string, caller: { id: string; editor: boolean }, id: string): Promise<PostRow | null> {
+  /** The post when the caller may see it here. */
+  private async readable(db: Executor, orgId: string, caller: NewsCaller, id: string): Promise<PostRow | null> {
     const post = await this.load(db, orgId, id);
     if (!post) return null;
-    if (caller.editor) return post;
-    if (!post.published_at) return null;
-    const rows = await db.execute(sql`SELECT 1 FROM news_posts p WHERE p.id = ${id} AND ${inAudience(orgId, caller.id)}`);
+    const rows = await db.execute(sql`SELECT 1 FROM news_posts p WHERE p.id = ${id} AND ${visibleTo(orgId, caller)}`);
     return rows.rows.length > 0 ? post : null;
   }
 
-  /** Everyone the post reaches today who may read news: active members, in its departments if it has any. */
-  private async audience(db: Executor, orgId: string, postId: string): Promise<{ id: string; name: string; email: string; locale: string | null }[]> {
+  /** The post when the caller may change it, else the error to return. */
+  private async editable(db: Executor, orgId: string, caller: NewsCaller | null, id: string): Promise<PostRow | { error: string }> {
+    if (!caller) return { error: 'forbidden' };
+    const post = await this.load(db, orgId, id);
+    if (!post) return { error: 'not-found' };
+    return mayEditNews(caller, post) ? post : { error: 'forbidden' };
+  }
+
+  /** Everyone an organization post reaches today who may read news: active members, in its departments if it has any. */
+  private async audience(db: Executor, orgId: string, postId: string): Promise<Reader[]> {
     const rows = (
       await db.execute(
         sql`SELECT u.id, coalesce(nullif(u.display_name, ''), u.email) AS name, u.email, u.locale
@@ -127,18 +181,42 @@ export class NewsController {
                            WHERE pd.post_id = p.id AND (d.leader_user_id = u.id OR a.department_id = d.id)))
             ORDER BY name`,
       )
-    ).rows as { id: string; name: string; email: string; locale: string | null }[];
-    const out = [];
-    for (const r of rows) if (await can(db, orgId, r.id, 'nav.news', 'see')) out.push(r);
+    ).rows as Omit<Reader, 'orgId'>[];
+    const out: Reader[] = [];
+    for (const r of rows) if (await can(db, orgId, r.id, 'nav.news', 'see')) out.push({ ...r, orgId });
     return out;
   }
 
+  /**
+   * Who product news reaches: in every organization, the active admins (`nav.admin`) who can read
+   * news there (the module is on). Once per person, noting every organization they administer.
+   */
+  private async productAudience(db: Executor): Promise<Reader[]> {
+    const rows = (
+      await db.execute(
+        sql`SELECT m.organization_id AS org_id, o.name AS org_name, u.id, coalesce(nullif(u.display_name, ''), u.email) AS name, u.email, u.locale
+            FROM organization_memberships m JOIN users u ON u.id = m.user_id JOIN organizations o ON o.id = m.organization_id
+            WHERE m.status = 'active' AND u.is_active
+            ORDER BY name, o.name`,
+      )
+    ).rows as { org_id: string; org_name: string; id: string; name: string; email: string; locale: string | null }[];
+    const byUser = new Map<string, Reader>();
+    for (const r of rows) {
+      if (!(await can(db, r.org_id, r.id, 'nav.admin', 'see')) || !(await can(db, r.org_id, r.id, 'nav.news', 'see'))) continue;
+      const seen = byUser.get(r.id);
+      if (seen) seen.orgNames!.push(r.org_name);
+      else byUser.set(r.id, { id: r.id, name: r.name, email: r.email, locale: r.locale, orgId: r.org_id, orgNames: [r.org_name] });
+    }
+    return [...byUser.values()];
+  }
+
   /** Validated texts, departments of this organization and the confirmation flag; or an error code. */
-  private async parse(db: Executor, orgId: string, body: Record<string, unknown>) {
+  private async parse(db: Executor, orgId: string, body: Record<string, unknown>, product: boolean) {
     const texts = validateNewsTexts(body?.texts);
     if (!texts.ok) return texts;
     const departmentIds = cleanDepartmentIds(body?.departmentIds);
     if (!departmentIds) return { ok: false as const, error: 'invalid-departments' };
+    if (product && departmentIds.length > 0) return { ok: false as const, error: 'news-product-departments' };
     if (departmentIds.length > 0) {
       const found = await db.execute(
         sql`SELECT count(*)::int AS n FROM departments WHERE organization_id = ${orgId} AND id IN (${sql.join(departmentIds.map((d) => sql`${d}`), sql`, `)})`,
@@ -170,62 +248,64 @@ export class NewsController {
     for (const d of departmentIds) await db.execute(sql`INSERT INTO news_post_departments (post_id, department_id) VALUES (${postId}, ${d})`);
   }
 
-  /** Posts the caller may read, newest first (drafts first for editors), with their own read state. */
+  /** Posts the caller may see here, newest first (drafts first), with their own read state. */
   @Get()
   async list(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, editor: false, posts: [] };
+    if (!db) return { ok: true, offline: true, editor: false, productEditor: false, posts: [] };
     const caller = await this.caller(db, orgId, req);
-    if (!caller) return { ok: true, editor: false, posts: [] };
-    const visible = caller.editor ? sql`TRUE` : sql`p.published_at IS NOT NULL AND ${inAudience(orgId, caller.id)}`;
+    if (!caller) return { ok: true, editor: false, productEditor: false, posts: [] };
     const rows = await db.execute(
-      sql`SELECT p.id, p.texts, p.require_ack, ${iso('p.published_at')} AS published_at,
+      sql`SELECT p.id, p.texts, p.require_ack, ${iso('p.published_at')} AS published_at, (p.organization_id IS NULL) AS product,
                  p.author_user_id, coalesce(nullif(u.display_name, ''), u.email) AS author_name,
                  coalesce((SELECT array_agg(pd.department_id) FROM news_post_departments pd WHERE pd.post_id = p.id), '{}') AS department_ids,
                  ${iso('r.read_at')} AS read_at, ${iso('r.acknowledged_at')} AS acknowledged_at
           FROM news_posts p
           LEFT JOIN users u ON u.id = p.author_user_id
           LEFT JOIN news_post_reads r ON r.post_id = p.id AND r.user_id = ${caller.id}
-          WHERE p.organization_id = ${orgId} AND ${visible}
+          WHERE ${visibleTo(orgId, caller)}
           ORDER BY p.published_at DESC NULLS FIRST LIMIT 300`,
     );
-    return { ok: true, editor: caller.editor, posts: rows.rows };
+    return { ok: true, editor: caller.editor, productEditor: caller.superdeveloper, posts: rows.rows };
   }
 
-  /** Published posts addressed to the caller they have not read (or not confirmed yet): the navbar badge. */
+  /** Published posts for the caller here they have not read (or not confirmed yet): the navbar badge. */
   @Get('summary')
   async summary(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, unread: 0 };
     const caller = await this.caller(db, orgId, req);
     if (!caller) return { ok: true, unread: 0 };
+    // Writers count only what is addressed to them, like everyone else.
+    const reader = { ...caller, editor: false, superdeveloper: false, admin: caller.admin };
     const rows = await db.execute(
       sql`SELECT count(*)::int AS n FROM news_posts p
           LEFT JOIN news_post_reads r ON r.post_id = p.id AND r.user_id = ${caller.id}
-          WHERE p.organization_id = ${orgId} AND p.published_at IS NOT NULL AND ${inAudience(orgId, caller.id)} AND ${UNREAD}`,
+          WHERE p.published_at IS NOT NULL AND ${visibleTo(orgId, reader)} AND ${UNREAD}`,
     );
     return { ok: true, unread: (rows.rows[0]?.n as number) ?? 0 };
   }
 
-  /** A new draft. */
+  /** A new draft; `product: true` (superdevelopers) for the admins of every organization. */
   @Post()
   async create(@Param('orgId') orgId: string, @Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
-    if (!caller?.editor) return { ok: false, error: 'forbidden' };
-    const input = await this.parse(db, orgId, body);
+    const product = body?.product === true;
+    if (!caller || !mayEditNews(caller, { organization_id: product ? null : orgId })) return { ok: false, error: 'forbidden' };
+    const input = await this.parse(db, orgId, body, product);
     if (!input.ok) return input;
     // A new post has no pictures yet: they are uploaded to it once it exists.
     if (Object.values(input.texts).some((t) => markdownImages(t?.body ?? '').length > 0)) return { ok: false, error: 'news-image-unknown' };
     const [post] = (
       await db.execute(
         sql`INSERT INTO news_posts (organization_id, author_user_id, texts, require_ack)
-            VALUES (${orgId}, ${caller.id}, ${JSON.stringify(input.texts)}::jsonb, ${input.requireAck}) RETURNING id`,
+            VALUES (${product ? null : orgId}, ${caller.id}, ${JSON.stringify(input.texts)}::jsonb, ${input.requireAck}) RETURNING id`,
       )
     ).rows as { id: string }[];
     await this.setDepartments(db, post.id, input.departmentIds);
-    void this.versions.record('news_posts', post.id, 'insert', caller.id, { ...input }).catch(() => {});
+    void this.versions.record('news_posts', post.id, 'insert', caller.id, { ...input, product }).catch(() => {});
     return { ok: true, id: post.id };
   }
 
@@ -235,14 +315,14 @@ export class NewsController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
-    if (!caller?.editor) return { ok: false, error: 'forbidden' };
-    if (!(await this.load(db, orgId, id))) return { ok: false, error: 'not-found' };
-    const input = await this.parse(db, orgId, body);
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error };
+    const input = await this.parse(db, orgId, body, post.organization_id === null);
     if (!input.ok) return input;
     if (!(await this.imagesBelong(db, id, input.texts))) return { ok: false, error: 'news-image-unknown' };
     await db.execute(sql`UPDATE news_posts SET texts = ${JSON.stringify(input.texts)}::jsonb, require_ack = ${input.requireAck} WHERE id = ${id}`);
     await this.setDepartments(db, id, input.departmentIds);
-    void this.versions.record('news_posts', id, 'update', caller.id, { ...input }).catch(() => {});
+    void this.versions.record('news_posts', id, 'update', caller!.id, { ...input }).catch(() => {});
     return { ok: true };
   }
 
@@ -252,31 +332,35 @@ export class NewsController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
-    if (!caller?.editor) return { ok: false, error: 'forbidden' };
-    const post = await this.load(db, orgId, id);
-    if (!post) return { ok: false, error: 'not-found' };
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error };
     if (post.published_at) return { ok: false, error: 'news-already-published' };
+    const authorId = caller!.id;
     await db.execute(sql`UPDATE news_posts SET published_at = now() WHERE id = ${id}`);
     // The author has read (and, when asked for, confirmed) their own post.
     await db.execute(
-      sql`INSERT INTO news_post_reads (post_id, user_id, acknowledged_at) VALUES (${id}, ${caller.id}, ${post.require_ack ? sql`now()` : sql`NULL`})
+      sql`INSERT INTO news_post_reads (post_id, user_id, acknowledged_at) VALUES (${id}, ${authorId}, ${post.require_ack ? sql`now()` : sql`NULL`})
           ON CONFLICT (post_id, user_id) DO UPDATE SET acknowledged_at = coalesce(news_post_reads.acknowledged_at, EXCLUDED.acknowledged_at)`,
     );
-    void this.versions.record('news_posts', id, 'update_delta', caller.id, { published: true }).catch(() => {});
+    void this.versions.record('news_posts', id, 'update_delta', authorId, { published: true }).catch(() => {});
 
-    const audience = (await this.audience(db, orgId, id)).filter((a) => a.id !== caller.id);
-    // One notification per reader, titled in their language.
-    const byLang = new Map<string, string[]>();
+    const product = post.organization_id === null;
+    const audience = (product ? await this.productAudience(db) : await this.audience(db, orgId, id)).filter((a) => a.id !== authorId);
+    // One notification per reader, in the organization it concerns, titled in their language.
+    const groups = new Map<string, { orgId: string; lang: string; ids: string[] }>();
     for (const a of audience) {
       const lang = newsTextFor(post.texts, (a.locale ?? 'de').slice(0, 2))?.lang ?? 'de';
-      byLang.set(lang, [...(byLang.get(lang) ?? []), a.id]);
+      const key = `${a.orgId}:${lang}`;
+      const g = groups.get(key) ?? { orgId: a.orgId, lang, ids: [] };
+      g.ids.push(a.id);
+      groups.set(key, g);
     }
-    for (const [lang, recipientUserIds] of byLang) {
-      const text = newsTextFor(post.texts, lang);
+    for (const g of groups.values()) {
+      const text = newsTextFor(post.texts, g.lang);
       await this.notifications.notifyMany({
-        organizationId: orgId,
-        recipientUserIds,
-        type: 'news.published',
+        organizationId: g.orgId,
+        recipientUserIds: g.ids,
+        type: product ? 'news.product' : 'news.published',
         title: text?.title ?? '',
         body: text ? markdownPlain(text.body).slice(0, 200) : undefined,
         sourceTable: 'news_posts',
@@ -287,7 +371,7 @@ export class NewsController {
     let mailed = 0;
     if (body?.mail === true) {
       const link = `${appBaseUrl()}/#/news?id=${id}`;
-      // In the background: a large organization should not keep the browser waiting.
+      // In the background: a large audience should not keep the browser waiting.
       void (async () => {
         for (const a of audience) {
           const mail = newsMail(post.texts, post.require_ack, a.locale, link);
@@ -305,13 +389,12 @@ export class NewsController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
-    if (!caller?.editor) return { ok: false, error: 'forbidden' };
-    const post = await this.load(db, orgId, id);
-    if (!post) return { ok: false, error: 'not-found' };
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error };
     const docs = (await db.execute(sql`SELECT document_id FROM news_post_documents WHERE post_id = ${id}`)).rows as { document_id: string }[];
     await db.execute(sql`DELETE FROM news_posts WHERE id = ${id}`);
     for (const d of docs) await this.documents.remove(db, d.document_id).catch(() => {});
-    void this.versions.record('news_posts', id, 'delete', caller.id, post).catch(() => {});
+    void this.versions.record('news_posts', id, 'delete', caller!.id, post).catch(() => {});
     return { ok: true };
   }
 
@@ -343,44 +426,53 @@ export class NewsController {
     return { ok: true };
   }
 
-  /** For editors: everyone the post reaches, with when they read and confirmed it. */
+  /** For whoever may change the post: everyone it reaches, with when they read and confirmed it. */
   @Get(':id/reads')
   async reads(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, people: [] };
     const caller = await this.caller(db, orgId, req);
-    if (!caller?.editor) return { ok: false, error: 'forbidden', people: [] };
-    if (!(await this.load(db, orgId, id))) return { ok: false, error: 'not-found', people: [] };
-    const audience = await this.audience(db, orgId, id);
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error, people: [] };
+    const audience = post.organization_id === null ? await this.productAudience(db) : await this.audience(db, orgId, id);
     const reads = (
       await db.execute(sql`SELECT user_id, ${iso('read_at')} AS read_at, ${iso('acknowledged_at')} AS acknowledged_at FROM news_post_reads WHERE post_id = ${id}`)
     ).rows as { user_id: string; read_at: string; acknowledged_at: string | null }[];
     const byUser = new Map(reads.map((r) => [r.user_id, r]));
     return {
       ok: true,
-      people: audience.map((a) => ({ userId: a.id, name: a.name, readAt: byUser.get(a.id)?.read_at ?? null, acknowledgedAt: byUser.get(a.id)?.acknowledged_at ?? null })),
+      people: audience.map((a) => ({
+        userId: a.id,
+        name: a.name,
+        organizations: a.orgNames ?? [],
+        readAt: byUser.get(a.id)?.read_at ?? null,
+        acknowledgedAt: byUser.get(a.id)?.acknowledged_at ?? null,
+      })),
     };
   }
 
-  /** Uploads a picture for the post's text; the text then shows it as `![alt](doc:<id>)`. */
+  /**
+   * Uploads a picture for the post's text; the text then shows it as `![alt](doc:<id>)`. Product news
+   * pictures are documents of the organization they were uploaded in.
+   */
   @Post(':id/images')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1 } }))
   async upload(@Param('orgId') orgId: string, @Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
-    if (!caller?.editor) return { ok: false, error: 'forbidden' };
-    if (!(await this.load(db, orgId, id))) return { ok: false, error: 'not-found' };
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error };
     if (!file?.buffer?.length) return { ok: false, error: 'file-required' };
     if (!NEWS_IMAGE_TYPES.includes(file.mimetype)) return { ok: false, error: 'news-image-type' };
     const count = await db.execute(sql`SELECT count(*)::int AS n FROM news_post_documents WHERE post_id = ${id}`);
     if ((count.rows[0]?.n as number) >= MAX_NEWS_IMAGES) return { ok: false, error: 'news-too-many-images' };
-    const documentId = await this.documents.upload(db as Db, orgId, caller.id, file, { table: 'news_posts', id });
+    const documentId = await this.documents.upload(db as Db, orgId, caller!.id, file, { table: 'news_posts', id });
     await db.execute(sql`INSERT INTO news_post_documents (post_id, document_id) VALUES (${id}, ${documentId})`);
     return { ok: true, documentId };
   }
 
-  /** A picture of a post, for whoever may read the post. */
+  /** A picture of a post, for whoever may see the post. */
   @Get(':id/images/:documentId')
   async image(
     @Param('orgId') orgId: string,

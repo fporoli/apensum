@@ -97,6 +97,7 @@
     <include file="079-newsletter-subscribers.sql" relativeToChangelogFile="true"/>
     <include file="080-news.sql" relativeToChangelogFile="true"/>
     <include file="081-permission-news.sql" relativeToChangelogFile="true"/>
+    <include file="082-news-product.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

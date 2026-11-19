@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { markdownImages, markdownPlain, renderMarkdown } from '@worktime3/shared/markdown';
 import { newsImageId, newsTextFor, validateNewsTexts } from '@worktime3/shared/news';
-import { cleanDepartmentIds, newsMail } from '../../apps/api/src/news.controller';
+import { cleanDepartmentIds, mayEditNews, newsMail } from '../../apps/api/src/news.controller';
 
 const opts = {
   image: (src: string, alt: string) => `<img src="${src}" alt="${alt}">`,
@@ -57,4 +57,13 @@ test('news audience: department ids are uuids, without duplicates', () => {
   assert.deepEqual(cleanDepartmentIds([id, id.toUpperCase()]), [id]);
   assert.equal(cleanDepartmentIds(['x']), null);
   assert.equal(cleanDepartmentIds('x'), null);
+});
+
+test('who changes a post: the organization news writers its posts, a superdeveloper product news', () => {
+  const hr = { id: 'u', editor: true, admin: false, superdeveloper: false };
+  const dev = { id: 'd', editor: false, admin: false, superdeveloper: true };
+  assert.equal(mayEditNews(hr, { organization_id: 'org' }), true);
+  assert.equal(mayEditNews(hr, { organization_id: null }), false);
+  assert.equal(mayEditNews(dev, { organization_id: null }), true);
+  assert.equal(mayEditNews(dev, { organization_id: 'org' }), false, 'a superdeveloper is no writer of an organization by that alone');
 });
