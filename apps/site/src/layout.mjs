@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'cases', 'expenses', 'pricing', 'security', 'law', 'about', 'contact', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'cases', 'expenses', 'plugins', 'pricing', 'security', 'law', 'about', 'contact', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -65,12 +65,19 @@ export function context(dicts, lang, page, config, assets) {
   };
 }
 
+/** The modules submenu: the optional modules, then how to build one's own. */
+export const MODULE_PAGES = ['cases', 'expenses', 'plugins'];
+
 function header(ctx) {
   const { t, link, lang, page, dicts, config } = ctx;
-  const nav = ['features', 'cases', 'expenses', 'pricing', 'security', 'about', 'contact']
-    // The Working Hours Act page lives under Security (its slug and its place in the menu).
-    .map((p) => `<a href="${link(p)}"${p === page || (p === 'security' && page === 'law') ? ' aria-current="page"' : ''}>${t(`nav.${p}`)}</a>`)
-    .join('');
+  const item = (p) => `<a href="${link(p)}"${p === page || (p === 'security' && page === 'law') ? ' aria-current="page"' : ''}>${t(`nav.${p}`)}</a>`;
+  // "Modules" opens on hover or focus (CSS only, no JavaScript); in the small-screen menu its pages are listed below it.
+  const modules = `<div class="nav-sub">
+          <button type="button" class="nav-sub-label" aria-haspopup="true"${MODULE_PAGES.includes(page) ? ' aria-current="page"' : ''}>${t('nav.modules')}${icon('chevron')}</button>
+          <div class="nav-sub-menu">${MODULE_PAGES.map(item).join('')}</div>
+        </div>`;
+  // The Working Hours Act page lives under Security (its slug and its place in the menu).
+  const nav = ['features', 'modules', 'pricing', 'security', 'about', 'contact'].map((p) => (p === 'modules' ? modules : item(p))).join('');
   const langs = LANGS.map(
     (l) =>
       `<a href="${pagePath(dicts, l, page)}" hreflang="${l}" lang="${l}"${l === lang ? ' aria-current="true"' : ''}>${l.toUpperCase()}<span>${LANG_NAMES[l]}</span></a>`,
@@ -108,14 +115,16 @@ function footer(ctx) {
     <nav aria-label="${t('footer.product')}">
       <h2>${t('footer.product')}</h2>
       <a href="${link('features')}">${t('nav.features')}</a>
-      <a href="${link('cases')}">${t('nav.cases')}</a>
-      <a href="${link('expenses')}">${t('nav.expenses')}</a>
       <a href="${link('pricing')}">${t('nav.pricing')}</a>
       <a href="${link('security')}">${t('nav.security')}</a>
       <a href="${link('law')}">${t('nav.law')}</a>
       <a href="${ctx.demo}">${t('cta.demo')}</a>
       ${config.appUrl ? `<a href="${esc(config.appUrl)}">${t('nav.login')}</a>` : ''}
       ${config.sourceUrl ? `<a class="footer-github" href="${esc(config.sourceUrl)}" rel="noopener">${t('nav.source')}${githubMark()}</a>` : ''}
+    </nav>
+    <nav aria-label="${t('nav.modules')}">
+      <h2>${t('nav.modules')}</h2>
+      ${MODULE_PAGES.map((p) => `<a href="${link(p)}">${t(`nav.${p}`)}</a>`).join('\n      ')}
     </nav>
     <nav aria-label="${t('footer.company')}">
       <h2>${t('footer.company')}</h2>

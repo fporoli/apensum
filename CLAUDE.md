@@ -477,4 +477,5 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   silently, logged), per-IP and daily limits, topic in the subject (`[Website] <topic>: <name>`), Origin must be in
   `CONTACT_SITE_ORIGINS`; it mails `CONTACT_EMAIL` (default info@apensum.ch, visitor as Reply-To) through
   the instance's SMTP and redirects to `/<lang>/<contact>/<thanks|error>/`. `remote.sh` puts the API's
-  origin into the CSP `form-action`. The app links back to the site ("More about Apensum", `infoUrl.ts`).
+  origin into the CSP `form-action`. The menu groups the module pages (Cases, Expenses, "build your own module" = `plugins`, its steps true to
+  docs/PLUGINS.md) under "Modules" (`MODULE_PAGES` in `layout.mjs`, CSS-only submenu). The app links back to the site ("More about Apensum", `infoUrl.ts`).

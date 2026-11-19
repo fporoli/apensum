@@ -59,6 +59,8 @@ test('builds every page; internal links resolve; nothing loads from third partie
       for (const m of html.matchAll(/\s(?:src|href|poster)="([^"]+)"/g)) {
         const url = m[1];
         if (/^#/.test(url) || [fullConfig.appUrl, fullConfig.demoUrl, fullConfig.about.linkedin, fullConfig.sourceUrl, fullConfig.lawSourceUrl].includes(url)) continue;
+        // Files in the source repository (the plugin page links its developer docs).
+        if (fullConfig.sourceUrl && url.startsWith(`${fullConfig.sourceUrl.replace(/\/$/, '')}/blob/`)) continue;
         if (/^https:\/\//.test(url)) {
           assert.ok(url.startsWith(`https://${fullConfig.domain}/`), `${file}: external link ${url}`);
           continue;

@@ -34,11 +34,9 @@ export const FEATURE_GROUPS = [
   ['absences', 'calendar'],
   ['balances', 'scale'],
   ['timesheets', 'check'],
-  ['expenses', 'receipt'],
   ['importexport', 'sync'],
   ['requests', 'chat'],
   ['documents', 'doc'],
-  ['cases', 'lock'],
   ['admin', 'sliders'],
   ['tenants', 'building'],
   ['access', 'key'],
@@ -366,7 +364,7 @@ function shot(ctx, id, caption, lang = ctx.lang) {
 }
 
 /** Feature groups shown with a demo video (media/demo-<id>.mp4, videos/record.mjs) instead of screenshots. */
-const FEATURE_VIDEOS = { customize: 'developer', cases: 'cases' };
+const FEATURE_VIDEOS = { customize: 'developer' };
 
 /** The pictures (or the video) of one feature group, between its intro and its list. */
 function featureMedia(ctx, group) {
@@ -935,4 +933,137 @@ ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('expenses.meta.title'), description: t('expenses.meta.description'), body });
 }
 
-export const RENDER = { home, features, cases, expenses, pricing, security, law, about, contact, impressum, privacy };
+/** The plugin page's steps: icon, and a short code example (the same in every language). */
+const PLUGIN_STEPS = [
+  ['folder', 'layers', `plugins/demo/package.json
+{
+  "name": "@acme/demo",
+  "apensum": {
+    "id": "demo",
+    "apensumApi": 1,
+    "dbSchema": "demo",
+    "permissions": [
+      { "id": "nav.demo", "kind": "nav",
+        "scopes": ["own", "all"], "caption": "nav.demo" }
+    ],
+    "module": { "id": "demo", "caption": "modules.demo",
+                "defaultEnabled": false, "objects": ["nav.demo"] },
+    "api": "dist/api/index.js",
+    "web": "web/index.tsx"
+  }
+}`],
+  ['api', 'sync', `// plugins/demo/api/index.ts
+import { defineApiPlugin } from '@worktime3/api/plugin';
+import { DemoController } from './demo.controller';
+
+export default defineApiPlugin({
+  id: 'demo',
+  controllers: [DemoController],
+});`],
+  ['web', 'phone', `// plugins/demo/web/index.tsx
+import { defineWebPlugin, FolderSharedIcon } from '@worktime3/web/plugin';
+
+export default defineWebPlugin({
+  id: 'demo',
+  texts: DEMO_TEXTS, // en, de, fr, it
+  pages: [{
+    section: 'demo', hash: '#/demo', object: 'nav.demo',
+    nav: { group: 'myWork', label: 'nav.demo', icon: <FolderSharedIcon /> },
+    render: (ctx) => <DemoPage orgId={ctx.orgId} authHeaders={ctx.authHeaders} />,
+  }],
+});`],
+  ['database', 'doc', `plugins/demo/changelog/db.changelog-master.xml
+plugins/demo/changelog/001-demo-schema.sql
+
+npm run dev:migrate      # the core's changelog, then every plugin's
+npm run dev:introspect   # writes plugins/demo/api/db/schema.ts`],
+  ['run', 'check', `git clone <your repository> plugins/demo
+npm run build --workspace=@worktime3/api
+npm run dev:api          # log: "Loaded plugins: ..., demo"
+npm run dev:web
+npm test                 # the core's tests, then the plugin's`],
+  ['ship', 'lock', `plugins/demo/   -> built into the API and web images
+                   the core keeps working without it`],
+];
+
+/** What a plugin can add to the core (docs/PLUGINS.md). */
+const PLUGIN_POINTS = [
+  ['pages', 'layers'],
+  ['data', 'doc'],
+  ['approvals', 'inbox'],
+  ['reports', 'scale'],
+  ['documents', 'receipt'],
+  ['ai', 'sparkle'],
+];
+
+export function plugins(ctx) {
+  const { t, config } = ctx;
+  const docs = config.sourceUrl ? `${config.sourceUrl.replace(/\/$/, '')}/blob/main/docs/PLUGINS.md` : null;
+  const steps = PLUGIN_STEPS.map(([k, ic, code], i) => `<li class="card plugin-step">
+        <div class="plugin-step-head"><span class="step-no">${i + 1}</span><div class="feature-icon">${icon(ic)}</div></div>
+        <div>
+          <h3>${t(`plugins.steps.${k}.title`)}</h3>
+          <p>${t(`plugins.steps.${k}.text`)}</p>
+        </div>
+        <pre class="code"><code>${esc(code)}</code></pre>
+      </li>`).join('\n      ');
+  const points = PLUGIN_POINTS.map(([k, ic]) => `<article class="card feature">
+        <div class="feature-icon">${icon(ic)}</div>
+        <h3>${t(`plugins.points.${k}.title`)}</h3>
+        <p>${t(`plugins.points.${k}.text`)}</p>
+      </article>`).join('\n    ');
+
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${icon('code')}${t('plugins.hero.eyebrow')}</p>
+    <h1>${t('plugins.hero.title')}</h1>
+    <p class="lead">${t('plugins.hero.lead')}</p>
+    <div class="actions" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+      ${docs ? `<a class="btn btn-primary" href="${esc(docs)}" rel="noopener">${t('plugins.docsCta')}${icon('arrow')}</a>` : ''}
+      <a class="btn btn-ghost" href="${ctx.contactLink('general')}">${icon('mail')}${t('cta.contact')}</a>
+    </div>
+  </div>
+</section>
+
+<section class="section tight">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>${t('plugins.steps.title')}</h2>
+      <p class="lead">${t('plugins.steps.lead')}</p>
+    </div>
+    <ol class="plugin-steps">
+      ${steps}
+    </ol>
+  </div>
+</section>
+
+<section class="section band">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>${t('plugins.points.title')}</h2>
+      <p class="lead">${t('plugins.points.lead')}</p>
+    </div>
+    <div class="grid grid-3">
+    ${points}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">${icon('shield')}${t('plugins.rules.eyebrow')}</p>
+      <h2>${t('plugins.rules.title')}</h2>
+      <p class="lead">${t('plugins.rules.lead')}</p>
+    </div>
+    <div>${checklist(t.list('plugins.rules.items'))}</div>
+  </div>
+</section>
+${ctaBand(ctx)}`;
+
+  return layout(ctx, { title: t('plugins.meta.title'), description: t('plugins.meta.description'), body });
+}
+
+
+export const RENDER = { home, features, cases, expenses, plugins, pricing, security, law, about, contact, impressum, privacy };
