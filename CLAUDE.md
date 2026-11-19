@@ -491,3 +491,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `newsletter_subscribers` 079 with the consent timestamps). Double opt-in: the mail's link opens a small API page with a
   button (GET shows, POST acts, so mail scanners change nothing); unsubscribing by form mails a link, and no answer tells
   whether an address is subscribed; one mail per address per 10 minutes, per-IP and daily limits. Sending news is not built.
+  News posts (`apps/site/content/news/<YYYY-MM-DD>-<slug>/<lang>.md`, pictures in the same folder, `src/news.mjs`: a small
+  Markdown subset, front matter `title`/`summary`/`draft`): de.md is required, other languages fall back to it (marked
+  `lang="de"`); `draft: true` posts are built only with `--drafts` (the `site:dev` preview), never deployed. References page
+  (`references`): no references yet, first customers' operation free, only customizations billed; contact topic `pilot`
+  (also in `site-contact.controller.ts`).

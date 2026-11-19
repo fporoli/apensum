@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'cases', 'expenses', 'plugins', 'pricing', 'security', 'law', 'about', 'contact', 'news', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'cases', 'expenses', 'plugins', 'pricing', 'security', 'law', 'about', 'references', 'contact', 'news', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -43,6 +43,11 @@ export function pagePath(dicts, lang, page) {
   return page === 'home' ? `/${lang}/` : `/${lang}/${dicts[lang][`slug.${page}`]}/`;
 }
 
+/** A news post: /de/news/2026-11-19-was-neu-ist/ (the date keeps it apart from the result pages). */
+export function postPath(dicts, lang, id) {
+  return `${pagePath(dicts, lang, 'news')}${id}/`;
+}
+
 /** Everything a page template needs. */
 export function context(dicts, lang, page, config, assets) {
   const t = translator(dicts[lang], lang);
@@ -55,6 +60,8 @@ export function context(dicts, lang, page, config, assets) {
     assets,
     locale,
     link: (p) => pagePath(dicts, lang, p),
+    /** This page in another language (the language menu, hreflang, canonical); a news post overrides it. */
+    pathIn: (l) => pagePath(dicts, l, page),
     demo: esc(config.demoUrl),
     number: (n, opts) => new Intl.NumberFormat(locale, opts).format(n),
     /** The contact page's form with a topic preselected (CONTACT_TOPICS); no mailto: links anywhere. */
@@ -74,7 +81,7 @@ export function context(dicts, lang, page, config, assets) {
 export const MODULE_PAGES = ['cases', 'expenses', 'plugins'];
 
 function header(ctx) {
-  const { t, link, lang, page, dicts, config } = ctx;
+  const { t, link, lang, page, config } = ctx;
   const item = (p) => `<a href="${link(p)}"${p === page || (p === 'security' && page === 'law') ? ' aria-current="page"' : ''}>${t(`nav.${p}`)}</a>`;
   // "Modules" opens on hover or focus (CSS only, no JavaScript); in the small-screen menu its pages are listed below it.
   const modules = `<div class="nav-sub">
@@ -82,10 +89,10 @@ function header(ctx) {
           <div class="nav-sub-menu">${MODULE_PAGES.map(item).join('')}</div>
         </div>`;
   // The Working Hours Act page lives under Security (its slug and its place in the menu).
-  const nav = ['features', 'modules', 'pricing', 'security', 'about', 'contact'].map((p) => (p === 'modules' ? modules : item(p))).join('');
+  const nav = ['features', 'modules', 'pricing', 'references', 'security', 'about', 'contact'].map((p) => (p === 'modules' ? modules : item(p))).join('');
   const langs = LANGS.map(
     (l) =>
-      `<a href="${pagePath(dicts, l, page)}" hreflang="${l}" lang="${l}"${l === lang ? ' aria-current="true"' : ''}>${l.toUpperCase()}<span>${LANG_NAMES[l]}</span></a>`,
+      `<a href="${ctx.pathIn(l)}" hreflang="${l}" lang="${l}"${l === lang ? ' aria-current="true"' : ''}>${l.toUpperCase()}<span>${LANG_NAMES[l]}</span></a>`,
   ).join('');
   const login = config.appUrl ? `<a class="btn btn-ghost btn-sm" href="${esc(config.appUrl)}">${t('nav.login')}</a>` : '';
   // The same panel twice: a bar on wide screens, a <details> menu on small ones (no JavaScript).
@@ -166,8 +173,9 @@ function footer(ctx) {
     <nav aria-label="${t('footer.company')}">
       <h2>${t('footer.company')}</h2>
       <a href="${link('about')}">${t('nav.about')}</a>
+      <a href="${link('references')}">${t('nav.references')}</a>
       <a href="${link('contact')}">${t('nav.contact')}</a>
-      ${ctx.newsletterUrl('subscribe') ? `<a href="${link('news')}">${t('nav.news')}</a>` : ''}
+      <a href="${link('news')}">${t('nav.news')}</a>
       <a href="${link('impressum')}">${t('nav.impressum')}</a>
       <a href="${link('privacy')}">${t('nav.privacy')}</a>
     </nav>
@@ -178,13 +186,13 @@ function footer(ctx) {
 
 /** A full HTML document. `alternates` maps language -> path of this page. */
 export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false }) {
-  const { lang, page, dicts, config, assets, t } = ctx;
+  const { lang, page, config, assets, t } = ctx;
   const origin = `https://${config.domain}`;
   const alternates = page
-    ? LANGS.map((l) => `<link rel="alternate" hreflang="${l}" href="${origin}${pagePath(dicts, l, page)}">`).join('\n  ') +
+    ? LANGS.map((l) => `<link rel="alternate" hreflang="${l}" href="${origin}${ctx.pathIn(l)}">`).join('\n  ') +
       `\n  <link rel="alternate" hreflang="x-default" href="${origin}/">`
     : '';
-  const canonical = page ? `<link rel="canonical" href="${origin}${pagePath(dicts, lang, page)}">` : '';
+  const canonical = page ? `<link rel="canonical" href="${origin}${ctx.pathIn(lang)}">` : '';
   return `<!doctype html>
 <html lang="${lang}">
 <head>

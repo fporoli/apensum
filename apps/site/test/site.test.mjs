@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DICTS, build, jpegSize, missingOperatorFields } from '../build.mjs';
 import { LANGS, PAGES, pagePath } from '../src/layout.mjs';
 import { preferredLang } from '../serve.mjs';
+import { loadPosts, parseFrontMatter, renderMarkdown } from '../src/news.mjs';
 import baseConfig from '../site.config.mjs';
 
 const placeholders = (v) => [...JSON.stringify(v).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
@@ -206,6 +207,77 @@ test('feature screenshots: sized, in the page language or German, the developer 
     assert.match(fr, /feature-time-1-fr\.jpg/);
     // Groups without pictures have none.
     assert.doesNotMatch(de, /<section class="feature-group" id="project">[\s\S]*?<img[\s\S]*?<\/section>\s*<section class="feature-group" id="absences">/);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('references page: no references yet, first customers contact us under their own topic', () => {
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  try {
+    build({ outDir: out, config: fullConfig, log: { warn() {} } });
+    const de = readFileSync(join(out, 'de', 'referenzen', 'index.html'), 'utf8');
+    assert.match(de, /Noch keine Referenzen/);
+    assert.match(de, /href="\/de\/kontakt\/\?topic=pilot#contact-form"/);
+    assert.match(de, /href="\/de\/preise\/"/);
+    // The hourly rate stays on the pricing page.
+    assert.doesNotMatch(de, /CHF|120|130/);
+    assert.match(readFileSync(join(out, 'fr', 'contact', 'index.html'), 'utf8'), /<option value="pilot">Premiers clients \/ pilote<\/option>/);
+    assert.match(readFileSync(join(out, 'it', 'index.html'), 'utf8'), /<a href="\/it\/referenze\/">Referenze<\/a>/, 'in the menu');
+    // HTML handed to a text placeholder would be shown as code.
+    for (const page of ['de/news', 'de/news/fehler']) assert.doesNotMatch(readFileSync(join(out, page, 'index.html'), 'utf8'), /&lt;span/);
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});
+
+test('news posts: Markdown subset, escaped, no script links', () => {
+  const opts = { image: (src, alt) => `<img src="/x/${src}" alt="${alt}">`, link: (href, label) => (/^https?:|^\//.test(href) ? `<a href="${href}">${label}</a>` : label) };
+  assert.equal(renderMarkdown('## Neu <b>\n\nText mit **fett**, *kursiv* und `a<b`.', opts), '<h2>Neu &lt;b&gt;</h2>\n<p>Text mit <strong>fett</strong>, <em>kursiv</em> und <code>a&lt;b</code>.</p>');
+  assert.equal(renderMarkdown('- eins\n  weiter\n- zwei', opts), '<ul><li>eins weiter</li><li>zwei</li></ul>');
+  assert.equal(renderMarkdown('1. a\n2. b', opts), '<ol><li>a</li><li>b</li></ol>');
+  assert.equal(renderMarkdown('![Ein "Bild"](a.png)', opts), '<figure><img src="/x/a.png" alt="Ein &quot;Bild&quot;"></figure>');
+  assert.equal(renderMarkdown('[klick](javascript:alert(1)) [ok](/de/)', opts), '<p>klick) <a href="/de/">ok</a></p>');
+  assert.deepEqual(parseFrontMatter('---\ntitle: "Hallo: Welt"\ndraft: true\n---\nText'), { meta: { title: 'Hallo: Welt', draft: true }, body: 'Text' });
+});
+
+test('news posts: pages per language with German fallback, pictures, drafts only on request', () => {
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  const news = join(out, 'news-src');
+  try {
+    const post = join(news, '2026-11-01-erster-beitrag');
+    mkdirSync(post, { recursive: true });
+    writeFileSync(join(post, 'de.md'), '---\ntitle: Erster Beitrag\nsummary: Kurz gesagt\n---\nHallo.\n\n![Bildschirm](screen.png)\n');
+    writeFileSync(join(post, 'fr.md'), '---\ntitle: Premier article\n---\nBonjour.\n');
+    writeFileSync(join(post, 'screen.png'), 'png');
+    mkdirSync(join(news, '2026-11-20-entwurf'));
+    writeFileSync(join(news, '2026-11-20-entwurf', 'de.md'), '---\ntitle: Noch nicht\ndraft: true\n---\nGeheim.\n');
+    const quiet = { warn() {} };
+
+    build({ outDir: join(out, 'a'), config: fullConfig, log: quiet, newsDir: news });
+    const de = readFileSync(join(out, 'a', 'de', 'news', '2026-11-01-erster-beitrag', 'index.html'), 'utf8');
+    assert.match(de, /<h1>Erster Beitrag<\/h1>/);
+    assert.match(de, /<time datetime="2026-11-01">1\. November 2026<\/time>/);
+    assert.match(de, /<img src="\/news-media\/2026-11-01-erster-beitrag\/screen\.png\?v=[0-9a-f]{10}" alt="Bildschirm"/);
+    assert.ok(existsSync(join(out, 'a', 'news-media', '2026-11-01-erster-beitrag', 'screen.png')));
+    // The language menu stays on the post.
+    assert.ok(de.includes(`<a href="/fr/${DICTS.fr['slug.news']}/2026-11-01-erster-beitrag/" hreflang="fr"`));
+    assert.match(readFileSync(join(out, 'a', 'fr', DICTS.fr['slug.news'], '2026-11-01-erster-beitrag', 'index.html'), 'utf8'), /<h1>Premier article<\/h1>/);
+    const it = readFileSync(join(out, 'a', 'it', DICTS.it['slug.news'], '2026-11-01-erster-beitrag', 'index.html'), 'utf8');
+    assert.match(it, /<h1 lang="de">Erster Beitrag<\/h1>/);
+    assert.match(it, /solo in tedesco/);
+    assert.match(readFileSync(join(out, 'a', 'de', 'news', 'index.html'), 'utf8'), /<a href="\/de\/news\/2026-11-01-erster-beitrag\/">Erster Beitrag<\/a>/);
+    assert.match(readFileSync(join(out, 'a', 'sitemap.xml'), 'utf8'), /\/de\/news\/2026-11-01-erster-beitrag\//);
+    assert.ok(!existsSync(join(out, 'a', 'de', 'news', '2026-11-20-entwurf')), 'no drafts in a normal build');
+
+    build({ outDir: join(out, 'b'), config: fullConfig, log: quiet, newsDir: news, drafts: true });
+    const draft = readFileSync(join(out, 'b', 'de', 'news', '2026-11-20-entwurf', 'index.html'), 'utf8');
+    assert.match(draft, /<meta name="robots" content="noindex">/);
+    assert.match(draft, /class="draft-badge"/);
+    assert.doesNotMatch(readFileSync(join(out, 'b', 'sitemap.xml'), 'utf8'), /entwurf/);
+
+    writeFileSync(join(post, 'de.md'), '---\ntitle: Erster Beitrag\n---\n![weg](fehlt.png)\n');
+    assert.throws(() => loadPosts(news), /fehlt\.png/);
   } finally {
     rmSync(out, { recursive: true, force: true });
   }

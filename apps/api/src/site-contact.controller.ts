@@ -16,6 +16,7 @@ export const CONTACT_MAX_LINKS = 3;
 export const CONTACT_TOPICS: Record<string, string> = {
   general: 'Allgemeine Frage',
   demo: 'Vorführung',
+  pilot: 'Erste Kunden / Pilot',
   pricing: 'Anpassung / Offerte',
   invest: 'Investition / Partnerschaft',
 };

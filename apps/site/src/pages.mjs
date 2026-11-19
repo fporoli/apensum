@@ -1,6 +1,7 @@
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
 import { githubMark, icon } from './icons.mjs';
-import { esc, layout, newsletterForm, pagePath } from './layout.mjs';
+import { esc, layout, newsletterForm, pagePath, postPath } from './layout.mjs';
+import { renderMarkdown } from './news.mjs';
 
 /** The canton each language's holiday example shows. */
 const EXAMPLE_CANTON = { de: 'ZH', fr: 'VD', it: 'TI', en: 'BE' };
@@ -86,7 +87,7 @@ export function phoneReveal(ctx) {
 }
 
 /** What a contact message is about: the form's dropdown, preselected by `?topic=` (contact.js). */
-export const CONTACT_TOPICS = ['general', 'demo', 'pricing', 'invest'];
+export const CONTACT_TOPICS = ['general', 'demo', 'pilot', 'pricing', 'invest'];
 
 const checklist = (items) => `<ul class="checklist">${items.map((i) => `<li>${icon('check')}<span>${i}</span></li>`).join('')}</ul>`;
 
@@ -564,7 +565,7 @@ export function contactResult(ctx, kind) {
   <div class="wrap narrow">
     <p class="eyebrow">${t('nav.contact')}</p>
     <h1>${t(ok ? 'contact.thanks.title' : 'contact.failed.title')}</h1>
-    <p class="lead">${ok ? t('contact.thanks.text') : t('contact.failed.text', { email: ctx.email })}</p>
+    <p class="lead">${ok ? t('contact.thanks.text') : t('contact.failed.text', { email: ctx.config.email })}</p>
     <p class="actions">${ok ? '' : `<a class="btn btn-primary" href="${ctx.link('contact')}">${t('contact.retry')}</a>`}<a class="btn btn-ghost" href="${ctx.link('home')}">${t('contact.back')}</a></p>
   </div>
 </section>`;
@@ -1071,8 +1072,113 @@ ${ctaBand(ctx)}`;
  * (a link by e-mail). The forms post to the API (site-newsletter.controller.ts); without a contact
  * URL there is no API, and the page says how to ask by e-mail instead.
  */
-export function news(ctx) {
+export function references(ctx) {
   const { t } = ctx;
+  const steps = t.list('references.steps.items');
+  const body = `
+<section class="page-head">
+  <div class="wrap narrow">
+    <p class="eyebrow">${icon('handshake')}${t('nav.references')}</p>
+    <h1>${t('references.title')}</h1>
+    <p class="lead">${t('references.lead')}</p>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap grid grid-2">
+    <article class="card">
+      <div class="feature-icon">${icon('building')}</div>
+      <h2 class="h3">${t('references.offer.title')}</h2>
+      ${checklist(t.list('references.offer.items'))}
+      <p class="muted small">${t('references.offer.note')} <a href="${ctx.link('pricing')}">${t('references.pricingLink')}</a></p>
+    </article>
+    <article class="card">
+      <div class="feature-icon">${icon('chat')}</div>
+      <h2 class="h3">${t('references.feedback.title')}</h2>
+      <p>${t('references.feedback.text')}</p>
+      ${checklist(t.list('references.feedback.items'))}
+    </article>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap narrow">
+    <h2>${t('references.steps.title')}</h2>
+    <ol class="plugin-steps references-steps">
+      ${steps.map((s, i) => `<li><span class="step-no">${i + 1}</span><p>${s}</p></li>`).join('\n      ')}
+    </ol>
+    <p class="actions">
+      <a class="btn btn-primary" href="${ctx.contactLink('pilot')}">${icon('mail')}${t('cta.contact')}</a>
+      <a class="btn btn-ghost" href="${ctx.demo}">${t('cta.demo')}${icon('arrow')}</a>
+    </p>
+  </div>
+</section>`;
+  return layout(ctx, { title: t('references.meta.title'), description: t('references.meta.description'), body });
+}
+
+/** A post's date in the page language: 19. November 2026. */
+const postDate = (ctx, date) => new Intl.DateTimeFormat(ctx.locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+
+/** The post's text in the page language, else the German one (`lang` says which it is). */
+const postIn = (post, lang) => (post.langs[lang] ? { lang, ...post.langs[lang] } : { lang: 'de', ...post.langs.de });
+
+/** Post Markdown to HTML for the site: pictures from /news-media, links to other sites open with noopener. */
+function postHtml(ctx, post, text) {
+  return renderMarkdown(text.body, {
+    image: (src, alt) => {
+      const url = ctx.assets.news.image(post, src.replace(/&amp;/g, '&'));
+      return url ? `<img src="${url}" alt="${alt}" loading="lazy" decoding="async">` : alt;
+    },
+    link: (href, label) => {
+      if (!/^(https?:\/\/|\/|#)/.test(href.replace(/&amp;/g, '&'))) return label;
+      return `<a href="${href}"${/^https?:/.test(href) ? ' rel="noopener"' : ''}>${label}</a>`;
+    },
+  });
+}
+
+export function newsPost(ctx, post) {
+  const { t, lang } = ctx;
+  const text = postIn(post, lang);
+  const other = text.lang !== lang ? ` lang="${text.lang}"` : '';
+  const body = `
+<section class="page-head">
+  <div class="wrap narrow">
+    <p class="eyebrow"><a href="${ctx.link('news')}">${t('nav.news')}</a> · <time datetime="${post.date}">${postDate(ctx, post.date)}</time></p>
+    ${post.draft ? `<p class="draft-badge">${t('news.post.draft')}</p>` : ''}
+    <h1${other}>${esc(text.title)}</h1>
+    ${text.summary ? `<p class="lead"${other}>${esc(text.summary)}</p>` : ''}
+    ${other ? `<p class="muted small">${t('news.post.onlyGerman')}</p>` : ''}
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap narrow">
+    <article class="prose post-body"${other}>
+      ${postHtml(ctx, post, text)}
+    </article>
+    <div class="card post-subscribe">
+      <h2 class="h3">${t('news.post.subscribe')}</h2>
+      ${newsletterForm(ctx, 'subscribe') || `<p>${t('news.noForm', { email: ctx.config.email })}</p>`}
+    </div>
+    <p><a href="${ctx.link('news')}">${t('news.post.back')}</a></p>
+  </div>
+</section>`;
+  return layout(ctx, { title: `${esc(text.title)} – Apensum`, description: esc(text.summary || text.title), body, noindex: post.draft });
+}
+
+export function news(ctx) {
+  const { t, lang } = ctx;
+  const posts = ctx.assets.news?.posts ?? [];
+  const list = posts.length
+    ? `<ul class="post-list">
+      ${posts
+        .map((post) => {
+          const text = postIn(post, lang);
+          const other = text.lang !== lang ? ` lang="${text.lang}"` : '';
+          return `<li class="card"><p class="muted small"><time datetime="${post.date}">${postDate(ctx, post.date)}</time>${post.draft ? ` · <span class="draft-badge">${t('news.post.draft')}</span>` : ''}</p>
+        <h2 class="h3"${other}><a href="${postPath(ctx.dicts, lang, post.id)}">${esc(text.title)}</a></h2>
+        ${text.summary ? `<p${other}>${esc(text.summary)}</p>` : ''}</li>`;
+        })
+        .join('\n      ')}
+    </ul>`
+    : '';
   const forms = ctx.newsletterUrl('subscribe')
     ? `<div class="grid grid-2">
       <div class="card">
@@ -1086,7 +1192,7 @@ export function news(ctx) {
         ${newsletterForm(ctx, 'unsubscribe')}
       </div>
     </div>`
-    : `<div class="card"><p>${t('news.noForm', { email: ctx.email })}</p></div>`;
+    : `<div class="card"><p>${t('news.noForm', { email: ctx.config.email })}</p></div>`;
   const body = `
 <section class="page-head">
   <div class="wrap narrow">
@@ -1095,7 +1201,12 @@ export function news(ctx) {
     <p class="lead">${t('news.lead')}</p>
   </div>
 </section>
-<section class="section tight">
+${list ? `<section class="section tight">
+  <div class="wrap narrow">
+    ${list}
+  </div>
+</section>` : ''}
+<section class="section tight" id="subscribe">
   <div class="wrap">
     ${forms}
     <p class="muted news-privacy">${t('news.privacy')} <a href="${ctx.link('privacy')}#newsletter">${t('nav.privacy')}</a></p>
@@ -1112,11 +1223,11 @@ export function newsResult(ctx, kind) {
   <div class="wrap narrow">
     <p class="eyebrow">${t('nav.news')}</p>
     <h1>${t(`news.${kind}.title`)}</h1>
-    <p class="lead">${t(`news.${kind}.text`, { email: ctx.email })}</p>
+    <p class="lead">${t(`news.${kind}.text`, { email: ctx.config.email })}</p>
     <p class="actions">${kind === 'failed' ? `<a class="btn btn-primary" href="${ctx.link('news')}">${t('contact.retry')}</a>` : ''}<a class="btn btn-ghost" href="${ctx.link('home')}">${t('contact.back')}</a></p>
   </div>
 </section>`;
   return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
 }
 
-export const RENDER = { home, features, cases, expenses, plugins, pricing, security, law, about, contact, news, impressum, privacy };
+export const RENDER = { home, features, cases, expenses, plugins, pricing, security, law, about, references, contact, news, impressum, privacy };

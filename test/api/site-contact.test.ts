@@ -70,6 +70,7 @@ test('a mail failure sends the visitor to the error page', async () => {
 test('the topic from the form names the subject; unknown topics count as general', () => {
   assert.equal(contactMail({ ...form, topic: 'pricing' }, 'x@y.ch')!.subject, '[Website] Anpassung / Offerte: Anna Muster');
   assert.equal(contactMail({ ...form, topic: 'invest' }, 'x@y.ch')!.subject, '[Website] Investition / Partnerschaft: Anna Muster');
+  assert.equal(contactMail({ ...form, topic: 'pilot' }, 'x@y.ch')!.subject, '[Website] Erste Kunden / Pilot: Anna Muster');
   assert.equal(contactMail({ ...form, topic: 'constructor' }, 'x@y.ch')!.subject, '[Website] Allgemeine Frage: Anna Muster');
 });
 

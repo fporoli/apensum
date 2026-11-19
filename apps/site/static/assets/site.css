@@ -111,7 +111,7 @@ a:hover { color: var(--brand-strong); }
 .menu summary::-webkit-details-marker { display: none; }
 .menu-panel { display: flex; align-items: center; gap: 22px; }
 .nav { display: flex; gap: 22px; }
-.nav a { color: var(--text); text-decoration: none; font-weight: 500; }
+.nav a { color: var(--text); text-decoration: none; font-weight: 500; white-space: nowrap; }
 .nav a:hover, .nav a[aria-current] { color: var(--brand); }
 /* Modules submenu: opens on hover or keyboard focus (no JavaScript). */
 .nav-sub { position: relative; display: flex; }
@@ -138,7 +138,7 @@ a:hover { color: var(--brand-strong); }
 .langs a[aria-current] { background: var(--brand-soft); color: var(--brand); }
 .header-actions { display: flex; gap: 10px; }
 .menu { display: none; }
-@media (max-width: 1080px) {
+@media (max-width: 1140px) {
   .menu-panel.bar { display: none; }
   .menu { display: block; }
   .menu summary { display: inline-flex; }
@@ -527,3 +527,25 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .law-teaser { flex-direction: column; gap: 12px; } }
 .footer-github { display: inline-flex; align-items: center; gap: 6px; }
 .footer-github .icon { width: 16px; height: 16px; }
+
+/* References: the steps after the first contact */
+.references-steps { margin: 16px 0 24px; }
+.references-steps li { display: flex; gap: 14px; align-items: center; }
+.references-steps p { margin: 0; }
+
+/* News posts: the list on the News page and a post */
+.post-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
+.post-list .card p { margin: 0; }
+.post-list h2 { margin: 6px 0; }
+.post-list h2 a { color: var(--ink); text-decoration: none; }
+.post-list h2 a:hover { color: var(--brand); }
+.draft-badge { display: inline-block; padding: 1px 8px; border-radius: 6px; background: #fff4d6; color: #7a5200; font-size: 0.85rem; font-weight: 600; }
+.post-body h2 { margin-top: 1.6em; }
+.post-body ul, .post-body ol { padding-left: 1.3em; max-width: 70ch; }
+.post-body li { margin: 4px 0; }
+.post-body figure { margin: 24px 0; }
+.post-body img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); }
+.post-body blockquote { margin: 16px 0; padding: 4px 16px; border-left: 3px solid var(--brand); color: var(--muted); }
+.post-body code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg-alt); padding: 1px 5px; border-radius: 5px; }
+.post-subscribe { margin: 40px 0 20px; }
+.card .checklist + .small { margin-top: 14px; }
