@@ -8,7 +8,7 @@
     "start": "node dist/main.js",
     "test": "NODE_PATH=./node_modules tsx --conditions=source --test ../../test/api/**/*.test.ts",
     "db:checkschema": "node scripts/check-schema.mjs",
-    "db:introspect": "drizzle-kit introspect && cp .drizzle-introspect/schema.ts .drizzle-introspect/relations.ts src/db/ && rm -rf .drizzle-introspect && node scripts/fix-introspected-schema.mjs"
+    "db:introspect": "node scripts/introspect.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.2.0",

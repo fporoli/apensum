@@ -17,6 +17,7 @@
       "defaultEnabled": true,
       "objects": ["nav.expenses", "nav.expenseReports", "nav.expenseProcessing"]
     },
+    "tables": ["expenses", "expense_reports", "expense_report_items", "exchange_rates"],
     "api": "dist/api/index.js",
     "web": "web/index.tsx"
   }

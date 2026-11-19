@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Checks that the committed src/db/schema.ts and relations.ts describe the database at
-// $DATABASE_URL: introspects it into a scratch folder (drizzle-kit, then the same fixes as
-// `npm run db:introspect`) and compares the result with the committed files.
+// Checks that the committed src/db/schema.ts and relations.ts, and every plugin's api/db/schema.ts
+// (plugin-schemas.mjs), describe the database at $DATABASE_URL: introspects it into a scratch folder
+// (drizzle-kit, then the same fixes as `npm run db:introspect`) and compares the result with the
+// committed files.
 //
 // Table order is ignored: drizzle-kit writes tables in the order the database created them,
 // which differs between a database reset from scratch and one migrated step by step. Each
@@ -15,6 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { introspectPlugin, pluginsWithTables } from './plugin-schemas.mjs';
 
 const apiDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 const scratch = join(apiDir, '.drizzle-introspect'); // drizzle.config.ts `out`
@@ -48,9 +50,9 @@ function blocks(source) {
   return map;
 }
 
-function compare(label, committedPath, freshPath) {
-  const committed = blocks(readFileSync(committedPath, 'utf8'));
-  const fresh = blocks(readFileSync(freshPath, 'utf8'));
+function compare(label, committedPath, freshPath, freshSource) {
+  const committed = blocks(existsSync(committedPath) ? readFileSync(committedPath, 'utf8') : '');
+  const fresh = blocks(freshSource ?? readFileSync(freshPath, 'utf8'));
   const problems = [];
   for (const [name, text] of fresh) {
     if (!committed.has(name)) problems.push(`  + ${name}   (in the database, missing from ${label})`);
@@ -70,6 +72,9 @@ try {
     ...compare('schema.ts', join(apiDir, 'src', 'db', 'schema.ts'), join(scratch, 'schema.ts')),
     ...compare('relations.ts', join(apiDir, 'src', 'db', 'relations.ts'), join(scratch, 'relations.ts')),
   ];
+  for (const plugin of pluginsWithTables()) {
+    problems.push(...compare(`plugins/${plugin.id}/api/db/schema.ts`, plugin.schema, null, introspectPlugin(plugin)));
+  }
 } catch (err) {
   console.error(`check-schema: could not introspect the database (${err.message}).`);
   process.exit(2);
@@ -78,7 +83,7 @@ try {
 }
 
 if (problems.length === 0) {
-  console.log('check-schema: schema.ts and relations.ts match the database.');
+  console.log(`check-schema: schema.ts and relations.ts${pluginsWithTables().length ? ' and the plugins\' schemas' : ''} match the database.`);
   process.exit(0);
 }
 console.error(`check-schema: schema.ts / relations.ts do not match the database:\n${problems.join('\n')}`);

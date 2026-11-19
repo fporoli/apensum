@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { exchange_rates, expense_report_items, expense_reports, expenses } from '@worktime3/api/schema';
+import { exchange_rates, expense_report_items, expense_reports, expenses } from './db/schema';
 import type { ApiBackup, ApiPayrollItem } from '@worktime3/api/plugin';
 
 /** Report statuses whose expenses are paid with the salary (approved and everything after). */

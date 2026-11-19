@@ -166,3 +166,6 @@ plugins/*
 # Plugin changelogs staged for the migrate image (scripts/plugins.mjs stage-changelogs).
 infra/liquibase/plugins/*
 !infra/liquibase/plugins/.gitkeep
+
+# drizzle-kit scratch output and per-plugin configs (apps/api/scripts/plugin-schemas.mjs)
+apps/api/.drizzle-*

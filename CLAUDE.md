@@ -98,7 +98,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   headers), added to `db.changelog-master.xml`. Never edit an existing
   changeset; Liquibase checksums them.
 - Then run `npm run dev:migrate` and `npm run dev:introspect` (drizzle-kit 0.31,
-  matching drizzle-orm 0.45), and commit both generated files. `db:checkschema`
+  matching drizzle-orm 0.45), and commit the generated files (also a plugin's `api/db/schema.ts` for the tables
+  its manifest lists in `apensum.tables`; `scripts/plugin-schemas.mjs`). `db:checkschema`
   (`apps/api/scripts/check-schema.mjs`) introspects into a scratch folder and compares,
   ignoring table/line order (which follows the database's history); `resetdb` runs it after
   migrating and CI fails on a mismatch.
@@ -355,7 +356,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   it), changesets recorded as `<id>/changelog/<file>`; compose and `migrate.mjs` mount `plugins/`, the Azure/VPS
   workflows stage them (`scripts/plugins.mjs stage-changelogs` -> `infra/liquibase/plugins`); `db:status` checks
   each changelog. A plugin's permission rows and default grants live there; its tables may be in `public`.
-  The expense tables and the rows 035/037/049 made stay in the core's changelogs and schema.
+  Tables a plugin lists in `apensum.tables` are introspected into its own `api/db/schema.ts`, not the core's
+  (expenses: expenses, expense_reports, expense_report_items, exchange_rates; their old changesets and the rows
+  035/037/049 made stay in the core's changelogs).
 - Expenses (plugin `plugins/expenses`, module `expenses`, default on; the core keeps the tables, Approvals, reports,
   documents, team overview and the expense form's field registry; the Workflow page's expense report review is the
   plugin's `workflowKinds`): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and

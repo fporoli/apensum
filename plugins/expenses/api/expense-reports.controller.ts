@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, OnModuleInit, Param, Post, Query, Req } from '@nestjs/common';
 import { and, asc, desc, eq, getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
 import { DbService, callerUserId, can, canSeeUserData, isOrgMember, listableUserIds, membershipManagerId, type AuthenticatedRequest, AuditService, VersionsService, WorkflowsService } from '@worktime3/api/plugin';
-import { expense_report_items, expense_reports, expenses, projects, subprojects, users } from '@worktime3/api/schema';
+import { projects, subprojects, users } from '@worktime3/api/schema';
+import { expense_report_items, expense_reports, expenses } from './db/schema';
 
 const STATUSES = [
   'in_preparation', 'submitted', 'approved', 'rejected',

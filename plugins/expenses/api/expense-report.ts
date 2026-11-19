@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
-import { expenses, projects } from '@worktime3/api/schema';
+import { projects } from '@worktime3/api/schema';
+import { expenses } from './db/schema';
 import type { ApiReport, ReportRow, ReportRowsContext } from '@worktime3/api/plugin';
 import { monthEnd } from '@worktime3/shared/reports';
 import { EXPENSES_REPORT } from '../shared/report';

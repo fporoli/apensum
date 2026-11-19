@@ -167,8 +167,14 @@ changeset. Use the plugin id as changeset author.
 - **Permissions:** insert the `permissions` rows of the manifest's objects and the default grants on the
   global roles (`organization_id IS NULL`), with `ON CONFLICT DO NOTHING`; see
   `plugins/expenses/changelog/001-permissions.sql` and its test.
-- **Tables** may live in `public`. `npm run dev:introspect` then also writes them into the core's
-  `schema.ts`, which the plugin imports through `@worktime3/api/schema`.
+- **Tables** may live in `public`. List them in the manifest (`"tables": ["expenses", ...]`):
+  `npm run dev:introspect` then leaves them out of the core's `schema.ts` and writes them into the
+  plugin's own `api/db/schema.ts` (generated, never edit; it imports the core's tables it refers to
+  from `@worktime3/api/schema`). `db:checkschema` checks both. The plugin imports its tables from
+  `./db/schema`, the core's from `@worktime3/api/schema`.
+- **Moving existing tables into a plugin** (as expenses did): the changesets that created them stay
+  in the core's changelog, since applied changesets cannot move; new changes go into the plugin's.
+  A database without the plugin still has the (empty) tables.
 
 ## Rules
 
@@ -215,5 +221,5 @@ npm test                                    # core tests, then each plugin's tes
 
 ## Not yet supported
 
-- **The plugin's own drizzle schema.** Plugin tables are introspected into the core's
-  `apps/api/src/db/schema.ts`, so a private plugin's tables show up in the core's generated files.
+- **Removing a plugin** leaves its tables in the database; the core's introspection then picks them
+  up again (they are no longer listed by an installed plugin), so `db:checkschema` reports them.
