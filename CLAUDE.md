@@ -351,6 +351,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   workflow kinds (label, source, title, Inspect dialog of an approval kind; the API side registers its actions, org
   resolver, record loader `registerSourceRecords` and `registerManagerRoutedWorkflow` with `WorkflowsService`).
   Tests: `plugins/<id>/test` (`*.test.ts` via tsx, `*.test.mjs` via node), run by `npm test` (`scripts/plugins.mjs test`).
+  The core must work without plugins: CI job `core-only` (empty `APENSUM_PLUGINS_DIR`, `scripts/smoke-no-plugins.mjs`);
+  grants on objects outside the catalogue (a missing plugin's) count for nothing (`mergePermissionRows`).
   Database: `plugins/<id>/changelog/db.changelog-master.xml` (same rules as the core's, author = plugin id) runs after
   the core's: the migrate image's entrypoint `infra/liquibase/apensum-migrate.sh` (APENSUM_CHANGELOG=core|<id> limits
   it), changesets recorded as `<id>/changelog/<file>`; compose and `migrate.mjs` mount `plugins/`, the Azure/VPS

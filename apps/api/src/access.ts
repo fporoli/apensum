@@ -332,11 +332,16 @@ export async function permissionIdsOf(db: Executor, organizationId: string, user
   return withoutDisabledModules(mergePermissionRows(list), resolveModules(list[0]?.modules));
 }
 
-/** Folds `(role name, permission id)` rows into one set; an `owner` row means the whole catalogue. */
+/**
+ * Folds `(role name, permission id)` rows into one set; an `owner` row means the whole catalogue.
+ * Only catalogue ids count: grants on objects nobody registered (a plugin that is not installed,
+ * legacy ids like `data:read`) stay in the database but grant nothing.
+ */
 export function mergePermissionRows(rows: { name: string; permission_id: string | null }[]): Set<string> {
-  if (rows.some((r) => r.name === 'owner')) return new Set(allPermissionIds());
+  const catalogue = new Set(allPermissionIds());
+  if (rows.some((r) => r.name === 'owner')) return catalogue;
   const ids = new Set<string>();
-  for (const r of rows) if (r.permission_id) ids.add(r.permission_id);
+  for (const r of rows) if (r.permission_id && catalogue.has(r.permission_id)) ids.add(r.permission_id);
   return ids;
 }
 

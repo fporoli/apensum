@@ -210,6 +210,18 @@ npm test                                    # core tests, then each plugin's tes
 - **Rebuilds:** after a change in `api/`, restart the API launch (its pre-launch task rebuilds). Web
   changes reload on their own.
 
+## The core without plugins
+
+The core must build, test and run with no plugin at all. CI's `core-only` job checks it with an empty
+`APENSUM_PLUGINS_DIR` and `scripts/smoke-no-plugins.mjs`; locally:
+
+```sh
+mkdir -p /tmp/no-plugins && APENSUM_PLUGINS_DIR=/tmp/no-plugins npm run build && APENSUM_PLUGINS_DIR=/tmp/no-plugins npm test
+```
+
+Grants the database still holds for a missing plugin's objects grant nothing: a person's permissions
+are limited to the catalogue (`mergePermissionRows` in access.ts).
+
 ## Builds and deploys
 
 - The API image (`apps/api/Dockerfile`) and the web image (`apps/web/Dockerfile`) copy the repository,

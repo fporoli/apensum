@@ -27,10 +27,49 @@ jobs:
         with: { node-version: 24 }
       - run: npm install --workspaces || npm install
       - run: npm run build --workspaces
-      - run: npm run test --workspaces
+      # The workspaces' tests, then each plugin's (scripts/plugins.mjs test).
+      - run: npm test
       # Fails the build if a changelog doesn't apply cleanly to a fresh database.
       - run: npm run db:migrate
       # Fails the build if src/db/schema.ts / relations.ts don't match the migrated database
       # (a changelog added without npm run dev:introspect).
       - run: npm run db:checkschema
       - run: npm run db:seed
+
+  # The core without any plugin (APENSUM_PLUGINS_DIR points at an empty folder): it builds, its tests
+  # pass, a fresh database migrates and seeds, and the API runs with nothing of a plugin left
+  # (scripts/smoke-no-plugins.mjs). No db:checkschema here: the expense tables still come from the
+  # core's old changesets, and without the plugin that lists them the core's introspection would
+  # claim them (docs/PLUGINS.md, "Not yet supported").
+  core-only:
+    runs-on: ubuntu-latest
+    services:
+      pg:
+        image: postgres:16
+        env:
+          POSTGRES_DB: worktime
+          POSTGRES_USER: worktime
+          POSTGRES_PASSWORD: worktime_ci_only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U worktime"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql://worktime:worktime_ci_only@localhost:5432/worktime
+      APENSUM_PLUGINS_DIR: ${{ github.workspace }}/.no-plugins
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 24 }
+      - run: mkdir -p "$APENSUM_PLUGINS_DIR"
+      - run: npm install --workspaces || npm install
+      - run: npm run build --workspaces
+      - run: npm test
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - name: API without plugins
+        run: |
+          npm run start --workspace=@worktime3/api > api.log 2>&1 &
+          node scripts/smoke-no-plugins.mjs || { cat api.log; exit 1; }

@@ -56,6 +56,11 @@ test('scopesCover matches each scope to its relation', () => {
 
 test('owner holds the whole catalogue; other roles exactly their rows', () => {
   assert.equal(mergePermissionRows([{ name: 'owner', permission_id: null }]).size, allPermissionIds().length);
+  // Grants on objects outside the catalogue (an uninstalled plugin's, legacy ids) grant nothing.
+  assert.deepEqual(
+    [...mergePermissionRows([{ name: 'hr', permission_id: 'nav.time:edit:own' }, { name: 'hr', permission_id: 'nav.gonePlugin:see:all' }, { name: 'hr', permission_id: 'data:read' }])],
+    ['nav.time:edit:own'],
+  );
   const merged = mergePermissionRows([
     { name: 'member', permission_id: 'nav.time:edit:own' },
     { name: 'hr', permission_id: 'nav.users:edit:all' },
