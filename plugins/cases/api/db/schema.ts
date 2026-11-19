@@ -56,30 +56,6 @@ export const casesInCases = cases.table("cases", {
 	check("chk_cases_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'review'::text, 'completed'::text, 'archived'::text])`),
 ]);
 
-export const case_documentsInCases = cases.table("case_documents", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	case_id: uuid().notNull(),
-	document_id: uuid(),
-	title: text().notNull(),
-	category: text().default('evidence').notNull(),
-	extracted_text: text(),
-	metadata: jsonb().default({}).notNull(),
-	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("idx_case_docs_case").using("btree", table.case_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.case_id],
-			foreignColumns: [casesInCases.id],
-			name: "case_documents_case_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.document_id],
-			foreignColumns: [documents.id],
-			name: "case_documents_document_id_fkey"
-		}).onDelete("set null"),
-	check("chk_case_docs_category", sql`category = ANY (ARRAY['court_decree'::text, 'medical'::text, 'police_report'::text, 'evidence'::text, 'correspondence'::text, 'financial'::text, 'other'::text])`),
-]);
-
 export const case_interviewsInCases = cases.table("case_interviews", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	case_id: uuid().notNull(),
@@ -154,6 +130,31 @@ export const assessmentsInCases = cases.table("assessments", {
 			name: "assessments_template_id_fkey"
 		}).onDelete("restrict"),
 	check("chk_assessments_status", sql`status = ANY (ARRAY['draft'::text, 'in_review'::text, 'final'::text, 'signed'::text])`),
+]);
+
+export const case_documentsInCases = cases.table("case_documents", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	case_id: uuid().notNull(),
+	document_id: uuid(),
+	title: text().notNull(),
+	category: text().default('evidence').notNull(),
+	extracted_text: text(),
+	metadata: jsonb().default({}).notNull(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	enc: jsonb(),
+}, (table) => [
+	index("idx_case_docs_case").using("btree", table.case_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.case_id],
+			foreignColumns: [casesInCases.id],
+			name: "case_documents_case_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.document_id],
+			foreignColumns: [documents.id],
+			name: "case_documents_document_id_fkey"
+		}).onDelete("set null"),
+	check("chk_case_docs_category", sql`category = ANY (ARRAY['court_decree'::text, 'medical'::text, 'police_report'::text, 'evidence'::text, 'correspondence'::text, 'financial'::text, 'other'::text])`),
 ]);
 
 export const assessment_templatesInCases = cases.table("assessment_templates", {

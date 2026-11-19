@@ -65,3 +65,17 @@ test('custom fields: an object of limited size', () => {
   assert.equal(code(() => checkCustom('x')), 'invalid-custom');
   assert.ok(validEnvelope(env));
 });
+
+test('compute content: shapes are coerced and bounded', async () => {
+  const { checkComputeContent } = await import('../api/case-encryption');
+  const c = checkComputeContent({
+    case: { reference_number: 'K-1', title: 'T', subject_name: 'S', domain: 'kesb', evil: 'x' },
+    documents: [{ title: 'D', category: 'medical', extracted_text: 'text', extra: 1 }],
+    interviews: [{ interviewee_name: 'A', transcript_text: 't', duration_minutes: 'NaN' }],
+  });
+  assert.equal((c.case as any).evil, undefined);
+  assert.equal(c.interviews[0].duration_minutes, 0);
+  assert.equal(c.interviews[0].transcript_stale, false);
+  assert.equal(code(() => checkComputeContent(null)), 'invalid-content');
+  assert.equal(code(() => checkComputeContent({ case: {}, documents: new Array(301).fill({}), interviews: [] })), 'invalid-content');
+});

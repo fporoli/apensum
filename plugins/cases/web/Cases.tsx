@@ -29,7 +29,8 @@ import {
 import { useI18n } from '@worktime3/web/plugin';
 import { CaseKeyControl } from './CaseKeyControl';
 import { isUnlocked, useKeyringState } from './caseKeyring';
-import { caseMatches, discardNewCaseKey, keyOf, newEncryptedCaseBody, openAssessments, openCaseList, openInterviews } from './caseVaultClient';
+import { caseMatches, compute, discardNewCaseKey, keyOf, newEncryptedCaseBody, openAssessments, openBytes, openCaseList, openDocuments, openInterviews, saveBlob, sealBytes } from './caseVaultClient';
+import { buildRuleDraft } from '../shared/caseDraft';
 import { sealedBody } from '../shared/caseVault';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 import { CaseInterviewEditor, caseErrorText, interviewError, interviewResponse, type InterviewAiProviders } from './CaseInterviewEditor';
@@ -575,13 +576,13 @@ function CaseDossierWorkspace({
           onJumpToTab={setActiveTab}
         />
       )}
-      {!caseItem.vault_locked && activeTab === 1 && caseItem.enc && <Alert severity="info" sx={{ mb: 2 }}>{t('cases.keys.noFiles')}</Alert>}
       {!caseItem.vault_locked && activeTab === 1 && (
         <CaseDocumentsTab
           orgId={orgId}
           caseId={caseItem.id}
+          encrypted={!!caseItem.enc}
           authHeaders={authHeaders}
-          canEdit={canEdit && !caseItem.enc}
+          canEdit={canEdit}
           onRefreshCase={onRefreshCase}
         />
       )}
@@ -799,12 +800,14 @@ function CaseOverviewTab({
 function CaseDocumentsTab({
   orgId,
   caseId,
+  encrypted,
   authHeaders,
   canEdit,
   onRefreshCase,
 }: {
   orgId: string;
   caseId: string;
+  encrypted: boolean;
   authHeaders: () => Promise<Record<string, string>>;
   canEdit: boolean;
   onRefreshCase: () => Promise<void>;
@@ -834,13 +837,13 @@ function CaseDocumentsTab({
         headers: await authHeaders(),
       });
       const data = await res.json();
-      if (data?.ok) setDocs(data.documents ?? []);
+      if (data?.ok) setDocs(await openDocuments(encrypted ? await keyOf(orgId, authHeaders, caseId) : null, data.documents ?? []));
     } catch {
       setError(t('common.cannotReachApi'));
     } finally {
       setLoading(false);
     }
-  }, [orgId, caseId, authHeaders, t]);
+  }, [orgId, caseId, authHeaders, t, encrypted]);
 
   useEffect(() => {
     void loadDocs();
@@ -851,10 +854,31 @@ function CaseDocumentsTab({
     try {
       setSaving(true);
       const formData = new FormData();
-      formData.set('title', title.trim() || selectedFile?.name || 'Document');
       formData.set('category', category);
-      if (extractedText.trim()) formData.set('extracted_text', extractedText.trim());
-      if (selectedFile) formData.set('file', selectedFile);
+      const key = encrypted ? await keyOf(orgId, authHeaders, caseId) : null;
+      if (key) {
+        // Sealed here: the file as ciphertext, its title, text and details in `enc`. Text of a PDF is read by a
+        // stateless server call (nothing stored) when the person typed none.
+        const id = crypto.randomUUID();
+        let text: string | null = extractedText.trim() || null;
+        let extraction: string | null = null;
+        if (!text && selectedFile) {
+          const probe = new FormData();
+          probe.set('file', selectedFile);
+          const r = await (await compute(orgId, authHeaders, caseId, 'extract-text', probe)).json().catch(() => null);
+          if (r?.ok) { text = r.text; extraction = r.extraction; }
+        }
+        formData.set('id', id);
+        formData.set('enc', JSON.stringify((await sealedBody(key, 'document', id, {
+          title: title.trim() || selectedFile?.name || 'Document', extracted_text: text, file_name: selectedFile?.name ?? null, mime_type: selectedFile?.type || null, metadata: {},
+        })).enc));
+        if (selectedFile) formData.set('file', await sealBytes(key, 'file', id, await selectedFile.arrayBuffer()), 'document.bin');
+        setNotice(extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
+      } else {
+        formData.set('title', title.trim() || selectedFile?.name || 'Document');
+        if (extractedText.trim()) formData.set('extracted_text', extractedText.trim());
+        if (selectedFile) formData.set('file', selectedFile);
+      }
 
       const headers = await authHeaders();
       // Drop content-type header so browser sets multipart boundary
@@ -868,7 +892,7 @@ function CaseDocumentsTab({
       });
       const data = await res.json();
       if (data?.ok) {
-        setNotice(data.extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
+        if (!key) setNotice(data.extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
         setOpenUpload(false);
         setTitle('');
         setCategory('evidence');
@@ -883,6 +907,19 @@ function CaseDocumentsTab({
       setError(t('common.cannotReachApi'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** The stored file; an encrypted one is decrypted here, so the server never sees it. */
+  const handleDownload = async (d: CaseDocument) => {
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/cases/${caseId}/documents/${d.id}/file`, { headers: await authHeaders() });
+      if (!res.ok) throw new Error();
+      const key = encrypted ? await keyOf(orgId, authHeaders, caseId) : null;
+      const bytes = await res.arrayBuffer();
+      saveBlob(new Blob([key ? await openBytes(key, 'file', d.id, bytes) : bytes], { type: d.mime_type || 'application/octet-stream' }), d.file_name || d.title);
+    } catch {
+      setError(t('common.cannotReachApi'));
     }
   };
 
@@ -958,6 +995,11 @@ function CaseDocumentsTab({
                     {d.extracted_text && (
                       <Button size="small" variant="outlined" onClick={() => setPreviewDoc(d)}>
                         {t('cases.documents.viewExtractedText')}
+                      </Button>
+                    )}
+                    {d.document_id && (
+                      <Button size="small" variant="outlined" startIcon={<DownloadIcon fontSize="small" />} onClick={() => void handleDownload(d)}>
+                        {t('cases.documents.download')}
                       </Button>
                     )}
                     {canEdit && (
@@ -1159,8 +1201,9 @@ function CaseInterviewsTab({
       };
       const key = encrypted ? await keyOf(orgId, authHeaders, caseId) : null;
       const id = key ? crypto.randomUUID() : undefined;
-      form.append('data', JSON.stringify(key && id ? { id, ...(await sealedBody(key, 'interview', id, fields)) } : fields));
-      if (audioFile && !key) form.append('file', audioFile);
+      const sealedFields = key && id ? { ...fields, audio_mime: audioFile?.type || null } : fields;
+      form.append('data', JSON.stringify(key && id ? { id, ...(await sealedBody(key, 'interview', id, sealedFields)) } : fields));
+      if (audioFile) form.append('file', key && id ? await sealBytes(key, 'audio', id, await audioFile.arrayBuffer()) : audioFile, key ? 'interview-audio.bin' : undefined);
       const created = await interviewResponse(await fetch(endpoint, { method: 'POST', headers: await authHeaders(), body: form }));
       const interview = key ? (await openInterviews(key, [created.interview]))[0] : created.interview;
       setOpenModal(false);
@@ -1340,7 +1383,7 @@ function CaseInterviewsTab({
               inputProps={{ maxLength: 100_000 }}
               helperText={t('cases.interviews.transcriptHelp')}
             />
-            {openModal && !encrypted && <CaseInterviewAudioInput file={audioFile} setFile={setAudioFile} disabled={saving} setRecording={setRecording} />}
+            {openModal && <CaseInterviewAudioInput file={audioFile} setFile={setAudioFile} disabled={saving} setRecording={setRecording} />}
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1360,6 +1403,7 @@ function CaseInterviewsTab({
         transcriptionEnabled={transcriptionEnabled}
         providers={aiProviders}
         getKey={encrypted ? () => keyOf(orgId, authHeaders, caseId) : undefined}
+        computeUrl={`${API}/organizations/${orgId}/cases/${caseId}/compute`}
         onChange={(next) => {
           setSelectedInterview(next);
           setInterviews((current) => current.map((item) => item.id === next.id ? next : item));
@@ -1446,7 +1490,7 @@ function CaseAssessmentsTab({
           setNewTitle(`${match.name} — ${caseItem.subject_name}`);
         }
       }
-      if (docData?.ok) setEvidenceDocs(docData.documents ?? []);
+      if (docData?.ok) setEvidenceDocs(await openDocuments(key, docData.documents ?? []));
       if (invData?.ok) setInterviewTranscripts(await openInterviews(key, invData.interviews ?? []));
     } catch {
       setError(t('common.cannotReachApi'));
@@ -1483,21 +1527,31 @@ function CaseAssessmentsTab({
       setCreating(mode);
       setCreateError(null);
       if (caseItem.enc) {
-        // The server cannot read an encrypted case, so it cannot draft: an empty assessment, sealed here.
-        if (mode === 'ai') { setCreateError(t('cases.keys.noDrafts')); return; }
+        // The server cannot read an encrypted case: the rule-based draft is built here, the AI draft is a stateless
+        // server call with the decrypted content (nothing stored), and the result is sealed before it is saved.
         const key = await keyOf(orgId, authHeaders, caseItem.id);
         const tpl = templates.find((x) => x.id === selectedTemplateId);
         if (!key || !tpl) throw new Error('locked');
+        let draft: { sections_content: Record<string, string> };
+        if (mode === 'ai') {
+          const form = new FormData();
+          form.set('data', JSON.stringify({ template_id: tpl.id, case: caseItem, documents: evidenceDocs, interviews: interviewTranscripts }));
+          const r = await (await compute(orgId, authHeaders, caseItem.id, 'ai-draft', form)).json().catch(() => null);
+          if (!r?.ok || !r.draft?.sections_content) { setCreateError(draftError(r?.message ?? r?.error)); return; }
+          draft = r.draft;
+        } else {
+          draft = buildRuleDraft(caseItem, tpl, evidenceDocs, interviewTranscripts);
+        }
         const id = crypto.randomUUID();
-        const sections = Object.fromEntries((tpl.sections as AssessmentTemplateSection[]).map((sec) => [sec.key, '']));
         const made = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}/assessments`, {
           method: 'POST',
           headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, template_id: selectedTemplateId, ...(await sealedBody(key, 'assessment', id, { title: newTitle.trim(), sections_content: sections, custom: {} })) }),
+          body: JSON.stringify({ id, template_id: selectedTemplateId, ...(await sealedBody(key, 'assessment', id, { title: newTitle.trim(), sections_content: draft.sections_content, custom: {} })) }),
         });
         const madeData = await made.json().catch(() => null);
         if (madeData?.ok && madeData.assessment) {
           setOpenCreate(false);
+          setAiConsent(false);
           await loadData();
           await onRefreshCase();
           await openEditor((await openAssessments(key, [madeData.assessment]))[0]);
@@ -1574,10 +1628,20 @@ function CaseAssessmentsTab({
 
   const handleDownloadPdf = async (assessmentId: string) => {
     try {
-      const res = await fetch(
-        `${API}/organizations/${orgId}/cases/${caseItem.id}/assessments/${assessmentId}/pdf`,
-        { headers: await authHeaders() },
-      );
+      let res: Response;
+      if (caseItem.enc) {
+        // Encrypted case: the decrypted assessment goes to the server for this one call, the PDF comes back, nothing is stored.
+        const a = (activeAssessment?.id === assessmentId ? { ...activeAssessment, sections_content: sectionsContent } : assessments.find((x) => x.id === assessmentId));
+        if (!a) throw new Error();
+        const form = new FormData();
+        form.set('data', JSON.stringify({ title: a.title, sections_content: a.sections_content, case: caseItem, documents: evidenceDocs, interviews: interviewTranscripts }));
+        res = await compute(orgId, authHeaders, caseItem.id, `pdf/${assessmentId}`, form);
+      } else {
+        res = await fetch(
+          `${API}/organizations/${orgId}/cases/${caseItem.id}/assessments/${assessmentId}/pdf`,
+          { headers: await authHeaders() },
+        );
+      }
       if (!res.ok) throw new Error('pdf-generation-failed');
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -1669,14 +1733,14 @@ function CaseAssessmentsTab({
                         >
                           {t('cases.assessments.openEditor')}
                         </Button>
-                        {!caseItem.enc && <Button
+                        <Button
                           size="small"
                           variant="outlined"
                           startIcon={<DownloadIcon fontSize="small" />}
                           onClick={() => handleDownloadPdf(a.id)}
                         >
                           {t('cases.assessments.exportPdf')}
-                        </Button>}
+                        </Button>
                       </Stack>
                     </Box>
                   </CardContent>
@@ -1728,8 +1792,7 @@ function CaseAssessmentsTab({
                   </Typography>
                 </Box>
 
-                {caseItem.enc && <Alert severity="info">{t('cases.keys.noDrafts')}</Alert>}
-                {!caseItem.enc && selectedTemplate?.ai_allowed && (aiProvider ? (
+                {selectedTemplate?.ai_allowed && (aiProvider ? (
                   <Alert severity="warning">
                     <Typography variant="body2" sx={{ mb: 1 }}>
                       {t('cases.assessments.aiNotice', { provider: t(`cases.assessments.aiProvider.${aiProvider}`) })}
@@ -1757,7 +1820,7 @@ function CaseAssessmentsTab({
               >
                 {creating === 'rules' ? <CircularProgress size={20} /> : t('cases.assessments.startDraft')}
               </Button>
-              {!caseItem.enc && selectedTemplate?.ai_allowed && (
+              {selectedTemplate?.ai_allowed && (
                 <Button
                   variant="contained"
                   color="warning"
@@ -1802,14 +1865,14 @@ function CaseAssessmentsTab({
                 {showEvidenceSidebar ? t('cases.assessments.hideEvidence') : t('cases.assessments.showEvidence')}
               </Button>
 
-              {!caseItem.enc && <Button
+              <Button
                 variant="outlined"
                 size="small"
                 startIcon={<DownloadIcon fontSize="small" />}
                 onClick={() => handleDownloadPdf(activeAssessment.id)}
               >
                 {t('cases.assessments.exportPdf')}
-              </Button>}
+              </Button>
 
               <Button
                 variant="contained"

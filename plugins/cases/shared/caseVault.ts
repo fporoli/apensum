@@ -5,21 +5,23 @@
 // server cannot swap one row's secrets into another.
 
 import { decryptJson, encryptJson, isEnvelope, type Envelope } from './caseCrypto';
-import type { Assessment, Case, CaseInterview } from './cases';
+import type { Assessment, Case, CaseDocument, CaseInterview } from './cases';
 
 export const CASE_FIELDS = ['title', 'subject_name', 'subject_dob', 'metadata', 'custom'] as const;
-export const INTERVIEW_FIELDS = ['interviewee_name', 'transcript_text', 'summary', 'tags'] as const;
+export const INTERVIEW_FIELDS = ['interviewee_name', 'transcript_text', 'summary', 'tags', 'audio_mime'] as const;
+export const DOCUMENT_FIELDS = ['title', 'extracted_text', 'file_name', 'mime_type', 'metadata'] as const;
 export const ASSESSMENT_FIELDS = ['title', 'sections_content', 'custom'] as const;
 
-export type VaultKind = 'case' | 'interview' | 'assessment';
-const FIELDS: Record<VaultKind, readonly string[]> = { case: CASE_FIELDS, interview: INTERVIEW_FIELDS, assessment: ASSESSMENT_FIELDS };
+export type VaultKind = 'case' | 'interview' | 'assessment' | 'document';
+const FIELDS: Record<VaultKind, readonly string[]> = { case: CASE_FIELDS, interview: INTERVIEW_FIELDS, assessment: ASSESSMENT_FIELDS, document: DOCUMENT_FIELDS };
 
 export const vaultAad = (kind: VaultKind, id: string) => `cases:${kind}:${id}`;
 
 /** What a row looks like when its secrets are removed: sent to the server next to `enc`. */
 export const BLANK: Record<VaultKind, Record<string, unknown>> = {
   case: { title: '', subject_name: '', subject_dob: null, metadata: {}, custom: {} },
-  interview: { interviewee_name: '', transcript_text: '', summary: null, tags: [] },
+  interview: { interviewee_name: '', transcript_text: '', summary: null, tags: [], audio_mime: null },
+  document: { title: '', extracted_text: null, file_name: null, mime_type: null, metadata: {} },
   assessment: { title: '', sections_content: {}, custom: {} },
 };
 
@@ -48,6 +50,7 @@ export async function openRow<T extends { id: string; enc?: Envelope | null }>(k
 
 export const openCase = (key: CryptoKey | null, c: Case) => openRow(key, 'case', c);
 export const openInterview = (key: CryptoKey | null, i: CaseInterview) => openRow(key, 'interview', i);
+export const openDocument = (key: CryptoKey | null, d: CaseDocument) => openRow(key, 'document', d);
 export const openAssessment = (key: CryptoKey | null, a: Assessment) => openRow(key, 'assessment', a);
 
 /** The same row as the server stores it: secrets blanked, sealed copy attached. */

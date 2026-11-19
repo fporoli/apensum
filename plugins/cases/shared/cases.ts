@@ -103,6 +103,7 @@ export interface CaseDocument {
   file_name?: string | null;
   file_size?: number | null;
   mime_type?: string | null;
+  enc?: Envelope | null;
 }
 
 export interface CaseInterview {
@@ -121,6 +122,8 @@ export interface CaseInterview {
   transcript_text: string;
   summary: string | null;
   tags: string[];
+  /** Encrypted audio: its real type (the stored file is ciphertext), inside `enc`. */
+  audio_mime?: string | null;
   enc?: Envelope | null;
   created_at: string;
 }
@@ -180,6 +183,9 @@ export interface CreateCaseDocumentDto {
   document_id?: string | null;
   extracted_text?: string | null;
   metadata?: Record<string, unknown>;
+  /** Encrypted case: the client's id (part of the sealing) and the sealed fields. */
+  id?: string;
+  enc?: Envelope;
 }
 
 export interface CreateCaseInterviewDto {

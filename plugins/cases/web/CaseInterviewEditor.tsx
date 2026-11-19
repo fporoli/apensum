@@ -4,6 +4,7 @@ import type { CaseInterview } from '../shared/cases';
 import { useT } from '@worktime3/web/plugin';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 import { openInterview, sealedBody } from '../shared/caseVault';
+import { openBytes, sealBytes } from './caseVaultClient';
 
 export async function interviewResponse(res: Response) {
   const data = await res.json();
@@ -30,15 +31,17 @@ export interface InterviewAiProviders {
   summary: 'local' | 'gemini' | 'openai' | 'azure' | null;
 }
 
-export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, getKey, onChange, onClose }: {
+export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, getKey, computeUrl, onChange, onClose }: {
   interview: CaseInterview;
   url: string;
   authHeaders: () => Promise<Record<string, string>>;
   canEdit: boolean;
   transcriptionEnabled: boolean;
   providers: InterviewAiProviders;
-  /** Set for an encrypted case: the case key. The text is sealed in the browser; audio and server AI are off. */
+  /** Set for an encrypted case: the case key. Text and audio are sealed in the browser; server AI gets them per request. */
   getKey?: () => Promise<CryptoKey | null>;
+  /** The stateless jobs of an encrypted case (transcription, summary): the text or audio is sent for that call only. */
+  computeUrl?: string;
   onChange: (interview: CaseInterview) => void;
   onClose: () => void;
 }) {
@@ -89,16 +92,50 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     return interviewResponse(await fetch(`${url}${suffix}`, { method, headers, body: body instanceof FormData ? body : JSON.stringify(body) }));
   };
 
+  /** A stateless call for an encrypted case: what the server needs comes in the request, nothing is stored there. */
+  const computeCall = async (job: string, body: FormData) => {
+    const headers = await authHeaders();
+    delete headers['Content-Type'];
+    delete headers['content-type'];
+    return interviewResponse(await fetch(`${computeUrl}/${job}`, { method: 'POST', headers, body }));
+  };
+
   const generate = (target: 'transcript' | 'summary') => run(async () => {
+    if (getKey) {
+      if (target === 'transcript') throw new Error('locked');
+      const form = new FormData();
+      form.set('data', JSON.stringify({ name: interview.interviewee_name, role: interview.interviewee_role, date: interview.interview_date, transcript }));
+      const data = await computeCall('summarize', form);
+      setDraft({ target, text: data.draft });
+      return;
+    }
     const data = await request(target === 'transcript' ? '/transcribe' : '/summarize', 'POST', { revision: interview.revision });
     setDraft({ target, text: data.draft });
   });
 
+  /** The audio, plain: the chosen file, or the stored one (decrypted here when the case is encrypted). */
+  const plainAudio = async (chosen: File | null): Promise<Blob> => {
+    if (chosen) return chosen;
+    const res = await fetch(`${url}/audio`, { headers: await authHeaders(), cache: 'no-store' });
+    if (!res.ok) await interviewResponse(res);
+    const key = getKey ? await getKey() : null;
+    if (!key) return res.blob();
+    return new Blob([await openBytes(key, 'audio', interview.id, await res.arrayBuffer())], { type: interview.audio_mime || 'audio/webm' });
+  };
+
   const uploadAudio = async (chosen: File): Promise<CaseInterview> => {
     const form = new FormData();
     form.append('revision', interview.revision);
-    form.append('file', chosen);
-    const { interview: next } = await request('/audio', 'PUT', form);
+    const key = getKey ? await getKey() : null;
+    if (key) {
+      // Sealed: the audio as ciphertext, and its type in the interview's `enc` (re-sealed with the saved texts).
+      form.append('enc', JSON.stringify((await sealedBody(key, 'interview', interview.id, {
+        interviewee_name: interview.interviewee_name, transcript_text: interview.transcript_text, summary: interview.summary, tags: interview.tags, audio_mime: chosen.type || null,
+      })).enc));
+      form.append('file', await sealBytes(key, 'audio', interview.id, await chosen.arrayBuffer()), 'interview-audio.bin');
+    } else form.append('file', chosen);
+    const { interview: saved } = await request('/audio', 'PUT', form);
+    const next = key ? await openInterview(key, saved) : saved;
     setAudio(null);
     setAudioUrl('');
     onChange(next);
@@ -108,10 +145,16 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
 
   /** Attaches a chosen file first if there is one, then waits for Whisper's draft. */
   const transcribe = () => run(async () => {
+    const chosen = file;
     const revision = file ? (await uploadAudio(file)).revision : interview.revision;
     setTranscribingSince(Date.now());
     try {
-      const data = await request('/transcribe', 'POST', { revision });
+      let data;
+      if (getKey) {
+        const form = new FormData();
+        form.set('file', await plainAudio(chosen), 'interview-audio');
+        data = await computeCall('transcribe', form);
+      } else data = await request('/transcribe', 'POST', { revision });
       setDraft({ target: 'transcript', text: data.draft });
     } finally {
       setTranscribingSince(null);
@@ -123,7 +166,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     const key = getKey ? await getKey() : null;
     form.append('data', JSON.stringify(key
       ? { revision: interview.revision, ...(await sealedBody(key, 'interview', interview.id, {
-          interviewee_name: interview.interviewee_name, transcript_text: transcript, summary: summary.trim() ? summary : null, tags: interview.tags,
+          interviewee_name: interview.interviewee_name, transcript_text: transcript, summary: summary.trim() ? summary : null, tags: interview.tags, audio_mime: interview.audio_mime ?? null,
         })) }
       : { revision: interview.revision,
         ...(transcriptDirty ? { transcript_text: transcript } : {}),
@@ -150,11 +193,9 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
           {error && <Alert severity="error">{error}</Alert>}
           {busy && <LinearProgress />}
           {interview.has_audio && (audioUrl ? <audio controls src={audioUrl} /> : <Button disabled={locked} onClick={() => void run(async () => {
-            const res = await fetch(`${url}/audio`, { headers: await authHeaders(), cache: 'no-store' });
-            if (!res.ok) await interviewResponse(res);
-            setAudio(await res.blob());
+            setAudio(await plainAudio(null));
           })}>{t('cases.interviews.playAudio')}</Button>)}
-          {canEdit && !getKey && <>
+          {canEdit && <>
             <CaseInterviewAudioInput file={file} setFile={setFile} disabled={busy} setRecording={setRecording} />
             {file && <Button disabled={locked || transcriptDirty || summaryDirty || !!draft} onClick={() => void run(async () => { await uploadAudio(file); })}>
               {t(interview.has_audio ? 'cases.interviews.replaceAudio' : 'cases.interviews.attachAudio')}
@@ -187,7 +228,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
           <TextField label={t('cases.interviews.summary')} value={summary} multiline minRows={3} maxRows={9}
             onChange={(e) => setSummary(e.target.value)} disabled={busy}
             InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
-          {canEdit && !getKey && <Stack direction="row" spacing={1} alignItems="center">
+          {canEdit && <Stack direction="row" spacing={1} alignItems="center">
             <Button disabled={locked || !!draft || transcriptDirty || interview.transcript_stale || !transcript.trim() || !providers.summary}
               onClick={() => void generate('summary')}>{t('cases.interviews.generateSummary')}</Button>
             <Typography variant="caption" color="text.secondary">

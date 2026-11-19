@@ -31,6 +31,8 @@ import { extractPdfText, isPdf, tidyExtractedText } from '@worktime3/api/plugin'
 import { CaseAiService, caseAiAvailability } from './case-ai.service';
 import { VersionsService } from '@worktime3/api/plugin';
 import { validateCaseAiSettings } from '../shared/cases';
+import { checkComputeContent, checkWrite } from './case-encryption';
+import { interviewAudioFormat } from './case-interview-processing';
 import type {
   CreateCaseDto,
   UpdateCaseDto,
@@ -230,7 +232,21 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    this.requirePlain(caseItem);
+
+    if (caseItem.encrypted) {
+      // The browser sealed the file and its details: the file is ciphertext, the rest is in `enc`.
+      const enc = typeof body.enc === 'string' ? (() => { try { return JSON.parse(body.enc); } catch { return undefined; } })() : undefined;
+      checkWrite('document', true, { id: body.id, enc }, { requireEnc: true, requireId: true });
+      const stored = file
+        ? await this.documentsService.store(this.db, orgId, callerId,
+            { name: 'document.bin', mimeType: 'application/octet-stream', buffer: file.buffer },
+            { table: 'cases.case_documents', id: caseId })
+        : null;
+      const sealed = await this.casesService.createDocument(orgId, caseId, {
+        id: body.id, enc, title: '', category: body.category || 'evidence', document_id: stored,
+      });
+      return { ok: true, document: sealed, extraction: null };
+    }
 
     let documentId = body.document_id ?? null;
     let extractedText = body.extracted_text ?? null;
@@ -263,6 +279,21 @@ export class CasesController {
     });
 
     return { ok: true, document: doc, extraction };
+  }
+
+  /** The stored file as it is: for an encrypted case the ciphertext, which the browser decrypts. */
+  @Get('cases/:caseId/documents/:docId/file')
+  async downloadDocument(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('docId') docId: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    await this.getCase(orgId, caseId, req);
+    const file = await this.casesService.documentFile(orgId, caseId, docId);
+    res.set({ 'Cache-Control': privateCache, 'X-Content-Type-Options': 'nosniff' });
+    await this.documentsService.send(res, file);
   }
 
   @Delete('cases/:caseId/documents/:docId')
@@ -368,14 +399,17 @@ export class CasesController {
     @Param('interviewId') interviewId: string,
     @Req() req: AuthenticatedRequest,
     @Body('revision') revision: string,
+    @Body('enc') encJson?: string,
     @UploadedFile() file?: Express.Multer.File,
   ) {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
-    this.requirePlain(caseItem);
     if (!file) throw new BadRequestException('interview-audio-not-found');
-    const interview = await this.casesService.replaceInterviewAudio(orgId, caseId, interviewId, callerId, interviewRevision(revision), file);
+    // An encrypted case's audio is ciphertext and its type comes sealed again in `enc` with it.
+    let enc: unknown;
+    if (encJson !== undefined) { try { enc = JSON.parse(encJson); } catch { throw new BadRequestException('invalid-envelope'); } }
+    const interview = await this.casesService.replaceInterviewAudio(orgId, caseId, interviewId, callerId, interviewRevision(revision), file, enc);
     return { ok: true, interview };
   }
 
@@ -556,6 +590,109 @@ export class CasesController {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Length', pdfBuffer.length);
     res.end(pdfBuffer);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Stateless compute for encrypted cases. The server cannot read such a case, so the browser decrypts what a job
+  // needs and sends it with that one request; the server works on it in memory, stores nothing and returns the
+  // result, which the browser seals before saving. The same access rules, consent and AI budget as the plain paths.
+  // ---------------------------------------------------------------------------
+
+  private async computeAccess(orgId: string, caseId: string, req: AuthenticatedRequest) {
+    const callerId = await this.requireCallerId(req);
+    await this.checkEditAccess(orgId, callerId, await this.casesService.getCase(orgId, caseId));
+    return callerId;
+  }
+
+  @Post('cases/:caseId/compute/transcribe')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(FileInterceptor('file', interviewUpload))
+  async computeTranscribe(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    const callerId = await this.computeAccess(orgId, caseId, req);
+    if (!file) throw new BadRequestException('interview-audio-not-found');
+    interviewAudioFormat(file.buffer);
+    return { ok: true, draft: await this.caseAi.transcribe(orgId, callerId, caseId, file.buffer) };
+  }
+
+  @Post('cases/:caseId/compute/summarize')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(NoFilesInterceptor({ limits: { fields: 1, fieldSize: 1_300_000 } }))
+  async computeSummarize(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() body: { data?: string },
+  ) {
+    const callerId = await this.computeAccess(orgId, caseId, req);
+    const p = interviewPayload(body) as { name?: unknown; role?: unknown; date?: unknown; transcript?: unknown };
+    if (typeof p.transcript !== 'string' || !p.transcript.trim() || p.transcript.length > 100_000) throw new BadRequestException('interview-current-transcript-required');
+    const draft = await this.caseAi.summarize(orgId, callerId, caseId, {
+      name: String(p.name ?? '').slice(0, 300), role: String(p.role ?? '').slice(0, 40), date: String(p.date ?? '').slice(0, 20), transcript: p.transcript,
+    });
+    return { ok: true, draft };
+  }
+
+  @Post('cases/:caseId/compute/ai-draft')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(NoFilesInterceptor({ limits: { fields: 1, fieldSize: 12_000_000 } }))
+  async computeAiDraft(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() body: { data?: string },
+  ) {
+    const callerId = await this.computeAccess(orgId, caseId, req);
+    const p = interviewPayload(body) as { template_id?: unknown };
+    if (typeof p.template_id !== 'string') throw new BadRequestException('invalid-content');
+    const draft = await this.casesService.aiDraftFromContent(orgId, caseId, p.template_id, callerId, checkComputeContent(p));
+    return { ok: true, draft };
+  }
+
+  @Post('cases/:caseId/compute/pdf/:assessmentId')
+  @UseInterceptors(NoFilesInterceptor({ limits: { fields: 1, fieldSize: 12_000_000 } }))
+  async computePdf(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('assessmentId') assessmentId: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+    @Body() body: { data?: string },
+  ) {
+    const callerId = await this.requireCallerId(req);
+    const { onlyLeadUserId } = await this.checkSeeAccess(orgId, callerId);
+    const caseItem = await this.casesService.getCase(orgId, caseId);
+    if (onlyLeadUserId && caseItem.lead_user_id !== callerId) throw new ForbiddenException('forbidden');
+    const p = interviewPayload(body) as { title?: unknown; sections_content?: unknown };
+    if (typeof p.title !== 'string' || !p.sections_content || typeof p.sections_content !== 'object') throw new BadRequestException('invalid-content');
+    const sections = Object.fromEntries(Object.entries(p.sections_content as Record<string, unknown>).map(([k, v]) => [k.slice(0, 100), typeof v === 'string' ? v.slice(0, 200_000) : '']));
+    const pdf = await this.casesService.assessmentPdfFromContent(orgId, caseId, assessmentId, { ...checkComputeContent(p), title: p.title.slice(0, 500), sections_content: sections });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Cache-Control', privateCache);
+    res.setHeader('Content-Length', pdf.length);
+    res.end(pdf);
+  }
+
+  /** The text of an uploaded PDF or text file (for an encrypted case the browser seals it afterwards); nothing is stored. */
+  @Post('cases/:caseId/compute/extract-text')
+  @Header('Cache-Control', privateCache)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DOCUMENT_BYTES } }))
+  async computeExtractText(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    await this.computeAccess(orgId, caseId, req);
+    if (!file) throw new BadRequestException('invalid-content');
+    if (file.mimetype.startsWith('text/') || file.originalname.endsWith('.txt')) return { ok: true, text: tidyExtractedText(file.buffer.toString('utf8')), extraction: null };
+    if (!isPdf(file.buffer)) return { ok: true, text: null, extraction: null };
+    const text = await extractPdfText(file.buffer);
+    return { ok: true, text: text || null, extraction: text ? 'pdf' : 'pdf-no-text' };
   }
 
   // ---------------------------------------------------------------------------

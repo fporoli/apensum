@@ -8,6 +8,8 @@ import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from
 import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
 import { CaseAiService } from './case-ai.service';
 import { documents, users } from '@worktime3/api/schema';
+import { buildRuleDraft } from '../shared/caseDraft';
+import type { ComputeContent } from './case-encryption';
 import { checkCustom, checkNewEncryptedCase, checkWrite } from './case-encryption';
 import { casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases } from './db/schema';
 import type {
@@ -26,9 +28,6 @@ import type {
   CreateAssessmentTemplateDto,
   UpdateAssessmentTemplateDto,
 } from '../shared/cases';
-
-/** Placeholder for every judgement in a rule-based draft: the draft never states findings itself. */
-const OPEN_ASSESSMENT = '[Offen: Beurteilung durch die Fachperson]';
 
 @Injectable()
 export class CasesService {
@@ -243,6 +242,7 @@ export class CasesService {
         cd.category,
         cd.extracted_text,
         cd.metadata,
+        cd.enc,
         cd.created_at::text AS created_at,
         d.file_name,
         d.size_bytes AS file_size,
@@ -259,8 +259,10 @@ export class CasesService {
     const [row] = await this.db
       .insert(case_documentsInCases)
       .values({
+        ...(dto.id ? { id: dto.id } : {}),
+        enc: dto.enc ?? null,
         case_id: caseId,
-        title: dto.title.trim(),
+        title: dto.enc ? '' : dto.title.trim(),
         category: dto.category ?? 'evidence',
         document_id: dto.document_id ?? null,
         extracted_text: dto.extracted_text ?? null,
@@ -275,6 +277,17 @@ export class CasesService {
     const created = docs.find((d) => d.id === row.id);
     if (!created) throw new NotFoundException('case-doc-not-found');
     return created;
+  }
+
+  /** The stored file of a case document, for `DocumentsService.send`. */
+  async documentFile(orgId: string, caseId: string, docId: string) {
+    const { rows } = await this.db.execute<{ file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }>(sql`
+      SELECT d.file_name, d.mime_type, d.storage_path, d.encrypted_key, d.key_id
+      FROM cases.case_documents cd JOIN cases.cases c ON c.id = cd.case_id
+      JOIN public.documents d ON d.id = cd.document_id AND d.organization_id = c.organization_id
+      WHERE c.organization_id = ${orgId}::uuid AND c.id = ${caseId}::uuid AND cd.id = ${docId}::uuid`);
+    if (!rows[0]) throw new NotFoundException('case-doc-not-found');
+    return rows[0];
   }
 
   async deleteDocument(caseId: string, docId: string): Promise<void> {
@@ -322,9 +335,10 @@ export class CasesService {
     return rows[0].encrypted;
   }
 
-  private async storeInterviewAudio(orgId: string, callerId: string, interviewId: string, file: { buffer: Buffer }) {
+  private async storeInterviewAudio(orgId: string, callerId: string, interviewId: string, file: { buffer: Buffer }, sealed = false) {
     if (file.buffer.length > MAX_DOCUMENT_BYTES) throw new BadRequestException('interview-audio-too-large');
-    const { mime, extension } = interviewAudioFormat(file.buffer);
+    // Sealed audio is ciphertext: its type is not readable here (it is inside the interview's `enc`).
+    const { mime, extension } = sealed ? { mime: 'application/octet-stream', extension: 'bin' } : interviewAudioFormat(file.buffer);
     return this.documentsService.store(this.db, orgId, callerId,
       { name: `interview-audio.${extension}`, mimeType: mime, buffer: file.buffer },
       { table: INTERVIEW_AUDIO_SOURCE, id: interviewId });
@@ -366,10 +380,9 @@ export class CasesService {
   async createInterview(orgId: string, caseId: string, callerId: string, dto: CreateCaseInterviewDto, file?: { buffer: Buffer }) {
     const sealed = dto.enc !== undefined;
     if (!sealed && (typeof dto.interviewee_name !== 'string' || !dto.interviewee_name.trim())) throw new BadRequestException('interview-name-required');
-    if (sealed && file) throw new BadRequestException('case-encrypted-files');
     this.validateInterviewText(dto);
     const id = sealed ? (dto.id as string) : randomUUID();
-    const documentId = file ? await this.storeInterviewAudio(orgId, callerId, id, file) : null;
+    const documentId = file ? await this.storeInterviewAudio(orgId, callerId, id, file, sealed) : null;
     try {
       return await this.db.transaction(async (tx) => {
         const encrypted = await this.lockInterviewCase(tx, orgId, caseId);
@@ -442,10 +455,10 @@ export class CasesService {
     });
   }
 
-  async replaceInterviewAudio(orgId: string, caseId: string, interviewId: string, callerId: string, revision: string, file: { buffer: Buffer }) {
+  async replaceInterviewAudio(orgId: string, caseId: string, interviewId: string, callerId: string, revision: string, file: { buffer: Buffer }, enc?: unknown) {
     const existing = await this.getInterview(caseId, interviewId);
     if (existing.revision !== revision) throw new ConflictException('interview-changed');
-    const documentId = await this.storeInterviewAudio(orgId, callerId, interviewId, file);
+    const documentId = await this.storeInterviewAudio(orgId, callerId, interviewId, file, enc !== undefined);
     let result;
     try {
       result = await this.db.transaction(async (tx) => {
@@ -455,8 +468,11 @@ export class CasesService {
           WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid AND revision = ${revision} FOR UPDATE
         `);
         if (!old) throw new ConflictException('interview-changed');
+        const encrypted = await this.lockInterviewCase(tx, orgId, caseId);
+        checkWrite('interview', encrypted, { enc }, { requireEnc: true });
         await tx.execute(sql`
           UPDATE cases.case_interviews SET audio_document_id = ${documentId}::uuid, revision = uuid_generate_v4(),
+            enc = COALESCE(${enc === undefined ? null : JSON.stringify(enc)}::jsonb, enc),
             transcript_stale = btrim(transcript_text) <> '', summary_stale = COALESCE(btrim(summary), '') <> ''
           WHERE case_id = ${caseId}::uuid AND id = ${interviewId}::uuid
         `);
@@ -724,87 +740,7 @@ export class CasesService {
     const documents = await this.listDocuments(caseId);
     const interviews = await this.listInterviews(caseId);
 
-    const title = `${template.name} — ${c.subject_name} (${c.reference_number})`;
-    const sections_content: Record<string, string> = {};
-
-    const sections = template.sections as AssessmentTemplateSection[];
-
-    for (const sec of sections) {
-      let draftText = '';
-      const key = sec.key.toLowerCase();
-
-      if (key.includes('mandat') || key.includes('ausgangslage') || key.includes('incident') || key.includes('auftrag')) {
-        draftText =
-          `Dossier: ${c.reference_number}\n` +
-          `Betroffene Person: ${c.subject_name}` + (c.subject_dob ? ` (geb. ${c.subject_dob})` : '') + `\n` +
-          `Federführende Stelle / Gutachter: ${c.lead_user_name ?? 'Zuständige Fachperson'}\n\n` +
-          `Gegenstand der vorliegenden Beurteilung ist die Abklärung betreffend ${c.title}. ` +
-          `Die Abklärung erfolgt unter Wahrung des gesetzlichen Verhältnismässigkeitsprinzips sowie der schutzwürdigen Interessen der beteiligten Personen.`;
-      } else if (key.includes('akte') || key.includes('dossier') || key.includes('evidence') || key.includes('spuren') || key.includes('vorakten')) {
-        if (documents.length === 0) {
-          draftText = `Zum aktuellen Zeitpunkt sind im Dossier keine externen Dokumente oder Belege verzeichnet.`;
-        } else {
-          draftText = `Im vorliegenden Verfahren wurden ${documents.length} Dokument(e) und Beweismittel ausgewertet:\n\n`;
-          for (const doc of documents) {
-            draftText += `• [${doc.category.toUpperCase()}] ${doc.title} (${doc.file_name ?? 'Aktennotiz'})\n`;
-            if (doc.extracted_text) {
-              const snippet = doc.extracted_text.slice(0, 300).trim().replace(/\n+/g, ' ');
-              draftText += `  Auszug/Erkenntnis: "${snippet}${doc.extracted_text.length > 300 ? '...' : ''}"\n`;
-            }
-          }
-        }
-      } else if (key.includes('interview') || key.includes('befragung') || key.includes('einvernahme') || key.includes('exploration') || key.includes('findings')) {
-        if (interviews.length === 0) {
-          draftText = `Bisher wurden keine Einvernahmen oder Explorationsgespräche protokolliert.`;
-        } else {
-          draftText = `Die Würdigung stützt sich auf ${interviews.length} durchgeführte Befragung(en):\n\n`;
-          for (const inv of interviews) {
-            draftText += `• Befragung von ${inv.interviewee_name} (${inv.interviewee_role}) vom ${inv.interview_date} (Dauer: ${inv.duration_minutes} Min.)\n`;
-            if (inv.summary && !inv.summary_stale) {
-              draftText += `  Zusammenfassung: ${inv.summary}\n`;
-            }
-            if (inv.transcript_text && !inv.transcript_stale) {
-              const preview = inv.transcript_text.slice(0, 250).trim().replace(/\n+/g, ' ');
-              draftText += `  Protokollauszug: "${preview}..."\n`;
-            }
-          }
-        }
-      } else if (key.includes('gesundheit') || key.includes('health') || key.includes('biography') || key.includes('anamnese') || key.includes('clinical')) {
-        const medicalDocs = documents.filter((d) => d.category === 'medical');
-        draftText = `Gesundheitliche und anamnestische Abklärung bezüglich ${c.subject_name}:\n\n`;
-        if (medicalDocs.length > 0) {
-          draftText += `Vorliegende medizinische/psychiatrische Berichte (${medicalDocs.map((m) => m.title).join(', ')}):\n`;
-          for (const m of medicalDocs) {
-            if (m.extracted_text) {
-              draftText += `• ${m.title}: ${m.extracted_text.slice(0, 200).trim()}...\n`;
-            }
-          }
-        } else {
-          draftText += `Zurzeit liegen keine Arztberichte im Dossier vor.\n\n${OPEN_ASSESSMENT}`;
-        }
-      } else if (key.includes('schuld') || key.includes('delict') || key.includes('tat') || key.includes('deduction') || key.includes('rekonstruktion')) {
-        draftText =
-          `Analyse des Sachverhalts und Handlungsdynamik:\n` +
-          `Grundlagen: ${documents.length} Dokument(e); Befragungen von ${interviews.map((i) => i.interviewee_name).join(', ') || '-'}.\n\n` +
-          OPEN_ASSESSMENT;
-      } else if (key.includes('empfehl') || key.includes('recommendation') || key.includes('antrag') || key.includes('referral') || key.includes('schluss')) {
-        // Conclusions, findings and motions are the expert's: the draft names what to decide, never decides it.
-        const motions: Record<string, string> = {
-          kesb: 'Antrag an die Kindes- und Erwachsenenschutzbehörde (KESB)',
-          forensic_psychiatry: 'Beantwortung der richterlichen Fragestellungen',
-          police: 'Schlussantrag an die Staatsanwaltschaft',
-        };
-        draftText = `${motions[template.domain] ?? 'Zusammenfassende Beurteilung und Empfehlung'}:\n\n${OPEN_ASSESSMENT}`;
-      } else {
-        draftText = sec.promptGuidance
-          ? `${sec.promptGuidance}\n\n[Befund für ${c.subject_name} (${c.reference_number}) basierend auf ${documents.length} Dokumenten und ${interviews.length} Befragungen]`
-          : `Beurteilung für Abschnitt "${sec.title}".`;
-      }
-
-      sections_content[sec.key] = draftText;
-    }
-
-    return { title, sections_content };
+    return buildRuleDraft(c, template, documents, interviews);
   }
 
   /**
@@ -822,6 +758,35 @@ export class CasesService {
     if (!template.ai_allowed) throw new ForbiddenException('template-ai-not-allowed');
     const c = await this.getCase(orgId, caseId);
     const [documents, interviews] = await Promise.all([this.listDocuments(caseId), this.listInterviews(caseId)]);
+    return this.aiDraftFrom(orgId, caseId, templateId, callerId, template, c, documents, interviews);
+  }
+
+  /**
+   * The AI draft from content the caller supplies: for an encrypted case the browser decrypts the case and sends it
+   * for this one request. Nothing is stored; the budget, consent and logging are the same as for a plain case.
+   */
+  async aiDraftFromContent(
+    orgId: string,
+    caseId: string,
+    templateId: string,
+    callerId: string,
+    content: ComputeContent,
+  ): Promise<{ title: string; sections_content: Record<string, string> }> {
+    const template = await this.getTemplate(orgId, templateId);
+    if (!template.ai_allowed) throw new ForbiddenException('template-ai-not-allowed');
+    return this.aiDraftFrom(orgId, caseId, templateId, callerId, template, content.case, content.documents, content.interviews);
+  }
+
+  private async aiDraftFrom(
+    orgId: string,
+    caseId: string,
+    templateId: string,
+    callerId: string,
+    template: AssessmentTemplate,
+    c: Case,
+    documents: CaseDocument[],
+    interviews: CaseInterview[],
+  ): Promise<{ title: string; sections_content: Record<string, string> }> {
     const sections = template.sections as AssessmentTemplateSection[];
     const messages = buildAiDraftMessages({
       caseInfo: { reference: c.reference_number, title: c.title, subjectName: c.subject_name, subjectDob: c.subject_dob ?? null, domain: c.domain, lead: c.lead_user_name ?? null },
@@ -860,7 +825,28 @@ export class CasesService {
     const template = await this.getTemplate(orgId, assessment.template_id);
     const documents = await this.listDocuments(caseId);
     const interviews = await this.listInterviews(caseId);
+    return this.renderAssessmentPdf(orgId, c, assessment, template, documents, interviews);
+  }
 
+  /**
+   * The PDF of an encrypted case's assessment: what the browser decrypted comes in the request, the rest (status,
+   * version, template) is read here, and nothing is stored. The same layout as for a plain case.
+   */
+  async assessmentPdfFromContent(orgId: string, caseId: string, assessmentId: string, content: ComputeContent & { title: string; sections_content: Record<string, string> }): Promise<Buffer> {
+    const stored = await this.getAssessment(caseId, assessmentId);
+    const template = await this.getTemplate(orgId, stored.template_id);
+    const assessment = { ...stored, title: content.title, sections_content: content.sections_content };
+    return this.renderAssessmentPdf(orgId, content.case as Case, assessment, template, content.documents as CaseDocument[], content.interviews as CaseInterview[]);
+  }
+
+  private async renderAssessmentPdf(
+    orgId: string,
+    c: Case,
+    assessment: Assessment,
+    template: AssessmentTemplate,
+    documents: CaseDocument[],
+    interviews: CaseInterview[],
+  ): Promise<Buffer> {
     // Retrieve organization name
     const orgRow = await this.db.execute(sql`SELECT name FROM public.organizations WHERE id = ${orgId}::uuid LIMIT 1`);
     const orgName = (orgRow.rows[0]?.name as string) ?? 'Behörde / Fachstelle';
