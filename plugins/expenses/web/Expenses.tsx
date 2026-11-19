@@ -25,8 +25,8 @@ import { EXPENSE_FORM, validateFields } from '@worktime3/shared/fields';
 import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '@worktime3/shared/expenses';
 import {
   useI18n, formatLocaleDate, formatLocaleNumber, formatMoney, parseLocaleNumber, ConfigFieldGroup, useGroupTitle, type FieldOption, FieldDesignScope, useFormTemplate, DESIGN_PANEL_WIDTH, FormDesignPanel, ConfirmDialog, PageHeader, TableEmptyRow, DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon, AttachmentView, DropZone, useAttachmentDraft, type Attachment, currencyOptions,
-  type ExpenseRow,
 } from '@worktime3/web/plugin';
+import type { ExpenseRow } from './expenseRows';
 import { ReceiptCaptureButtons } from './receiptCapture';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';

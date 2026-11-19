@@ -339,11 +339,13 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   them in `app.module.ts` (an unbuilt plugin stops the start); `npm run build --workspace=@worktime3/api` compiles them
   (`scripts/plugins.mjs build`, after the API's declarations). Web: Vite's `virtual:apensum-plugins`
   (`vite.config.ts`) bundles them; `plugins.ts` merges their texts into the dictionaries and App.tsx /
-  main.tsx / OrganizationSettings.tsx show their pages, nav groups, settings sections and public routes.
+  main.tsx / OrganizationSettings.tsx / Approvals.tsx show their pages, nav groups, settings sections, public routes and
+  workflow kinds (label, source, title, Inspect dialog of an approval kind).
   Tests: `plugins/<id>/test` (`*.test.ts` via tsx, `*.test.mjs` via node), run by `npm test` (`scripts/plugins.mjs test`).
   Not yet: plugin-owned Liquibase changelogs (expense tables stay in the core's changelogs and schema).
 - Expenses (plugin `plugins/expenses`, module `expenses`, default on; the core keeps the tables, Approvals, reports,
-  documents, team overview, the expense form's field registry and `expenseRows.ts`): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
+  documents, team overview and the expense form's field registry; the Workflow page's expense report review is the
+  plugin's `workflowKinds`): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and
   shown there when editing; the list is newest first. `receiptCapture.tsx` adds a photo (phone camera via
   `capture`, webcam dialog on a computer), a screen area (`getDisplayMedia` + crop) and a QR code: the PC
   creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone

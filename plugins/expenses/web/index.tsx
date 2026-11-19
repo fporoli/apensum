@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { defineWebPlugin, FolderCopyIcon, PaymentsIcon, ReceiptLongIcon, TeamView } from '@worktime3/web/plugin';
+import { getExpenseReportTitle } from './expenseRows';
 import { parseReceiptHash } from './receiptHash';
 import { EXPENSE_TEXTS } from './texts';
 
@@ -8,6 +9,7 @@ const ExpenseReports = lazy(() => import('./ExpenseReports'));
 const ExpenseProcessing = lazy(() => import('./ExpenseProcessing'));
 const ExchangeRateSettings = lazy(() => import('./ExchangeRateSettings'));
 const PhoneUpload = lazy(() => import('./PhoneUpload'));
+const ExpenseReportReview = lazy(() => import('./ExpenseReportReview'));
 
 export default defineWebPlugin({
   id: 'expenses',
@@ -61,6 +63,20 @@ export default defineWebPlugin({
           </Suspense>
         );
       },
+    },
+  ],
+  workflowKinds: [
+    {
+      definitionName: 'approve expense report',
+      recordField: 'expense_report',
+      label: (t) => t('approvals.kind.expenseReport'),
+      source: { name: 'Expense Report', label: (t) => t('approvals.source.expenseReport') },
+      title: { sourceName: 'getExpenseReportTitle', get: (r) => getExpenseReportTitle({ date_submitted: typeof r.date_submitted === 'string' ? r.date_submitted : null }) },
+      Inspect: (props) => (
+        <Suspense fallback={null}>
+          <ExpenseReportReview {...props} />
+        </Suspense>
+      ),
     },
   ],
   notificationSections: { expense_reports: 'expenseReports' },

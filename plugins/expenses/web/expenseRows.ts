@@ -1,7 +1,5 @@
 /**
- * Expense rows as the API returns them. Kept in the core because the Workflow page (Approvals.tsx)
- * shows the expenses of a report under approval; the expenses plugin (plugins/expenses) imports it
- * from the plugin contract.
+ * Expense rows as the API returns them (expense pages and the Workflow page's report review).
  */
 export interface ExpenseRow {
   id: string;

@@ -23,8 +23,8 @@ import {
 } from '@mui/material';
 import {
   useI18n, formatLocaleDate, formatMoney, PageHeader, TableEmptyRow, AddIcon, DeleteIcon, DownloadIcon, FolderCopyIcon, ReceiptLongIcon, VisibilityIcon,
-  type ExpenseRow,
 } from '@worktime3/web/plugin';
+import type { ExpenseRow } from './expenseRows';
 import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';

@@ -4,7 +4,7 @@
  * default export has. A plugin imports the core only from here; plugins.ts registers what the
  * plugins declare, App.tsx, main.tsx and OrganizationSettings.tsx show it. docs/PLUGINS.md.
  */
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import type { Locale, TFunction } from './i18n';
 
 export interface PluginRoles {
@@ -61,6 +61,43 @@ export interface PluginPublicRoute {
   render: (match: unknown) => ReactNode;
 }
 
+/** The record a workflow action item is about, as GET workflows/assigned-to-me returns it. */
+export interface PluginWorkflowRecord {
+  id: string;
+  user_id: string;
+  user_display_name: string;
+  user_email: string;
+  [field: string]: unknown;
+}
+
+export interface PluginWorkflowInspectProps {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  record: PluginWorkflowRecord;
+  /** The open action item (approve/reject offered), or null when only looking. */
+  actionItemId: string | null;
+  onClose: () => void;
+  /** Closes the dialog and approves / asks for the rejection note, as the Workflow page does. */
+  onApprove: (actionItemId: string) => void;
+  onReject: (actionItemId: string) => void;
+}
+
+/** An approval kind on the Workflow page (Approvals.tsx) that a plugin owns. */
+export interface PluginWorkflowKind {
+  /** The workflow definition's name, e.g. 'approve expense report'. */
+  definitionName: string;
+  /** The action item's field that holds the record, e.g. 'expense_report'. */
+  recordField: string;
+  /** The kind's chip. */
+  label: (t: TFunction) => string;
+  /** The API's (English) source label it replaces, e.g. 'Expense Report', and its translation. */
+  source?: { name: string; label: (t: TFunction) => string };
+  /** The record's title in the "related object" column (the API's source_name, e.g. 'getExpenseReportTitle'). */
+  title?: { sourceName: string; get: (record: PluginWorkflowRecord) => string | null };
+  /** The "Inspect" dialog; without it the item has no Inspect button. */
+  Inspect?: ComponentType<PluginWorkflowInspectProps & { open: boolean }>;
+}
+
 export interface WebPlugin {
   id: string;
   /** The plugin's UI texts per language; every language the same keys (the plugin's tests check it). */
@@ -70,6 +107,8 @@ export interface WebPlugin {
   /** Sections on Organization settings (shown after the core's work-time section). */
   orgSettings?: PluginSettingsSection[];
   publicRoutes?: PluginPublicRoute[];
+  /** Approval kinds the plugin owns on the Workflow page. */
+  workflowKinds?: PluginWorkflowKind[];
   /** A notification's source_table -> the section its click opens. */
   notificationSections?: Record<string, string>;
 }
@@ -92,4 +131,3 @@ export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, typ
 export { currencyOptions, type CurrencyOption } from './currencyOptions';
 export { SectionPaper } from './SettingsSection';
 export { default as TeamView } from './TeamView';
-export { getExpenseReportTitle, type ExpenseRow } from './expenseRows';

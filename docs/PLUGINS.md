@@ -13,7 +13,7 @@ plugins/<id>/
   tsconfig.json       editor + tests for api/ and test/ (core sources via the `source` condition)
   tsconfig.api.json   the build: api/ -> dist/api (against the core's built declarations)
   api/index.ts        export default defineApiPlugin({ id, controllers, providers })
-  web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, notificationSections })
+  web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
   web/tsconfig.json   editor only: extends apps/web/tsconfig.json
   web/texts.ts        the plugin's UI texts, en/de/fr/it with the same keys
   test/*.test.ts      API tests (tsx, node:test), like test/api
@@ -86,6 +86,10 @@ npm test                                    # core tests, then each plugin's tes
   - its own changelog list (in its own schema, like `cases`)
   - `migrate.mjs` / compose / the Liquibase image including `plugins/*/changelog`
   - its own drizzle table definitions
-- **Plugin parts of core pages.** Approvals, Reports, Documents, Team overview and Import/Export still
-  show expense data themselves (the tables are core). Moving those out needs extension points on those
-  pages.
+- **Plugin parts of core pages.**
+  - The Workflow page already has an extension point: `workflowKinds` gives an approval kind its label,
+    source, title and Inspect dialog (expenses: the expense report review).
+  - The API side is still in the core: `workflows.service.ts` and `GET workflows/assigned-to-me` join the
+    expense report.
+  - Reports, Documents, Team overview and Import/Export still show expense data themselves (the tables
+    are core). Each needs its own extension point.

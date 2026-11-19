@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
@@ -24,14 +24,14 @@ import {
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
-import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatMoney, formatSignedMinutes, swissLocale } from './localeFormat';
+import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatSignedMinutes, swissLocale } from './localeFormat';
 import { getSourceTitle } from './Timesheet';
-import { getExpenseReportTitle, type ExpenseRow } from './expenseRows';
+import { PLUGIN_WORKFLOW_KINDS } from './plugins';
+import type { PluginWorkflowKind, PluginWorkflowRecord } from './plugin';
 import { getAbsenceTitle } from './Absences';
 import { PageHeader, TableEmptyRow } from './components';
 import { CheckCircleIcon, DownloadIcon, MailIcon, SearchIcon } from './icons';
 import ForwardMailDialog from './ForwardMailDialog';
-import { MILEAGE_CATEGORY } from '@worktime3/shared/expenses';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -64,15 +64,6 @@ interface DayRow {
   holidayInfo: { name?: string; key?: string } | null;
 }
 
-interface ExpenseReportRow {
-  id: string;
-  user_id: string;
-  user_display_name: string;
-  user_email: string;
-  status: string;
-  date_submitted: string | null;
-}
-
 interface AbsenceRow {
   id: string;
   user_id: string;
@@ -93,12 +84,6 @@ interface AbsenceDocumentRow {
   created_at: string;
 }
 
-interface StaticDataRow {
-  enum_name: string;
-  values: Record<string, string>;
-  translation?: Record<string, Record<string, string>>;
-}
-
 function formatAbsenceType(type: string, t: TFunction): string {
   const key = `absences.type.${type}`;
   const translated = t(key);
@@ -117,15 +102,24 @@ interface ActionItem {
   source: string | null;
   source_name: string | null;
   timesheet_period: PeriodRow | null;
-  expense_report: ExpenseReportRow | null;
   absence: AbsenceRow | null;
   project_time_period: ProjectPeriodRow | null;
 }
 
+/** The plugin approval kind of an item (PLUGIN_WORKFLOW_KINDS) with its record, if it is one. */
+function pluginRecord(item: ActionItem): { kind: PluginWorkflowKind; record: PluginWorkflowRecord } | null {
+  for (const kind of PLUGIN_WORKFLOW_KINDS) {
+    const record = (item as unknown as Record<string, unknown>)[kind.recordField];
+    if (record && typeof record === 'object') return { kind, record: record as PluginWorkflowRecord };
+  }
+  return null;
+}
+
 function actionItemLabel(definitionName: string, t: TFunction): string {
+  const kind = PLUGIN_WORKFLOW_KINDS.find((k) => k.definitionName === definitionName);
+  if (kind) return kind.label(t);
   if (definitionName === 'approve timesheet') return t('approvals.kind.timesheet');
   if (definitionName === 'reopen approved timesheet') return t('approvals.kind.reopen');
-  if (definitionName === 'approve expense report') return t('approvals.kind.expenseReport');
   if (definitionName === 'approve absence') return t('approvals.kind.absence');
   if (definitionName === 'approve project timesheet') return t('approvals.kind.projectTimesheet');
   return definitionName;
@@ -139,13 +133,12 @@ function actionItemDetail(item: ActionItem): string {
 
 /** The person an action item is about, whatever kind of record it is. */
 function itemPerson(item: ActionItem): { name: string; email: string } | null {
-  const row = item.timesheet_period ?? item.expense_report ?? item.absence ?? item.project_time_period;
+  const row = item.timesheet_period ?? pluginRecord(item)?.record ?? item.absence ?? item.project_time_period;
   return row ? { name: row.user_display_name, email: row.user_email } : null;
 }
 
 const SOURCE_TITLE_FNS: Record<string, (item: ActionItem) => string | null> = {
   getSourceTitle: (item) => (item.timesheet_period ? getSourceTitle(item.timesheet_period.period_start) : null),
-  getExpenseReportTitle: (item) => (item.expense_report ? getExpenseReportTitle(item.expense_report) : null),
   getAbsenceTitle: (item) => (item.absence ? getAbsenceTitle(item.absence) : null),
   getProjectTimesheetTitle: (item) =>
     item.project_time_period ? `${item.project_time_period.project_name} · ${getSourceTitle(item.project_time_period.period_start)}` : null,
@@ -154,16 +147,19 @@ const SOURCE_TITLE_FNS: Record<string, (item: ActionItem) => string | null> = {
 /** The API's (English) source labels, shown in the user's language. Others are shown as they come. */
 const SOURCE_KEYS: Record<string, string> = {
   'Vacation Request': 'approvals.source.absence',
-  'Expense Report': 'approvals.source.expenseReport',
   'Project time': 'approvals.source.projectTimesheet',
   'Timesheet Period': 'approvals.source.timesheet',
 };
 
 function correspondingObject(item: ActionItem, t: TFunction): string {
   if (!item.source) return '—';
-  const source = SOURCE_KEYS[item.source] ? t(SOURCE_KEYS[item.source]) : item.source;
+  const plugin = pluginRecord(item);
+  const pluginSource = PLUGIN_WORKFLOW_KINDS.find((k) => k.source?.name === item.source)?.source;
+  const source = pluginSource ? pluginSource.label(t) : SOURCE_KEYS[item.source] ? t(SOURCE_KEYS[item.source]) : item.source;
   const fn = item.source_name ? SOURCE_TITLE_FNS[item.source_name] : undefined;
-  const title = fn?.(item);
+  const title = fn
+    ? fn(item)
+    : plugin && plugin.kind.title?.sourceName === item.source_name ? plugin.kind.title.get(plugin.record) : null;
   return title ? `${source} ${title}` : source;
 }
 
@@ -200,16 +196,8 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
   const [monthLoading, setMonthLoading] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
 
-  const [inspectingReport, setInspectingReport] = useState<ExpenseReportRow | null>(null);
-  const [inspectingReportActionItemId, setInspectingReportActionItemId] = useState<string | null>(null);
-  const [inspectingExpenses, setInspectingExpenses] = useState<ExpenseRow[]>([]);
-  const [inspectingReportLoading, setInspectingReportLoading] = useState(false);
-  const [inspectingReportError, setInspectingReportError] = useState<string | null>(null);
-
-  const [categories, setCategories] = useState<Record<string, string>>({});
-  const [subCategories, setSubCategories] = useState<Record<string, string>>({});
-  const [catTranslations, setCatTranslations] = useState<Record<string, Record<string, string>>>({});
-  const [subCatTranslations, setSubCatTranslations] = useState<Record<string, Record<string, string>>>({});
+  /** A plugin approval kind's Inspect dialog (PluginWorkflowKind.Inspect). */
+  const [inspectingPlugin, setInspectingPlugin] = useState<{ kind: PluginWorkflowKind; record: PluginWorkflowRecord; actionItemId: string | null } | null>(null);
 
   const [inspectingAbsence, setInspectingAbsence] = useState<AbsenceRow | null>(null);
   const [absenceDocument, setAbsenceDocument] = useState<AbsenceDocumentRow | null>(null);
@@ -247,21 +235,6 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
           setAbsencePreviewUrl(URL.createObjectURL(blob));
         }
       }
-    } catch { /* offline fallback */ }
-  }
-
-  async function downloadExpenseDocument(expenseId: string) {
-    try {
-      const res = await fetch(`${API}/expenses/${expenseId}/document`, { headers: await authHeaders() });
-      const disposition = res.headers.get('content-disposition') ?? '';
-      const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'payslip';
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
     } catch { /* offline fallback */ }
   }
 
@@ -320,44 +293,17 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
     }
   }
 
-  async function inspectReport(report: ExpenseReportRow, actionItemId: string | null) {
-    setInspectingReport(report);
-    setInspectingReportActionItemId(actionItemId);
-    setInspectingExpenses([]);
-    setInspectingReportLoading(true);
-    setInspectingReportError(null);
-    try {
-      const res = await fetch(`${API}/expense-reports/${report.id}/items`, { headers: await authHeaders() });
-      const data = await res.json();
-      setInspectingExpenses(Array.isArray(data) ? data : []);
-    } catch {
-      setInspectingReportError(t('approvals.loadReportFailed'));
-    } finally {
-      setInspectingReportLoading(false);
-    }
-  }
-
   async function reload() {
     setLoading(true);
     try {
       const headers = await authHeaders();
-      const [iRes, aRes, sRes] = await Promise.all([
+      const [iRes, aRes] = await Promise.all([
         fetch(`${API}/workflows/assigned-to-me`, { headers }),
         fetch(`${API}/organizations/${orgId}/timesheet-periods?status=approved`, { headers }),
-        fetch(`${API}/organizations/${orgId}/static-data/expenses`, { headers }),
       ]);
-      const [i, a, s] = await Promise.all([iRes.json(), aRes.json(), sRes.json()]);
+      const [i, a] = await Promise.all([iRes.json(), aRes.json()]);
       if (Array.isArray(i)) setActionItems(i);
       if (Array.isArray(a)) setApproved(a);
-      if (Array.isArray(s)) {
-        const rows = s as StaticDataRow[];
-        const cat = rows.find((r) => r.enum_name === 'expense_category');
-        const sub = rows.find((r) => r.enum_name === 'expense_subcategory');
-        setCategories(cat?.values ?? {});
-        setCatTranslations(cat?.translation ?? {});
-        setSubCategories(sub?.values ?? {});
-        setSubCatTranslations(sub?.translation ?? {});
-      }
     } catch { /* offline fallback */ } finally {
       setLoading(false);
     }
@@ -422,29 +368,9 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
     }
   }
 
-  function categoryLabel(row: ExpenseRow): string {
-    const cat = catTranslations[locale]?.[row.category] ?? categories[row.category] ?? (row.category === MILEAGE_CATEGORY ? t('expenses.mileage') : row.category);
-    if (!row.sub_category) return cat;
-    const subKey = `${row.category}$${row.sub_category}`;
-    const sub = subCatTranslations[locale]?.[subKey] ?? subCategories[subKey] ?? row.sub_category;
-    return `${cat} / ${sub}`;
-  }
-
-  const reportTotalLabel = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const e of inspectingExpenses) {
-      const v = Number(e.value);
-      if (!Number.isFinite(v)) continue;
-      totals.set(e.currency, (totals.get(e.currency) ?? 0) + v);
-    }
-    return [...totals.entries()]
-      .map(([currency, sum]) => `${formatMoney(sum, locale)} ${currency}`)
-      .join(' + ');
-  }, [inspectingExpenses, locale]);
-
   /** "Send by e-mail" (ForwardMailDialog): suggested to the person the item is about, e.g. as a reminder or a question. */
   function itemPersonId(item: ActionItem): string | null {
-    return (item.timesheet_period ?? item.expense_report ?? item.absence ?? item.project_time_period)?.user_id ?? null;
+    return (item.timesheet_period ?? pluginRecord(item)?.record ?? item.absence ?? item.project_time_period)?.user_id ?? null;
   }
 
   function itemMessage(item: ActionItem): string {
@@ -466,8 +392,8 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
     const haystack = [
       item.timesheet_period?.user_display_name,
       item.timesheet_period?.user_email,
-      item.expense_report?.user_display_name,
-      item.expense_report?.user_email,
+      pluginRecord(item)?.record.user_display_name,
+      pluginRecord(item)?.record.user_email,
       item.absence?.user_display_name,
       item.absence?.user_email,
       item.project_time_period?.user_display_name,
@@ -549,9 +475,12 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                       {item.timesheet_period && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(item.timesheet_period!, item.id)}>{t('approvals.inspect')}</Button>
                       )}
-                      {item.expense_report && (
-                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspectReport(item.expense_report!, item.id)}>{t('approvals.inspect')}</Button>
-                      )}
+                      {(() => {
+                        const plugin = pluginRecord(item);
+                        return plugin?.kind.Inspect ? (
+                          <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => setInspectingPlugin({ ...plugin, actionItemId: item.id })}>{t('approvals.inspect')}</Button>
+                        ) : null;
+                      })()}
                       {item.project_time_period && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspectProjectMonth(item.project_time_period!, item.id)}>{t('approvals.inspect')}</Button>
                       )}
@@ -789,84 +718,24 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!inspectingReport} onClose={() => setInspectingReport(null)} maxWidth="md" fullWidth>
-        <DialogTitle>
-          {inspectingReport ? t('approvals.reviewReportFor', { name: inspectingReport.user_display_name }) : t('approvals.reviewReport')}
-        </DialogTitle>
-        <DialogContent dividers>
-          {inspectingReportError && <Alert severity="error" sx={{ mb: 2 }}>{inspectingReportError}</Alert>}
-          {inspectingReportLoading && <LinearProgress sx={{ mb: 2 }} />}
-          {inspectingReport && (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-              <Typography variant="body2" color="text.secondary">{inspectingReport.user_email}</Typography>
-              {reportTotalLabel && (
-                <Chip label={`${t('approvals.total')}: ${reportTotalLabel}`} color="primary" variant="outlined" />
-              )}
-            </Box>
-          )}
-          {inspectingExpenses.length === 0 && !inspectingReportLoading ? (
-            <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>{t('approvals.noExpenses')}</Typography>
-          ) : (
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>{t('common.date')}</TableCell>
-                    <TableCell>{t('approvals.category')}</TableCell>
-                    <TableCell align="right">{t('approvals.value')}</TableCell>
-                    <TableCell>{t('common.project')}</TableCell>
-                    <TableCell>{t('common.subproject')}</TableCell>
-                    <TableCell>{t('common.comment')}</TableCell>
-                    <TableCell />
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {inspectingExpenses.map((e) => (
-                    <TableRow key={e.id}>
-                      <TableCell>{formatLocaleDate(e.expense_date, locale)}</TableCell>
-                      <TableCell>{categoryLabel(e)}</TableCell>
-                      <TableCell align="right">{formatMoney(Number(e.value), locale)} {e.currency}</TableCell>
-                      <TableCell>{e.project_name ?? '—'}</TableCell>
-                      <TableCell>{e.subproject_name ?? '—'}</TableCell>
-                      <TableCell>{e.comment ?? '—'}</TableCell>
-                      <TableCell align="right">
-                        {e.document_id && <Button size="small" onClick={() => void downloadExpenseDocument(e.id)}>{t('approvals.receipt')}</Button>}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setInspectingReport(null)}>{t('common.close')}</Button>
-          {inspectingReportActionItemId && (
-            <>
-              <Button
-                color="error"
-                onClick={() => {
-                  const id = inspectingReportActionItemId;
-                  setInspectingReport(null);
-                  setRejectingId(id);
-                }}
-              >
-                {t('approvals.reject')}…
-              </Button>
-              <Button
-                variant="contained"
-                onClick={async () => {
-                  const id = inspectingReportActionItemId;
-                  setInspectingReport(null);
-                  await approveItem(id);
-                }}
-              >
-                {t('approvals.approve')}
-              </Button>
-            </>
-          )}
-        </DialogActions>
-      </Dialog>
+      {inspectingPlugin?.kind.Inspect && (
+        <inspectingPlugin.kind.Inspect
+          open
+          orgId={orgId}
+          authHeaders={authHeaders}
+          record={inspectingPlugin.record}
+          actionItemId={inspectingPlugin.actionItemId}
+          onClose={() => setInspectingPlugin(null)}
+          onApprove={(id) => {
+            setInspectingPlugin(null);
+            void approveItem(id);
+          }}
+          onReject={(id) => {
+            setInspectingPlugin(null);
+            setRejectingId(id);
+          }}
+        />
+      )}
 
       <Dialog open={!!inspectingAbsence} onClose={closeAbsenceDialog} maxWidth="sm" fullWidth>
         <DialogTitle>
