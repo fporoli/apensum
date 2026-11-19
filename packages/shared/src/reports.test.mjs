@@ -4,7 +4,8 @@ import { REPORTS, groupReport, monthEnd, monthsBetween, parseGroupBy, reportById
 import { PERMISSION_OBJECTS } from './permissions.ts';
 
 test('every report reads through a page that exists, and groups only by its own dimensions', () => {
-  const nav = new Set(PERMISSION_OBJECTS.map((o) => o.id));
+  // The expenses report reads the expenses plugin's page (plugins/expenses, its manifest's permissions).
+  const nav = new Set([...PERMISSION_OBJECTS.map((o) => o.id), 'nav.expenses']);
   for (const r of REPORTS) {
     assert.ok(nav.has(r.object), r.id);
     for (const d of r.defaultGroupBy) assert.ok(r.dimensions.includes(d), `${r.id}: ${d}`);

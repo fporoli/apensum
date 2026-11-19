@@ -163,3 +163,6 @@ apps/site/videos/out/
 # cloned into plugins/<id> and stays in its own repository.
 plugins/*
 !plugins/expenses
+# Plugin changelogs staged for the migrate image (scripts/plugins.mjs stage-changelogs).
+infra/liquibase/plugins/*
+!infra/liquibase/plugins/.gitkeep

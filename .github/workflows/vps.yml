@@ -79,6 +79,9 @@ jobs:
         if: inputs.action == 'destroy' && inputs.confirmation != format('DESTROY {0}', inputs.environment)
         run: echo "Destroy not run. Type DESTROY followed by the environment name." && exit 1
       - uses: actions/checkout@v7
+      # The server builds the migrate image from infra/liquibase, plugin changelogs included.
+      - name: Stage plugin changelogs
+        run: node scripts/plugins.mjs stage-changelogs
       - name: Package deploy files
         run: tar czf release.tgz compose/docker-compose.vps.yml infra/liquibase infra/keycloak infra/postgres/seeds/seed.sql infra/caddy/edge infra/portainer infra/whisper infra/vps
       - name: Upload to VPS

@@ -1,4 +1,5 @@
-import PLUGINS from 'virtual:apensum-plugins';
+import PLUGINS, { permissions as PLUGIN_PERMISSIONS } from 'virtual:apensum-plugins';
+import { registerPermissionObjects } from '@worktime3/shared/permissions';
 import { DICTIONARIES, type Locale } from './dictionaries';
 import type { PluginNavGroup, PluginPage, PluginPublicRoute, PluginSettingsSection, PluginWorkflowKind, WebPlugin } from './plugin';
 
@@ -17,6 +18,8 @@ export function mergePluginTexts(plugins: readonly WebPlugin[], dictionaries: Re
 }
 
 mergePluginTexts(WEB_PLUGINS, DICTIONARIES);
+// The plugins' permission objects join the catalogue (roles editor, owner's ids) as the API's do.
+registerPermissionObjects(PLUGIN_PERMISSIONS);
 
 export const PLUGIN_PAGES: readonly PluginPage[] = WEB_PLUGINS.flatMap((p) => p.pages ?? []);
 export const PLUGIN_NAV_GROUPS: readonly PluginNavGroup[] = WEB_PLUGINS.flatMap((p) => p.navGroups ?? []);

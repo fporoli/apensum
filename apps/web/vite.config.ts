@@ -5,31 +5,34 @@ import react from '@vitejs/plugin-react';
 
 /**
  * `virtual:apensum-plugins`: imports the web entry (package.json `apensum.web`) of every plugin
- * under <repo>/plugins/<id> and exports them as an array (apps/web/src/plugins.ts reads it).
+ * under <repo>/plugins/<id> and exports them as an array (apps/web/src/plugins.ts reads it), and
+ * `permissions`: the permission objects of every plugin's manifest (`apensum.permissions`).
  * A plugin is part of the bundle when its folder is there at build time; docs/PLUGINS.md.
  */
 function apensumPlugins(): Plugin {
   const id = 'virtual:apensum-plugins';
   const resolved = `\0${id}`;
   const dir = resolve(import.meta.dirname, process.env.APENSUM_PLUGINS_DIR?.trim() || '../../plugins');
-  const entries = () => {
+  const manifests = () => {
     if (!existsSync(dir)) return [];
     return readdirSync(dir, { withFileTypes: true })
       .filter((e) => (e.isDirectory() || e.isSymbolicLink()) && existsSync(join(dir, e.name, 'package.json')))
       .map((e) => ({ name: e.name, manifest: JSON.parse(readFileSync(join(dir, e.name, 'package.json'), 'utf8')).apensum }))
-      .filter((p) => p.manifest?.web)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((p) => join(dir, p.name, p.manifest.web));
+      .filter((p) => p.manifest)
+      .sort((a, b) => a.name.localeCompare(b.name));
   };
   return {
     name: 'apensum-plugins',
     resolveId: (source) => (source === id ? resolved : undefined),
     load(source) {
       if (source !== resolved) return undefined;
-      const files = entries();
+      const found = manifests();
+      const files = found.filter((p) => p.manifest.web).map((p) => join(dir, p.name, p.manifest.web));
+      const permissions = found.flatMap((p) => p.manifest.permissions ?? []);
       return [
         ...files.map((f, i) => `import plugin${i} from ${JSON.stringify(f)};`),
         `export default [${files.map((_, i) => `plugin${i}`).join(', ')}];`,
+        `export const permissions = ${JSON.stringify(permissions)};`,
       ].join('\n');
     },
   };

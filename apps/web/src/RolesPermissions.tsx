@@ -30,6 +30,7 @@ import {
   ADMIN_LOCKED_PERMISSIONS,
   ADMIN_SECTION_OBJECTS,
   NAV_OBJECTS,
+  PLUGIN_SECTION_OBJECTS,
   SCOPES,
   SECTION_OBJECTS,
   WORK_SECTION_OBJECTS,
@@ -72,7 +73,7 @@ const KNOWN_ERRORS = new Set([
   'unknown-permission',
 ]);
 
-/** Ids this page manages; older ids still in the database (`data:read`, ...) are left out. */
+/** Ids this page manages (plugins.ts has registered the plugins' objects by now); older ids still in the database (`data:read`, ...) are left out. */
 const CATALOGUE = new Set(allPermissionIds());
 
 const OBJECT_GROUPS: { key: string; objects: readonly PermissionObject[] }[] = [
@@ -80,7 +81,9 @@ const OBJECT_GROUPS: { key: string; objects: readonly PermissionObject[] }[] = [
   { key: 'roles.group.basicdata', objects: SECTION_OBJECTS },
   { key: 'roles.group.work', objects: WORK_SECTION_OBJECTS },
   { key: 'roles.group.admin', objects: ADMIN_SECTION_OBJECTS },
-];
+  // Sections of plugins (their navbar entries are in NAV_OBJECTS).
+  { key: 'roles.group.plugins', objects: PLUGIN_SECTION_OBJECTS },
+].filter((g) => g.objects.length > 0);
 
 interface Draft {
   id: string | null;

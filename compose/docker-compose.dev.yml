@@ -26,6 +26,8 @@ services:
     build: { context: ../infra/liquibase, dockerfile: Dockerfile }
     volumes:
       - ../infra/liquibase/changelog:/liquibase/changelog:ro
+      # Plugin changelogs (plugins/<id>/changelog), run after the core's by apensum-migrate.sh.
+      - ../plugins:/liquibase/plugins:ro
     command:
       - --changelog-file=db.changelog-master.xml
       - --url=jdbc:postgresql://pg:5432/worktime

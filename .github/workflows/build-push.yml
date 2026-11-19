@@ -100,6 +100,9 @@ jobs:
           tags: |
             type=raw,value=${{ steps.release.outputs.image_tag }}
             type=sha
+      # The image carries the plugins' changelogs (plugins/<id>/changelog) next to the core's.
+      - name: Stage plugin changelogs
+        run: node scripts/plugins.mjs stage-changelogs
       - name: Build and push migrate
         uses: docker/build-push-action@v7
         with:

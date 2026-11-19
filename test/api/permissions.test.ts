@@ -114,10 +114,13 @@ test('the migration catalogue matches the shared registry, and default grants us
   }
   // Later changelogs insert permission ids directly: `('<id>', '<description>')`.
   for (const m of sql.matchAll(/\('((?:nav|section)\.[\w.]+:\w+:\w+)', '[^']*'\)/g)) ids.add(m[1]);
-  assert.deepEqual([...ids].sort(), allPermissionIds().sort());
+  // The core's changelogs created the expenses objects before expenses became a plugin; the plugin
+  // now declares them (plugins/expenses: package.json permissions, changelog/).
+  const pluginIds = (id: string) => /^nav\.expense(s|Reports|Processing):/.test(id);
+  assert.deepEqual([...ids].filter((id) => !pluginIds(id)).sort(), allPermissionIds().sort());
 
   const catalogue = new Set(allPermissionIds());
   const granted = [...sql.matchAll(/'((?:nav|section)\.[\w.]+:\w+:\w+)'/g)].map((m) => m[1]);
   assert.ok(granted.length > 0);
-  for (const id of granted) assert.ok(catalogue.has(id), `${id} is not in the catalogue`);
+  for (const id of granted) assert.ok(catalogue.has(id) || pluginIds(id), `${id} is not in the catalogue`);
 });

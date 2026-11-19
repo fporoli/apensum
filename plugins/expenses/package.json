@@ -6,6 +6,11 @@
   "description": "Expenses, expense reports, exchange rates, mileage and receipt recognition (bundled Apensum plugin)",
   "apensum": {
     "id": "expenses",
+    "permissions": [
+      { "id": "nav.expenses", "kind": "nav", "scopes": ["own", "team", "reports", "all"], "caption": "nav.expenses" },
+      { "id": "nav.expenseReports", "kind": "nav", "scopes": ["own", "team", "reports", "all"], "caption": "nav.expenseReports" },
+      { "id": "nav.expenseProcessing", "kind": "nav", "scopes": ["all"], "caption": "nav.expenseProcessing" }
+    ],
     "module": {
       "id": "expenses",
       "caption": "modules.expenses",

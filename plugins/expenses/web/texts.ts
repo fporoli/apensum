@@ -9,6 +9,10 @@ import type { Locale } from '@worktime3/web/plugin';
 // prettier-ignore
 export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
   en: {
+    'nav.expenses': 'Expenses',
+    'nav.expenseReports': 'Expense Reports',
+    'nav.expenseProcessing': 'Expense Processing',
+    'nav.expensesGroup': "Expenses",
     'approvals.kind.expenseReport': 'Expense report approval',
     'approvals.source.expenseReport': 'Expense report',
     'approvals.loadReportFailed': 'Failed to load expense report items.',
@@ -126,6 +130,10 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Expense report ({{date}})',
   },
   de: {
+    'nav.expenses': 'Spesen',
+    'nav.expenseReports': 'Spesenabrechnungen',
+    'nav.expenseProcessing': 'Spesenverarbeitung',
+    'nav.expensesGroup': "Spesen",
     'approvals.kind.expenseReport': 'Genehmigung Spesenabrechnung',
     'approvals.source.expenseReport': 'Spesenabrechnung',
     'approvals.loadReportFailed': 'Positionen der Spesenabrechnung konnten nicht geladen werden.',
@@ -243,6 +251,10 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Spesenbericht ({{date}})',
   },
   fr: {
+    'nav.expenses': 'Notes de frais',
+    'nav.expenseReports': 'Rapports de frais',
+    'nav.expenseProcessing': 'Traitement des frais',
+    'nav.expensesGroup': "Frais",
     'approvals.kind.expenseReport': 'Approbation de note de frais',
     'approvals.source.expenseReport': 'Rapport de frais',
     'approvals.loadReportFailed': 'Impossible de charger les éléments de la note de frais.',
@@ -360,6 +372,10 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Note de frais ({{date}})',
   },
   it: {
+    'nav.expenses': 'Spese',
+    'nav.expenseReports': 'Note spese',
+    'nav.expenseProcessing': 'Elaborazione spese',
+    'nav.expensesGroup': "Spese",
     'approvals.kind.expenseReport': 'Approvazione nota spese',
     'approvals.source.expenseReport': 'Nota spese',
     'approvals.loadReportFailed': 'Impossibile caricare le voci della nota spese.',

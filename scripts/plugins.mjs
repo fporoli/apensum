@@ -9,8 +9,12 @@
 //                                    whose declarations it compiles against)
 //   node scripts/plugins.mjs test    runs each plugin's test/*.test.ts (tsx, like test/api) and
 //                                    test/*.test.mjs (node --test)
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+//   node scripts/plugins.mjs stage-changelogs [dest]
+//                                    copies each plugin's changelog/ to <dest>/<id>/changelog
+//                                    (default infra/liquibase/plugins), so the migrate image carries
+//                                    them; the Azure and VPS workflows run it before building it
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -56,7 +60,17 @@ if (command === 'list') {
     if (ts.length) run(join(root, 'node_modules/.bin/tsx'), [...tsconfig, '--conditions=source', '--test', ...ts], join(root, 'apps/api'));
     if (mjs.length) run(process.execPath, ['--conditions=source', '--test', ...mjs], root);
   }
+} else if (command === 'stage-changelogs') {
+  const dest = resolve(process.argv[3] ?? join(root, 'infra/liquibase/plugins'));
+  mkdirSync(dest, { recursive: true });
+  for (const entry of readdirSync(dest)) if (entry !== '.gitkeep') rmSync(join(dest, entry), { recursive: true, force: true });
+  for (const p of list) {
+    const changelog = join(p.dir, 'changelog');
+    if (!existsSync(join(changelog, 'db.changelog-master.xml'))) continue;
+    cpSync(changelog, join(dest, p.manifest.id, 'changelog'), { recursive: true });
+    console.log(`plugin ${p.manifest.id}: changelog staged in ${join(dest, p.manifest.id)}`);
+  }
 } else {
-  console.error(`Unknown command "${command}" (list, build or test).`);
+  console.error(`Unknown command "${command}" (list, build, test or stage-changelogs).`);
   process.exit(2);
 }

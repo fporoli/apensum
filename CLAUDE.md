@@ -333,7 +333,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   person, each shared with the person (listed on their Documents page, notified) or HR only. Access is the
   grant alone, not the reporting line; a person never edits their own file.
 - Plugins (`plugins/<id>`, docs/PLUGINS.md): a folder with a package.json `apensum` manifest (`id` = folder name,
-  optional `module` registered via `registerModule`, `api` = built entry, `web` = TS entry). Not npm workspaces and
+  optional `module` registered via `registerModule`, optional `permissions` = its permission objects, registered via
+  `registerPermissionObjects` by the API and the web app, `api` = built entry, `web` = TS entry). Not npm workspaces and
   no dependencies of their own (everything resolves from the root `node_modules`), so a private plugin cloned into
   the folder (gitignored except the bundled `plugins/expenses`) changes neither the lockfile nor `npm ci`. A plugin
   imports the core only through the contracts `@worktime3/api/plugin` (+ `@worktime3/api/schema`) and
@@ -344,7 +345,12 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   main.tsx / OrganizationSettings.tsx / Approvals.tsx show their pages, nav groups, settings sections, public routes and
   workflow kinds (label, source, title, Inspect dialog of an approval kind).
   Tests: `plugins/<id>/test` (`*.test.ts` via tsx, `*.test.mjs` via node), run by `npm test` (`scripts/plugins.mjs test`).
-  Not yet: plugin-owned Liquibase changelogs (expense tables stay in the core's changelogs and schema).
+  Database: `plugins/<id>/changelog/db.changelog-master.xml` (same rules as the core's, author = plugin id) runs after
+  the core's: the migrate image's entrypoint `infra/liquibase/apensum-migrate.sh` (APENSUM_CHANGELOG=core|<id> limits
+  it), changesets recorded as `<id>/changelog/<file>`; compose and `migrate.mjs` mount `plugins/`, the Azure/VPS
+  workflows stage them (`scripts/plugins.mjs stage-changelogs` -> `infra/liquibase/plugins`); `db:status` checks
+  each changelog. A plugin's permission rows and default grants live there; its tables may be in `public`.
+  The expense tables and the rows 035/037/049 made stay in the core's changelogs and schema.
 - Expenses (plugin `plugins/expenses`, module `expenses`, default on; the core keeps the tables, Approvals, reports,
   documents, team overview and the expense form's field registry; the Workflow page's expense report review is the
   plugin's `workflowKinds`): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and

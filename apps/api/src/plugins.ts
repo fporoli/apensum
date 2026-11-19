@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Logger, type Provider, type Type } from '@nestjs/common';
 import { registerModule, type ModuleDefinition } from '@worktime3/shared/modules';
+import { registerPermissionObjects, type PermissionObject } from '@worktime3/shared/permissions';
 import type { ApiPlugin } from './plugin';
 
 /**
@@ -16,6 +17,12 @@ export interface PluginManifest {
   id: string;
   /** Optional feature module the organization switches on or off (packages/shared/src/modules.ts). */
   module?: ModuleDefinition;
+  /**
+   * Permission objects the plugin adds to the catalogue (packages/shared/src/permissions.ts). Their
+   * `permissions` rows and default grants come from the plugin's Liquibase changelog
+   * (`changelog/db.changelog-master.xml`, run after the core's; docs/PLUGINS.md).
+   */
+  permissions?: PermissionObject[];
   /** Built API entry, relative to the plugin folder; its default export is an ApiPlugin. */
   api?: string;
   /** Web entry (TypeScript source, bundled by Vite; see apps/web/vite.config.ts). */
@@ -55,6 +62,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
   const logger = new Logger('Plugins');
   const loaded: LoadedPlugins = { ids: [], controllers: [], providers: [] };
   for (const { dir: pluginDir, manifest } of readPluginManifests(dir)) {
+    if (manifest.permissions) registerPermissionObjects(manifest.permissions);
     if (manifest.module) registerModule(manifest.module);
     if (manifest.api) {
       const entry = join(pluginDir, manifest.api);

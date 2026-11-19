@@ -11,6 +11,9 @@ interface ImportMetaEnv {
 /** The installed plugins' web entries (vite.config.ts, apensumPlugins). */
 declare module 'virtual:apensum-plugins' {
   import type { WebPlugin } from './plugin';
+  import type { PermissionObject } from '@worktime3/shared/permissions';
   const plugins: WebPlugin[];
   export default plugins;
+  /** Permission objects from the plugins' manifests (`apensum.permissions`). */
+  export const permissions: PermissionObject[];
 }

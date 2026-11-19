@@ -46,15 +46,13 @@ export interface PermissionObject {
  * Navbar entries that can be granted. `home` is not here: it is always visible, since it is
  * where the app falls back to when a page is not allowed.
  */
-export const NAV_OBJECTS: readonly PermissionObject[] = [
+export const NAV_OBJECTS: PermissionObject[] = [
   { id: 'nav.time', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.timeTracking' },
   { id: 'nav.projectTimesheet', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.projectTimesheet' },
   { id: 'nav.timesheet', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.monthlyTimesheet' },
   { id: 'nav.workTime', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.workTime' },
   { id: 'nav.absences', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.absences' },
   { id: 'nav.myData', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.myData' },
-  { id: 'nav.expenses', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.expenses' },
-  { id: 'nav.expenseReports', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.expenseReports' },
   { id: 'nav.teamHours', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.teamHours' },
   { id: 'nav.balances', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.balances' },
   { id: 'nav.approvals', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.approvals' },
@@ -72,7 +70,6 @@ export const NAV_OBJECTS: readonly PermissionObject[] = [
   { id: 'nav.management', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.management' },
   { id: 'nav.orgSettings', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.organizationSettings' },
   { id: 'nav.audit', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.auditLog' },
-  { id: 'nav.expenseProcessing', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.expenseProcessing' },
   { id: 'nav.admin', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.adminSettings' },
   { id: 'nav.importExport', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.importExport' },
   // Cases & Assessments module (modules.ts, cases.ts): `own` = cases lead by the caller, `all` = all cases in the org.
@@ -104,7 +101,11 @@ export const ADMIN_SECTION_OBJECTS: readonly PermissionObject[] = [
   { id: 'section.admin.roles', kind: 'section', scopes: ORG_SCOPES, caption: 'roles.title', parent: { own: 'nav.admin', others: 'nav.admin' } },
 ];
 
-export const PERMISSION_OBJECTS: readonly PermissionObject[] = [...NAV_OBJECTS, ...SECTION_OBJECTS, ...WORK_SECTION_OBJECTS, ...ADMIN_SECTION_OBJECTS];
+/** Sections the plugins add (registerPermissionObjects); navbar objects of plugins join NAV_OBJECTS. */
+export const PLUGIN_SECTION_OBJECTS: PermissionObject[] = [];
+
+/** The whole catalogue: the core's objects, then the plugins' (registerPermissionObjects). */
+export const PERMISSION_OBJECTS: PermissionObject[] = [...NAV_OBJECTS, ...SECTION_OBJECTS, ...WORK_SECTION_OBJECTS, ...ADMIN_SECTION_OBJECTS];
 
 /**
  * Grants the `admin` role always keeps, so an organization cannot lock itself out of
@@ -113,6 +114,35 @@ export const PERMISSION_OBJECTS: readonly PermissionObject[] = [...NAV_OBJECTS, 
 export const ADMIN_LOCKED_PERMISSIONS: readonly string[] = ['nav.admin:edit:all', 'section.admin.roles:edit:all'];
 
 const OBJECTS_BY_ID = new Map(PERMISSION_OBJECTS.map((o) => [o.id, o]));
+
+/**
+ * Adds a plugin's permission objects (its package.json `apensum.permissions`) to the catalogue, so
+ * the API grants and checks them and the roles editor lists them. Their rows and default grants come
+ * from the plugin's own changelog (docs/PLUGINS.md). Registering the same object again is a no-op;
+ * an id the core or another plugin already uses differently is refused.
+ */
+export function registerPermissionObjects(objects: readonly PermissionObject[]): void {
+  for (const o of objects) {
+    const pattern = o?.kind === 'nav' ? /^nav\.\w+$/ : o?.kind === 'section' ? /^section\.\w+\.\w+$/ : null;
+    if (!pattern || typeof o.id !== 'string' || !pattern.test(o.id)) throw new Error(`Invalid permission object: ${JSON.stringify(o)}`);
+    if (!Array.isArray(o.scopes) || o.scopes.length === 0 || o.scopes.some((s) => !(SCOPES as readonly string[]).includes(s))) {
+      throw new Error(`${o.id}: scopes must be some of ${SCOPES.join(', ')}`);
+    }
+    if (typeof o.caption !== 'string' || !o.caption) throw new Error(`${o.id}: caption (an i18n key) is required`);
+    if (o.kind === 'section' && !(o.parent && typeof o.parent.own === 'string' && typeof o.parent.others === 'string')) {
+      throw new Error(`${o.id}: a section needs parent { own, others }`);
+    }
+    const existing = OBJECTS_BY_ID.get(o.id);
+    if (existing) {
+      if (JSON.stringify(existing) === JSON.stringify(o)) continue;
+      throw new Error(`Permission object ${o.id} is already defined`);
+    }
+    const object: PermissionObject = { ...o, scopes: [...o.scopes] };
+    (object.kind === 'nav' ? NAV_OBJECTS : PLUGIN_SECTION_OBJECTS).push(object);
+    PERMISSION_OBJECTS.push(object);
+    OBJECTS_BY_ID.set(object.id, object);
+  }
+}
 
 export function permissionObject(id: string): PermissionObject | undefined {
   return OBJECTS_BY_ID.get(id);
