@@ -5,6 +5,7 @@ import {
   type Subscriber, type SubscriberStore,
 } from '../../apps/api/src/site-newsletter.controller';
 import type { MailOptions } from '../../apps/api/src/mailer';
+import { newsUnsubscribeToken } from '../../apps/api/src/news-newsletter';
 
 /** The table in memory, as the database store keeps it. */
 function memoryStore() {
@@ -12,6 +13,7 @@ function memoryStore() {
   const store: SubscriberStore = {
     byEmail: async (email) => rows.find((r) => r.email === email) ?? null,
     byToken: async (hash) => rows.find((r) => r.token_hash === hash) ?? null,
+    byId: async (id) => rows.find((r) => r.id === id) ?? null,
     requestSubscription: async (email, lang, site_origin, token_hash, now) => {
       const r = rows.find((x) => x.email === email);
       const values = { lang, status: 'pending' as const, token_hash, site_origin, requested_at: now, last_mail_at: now, confirmed_at: undefined, unsubscribed_at: undefined };
@@ -161,4 +163,19 @@ test('mails and pages exist in every language, and the page escapes what it show
   assert.match(html, /&lt;b&gt;/);
   assert.match(html, /&quot;x&quot;/);
   assert.match(html, /<meta name="robots" content="noindex">/);
+});
+
+test('the unsubscribe link in a news mail names the subscriber, is signed and keeps working', async () => {
+  const { c, rows } = setup();
+  const id = '0e9c8b1a-1111-2222-3333-444455556666';
+  rows.push({ id, email: 'leser@example.ch', lang: 'fr', status: 'confirmed', token_hash: 'x', site_origin: 'https://apensum.ch', requested_at: new Date(), last_mail_at: null } as never);
+  const token = newsUnsubscribeToken(id);
+  assert.match((await page(c, 'unsubscribePage', token)).html!, /leser@example\.ch/);
+  const forged = `${id}_${'A'.repeat(43)}`;
+  assert.equal((await page(c, 'unsubscribe', forged)).status, 404, 'a forged signature is refused');
+  assert.equal(rows[0].status, 'confirmed');
+  assert.equal((await page(c, 'unsubscribe', token)).status, 200);
+  assert.equal(rows[0].status, 'unsubscribed');
+  // It only unsubscribes: it never confirms.
+  assert.equal((await page(c, 'confirm', token)).status, 404);
 });

@@ -26,6 +26,7 @@ import { TeamOverviewController } from './team-overview.controller';
 import { EmploymentController } from './employment.controller';
 import { RequestsController } from './requests.controller';
 import { NewsController } from './news.controller';
+import { PublicNewsController } from './public-news.controller';
 import { DocumentsController } from './documents.controller';
 import { DirectoryController } from './directory.controller';
 import { ReportsController } from './reports.controller';
@@ -90,6 +91,7 @@ const plugins = loadApiPlugins();
     EmploymentController,
     RequestsController,
     NewsController,
+    PublicNewsController,
     DocumentsController,
     DirectoryController,
     ReportsController,

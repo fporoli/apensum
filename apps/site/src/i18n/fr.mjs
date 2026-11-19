@@ -692,8 +692,10 @@ export default {
     "Vous travaillez avec Apensum et nous dites comment cela se passe.",
   ],
   'contact.topic.pilot': "Premiers clients / pilote",
-  'news.post.draft': "Brouillon – non publié",
   'news.post.onlyGerman': "Cet article n’existe pour l’instant qu’en allemand.",
-  'news.post.subscribe': "Recevoir les nouveaux articles par e-mail",
   'news.post.back': "← Toutes les actualités",
+  'news.posts.empty': "Pas encore d’articles. Inscrivez-vous pour recevoir le premier par e-mail.",
+  'news.posts.failed': "Les articles n’ont pas pu être chargés. Veuillez réessayer plus tard.",
+  'news.posts.noscript': "Les articles sont chargés avec JavaScript. Sans JavaScript, vous les recevez par e-mail en vous inscrivant ci-dessous.",
+  'news.posts.read': "Lire la suite",
 };

@@ -37,6 +37,8 @@ interface Post {
   published_at: string | null;
   /** Product news: from a superdeveloper to every organization's admins. */
   product: boolean;
+  /** Product news also on the website and for its newsletter. */
+  is_public: boolean;
   author_user_id: string | null;
   author_name: string | null;
   department_ids: string[];
@@ -66,6 +68,8 @@ interface Draft {
   requireAck: boolean;
   /** Product news (only when creating; it stays what it is). */
   product: boolean;
+  /** Product news on the website and for the newsletter. */
+  isPublic: boolean;
 }
 
 const emptyTexts = () => Object.fromEntries(NEWS_LANGS.map((l) => [l, { title: '', body: '' }])) as Draft['texts'];
@@ -262,7 +266,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
   function startEdit(p: Post | null) {
     const texts = emptyTexts();
     if (p) for (const l of NEWS_LANGS) if (p.texts[l]) texts[l] = { title: p.texts[l]!.title, body: p.texts[l]!.body };
-    setDraft({ id: p?.id ?? null, texts, departmentIds: p?.department_ids ?? [], requireAck: p?.require_ack ?? false, product: p ? p.product : !editor });
+    setDraft({ id: p?.id ?? null, texts, departmentIds: p?.department_ids ?? [], requireAck: p?.require_ack ?? false, product: p ? p.product : !editor, isPublic: p?.is_public ?? false });
   }
 
   async function acknowledge(p: Post) {
@@ -338,6 +342,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
                   {!selected.published_at && <Chip size="small" color="warning" label={t('news.draft')} />}
                   {selected.require_ack && <Chip size="small" color="info" variant="outlined" label={t('news.requiresAck')} />}
                   {selected.product && <Chip size="small" color="primary" label={t('news.product.label')} />}
+                  {selected.is_public && <Chip size="small" color="success" variant="outlined" label={t('news.public.label')} />}
                   {audienceChips(selected)}
                 </Box>
                 <Typography variant="h5" component="h2" lang={text?.lang}>
@@ -381,6 +386,10 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
                 {t('news.delete')}
               </Button>
             </Box>
+          )}
+
+          {selected.is_public && selected.published_at && productEditor && (
+            <NewsletterPanel orgId={orgId} postId={selected.id} authHeaders={authHeaders} errorText={errorText} />
           )}
 
           {canEdit(selected) && reads && (
@@ -482,6 +491,91 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
   );
 }
 
+/** Public product news: send it to the website's newsletter subscribers (a test to oneself first). */
+function NewsletterPanel({
+  orgId,
+  postId,
+  authHeaders,
+  errorText,
+}: {
+  orgId: string;
+  postId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  errorText: (code: string | undefined) => string;
+}) {
+  const { t } = useI18n();
+  const [status, setStatus] = useState<{ subscribers: number; sent: number; running: boolean } | null>(null);
+  const [message, setMessage] = useState<{ severity: 'success' | 'error'; text: string } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const url = `${API}/organizations/${orgId}/news/${postId}/newsletter`;
+
+  const load = useCallback(async () => {
+    try {
+      const data = await (await fetch(url, { headers: await authHeaders() })).json();
+      if (data?.ok) setStatus(data);
+    } catch {
+      /* the panel shows no numbers */
+    }
+  }, [url, authHeaders]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+  // While sending, the numbers move: look again every few seconds.
+  useEffect(() => {
+    if (!status?.running) return;
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, [status?.running, load]);
+
+  async function send(test: boolean) {
+    setMessage(null);
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' }, body: JSON.stringify({ test }) });
+      const data = await res.json();
+      if (!data?.ok) setMessage({ severity: 'error', text: errorText(data?.error) });
+      else setMessage({ severity: 'success', text: test ? t('news.newsletter.testSent', { email: data.to }) : t('news.newsletter.queued', { count: String(data.queued) }) });
+      await load();
+    } catch {
+      setMessage({ severity: 'error', text: t('common.cannotReachApi') });
+    }
+  }
+
+  const open = status ? Math.max(0, status.subscribers - status.sent) : 0;
+  return (
+    <Paper variant="outlined" sx={{ p: 2, mt: 3 }}>
+      <Typography variant="subtitle2">{t('news.newsletter.title')}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        {status ? t('news.newsletter.status', { sent: String(status.sent), subscribers: String(status.subscribers) }) : '…'}
+        {status?.running ? ` · ${t('news.newsletter.running')}` : ''}
+      </Typography>
+      {message && (
+        <Alert severity={message.severity} sx={{ mb: 1.5 }} onClose={() => setMessage(null)}>
+          {message.text}
+        </Alert>
+      )}
+      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button variant="outlined" onClick={() => void send(true)}>
+          {t('news.newsletter.test')}
+        </Button>
+        <Button variant="contained" disabled={!status || status.running || open === 0} onClick={() => setConfirming(true)}>
+          {t('news.newsletter.send', { count: String(open) })}
+        </Button>
+      </Box>
+      <ConfirmDialog
+        open={confirming}
+        title={t('news.newsletter.title')}
+        message={t('news.newsletter.confirm', { count: String(open) })}
+        confirmLabel={t('news.newsletter.send', { count: String(open) })}
+        cancelLabel={t('common.cancel')}
+        confirmColor="primary"
+        onClose={() => setConfirming(false)}
+        onConfirm={() => send(false)}
+      />
+    </Paper>
+  );
+}
+
 function PublishDialog({ post, onClose, onPublish }: { post: Post | null; onClose: () => void; onPublish: (mail: boolean) => void }) {
   const { t } = useI18n();
   const [mail, setMail] = useState(false);
@@ -547,7 +641,7 @@ function PostEditor({
       const res = await fetch(`${API}/organizations/${orgId}/news${draft.id ? `/${draft.id}` : ''}`, {
         method: draft.id ? 'PUT' : 'POST',
         headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texts: draft.texts, departmentIds: draft.product ? [] : draft.departmentIds, requireAck: draft.requireAck, product: draft.product }),
+        body: JSON.stringify({ texts: draft.texts, departmentIds: draft.product ? [] : draft.departmentIds, requireAck: draft.requireAck, product: draft.product, public: draft.product && draft.isPublic }),
       });
       const data = await res.json();
       if (!data?.ok) {
@@ -661,7 +755,14 @@ function PostEditor({
           />
         )}
         {draft.product ? (
-          <Alert severity="info">{t('news.product.hint')}</Alert>
+          <Box>
+            <Alert severity="info">{t('news.product.hint')}</Alert>
+            <FormControlLabel
+              sx={{ mt: 1 }}
+              control={<Checkbox checked={draft.isPublic} onChange={(e) => setDraft((d) => ({ ...d, isPublic: e.target.checked }))} />}
+              label={t('news.public.choose')}
+            />
+          </Box>
         ) : (
           <TextField
             select

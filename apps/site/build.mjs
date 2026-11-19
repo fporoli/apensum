@@ -3,15 +3,13 @@
 // No dependencies: templates are functions in src/, texts in src/i18n/<lang>.mjs.
 //   node build.mjs            build (warns about an incomplete legal notice)
 //   node build.mjs --strict   fail instead (the deploy uses this)
-//   node build.mjs --drafts   also news posts marked `draft: true` (the local preview, serve.mjs)
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import baseConfig, { REQUIRED_OPERATOR_FIELDS } from './site.config.mjs';
-import { LANGS, LANG_NAMES, NEWS_RESULTS, PAGES, context, esc, newsResultPath, pagePath, postPath, translator } from './src/layout.mjs';
-import { RENDER, contactResult, contactResultPath, newsPost, newsResult } from './src/pages.mjs';
-import { loadPosts } from './src/news.mjs';
+import { LANGS, LANG_NAMES, NEWS_RESULTS, PAGES, context, esc, newsResultPath, pagePath, translator } from './src/layout.mjs';
+import { RENDER, contactResult, contactResultPath, newsResult } from './src/pages.mjs';
 import { logoMark } from './src/icons.mjs';
 import de from './src/i18n/de.mjs';
 import fr from './src/i18n/fr.mjs';
@@ -66,11 +64,9 @@ function multilingual({ title, blocks, assets, noindex }) {
 export function build({
   outDir = join(ROOT, 'dist'),
   strict = false,
-  drafts = false,
   config = baseConfig,
   log = console,
   mediaDir = join(ROOT, 'media'),
-  newsDir = join(ROOT, 'content', 'news'),
 } = {}) {
   const missing = missingOperatorFields(config);
   if (missing.length) {
@@ -84,7 +80,7 @@ export function build({
   cpSync(join(ROOT, 'static'), outDir, { recursive: true });
   // Assets are cached for a year (infra/site/Caddyfile): the ?v= content hash makes a change visible.
   const versioned = (name) => `/assets/${name}?v=${createHash('sha256').update(readFileSync(join(ROOT, 'static', 'assets', name))).digest('hex').slice(0, 10)}`;
-  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), contact: versioned('contact.js'), media: {}, mediaSize: {} };
+  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), contact: versioned('contact.js'), news: versioned('news.js'), media: {}, mediaSize: {} };
   // Demo videos and posters (apps/site/media, not in git: recorded by videos/record.mjs, deployed
   // from the site-media release). Pages show only what is there.
   if (existsSync(mediaDir)) {
@@ -96,19 +92,6 @@ export function build({
       if (name.endsWith('.jpg')) assets.mediaSize[name] = jpegSize(data);
     }
   }
-
-  // News posts and their pictures (/news-media/<post>/<file>, versioned like the media).
-  const posts = loadPosts(newsDir, { drafts });
-  const newsMedia = {};
-  for (const post of posts) {
-    for (const name of post.images) {
-      const data = readFileSync(join(post.dir, name));
-      mkdirSync(join(outDir, 'news-media', post.id), { recursive: true });
-      writeFileSync(join(outDir, 'news-media', post.id, name), data);
-      newsMedia[`${post.id}/${name}`] = `/news-media/${post.id}/${name}?v=${createHash('sha256').update(data).digest('hex').slice(0, 10)}`;
-    }
-  }
-  assets.news = { posts, image: (post, name) => newsMedia[`${post.id}/${name}`] };
 
   const files = [];
   const write = (path, content) => {
@@ -122,11 +105,6 @@ export function build({
     for (const page of PAGES) {
       const ctx = context(DICTS, lang, page, config, assets);
       write(join(pagePath(DICTS, lang, page), 'index.html'), RENDER[page](ctx));
-    }
-    for (const post of posts) {
-      const ctx = context(DICTS, lang, 'news', config, assets);
-      ctx.pathIn = (l) => postPath(DICTS, l, post.id);
-      write(join(postPath(DICTS, lang, post.id), 'index.html'), newsPost(ctx, post));
     }
     // Where the contact form's server sends the visitor back to (not in the sitemap).
     for (const kind of ['thanks', 'failed']) {
@@ -159,10 +137,7 @@ export function build({
       const alts = LANGS.map((l) => `<xhtml:link rel="alternate" hreflang="${l}" href="${origin}${pathOf(l)}"/>`).join('');
       return `<url><loc>${origin}${pathOf(lang)}</loc>${alts}</url>`;
     });
-  const urls = [
-    ...PAGES.flatMap((page) => entry((l) => pagePath(DICTS, l, page))),
-    ...posts.filter((p) => !p.draft).flatMap((post) => entry((l) => postPath(DICTS, l, post.id))),
-  ];
+  const urls = PAGES.flatMap((page) => entry((l) => pagePath(DICTS, l, page)));
   write('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls.join('\n')}\n</urlset>\n`);
   write('robots.txt', `User-agent: *\nAllow: /\nSitemap: ${esc(origin)}/sitemap.xml\n`);
   return { outDir, files, missing };
@@ -170,7 +145,7 @@ export function build({
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    const { outDir, files } = build({ strict: process.argv.includes('--strict'), drafts: process.argv.includes('--drafts') });
+    const { outDir, files } = build({ strict: process.argv.includes('--strict') });
     console.log(`site: ${files.length} files in ${outDir}`);
   } catch (err) {
     console.error(err instanceof Error ? err.message : err);

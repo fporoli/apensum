@@ -43,11 +43,6 @@ export function pagePath(dicts, lang, page) {
   return page === 'home' ? `/${lang}/` : `/${lang}/${dicts[lang][`slug.${page}`]}/`;
 }
 
-/** A news post: /de/news/2026-11-19-was-neu-ist/ (the date keeps it apart from the result pages). */
-export function postPath(dicts, lang, id) {
-  return `${pagePath(dicts, lang, 'news')}${id}/`;
-}
-
 /** Everything a page template needs. */
 export function context(dicts, lang, page, config, assets) {
   const t = translator(dicts[lang], lang);
@@ -60,7 +55,7 @@ export function context(dicts, lang, page, config, assets) {
     assets,
     locale,
     link: (p) => pagePath(dicts, lang, p),
-    /** This page in another language (the language menu, hreflang, canonical); a news post overrides it. */
+    /** This page in another language (the language menu, hreflang, canonical). */
     pathIn: (l) => pagePath(dicts, l, page),
     demo: esc(config.demoUrl),
     number: (n, opts) => new Intl.NumberFormat(locale, opts).format(n),
@@ -71,6 +66,8 @@ export function context(dicts, lang, page, config, assets) {
      * without a contact URL, and then no news forms are shown.
      */
     newsletterUrl: (action) => (config.contactUrl ? `${config.contactUrl.replace(/\/contact\/?$/, '')}/newsletter/${action}` : null),
+    /** The public news posts on the same API (public/news, loaded by assets/news.js); null without a contact URL. */
+    newsApiUrl: config.contactUrl ? `${config.contactUrl.replace(/\/contact\/?$/, '')}/news` : null,
     /** The address as plain text: one click selects it for copying. */
     email: `<span class="email">${esc(config.email)}</span>`,
     dicts,
@@ -185,7 +182,7 @@ function footer(ctx) {
 }
 
 /** A full HTML document. `alternates` maps language -> path of this page. */
-export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false }) {
+export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false, news = false }) {
   const { lang, page, config, assets, t } = ctx;
   const origin = `https://${config.domain}`;
   const alternates = page
@@ -213,6 +210,7 @@ export function layout(ctx, { title, description, body, noindex = false, reveal 
   <link rel="stylesheet" href="${assets.css}">
   ${reveal && config.operator.phone ? `<script src="${assets.reveal}" defer></script>` : ''}
   ${form ? `<script src="${assets.contact}" defer></script>` : ''}
+  ${news ? `<script src="${assets.news}" defer></script>` : ''}
 </head>
 <body>
   <a class="skip" href="#main">${t('nav.skip')}</a>

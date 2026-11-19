@@ -691,8 +691,10 @@ export default {
     "Sie arbeiten mit Apensum und sagen uns, wie es läuft.",
   ],
   'contact.topic.pilot': "Erste Kunden / Pilot",
-  'news.post.draft': "Entwurf – nicht veröffentlicht",
   'news.post.onlyGerman': "Diesen Beitrag gibt es erst auf Deutsch.",
-  'news.post.subscribe': "Neue Beiträge per E-Mail erhalten",
   'news.post.back': "← Alle News",
+  'news.posts.empty': "Noch keine Beiträge. Melden Sie sich an, dann erfahren Sie vom ersten per E-Mail.",
+  'news.posts.failed': "Die Beiträge konnten gerade nicht geladen werden. Bitte versuchen Sie es später nochmals.",
+  'news.posts.noscript': "Die Beiträge werden mit JavaScript geladen. Ohne JavaScript erhalten Sie sie per E-Mail, wenn Sie sich unten anmelden.",
+  'news.posts.read': "Weiterlesen",
 };

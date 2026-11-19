@@ -749,7 +749,7 @@ erDiagram
     DOCUMENTS { uuid id PK }
 ```
 
-## News (4 tables)
+## News (5 tables)
 
 The "news" module (080): posts an organization's admin or HR (`nav.news:edit`)
 publishes to everyone, or to the departments in `news_post_departments` (whoever's
@@ -761,6 +761,9 @@ opened a post and, for a post with `require_ack`, confirmed reading it. Pictures
 are documents linked by `news_post_documents` and shown as `![alt](doc:<id>)`.
 A post with `organization_id` NULL (082) is product news: written by a
 superdeveloper for the admins of every organization, never with departments.
+A product post with `is_public` (083) is also on the website (`public/news`)
+and can be sent to the newsletter's confirmed subscribers; `newsletter_deliveries`
+records who got it, so no one gets it twice.
 
 ```mermaid
 erDiagram
@@ -771,6 +774,7 @@ erDiagram
     NEWS_POSTS ||--o{ NEWS_POST_READS : "read by"
     USERS ||--o{ NEWS_POST_READS : "user_id"
     NEWS_POSTS ||--o{ NEWS_POST_DOCUMENTS : "pictures"
+    NEWS_POSTS ||--o{ NEWSLETTER_DELIVERIES : "sent to"
     DOCUMENTS ||--o{ NEWS_POST_DOCUMENTS : "document_id"
 
     NEWS_POSTS {
@@ -780,6 +784,12 @@ erDiagram
         jsonb texts "{ lang: { title, body } }, at least one language"
         boolean require_ack "readers confirm they read it"
         timestamptz published_at "nullable — NULL = draft"
+        boolean is_public "product news only: website and newsletter"
+    }
+    NEWSLETTER_DELIVERIES {
+        uuid post_id PK, FK
+        uuid subscriber_id PK, FK "newsletter_subscribers"
+        timestamptz sent_at
     }
     NEWS_POST_DEPARTMENTS {
         uuid post_id PK, FK

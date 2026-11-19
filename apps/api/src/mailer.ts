@@ -16,6 +16,10 @@ export interface MailOptions {
   from?: string;
   /** Where answers go, e.g. the colleague who forwarded something (the sender stays the app). */
   replyTo?: string;
+  /** An HTML part next to the text (news mails). */
+  html?: string;
+  /** Extra headers, e.g. List-Unsubscribe. */
+  headers?: Record<string, string>;
 }
 
 export interface SmtpConfig {
@@ -96,6 +100,8 @@ export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<
       to: options.to,
       subject: options.subject,
       text: options.text,
+      html: options.html,
+      headers: options.headers,
       replyTo: options.replyTo,
     });
     smtpStatus = 'ok';

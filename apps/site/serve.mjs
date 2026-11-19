@@ -21,16 +21,14 @@ export function preferredLang(header) {
 
 /** Builds in a child process: a re-import here would keep the cached templates and texts. */
 function rebuild() {
-  // With the draft news posts: the preview is where they are read before they go out.
-  const r = spawnSync(process.execPath, [join(ROOT, 'build.mjs'), '--drafts'], { stdio: 'inherit' });
+  const r = spawnSync(process.execPath, [join(ROOT, 'build.mjs')], { stdio: 'inherit' });
   if (r.status !== 0) console.error('site: build failed (the previous files are still served)');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   rebuild();
   let timer;
-  for (const dir of ['src', 'static', 'content']) {
-    if (!existsSync(join(ROOT, dir))) continue;
+  for (const dir of ['src', 'static']) {
     watch(join(ROOT, dir), { recursive: true }, () => {
       clearTimeout(timer);
       timer = setTimeout(rebuild, 150);

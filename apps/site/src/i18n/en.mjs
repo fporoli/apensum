@@ -692,8 +692,10 @@ export default {
     "You work with Apensum and tell us how it goes.",
   ],
   'contact.topic.pilot': "First customers / pilot",
-  'news.post.draft': "Draft – not published",
   'news.post.onlyGerman': "This post is only available in German so far.",
-  'news.post.subscribe': "Get new posts by e-mail",
   'news.post.back': "← All news",
+  'news.posts.empty': "No posts yet. Subscribe and you will get the first one by e-mail.",
+  'news.posts.failed': "The posts could not be loaded just now. Please try again later.",
+  'news.posts.noscript': "The posts are loaded with JavaScript. Without it, you get them by e-mail when you subscribe below.",
+  'news.posts.read': "Read more",
 };

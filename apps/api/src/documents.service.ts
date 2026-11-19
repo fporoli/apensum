@@ -117,7 +117,12 @@ export class DocumentsService {
   }
 
   /** Sends a document as a download (the caller has checked access); 404 when the file is gone. */
-  async send(res: Response, doc: { file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }): Promise<void> {
+  /** Sends the file; `publicCache` (public news pictures) lets browsers and proxies keep it and shows it inline. */
+  async send(
+    res: Response,
+    doc: { file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null },
+    options: { publicCache?: string } = {},
+  ): Promise<void> {
     let content: Buffer;
     try {
       content = await this.read(doc);
@@ -132,9 +137,9 @@ export class DocumentsService {
     }
     res.set({
       'Content-Type': doc.mime_type,
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(doc.file_name)}`,
+      'Content-Disposition': `${options.publicCache ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(doc.file_name)}`,
       'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': 'private, no-store',
+      'Cache-Control': options.publicCache ?? 'private, no-store',
     });
     res.send(content);
   }

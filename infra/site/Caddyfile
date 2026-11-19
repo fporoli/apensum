@@ -17,8 +17,9 @@
 		# Own scripts only (assets/reveal.js); inline style attributes are used for the mock-up's bar heights.
 		# form-action: the contact form posts to the Apensum API (SITE_FORM_ACTION, its origin, set by
 		# remote.sh in .env, plus 'self': browsers also check the API's redirect back to the thank-you page). connect-src: contact.js sends it there with fetch
-		# (SITE_CONNECT_SRC: 'self' plus that origin).
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' {$SITE_FORM_ACTION}; connect-src {$SITE_CONNECT_SRC}"
+		# (SITE_CONNECT_SRC: 'self' plus that origin); news.js loads the news from there too, and their pictures
+		# (SITE_IMG_SRC: that origin, empty without an API).
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: {$SITE_IMG_SRC}; frame-ancestors 'none'; base-uri 'self'; form-action 'self' {$SITE_FORM_ACTION}; connect-src {$SITE_CONNECT_SRC}"
 		Strict-Transport-Security "max-age=31536000"
 		-Server
 	}

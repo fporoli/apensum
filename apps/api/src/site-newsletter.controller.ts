@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { DbService } from './db.service';
 import { Public } from './jwt.guard';
+import { publicApiRoot, verifyNewsUnsubscribeToken } from './news-newsletter';
 import { sendMail, type MailOptions } from './mailer';
 import { isValidEmail } from './auth.controller';
 import { allowedOrigins, clientIp, safeBackPath } from './site-contact.controller';
@@ -44,6 +45,8 @@ export interface Subscriber {
 export interface SubscriberStore {
   byEmail(email: string): Promise<Subscriber | null>;
   byToken(tokenHash: string): Promise<Subscriber | null>;
+  /** For the unsubscribe link in news mails, which names the subscriber (news-newsletter.ts). */
+  byId(id: string): Promise<Subscriber | null>;
   /** Creates or updates the row for `email` as pending with a new link (re-subscribing after unsubscribing too). */
   requestSubscription(email: string, lang: NewsletterLang, siteOrigin: string, tokenHash: string, now: Date): Promise<void>;
   /** A new link for the row (an unsubscribe link mailed on request); records the mail. */
@@ -183,9 +186,7 @@ export function newsletterPage(lang: NewsletterLang, page: { title: string; text
 
 /** The API's own address as the visitor reached it (behind the edge Caddy, from X-Forwarded-*). */
 function apiBase(req: Request): string {
-  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost:8001').split(',')[0].trim();
-  return `${proto}://${host}/api/v1/public/newsletter`;
+  return `${publicApiRoot(req)}/public/newsletter`;
 }
 
 export interface NewsletterForm {
@@ -301,7 +302,9 @@ export class SiteNewsletterController {
   /** The subscriber a link's token belongs to; a confirmation link only while pending and not expired. */
   private async valid(token: unknown, purpose: 'confirm' | 'unsubscribe'): Promise<Subscriber | null> {
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null;
-    const sub = await this.store.byToken(hashToken(token)).catch(() => null);
+    // A news mail's link: signed, names the subscriber, never expires (it only unsubscribes).
+    const signedId = purpose === 'unsubscribe' ? verifyNewsUnsubscribeToken(token) : null;
+    const sub = await (signedId ? this.store.byId(signedId) : this.store.byToken(hashToken(token))).catch(() => null);
     if (!sub) return null;
     if (purpose === 'confirm' && sub.status === 'pending' && this.now() - new Date(sub.requested_at).getTime() > NEWSLETTER_CONFIRM_DAYS * DAY) return null;
     if (purpose === 'confirm' && sub.status === 'unsubscribed') return null;
@@ -372,6 +375,7 @@ export function dbSubscriberStore(dbService: DbService): SubscriberStore {
   return {
     byEmail: async (email) => row((await db().execute(sql`SELECT ${cols} FROM newsletter_subscribers WHERE email = ${email}`)).rows),
     byToken: async (hash) => row((await db().execute(sql`SELECT ${cols} FROM newsletter_subscribers WHERE token_hash = ${hash}`)).rows),
+    byId: async (id) => row((await db().execute(sql`SELECT ${cols} FROM newsletter_subscribers WHERE id = ${id}::uuid`)).rows),
     requestSubscription: async (email, lang, origin, hash, now) => {
       await db().execute(sql`
         INSERT INTO newsletter_subscribers (email, lang, status, token_hash, site_origin, requested_at, last_mail_at)

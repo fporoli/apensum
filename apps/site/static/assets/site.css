@@ -533,13 +533,12 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 .references-steps li { display: flex; gap: 14px; align-items: center; }
 .references-steps p { margin: 0; }
 
-/* News posts: the list on the News page and a post */
+/* News posts (assets/news.js): the list on the News page and one post */
 .post-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 16px; }
 .post-list .card p { margin: 0; }
 .post-list h2 { margin: 6px 0; }
 .post-list h2 a { color: var(--ink); text-decoration: none; }
 .post-list h2 a:hover { color: var(--brand); }
-.draft-badge { display: inline-block; padding: 1px 8px; border-radius: 6px; background: #fff4d6; color: #7a5200; font-size: 0.85rem; font-weight: 600; }
 .post-body h2 { margin-top: 1.6em; }
 .post-body ul, .post-body ol { padding-left: 1.3em; max-width: 70ch; }
 .post-body li { margin: 4px 0; }
@@ -547,5 +546,5 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 .post-body img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); }
 .post-body blockquote { margin: 16px 0; padding: 4px 16px; border-left: 3px solid var(--brand); color: var(--muted); }
 .post-body code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg-alt); padding: 1px 5px; border-radius: 5px; }
-.post-subscribe { margin: 40px 0 20px; }
+.post-title { font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 4px 0 12px; }
 .card .checklist + .small { margin-top: 14px; }

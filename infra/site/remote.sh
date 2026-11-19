@@ -50,10 +50,13 @@ deploy() {
     case "$form_action" in https://*) ;; *) echo "Invalid SITE_CONTACT_URL: $SITE_CONTACT_URL" >&2; exit 1 ;; esac
     case "$form_action" in */*/*/*) echo "Invalid SITE_CONTACT_URL: $SITE_CONTACT_URL" >&2; exit 1 ;; esac
   fi
-  # contact.js sends the form with fetch: the same origin is allowed for connections.
+  # contact.js sends the form and news.js loads the news with fetch: the same origin is allowed for connections.
   local connect_src="'self'"
   [ "$form_action" = "'none'" ] || connect_src="'self' $form_action"
-  printf 'SITE_FORM_ACTION="%s"\nSITE_CONNECT_SRC="%s"\nSITE_NAME="%s"\n' "$form_action" "$connect_src" "$SITE_NAME" > "$DIR/.env"
+  # news.js shows the news posts' pictures, served by the same API.
+  local img_src=""
+  [ "$form_action" = "'none'" ] || img_src="$form_action"
+  printf 'SITE_FORM_ACTION="%s"\nSITE_CONNECT_SRC="%s"\nSITE_IMG_SRC="%s"\nSITE_NAME="%s"\n' "$form_action" "$connect_src" "$img_src" "$SITE_NAME" > "$DIR/.env"
 
   # New release next to the old ones, then switch the `current` link in one step: requests are
   # served from either the old or the new tree, never from a half-copied one.

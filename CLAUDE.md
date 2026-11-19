@@ -332,8 +332,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `packages/shared/src/markdown.ts` (escapes everything; also used by the website's news posts). Product news (082,
   `organization_id` NULL): a superdeveloper writes it for the admins (`nav.admin`) of every organization with the module
   on; it shows in each of their organizations' News, one notification per person (`news.product`), pictures stored in
-  the organization it was written in; only superdevelopers change it (`mayEditNews`). Planned: public posts for the
-  website and newsletter.
+  the organization it was written in; only superdevelopers change it (`mayEditNews`). A product post marked
+  public (083, `is_public`) is also on the website and can be sent to the newsletter's confirmed subscribers
+  (`POST news/:id/newsletter`, superdeveloper, test mail to oneself first; `news-newsletter.ts`: HTML + text in the
+  subscriber's language, pictures from `public/news/:id/images/...`, a signed never-expiring unsubscribe link and
+  List-Unsubscribe one-click; `newsletter_deliveries` makes a send resumable and never mails anyone twice).
 - Documents (`nav.documents`, `documents.controller.ts`, `Documents.tsx`, Personal navbar group): the
   caller's own documents only, as one list built per call: timesheet PDFs, monthly project reports, absence
   evidence, attachments of requests they sent, and plugin documents (`ApiPlugin.documents`,
@@ -475,9 +478,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `migrate` service that runs before the API and Keycloak start.
 - Keycloak realm config: `infra/keycloak/realm-worktime.json`.
 - Website (`apps/site`, apensum.ch): static marketing pages in de/fr/it/en, built by `build.mjs`
-  with no dependencies (no framework, nothing loaded from third parties; the only script is
-  `assets/reveal.js`, which shows the phone number on click so it is not in the HTML, and `assets/contact.js` on the
-  contact page: topic from `?topic=`, time trap). No `mailto:` links (they do nothing without a mail program): buttons
+  with no dependencies (no framework, nothing loaded from third parties; the only scripts are
+  `assets/reveal.js`, which shows the phone number on click so it is not in the HTML, `assets/contact.js` on the
+  contact page: topic from `?topic=`, time trap, and `assets/news.js` on the News page: the posts from the API). No `mailto:` links (they do nothing without a mail program): buttons
   open the contact form with a topic (`ctx.contactLink`), the address is plain text (`ctx.email`). Texts are in `src/i18n/<lang>.mjs`, all four with the same keys, list lengths and
   `{{placeholders}}` (`test/site.test.mjs`); German is Swiss (no ß). The holiday card imports
   `packages/shared/src/worktime.ts`. The Working Hours Act page (`law`) cites SECO (`lawSourceUrl`); its cards must
@@ -500,9 +503,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   API (`public/newsletter/subscribe` / `unsubscribe-request`, `site-newsletter.controller.ts`, table
   `newsletter_subscribers` 079 with the consent timestamps). Double opt-in: the mail's link opens a small API page with a
   button (GET shows, POST acts, so mail scanners change nothing); unsubscribing by form mails a link, and no answer tells
-  whether an address is subscribed; one mail per address per 10 minutes, per-IP and daily limits. Sending news is not built.
-  News posts (`apps/site/content/news/<YYYY-MM-DD>-<slug>/<lang>.md`, pictures in the same folder, `src/news.mjs`: a small
-  Markdown subset, front matter `title`/`summary`/`draft`): de.md is required, other languages fall back to it (marked
-  `lang="de"`); `draft: true` posts are built only with `--drafts` (the `site:dev` preview), never deployed. References page
+  whether an address is subscribed; one mail per address per 10 minutes, per-IP and daily limits. The posts are public
+  product news written in the app (News module below): `news.js` loads them from the API's public `public/news`
+  (`public-news.controller.ts`, HTML rendered there), `?post=<id>` shows one; the site's CSP allows the API origin for
+  connections and pictures (`SITE_IMG_SRC`, `remote.sh`). Without `SITE_CONTACT_URL` there are no posts. References page
   (`references`): no references yet, first customers' operation free, only customizations billed; contact topic `pilot`
   (also in `site-contact.controller.ts`).

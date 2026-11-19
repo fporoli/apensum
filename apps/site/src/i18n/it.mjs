@@ -691,8 +691,10 @@ export default {
     "Lavora con Apensum e ci dice come va.",
   ],
   'contact.topic.pilot': "Primi clienti / progetto pilota",
-  'news.post.draft': "Bozza – non pubblicata",
   'news.post.onlyGerman': "Per ora questo articolo esiste solo in tedesco.",
-  'news.post.subscribe': "Ricevere i nuovi articoli per e-mail",
   'news.post.back': "← Tutte le novità",
+  'news.posts.empty': "Ancora nessun articolo. Si iscriva per ricevere il primo per e-mail.",
+  'news.posts.failed': "Non è stato possibile caricare gli articoli. Riprovi più tardi.",
+  'news.posts.noscript': "Gli articoli vengono caricati con JavaScript. Senza JavaScript li riceve per e-mail iscrivendosi qui sotto.",
+  'news.posts.read': "Continua a leggere",
 };

@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { sql, type SQL } from 'drizzle-orm';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 import { callerUserId, can, isOrgMember, isSuperDeveloper, type Executor } from './access';
@@ -10,6 +10,8 @@ import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { sendMail } from './mailer';
 import { appBaseUrl } from './orgs.controller';
+import { newsletterIssue, newsUnsubscribeToken, publicApiRoot, sitePostUrl } from './news-newsletter';
+import { allowedOrigins } from './site-contact.controller';
 import { markdownImages, markdownPlain } from '@worktime3/shared/markdown';
 import { MAX_NEWS_IMAGES, newsImageId, newsTextFor, validateNewsTexts, type NewsTexts } from '@worktime3/shared/news';
 
@@ -23,6 +25,9 @@ import { MAX_NEWS_IMAGES, newsImageId, newsTextFor, validateNewsTexts, type News
  * Product news (organization_id NULL, 082): a superdeveloper writes it once for the admins
  * (`nav.admin`) of every organization; it shows in each of their organizations' News page.
  */
+
+/** Pause between two newsletter mails. */
+export const NEWSLETTER_PAUSE_MS = 250;
 
 /** Pictures a post may show: no SVG (it could carry script when opened on its own). */
 export const NEWS_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -82,6 +87,8 @@ interface PostRow {
   texts: NewsTexts;
   require_ack: boolean;
   published_at: string | null;
+  /** Product news also on the website and for its newsletter (083). */
+  is_public: boolean;
 }
 
 export interface NewsCaller {
@@ -146,7 +153,7 @@ export class NewsController {
   /** The post, when it is this organization's or product news. */
   private async load(db: Executor, orgId: string, id: string): Promise<PostRow | null> {
     const rows = await db.execute(
-      sql`SELECT id, organization_id, texts, require_ack, ${iso('published_at')} AS published_at FROM news_posts
+      sql`SELECT id, organization_id, texts, require_ack, is_public, ${iso('published_at')} AS published_at FROM news_posts
           WHERE id = ${id} AND (organization_id = ${orgId} OR organization_id IS NULL)`,
     );
     return (rows.rows[0] as unknown as PostRow) ?? null;
@@ -217,13 +224,15 @@ export class NewsController {
     const departmentIds = cleanDepartmentIds(body?.departmentIds);
     if (!departmentIds) return { ok: false as const, error: 'invalid-departments' };
     if (product && departmentIds.length > 0) return { ok: false as const, error: 'news-product-departments' };
+    const isPublic = body?.public === true;
+    if (isPublic && !product) return { ok: false as const, error: 'news-public-product-only' };
     if (departmentIds.length > 0) {
       const found = await db.execute(
         sql`SELECT count(*)::int AS n FROM departments WHERE organization_id = ${orgId} AND id IN (${sql.join(departmentIds.map((d) => sql`${d}`), sql`, `)})`,
       );
       if ((found.rows[0]?.n as number) !== departmentIds.length) return { ok: false as const, error: 'invalid-departments' };
     }
-    return { ok: true as const, texts: texts.texts, departmentIds, requireAck: body?.requireAck === true };
+    return { ok: true as const, texts: texts.texts, departmentIds, requireAck: body?.requireAck === true, isPublic };
   }
 
   /** A text may only show pictures uploaded to this post. */
@@ -256,7 +265,7 @@ export class NewsController {
     const caller = await this.caller(db, orgId, req);
     if (!caller) return { ok: true, editor: false, productEditor: false, posts: [] };
     const rows = await db.execute(
-      sql`SELECT p.id, p.texts, p.require_ack, ${iso('p.published_at')} AS published_at, (p.organization_id IS NULL) AS product,
+      sql`SELECT p.id, p.texts, p.require_ack, ${iso('p.published_at')} AS published_at, (p.organization_id IS NULL) AS product, p.is_public,
                  p.author_user_id, coalesce(nullif(u.display_name, ''), u.email) AS author_name,
                  coalesce((SELECT array_agg(pd.department_id) FROM news_post_departments pd WHERE pd.post_id = p.id), '{}') AS department_ids,
                  ${iso('r.read_at')} AS read_at, ${iso('r.acknowledged_at')} AS acknowledged_at
@@ -300,8 +309,8 @@ export class NewsController {
     if (Object.values(input.texts).some((t) => markdownImages(t?.body ?? '').length > 0)) return { ok: false, error: 'news-image-unknown' };
     const [post] = (
       await db.execute(
-        sql`INSERT INTO news_posts (organization_id, author_user_id, texts, require_ack)
-            VALUES (${product ? null : orgId}, ${caller.id}, ${JSON.stringify(input.texts)}::jsonb, ${input.requireAck}) RETURNING id`,
+        sql`INSERT INTO news_posts (organization_id, author_user_id, texts, require_ack, is_public)
+            VALUES (${product ? null : orgId}, ${caller.id}, ${JSON.stringify(input.texts)}::jsonb, ${input.requireAck}, ${input.isPublic}) RETURNING id`,
       )
     ).rows as { id: string }[];
     await this.setDepartments(db, post.id, input.departmentIds);
@@ -320,7 +329,7 @@ export class NewsController {
     const input = await this.parse(db, orgId, body, post.organization_id === null);
     if (!input.ok) return input;
     if (!(await this.imagesBelong(db, id, input.texts))) return { ok: false, error: 'news-image-unknown' };
-    await db.execute(sql`UPDATE news_posts SET texts = ${JSON.stringify(input.texts)}::jsonb, require_ack = ${input.requireAck} WHERE id = ${id}`);
+    await db.execute(sql`UPDATE news_posts SET texts = ${JSON.stringify(input.texts)}::jsonb, require_ack = ${input.requireAck}, is_public = ${input.isPublic} WHERE id = ${id}`);
     await this.setDepartments(db, id, input.departmentIds);
     void this.versions.record('news_posts', id, 'update', caller!.id, { ...input }).catch(() => {});
     return { ok: true };
@@ -449,6 +458,102 @@ export class NewsController {
         acknowledgedAt: byUser.get(a.id)?.acknowledged_at ?? null,
       })),
     };
+  }
+
+  /** Public product news and the newsletter: who could get it and how many already did. Superdevelopers only. */
+  @Get(':id/newsletter')
+  async newsletterStatus(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const caller = await this.caller(db, orgId, req);
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error };
+    if (!post.is_public) return { ok: false, error: 'news-not-public' };
+    const [row] = (
+      await db.execute(
+        sql`SELECT (SELECT count(*)::int FROM newsletter_subscribers WHERE status = 'confirmed') AS subscribers,
+                   (SELECT count(*)::int FROM newsletter_deliveries WHERE post_id = ${id}) AS sent`,
+      )
+    ).rows as { subscribers: number; sent: number }[];
+    return { ok: true, subscribers: row.subscribers, sent: row.sent, running: this.sending.has(id) };
+  }
+
+  /**
+   * Sends a published public post to the newsletter's confirmed subscribers who did not get it yet
+   * (newsletter_deliveries), in the background; `test: true` sends it only to the caller.
+   */
+  @Post(':id/newsletter')
+  async newsletter(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: { test?: unknown }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const caller = await this.caller(db, orgId, req);
+    const post = await this.editable(db, orgId, caller, id);
+    if ('error' in post) return { ok: false, error: post.error };
+    if (!post.is_public) return { ok: false, error: 'news-not-public' };
+    if (!post.published_at) return { ok: false, error: 'news-not-published' };
+    const apiRoot = publicApiRoot(req as unknown as Request);
+    const siteOrigin = allowedOrigins()[0] ?? 'https://apensum.ch';
+
+    if (body?.test === true) {
+      const me = (await db.execute(sql`SELECT email, coalesce(locale, 'de') AS locale FROM users WHERE id = ${caller!.id}`)).rows[0] as { email: string; locale: string };
+      const lang = me.locale.slice(0, 2);
+      // The test mail's unsubscribe link leads to the website's news page: the caller is no subscriber.
+      const issue = newsletterIssue(post, { lang }, { apiRoot, siteUrl: sitePostUrl(siteOrigin, lang, id), unsubscribeUrl: sitePostUrl(siteOrigin, lang, id).replace(/\?post=.*$/, '') });
+      if (!issue) return { ok: false, error: 'news-text-required' };
+      try {
+        await sendMail({ to: me.email, subject: `[Test] ${issue.subject}`, text: issue.text, html: issue.html }, 15_000);
+      } catch {
+        return { ok: false, error: 'mail-failed' };
+      }
+      return { ok: true, test: true, to: me.email };
+    }
+
+    if (this.sending.has(id)) return { ok: false, error: 'news-newsletter-running' };
+    const subscribers = (
+      await db.execute(
+        sql`SELECT s.id, s.email::text AS email, s.lang, s.site_origin FROM newsletter_subscribers s
+            WHERE s.status = 'confirmed' AND NOT EXISTS (SELECT 1 FROM newsletter_deliveries d WHERE d.post_id = ${id} AND d.subscriber_id = s.id)
+            ORDER BY s.confirmed_at`,
+      )
+    ).rows as { id: string; email: string; lang: string; site_origin: string }[];
+    this.sending.add(id);
+    void this.deliver(db, post, subscribers, apiRoot)
+      .catch(() => {})
+      .finally(() => this.sending.delete(id));
+    void this.versions.record('news_posts', id, 'update_delta', caller!.id, { newsletter: subscribers.length }).catch(() => {});
+    return { ok: true, queued: subscribers.length };
+  }
+
+  /** Posts being sent to the newsletter right now (one send per post at a time). */
+  private readonly sending = new Set<string>();
+
+  /** One mail per subscriber, each claimed first in newsletter_deliveries; a failed one is released for the next send. */
+  private async deliver(db: Executor, post: PostRow, subscribers: { id: string; email: string; lang: string; site_origin: string }[], apiRoot: string) {
+    let failed = 0;
+    for (const s of subscribers) {
+      const claimed = await db.execute(
+        sql`INSERT INTO newsletter_deliveries (post_id, subscriber_id) VALUES (${post.id}, ${s.id}) ON CONFLICT DO NOTHING RETURNING subscriber_id`,
+      );
+      if (claimed.rows.length === 0) continue;
+      const issue = newsletterIssue(post, s, {
+        apiRoot,
+        siteUrl: sitePostUrl(s.site_origin, s.lang, post.id),
+        unsubscribeUrl: `${apiRoot}/public/newsletter/unsubscribe?t=${newsUnsubscribeToken(s.id)}`,
+      });
+      try {
+        if (!issue) throw new Error('no text');
+        await sendMail({ to: s.email, subject: issue.subject, text: issue.text, html: issue.html, headers: issue.headers }, 15_000);
+      } catch {
+        failed += 1;
+        await db.execute(sql`DELETE FROM newsletter_deliveries WHERE post_id = ${post.id} AND subscriber_id = ${s.id}`);
+      }
+      // Gently: an ordinary SMTP account must not take it for a flood.
+      await new Promise((r) => setTimeout(r, NEWSLETTER_PAUSE_MS));
+    }
+    if (failed > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(`newsletter ${post.id}: ${failed} of ${subscribers.length} mails failed; sending again retries them`);
+    }
   }
 
   /**

@@ -1,7 +1,6 @@
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
 import { githubMark, icon } from './icons.mjs';
-import { esc, layout, newsletterForm, pagePath, postPath } from './layout.mjs';
-import { renderMarkdown } from './news.mjs';
+import { esc, layout, newsletterForm, pagePath } from './layout.mjs';
 
 /** The canton each language's holiday example shows. */
 const EXAMPLE_CANTON = { de: 'ZH', fr: 'VD', it: 'TI', en: 'BE' };
@@ -1114,70 +1113,19 @@ export function references(ctx) {
   return layout(ctx, { title: t('references.meta.title'), description: t('references.meta.description'), body });
 }
 
-/** A post's date in the page language: 19. November 2026. */
-const postDate = (ctx, date) => new Intl.DateTimeFormat(ctx.locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
-
-/** The post's text in the page language, else the German one (`lang` says which it is). */
-const postIn = (post, lang) => (post.langs[lang] ? { lang, ...post.langs[lang] } : { lang: 'de', ...post.langs.de });
-
-/** Post Markdown to HTML for the site: pictures from /news-media, links to other sites open with noopener. */
-function postHtml(ctx, post, text) {
-  return renderMarkdown(text.body, {
-    image: (src, alt) => {
-      const url = ctx.assets.news.image(post, src.replace(/&amp;/g, '&'));
-      return url ? `<img src="${url}" alt="${alt}" loading="lazy" decoding="async">` : alt;
-    },
-    link: (href, label) => {
-      if (!/^(https?:\/\/|\/|#)/.test(href.replace(/&amp;/g, '&'))) return label;
-      return `<a href="${href}"${/^https?:/.test(href) ? ' rel="noopener"' : ''}>${label}</a>`;
-    },
-  });
-}
-
-export function newsPost(ctx, post) {
-  const { t, lang } = ctx;
-  const text = postIn(post, lang);
-  const other = text.lang !== lang ? ` lang="${text.lang}"` : '';
-  const body = `
-<section class="page-head">
-  <div class="wrap narrow">
-    <p class="eyebrow"><a href="${ctx.link('news')}">${t('nav.news')}</a> · <time datetime="${post.date}">${postDate(ctx, post.date)}</time></p>
-    ${post.draft ? `<p class="draft-badge">${t('news.post.draft')}</p>` : ''}
-    <h1${other}>${esc(text.title)}</h1>
-    ${text.summary ? `<p class="lead"${other}>${esc(text.summary)}</p>` : ''}
-    ${other ? `<p class="muted small">${t('news.post.onlyGerman')}</p>` : ''}
-  </div>
-</section>
-<section class="section tight">
-  <div class="wrap narrow">
-    <article class="prose post-body"${other}>
-      ${postHtml(ctx, post, text)}
-    </article>
-    <div class="card post-subscribe">
-      <h2 class="h3">${t('news.post.subscribe')}</h2>
-      ${newsletterForm(ctx, 'subscribe') || `<p>${t('news.noForm', { email: ctx.config.email })}</p>`}
-    </div>
-    <p><a href="${ctx.link('news')}">${t('news.post.back')}</a></p>
-  </div>
-</section>`;
-  return layout(ctx, { title: `${esc(text.title)} – Apensum`, description: esc(text.summary || text.title), body, noindex: post.draft });
-}
-
 export function news(ctx) {
-  const { t, lang } = ctx;
-  const posts = ctx.assets.news?.posts ?? [];
-  const list = posts.length
-    ? `<ul class="post-list">
-      ${posts
-        .map((post) => {
-          const text = postIn(post, lang);
-          const other = text.lang !== lang ? ` lang="${text.lang}"` : '';
-          return `<li class="card"><p class="muted small"><time datetime="${post.date}">${postDate(ctx, post.date)}</time>${post.draft ? ` · <span class="draft-badge">${t('news.post.draft')}</span>` : ''}</p>
-        <h2 class="h3"${other}><a href="${postPath(ctx.dicts, lang, post.id)}">${esc(text.title)}</a></h2>
-        ${text.summary ? `<p${other}>${esc(text.summary)}</p>` : ''}</li>`;
-        })
-        .join('\n      ')}
-    </ul>`
+  const { t, lang, locale } = ctx;
+  // The posts come from the API when the page opens (assets/news.js): written in the app as public
+  // product news, so a new one is here without a deploy. `?post=<id>` shows one post.
+  const list = ctx.newsApiUrl
+    ? `<section class="section tight">
+  <div class="wrap narrow">
+    <div id="news-posts" class="news-posts" data-api="${esc(ctx.newsApiUrl)}" data-lang="${lang}" data-locale="${locale}"
+      data-back="${t('news.post.back')}" data-empty="${t('news.posts.empty')}" data-failed="${t('news.posts.failed')}"
+      data-only-german="${t('news.post.onlyGerman')}" data-read="${t('news.posts.read')}" aria-live="polite"></div>
+    <noscript><p class="muted">${t('news.posts.noscript')}</p></noscript>
+  </div>
+</section>`
     : '';
   const forms = ctx.newsletterUrl('subscribe')
     ? `<div class="grid grid-2">
@@ -1201,18 +1149,14 @@ export function news(ctx) {
     <p class="lead">${t('news.lead')}</p>
   </div>
 </section>
-${list ? `<section class="section tight">
-  <div class="wrap narrow">
-    ${list}
-  </div>
-</section>` : ''}
+${list}
 <section class="section tight" id="subscribe">
   <div class="wrap">
     ${forms}
     <p class="muted news-privacy">${t('news.privacy')} <a href="${ctx.link('privacy')}#newsletter">${t('nav.privacy')}</a></p>
   </div>
 </section>`;
-  return layout(ctx, { title: t('news.meta.title'), description: t('news.meta.description'), body });
+  return layout(ctx, { title: t('news.meta.title'), description: t('news.meta.description'), body, news: !!ctx.newsApiUrl });
 }
 
 /** Where the news forms send the visitor back to: check your inbox, unsubscribe link sent, or an error. */

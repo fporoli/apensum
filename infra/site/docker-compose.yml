@@ -13,6 +13,8 @@ services:
       # Origin the contact form may post to (CSP form-action), written to .env by remote.sh.
       SITE_FORM_ACTION: ${SITE_FORM_ACTION:?set by infra/site/remote.sh}
       SITE_CONNECT_SRC: ${SITE_CONNECT_SRC:?set by infra/site/remote.sh}
+      # The news pictures' origin (CSP img-src), empty without an API.
+      SITE_IMG_SRC: ${SITE_IMG_SRC:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./www:/srv:ro
