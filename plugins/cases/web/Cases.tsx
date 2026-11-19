@@ -27,6 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useI18n } from '@worktime3/web/plugin';
+import { CaseKeyControl } from './CaseKeyControl';
 import { CaseInterviewAudioInput } from './CaseInterviewAudioInput';
 import { CaseInterviewEditor, caseErrorText, interviewError, interviewResponse, type InterviewAiProviders } from './CaseInterviewEditor';
 import { PageHeader, EmptyState } from '@worktime3/web/plugin';
@@ -183,15 +184,18 @@ export default function Cases({
             title={t('cases.title')}
             subtitle={t('cases.subtitle')}
             end={
-              canEdit && (
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon fontSize="small" />}
-                  onClick={() => setCreateCaseOpen(true)}
-                >
-                  {t('cases.newCase')}
-                </Button>
-              )
+              <Stack direction="row" spacing={2} alignItems="center">
+                <CaseKeyControl orgId={orgId} authHeaders={authHeaders} />
+                {canEdit && (
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon fontSize="small" />}
+                    onClick={() => setCreateCaseOpen(true)}
+                  >
+                    {t('cases.newCase')}
+                  </Button>
+                )}
+              </Stack>
             }
           />
 
