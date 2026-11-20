@@ -13,7 +13,7 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 interface AiSettingsResponse {
   settings: CaseAiSettings;
-  available: { whisper: boolean; azureTranscription: boolean; azureOpenai: boolean; instance: 'gemini' | 'openai' | null };
+  available: { azureTranscription: boolean; azureOpenai: boolean; instance: 'gemini' | 'openai' | null };
   canConfigure: boolean;
 }
 
@@ -59,7 +59,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
     const name = value === 'instance' ? instanceLabel : t(`cases.ai.provider.${value}`);
     return usable ? name : `${name} (${t('cases.ai.settings.notAvailable')})`;
   };
-  const usableTranscription = (v: string) => (v === 'azure' ? available.azureTranscription : available.whisper);
+  const usableTranscription = (v: string) => (v === 'azure' ? available.azureTranscription : true);
   const usableText = (v: string) => (v === 'azure' ? available.azureOpenai : v === 'instance' ? available.instance !== null : true);
 
   const save = async () => {

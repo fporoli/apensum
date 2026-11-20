@@ -9,8 +9,6 @@
 #                           missing (seed.sql is additive; nothing is dropped or overwritten)
 #   remote.sh reset-seed    backs up and drops the public schema, migrates, loads the demo data
 #   remote.sh portainer     (re)deploys Portainer, one per server, in its own stack
-#   remote.sh whisper       (re)builds the Whisper sidecar, one per server, shared by every instance
-#                           (downloads WHISPER_MODEL_FILE once); whisper-remove takes it down
 #   remote.sh destroy       removes this instance entirely (a final dump is kept in $HOME)
 #
 # One GitHub Environment = one instance. Everything instance-specific derives from its name
@@ -22,7 +20,6 @@ set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the files just shipped
 EDGE=/opt/edge
-WHISPER_NET=apensum-whisper   # internal network of the shared Whisper sidecar (infra/whisper)
 
 slug="$(printf '%s' "${ENVIRONMENT:?required}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')"
 PREFIX="apensum-$slug"
@@ -67,7 +64,7 @@ write_app_env() {
     umask 077
     for name in POSTGRES_PASSWORD KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS \
       SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS \
-      GEMINI_API_KEY GEMINI_MODEL OPENAI_API_KEY OPENAI_MODEL CONTACT_SITE_ORIGINS CONTACT_EMAIL CASES_WHISPER_URL \
+      GEMINI_API_KEY GEMINI_MODEL OPENAI_API_KEY OPENAI_MODEL CONTACT_SITE_ORIGINS CONTACT_EMAIL \
       REALM_FILE CONTAINER_PREFIX PG_PORT WEB_HOST API_HOST AUTH_HOST; do
       printf "%s='%s'\n" "$name" "$(printenv "$name" || true)"
     done > "$ROOT/compose/.env"
@@ -75,14 +72,8 @@ write_app_env() {
   export API_IMAGE="ghcr.io/$REPO/api:$IMAGE_TAG" WEB_IMAGE="ghcr.io/$REPO/web:$IMAGE_TAG"
 }
 
-# Every instance's API joins it (external in docker-compose.vps.yml), with or without the sidecar.
-whisper_network() {
-  docker network inspect "$WHISPER_NET" >/dev/null 2>&1 || docker network create --internal "$WHISPER_NET"
-}
-
 edge_up() {
   docker network inspect edge >/dev/null 2>&1 || docker network create edge
-  whisper_network
   own_dir "$EDGE"; mkdir -p "$EDGE/sites"
   cp "$ROOT/infra/caddy/edge/docker-compose.yml" "$ROOT/infra/caddy/edge/Caddyfile" "$EDGE/"
   # This instance's site file is rendered from its three hostnames. Only files this run owns
@@ -119,39 +110,6 @@ portainer_up() {
   if [ -n "$owner" ] && [ "$owner" != portainer ]; then docker rm -f portainer >/dev/null; fi
   (cd "$dir" && docker compose up -d)
   if docker inspect edge-caddy >/dev/null 2>&1; then caddy_reload; fi
-}
-
-# Whisper: one per server, its own stack in $EDGE/whisper, shared by every instance. The model
-# (official whisper.cpp ggml file) is downloaded once into $EDGE/whisper/models and kept.
-whisper_up() {
-  local dir="$EDGE/whisper" model="${WHISPER_MODEL_FILE:-ggml-medium.bin}"
-  case "$model" in ggml-*.bin) ;; *) echo "WHISPER_MODEL_FILE must be a ggml-*.bin file name" >&2; exit 1 ;; esac
-  case "$model" in */*) echo "WHISPER_MODEL_FILE must be a file name, not a path" >&2; exit 1 ;; esac
-  own_dir "$EDGE"; mkdir -p "$dir/models"
-  whisper_network
-  cp "$SRC/infra/whisper/Dockerfile" "$SRC/infra/whisper/worker.mjs" "$SRC/infra/whisper/docker-compose.yml" "$dir/"
-  if [ ! -s "$dir/models/$model" ]; then
-    echo "Downloading $model ..."
-    curl -fL --retry 3 -o "$dir/models/$model.part" "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$model"
-    mv "$dir/models/$model.part" "$dir/models/$model"
-  fi
-  # The container runs as `node` (uid 1000) with the models mounted read-only.
-  chmod 755 "$dir/models"; chmod 644 "$dir/models/$model"
-  (cd "$dir" && WHISPER_MODEL_FILE="$model" docker compose up -d --build)
-  local i
-  for i in $(seq 1 30); do
-    [ "$(docker inspect -f '{{.State.Health.Status}}' apensum-whisper 2>/dev/null)" = healthy ] && break
-    sleep 5
-  done
-  docker inspect -f 'apensum-whisper: {{.State.Health.Status}}' apensum-whisper
-  echo "Instances use it once their GitHub Environment sets CASES_WHISPER_URL=http://whisper:8080 (then deploy)."
-}
-
-whisper_remove() {
-  local dir="$EDGE/whisper"
-  if [ -f "$dir/docker-compose.yml" ]; then (cd "$dir" && WHISPER_MODEL_FILE=unused docker compose down); fi
-  docker rm -f apensum-whisper >/dev/null 2>&1 || true
-  echo "Whisper removed (models in $dir/models are kept; the network $WHISPER_NET stays for the instances)."
 }
 
 portainer_remove() {
@@ -317,10 +275,8 @@ case "${1:-}" in
   destroy) destroy ;;
   portainer) portainer_up ;;
   portainer-remove) portainer_remove ;;
-  whisper) whisper_up ;;
-  whisper-remove) whisper_remove ;;
   deploy) deploy ;;
   seed) seed ;;
   reset-seed) reset_seed ;;
-  *) echo "usage: remote.sh deploy|seed|reset-seed|destroy|portainer|portainer-remove|whisper|whisper-remove" >&2; exit 2 ;;
+  *) echo "usage: remote.sh deploy|seed|reset-seed|destroy|portainer|portainer-remove" >&2; exit 2 ;;
 esac

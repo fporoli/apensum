@@ -15,11 +15,13 @@ const PRICED = {
 const AZURE = { AZURE_OPENAI_ENDPOINT: 'https://apensum-openai-ch.openai.azure.com', AZURE_OPENAI_KEY: 'secret', AZURE_OPENAI_DEPLOYMENT: 'gpt-4.1-mini' };
 const MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(20)]);
 
-test('org AI settings: defaults keep everything on the server; reading never fails', () => {
-  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'whisper', summary: 'local', draft: 'instance' });
+test('org AI settings: defaults transcribe with Azure and summarize without a model; reading never fails', () => {
+  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'azure', summary: 'local', draft: 'instance' });
   assert.deepEqual(parseCaseAiSettings(undefined), DEFAULT_CASE_AI_SETTINGS);
-  assert.deepEqual(parseCaseAiSettings({ transcription: 'azure', summary: 'bogus', monthlyLimitChf: 10 }),
-    { ...DEFAULT_CASE_AI_SETTINGS, transcription: 'azure' });
+  assert.deepEqual(parseCaseAiSettings({ transcription: 'off', summary: 'bogus', monthlyLimitChf: 10 }),
+    { ...DEFAULT_CASE_AI_SETTINGS, transcription: 'off' });
+  // The server Whisper is gone: a stored choice of it reads as the default.
+  assert.equal(parseCaseAiSettings({ transcription: 'whisper' }).transcription, 'azure');
 });
 
 test('org AI settings: validation of what the browser sends', () => {
@@ -27,6 +29,7 @@ test('org AI settings: validation of what the browser sends', () => {
   // The monthly limit is the core's (packages/shared/src/ai.ts); a stray one is dropped.
   assert.deepEqual(validateCaseAiSettings({ ...ok, monthlyLimitChf: 12 }), { ok: true, value: ok });
   assert.deepEqual(validateCaseAiSettings({ ...ok, draft: 'local' }), { ok: false, error: 'ai-settings-invalid' });
+  assert.deepEqual(validateCaseAiSettings({ ...ok, transcription: 'whisper' }), { ok: false, error: 'ai-settings-invalid' });
   assert.deepEqual(validateCaseAiSettings(null), { ok: false, error: 'ai-settings-invalid' });
 });
 
@@ -81,12 +84,14 @@ test('AI summary: transcript in, bullet text out', () => {
 });
 
 test('providers: an unavailable choice is null (never silently another provider)', () => {
-  const none = { whisper: false, azureTranscription: false, azureOpenai: false, instance: null };
-  const all = { whisper: true, azureTranscription: true, azureOpenai: true, instance: 'gemini' as const };
+  const none = { azureTranscription: false, azureOpenai: false, instance: null };
+  const all = { azureTranscription: true, azureOpenai: true, instance: 'gemini' as const };
   const azure = { transcription: 'azure', summary: 'azure', draft: 'azure' } as const;
   assert.equal(transcriptionProviderFor(azure, { ...all, azureTranscription: false }), null);
   assert.equal(transcriptionProviderFor(azure, all), 'azure');
   assert.equal(transcriptionProviderFor(DEFAULT_CASE_AI_SETTINGS, none), null);
+  assert.equal(transcriptionProviderFor(DEFAULT_CASE_AI_SETTINGS, all), 'azure');
+  assert.equal(transcriptionProviderFor({ ...DEFAULT_CASE_AI_SETTINGS, transcription: 'off' }, all), null);
   assert.equal(summaryProviderFor(DEFAULT_CASE_AI_SETTINGS, none), 'local');
   assert.equal(summaryProviderFor(azure, { ...all, azureOpenai: false }), null);
   assert.equal(draftProviderFor(DEFAULT_CASE_AI_SETTINGS, all), 'gemini');
@@ -123,6 +128,11 @@ test('CaseAiService: Azure Whisper transcription reserves, calls Azure once and 
     const refusing = new CaseAiService({ getDb: () => db } as never, { orgMonthlyLimitChf: async () => 10, reserve: async () => { throw new Error('ai-budget-exhausted'); } } as never);
     await assert.rejects(refusing.transcribe('org', 'user', 'case', MP3), /ai-budget-exhausted/);
     assert.equal(sent, false);
+
+    // Beyond Azure's 25 MB nothing is reserved or sent.
+    await assert.rejects(service.transcribe('org', 'user', 'case', Buffer.alloc(25_000_001)), /interview-audio-too-large/);
+    assert.equal(sent, false);
+    assert.equal(reserved.length, 1);
   } finally {
     globalThis.fetch = realFetch;
     process.env = saved;

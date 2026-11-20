@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
 import { DbService, type Db } from '@worktime3/api/plugin';
-import { DocumentsService, MAX_DOCUMENT_BYTES } from '@worktime3/api/plugin';
+import { DocumentsService } from '@worktime3/api/plugin';
 import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
 import { CaseAiService } from './case-ai.service';
 import { documents, users } from '@worktime3/api/schema';
 import { buildRuleDraft } from '../shared/caseDraft';
-import { validateCustomFieldDefs, validateCustomValues, type CaseCustomField, type CustomFieldTarget } from '../shared/cases';
+import { MAX_INTERVIEW_AUDIO_BYTES, MAX_SEALED_INTERVIEW_AUDIO_BYTES, validateCustomFieldDefs, validateCustomValues, type CaseCustomField, type CustomFieldTarget } from '../shared/cases';
 import type { ComputeContent } from './case-encryption';
 import { checkCustom, checkNewEncryptedCase, checkWrite } from './case-encryption';
 import { casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases } from './db/schema';
@@ -336,7 +336,7 @@ export class CasesService {
   }
 
   private async storeInterviewAudio(orgId: string, callerId: string, interviewId: string, file: { buffer: Buffer }, sealed = false) {
-    if (file.buffer.length > MAX_DOCUMENT_BYTES) throw new BadRequestException('interview-audio-too-large');
+    if (file.buffer.length > (sealed ? MAX_SEALED_INTERVIEW_AUDIO_BYTES : MAX_INTERVIEW_AUDIO_BYTES)) throw new BadRequestException('interview-audio-too-large');
     // Sealed audio is ciphertext: its type is not readable here (it is inside the interview's `enc`).
     const { mime, extension } = sealed ? { mime: 'application/octet-stream', extension: 'bin' } : interviewAudioFormat(file.buffer);
     return this.documentsService.store(this.db, orgId, callerId,

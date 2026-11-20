@@ -25,9 +25,9 @@ export function interviewError(error: unknown, t: ReturnType<typeof useT>) {
 
 /** Who handles transcription / summaries for this organization (GET interviews); null = chosen but not set up. */
 export interface InterviewAiProviders {
-  transcription: 'whisper' | 'azure' | null;
+  transcription: 'azure' | null;
   /** What the organization chose, to say which provider is missing. */
-  transcriptionSetting: 'whisper' | 'azure';
+  transcriptionSetting: 'azure' | 'off';
   summary: 'local' | 'gemini' | 'openai' | 'azure' | null;
 }
 
@@ -146,7 +146,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     return next;
   };
 
-  /** Attaches a chosen file first if there is one, then waits for Whisper's draft. */
+  /** Attaches a chosen file first if there is one, then waits for the transcription draft. */
   const transcribe = () => run(async () => {
     const chosen = file;
     const revision = file ? (await uploadAudio(file)).revision : interview.revision;
@@ -216,10 +216,10 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
                 {t('cases.ai.sendsTo', { provider: providerName(providers.transcription) })}
               </Typography>}
               {!transcriptionEnabled && <Alert severity="info">
-                {t(providers.transcriptionSetting === 'azure' ? 'cases.ai.error.ai-provider-not-configured' : 'cases.interviews.interview-transcription-disabled')}
+                {t(providers.transcriptionSetting === 'off' ? 'cases.interviews.interview-transcription-disabled' : 'cases.ai.error.ai-provider-not-configured')}
               </Alert>}
               {transcribingSince !== null && <Alert severity="info" icon={<CircularProgress size={20} />}>
-                {t('cases.interviews.transcribing', { seconds: String(elapsed), provider: providerName(providers.transcription ?? 'whisper') })}
+                {t('cases.interviews.transcribing', { seconds: String(elapsed), provider: providerName(providers.transcription ?? 'azure') })}
               </Alert>}
             </Stack>}
           </>}

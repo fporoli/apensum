@@ -269,8 +269,13 @@ export function isValidAssessmentStatus(s: string): s is AssessmentStatus {
 // Azure calls are paid and go through the API's budget (ai-budget.service.ts): the instance's
 // AI_MONTHLY_BUDGET_CHF and the organization's limit (settings.ai, packages/shared/src/ai.ts).
 
-/** Who transcribes interview audio: the server's own Whisper, or Azure AI Speech. */
-export const CASE_AI_TRANSCRIPTION = ['whisper', 'azure'] as const;
+/** An interview's audio: at most what Azure OpenAI Whisper takes in one request (25 MB). */
+export const MAX_INTERVIEW_AUDIO_BYTES = 25_000_000;
+/** The same audio sealed in the browser (an encrypted case): AES-GCM adds its nonce and tag. */
+export const MAX_SEALED_INTERVIEW_AUDIO_BYTES = MAX_INTERVIEW_AUDIO_BYTES + 1024;
+
+/** Who transcribes interview audio: Azure OpenAI Whisper (Switzerland), or nobody (typed notes only). */
+export const CASE_AI_TRANSCRIPTION = ['azure', 'off'] as const;
 export type CaseAiTranscription = (typeof CASE_AI_TRANSCRIPTION)[number];
 /** Who drafts an interview summary: no model (key sentences), the instance's provider (Gemini/OpenAI), or Azure OpenAI. */
 export const CASE_AI_SUMMARY = ['local', 'instance', 'azure'] as const;
@@ -284,8 +289,12 @@ export interface CaseAiSettings {
   draft: CaseAiDraft;
 }
 
-/** What an organization gets until a superdeveloper changes it: nothing leaves the server for Azure. */
-export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'whisper', summary: 'local', draft: 'instance' };
+/**
+ * What an organization gets until a superdeveloper changes it: transcription by Azure (capped by the
+ * organization's and the instance's AI budget), summaries as key sentences without a model. A stored
+ * value no longer offered (the server Whisper this replaced) reads as the default.
+ */
+export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'azure', summary: 'local', draft: 'instance' };
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);

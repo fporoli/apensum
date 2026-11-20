@@ -30,7 +30,7 @@ import { CasesService } from './cases.service';
 import { extractPdfText, isPdf, tidyExtractedText } from '@worktime3/api/plugin';
 import { CaseAiService, caseAiAvailability } from './case-ai.service';
 import { VersionsService } from '@worktime3/api/plugin';
-import { validateCaseAiSettings, validateCustomFieldDefs } from '../shared/cases';
+import { MAX_SEALED_INTERVIEW_AUDIO_BYTES, validateCaseAiSettings, validateCustomFieldDefs } from '../shared/cases';
 import { checkComputeContent, checkWrite } from './case-encryption';
 import { interviewAudioFormat } from './case-interview-processing';
 import type {
@@ -44,7 +44,7 @@ import type {
   UpdateAssessmentTemplateDto,
 } from '../shared/cases';
 
-const interviewUpload = { limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1, fields: 2, fieldSize: 1_300_000 } };
+const interviewUpload = { limits: { fileSize: MAX_SEALED_INTERVIEW_AUDIO_BYTES, files: 1, fields: 2, fieldSize: 1_300_000 } };
 const privateCache = 'private, no-store';
 
 function interviewPayload<T extends object>(body: T & { data?: string }): T {

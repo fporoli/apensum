@@ -1,23 +1,22 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type OpenAI from 'openai';
-import { parseCaseAiSettings, type CaseAiSettings } from '../shared/cases';
+import { MAX_INTERVIEW_AUDIO_BYTES, parseCaseAiSettings, type CaseAiSettings } from '../shared/cases';
 import { DbService, type Db } from '@worktime3/api/plugin';
 import { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from '@worktime3/api/plugin';
 import { AiBudgetService, azureAllowed, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, transcribeChf, type AiUsageKind } from '@worktime3/api/plugin';
 import { AzureCallError, azureTranscribeConfig, azureTranscribe } from './azure-transcribe';
-import { interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from './case-interview-processing';
+import { summarizeInterview } from './case-interview-processing';
 import { AI_SUMMARY_MAX_TOKENS, buildAiSummaryMessages, parseAiSummary } from './case-ai-summary';
 
 /** Who actually handles a job for an organization; null = what it chose isn't configured on this instance. */
-export type TranscriptionProvider = 'whisper' | 'azure';
+export type TranscriptionProvider = 'azure';
 export type TextProvider = 'gemini' | 'openai' | 'azure';
 
 /** What this instance offers (env), independent of any organization. */
 export function caseAiAvailability(env: NodeJS.ProcessEnv = process.env) {
   const azure = azureAllowed(env);
   return {
-    whisper: interviewTranscriptionEnabled(),
     azureTranscription: azure && azureTranscribeConfig(env) !== null,
     azureOpenai: azure && azureOpenAiConfig(env) !== null,
     instance: aiProvider(),
@@ -25,8 +24,8 @@ export function caseAiAvailability(env: NodeJS.ProcessEnv = process.env) {
 }
 
 export function transcriptionProviderFor(s: CaseAiSettings, a = caseAiAvailability()): TranscriptionProvider | null {
-  if (s.transcription === 'azure') return a.azureTranscription ? 'azure' : null;
-  return a.whisper ? 'whisper' : null;
+  if (s.transcription === 'off') return null;
+  return a.azureTranscription ? 'azure' : null;
 }
 
 /** 'local' = key sentences, no model and no network. */
@@ -76,8 +75,8 @@ export class CaseAiService {
   async transcribe(orgId: string, userId: string, caseId: string, audio: Buffer): Promise<string> {
     const settings = await this.settings(orgId);
     const provider = transcriptionProviderFor(settings);
-    if (!provider) throw new ServiceUnavailableException(settings.transcription === 'azure' ? 'ai-provider-not-configured' : 'interview-transcription-disabled');
-    if (provider === 'whisper') return transcribeInterviewAudio(audio);
+    if (!provider) throw new ServiceUnavailableException(settings.transcription === 'off' ? 'interview-transcription-disabled' : 'ai-provider-not-configured');
+    if (audio.length > MAX_INTERVIEW_AUDIO_BYTES) throw new BadRequestException('interview-audio-too-large');
 
     const prices = azurePrices()!;
     const config = azureTranscribeConfig()!;

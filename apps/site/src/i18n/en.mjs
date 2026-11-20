@@ -539,7 +539,7 @@ export default {
   'cases.cards.evidence.title': 'Evidence and document vault',
   'cases.cards.evidence.text': 'Upload medical reports, testimonies, official rulings, and photos. Automatic text extraction from PDF files enables instant full-text search across all evidence.',
   'cases.cards.interviews.title': 'Interviews & audio transcription',
-  'cases.cards.interviews.text': 'Recorded hearings with audio or notes. Transcripts and summary drafts are generated securely in Swiss data centres or locally using Whisper.',
+  'cases.cards.interviews.text': 'Recorded hearings with audio or notes. Transcripts are made with Azure in Switzerland, summary drafts from key sentences or with the AI your organization chooses.',
   'cases.cards.templates.title': 'Customisable assessment templates',
   'cases.cards.templates.text': 'Standardised templates for KESB welfare assessments (Art. 443+ Swiss Civil Code), criminal responsibility evaluations (Art. 19/20 Criminal Code), or investigative reports. Expert findings remain strictly human-driven.',
   'cases.cards.security.title': 'Art. 321 Swiss Criminal Code & schema isolation',
@@ -549,7 +549,7 @@ export default {
   'cases.checkItems': [
     'Comprehensive case dossier management for KESB, forensics, psychiatry, police, and social services',
     'Isolated database storage (PostgreSQL schema cases) safeguarding professional secrecy',
-    'Audio recording and AI transcription (Whisper/Azure Switzerland) for hearings',
+    'Audio recording and AI transcription (Azure Switzerland) for hearings',
     'Customizable assessment templates with automated evidence synthesis',
     'Currently included in Apensum at no extra cost',
   ],

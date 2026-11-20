@@ -538,7 +538,7 @@ export default {
   'cases.cards.evidence.title': 'Akten- und Beweismittelverwaltung',
   'cases.cards.evidence.text': 'Upload von medizinischen Berichten, Zeugenaussagen, behördlichen Verfügungen und Fotos. Automatische Textextraktion aus PDF-Dateien für eine blitzschnelle Volltextrecherche.',
   'cases.cards.interviews.title': 'Befragungen & Audio-Transkription',
-  'cases.cards.interviews.text': 'Protokollierte Einvernahmen mit Audioaufzeichnung oder Notizen. Transkripte und Entwurfszusammenfassungen werden sicher auf Schweizer Servern oder lokal via Whisper generiert.',
+  'cases.cards.interviews.text': 'Protokollierte Einvernahmen mit Audioaufzeichnung oder Notizen. Transkripte entstehen mit Azure in der Schweiz, Zusammenfassungsentwürfe aus Kernsätzen oder mit der KI, die Ihre Organisation wählt.',
   'cases.cards.templates.title': 'Anpassbare Gutachten-Vorlagen',
   'cases.cards.templates.text': 'Standardisierte Vorlagen für KESB-Gefährdungsmeldungen (Art. 443 ff. ZGB), forensische Schuldfähigkeitsgutachten (Art. 19/20 StGB) oder Ermittlungsberichte. Fachliche Befunde bleiben stets bei der Fachperson.',
   'cases.cards.security.title': 'Art. 321 StGB & isoliertes Datenbankschema',
@@ -548,7 +548,7 @@ export default {
   'cases.checkItems': [
     'Vollständige Aktenführung für KESB, Forensik, Psychiatrie, Polizei und Sozialberatung',
     'Isolierte Datenhaltung (PostgreSQL-Schema cases) zum Schutz des Berufsgeheimnisses',
-    'Audioaufnahme und KI-Transkription (Whisper/Azure Schweiz) für Einvernahmen',
+    'Audioaufnahme und KI-Transkription (Azure Schweiz) für Einvernahmen',
     'Individuell definierbare Gutachtenvorlagen mit automatischer Aktenzusammenfassung',
     'Aktuell kostenlos und ohne Zusatzkosten in Apensum enthalten',
   ],

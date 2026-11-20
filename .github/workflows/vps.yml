@@ -11,8 +11,6 @@ run-name: 'vps: ${{ inputs.action }} on ${{ inputs.environment }} (tag ${{ input
 #   seed        adds the demo data that is missing (demo users with known passwords: not for prod)
 #   reset-seed  DESTRUCTIVE: backs up, drops and re-creates the public schema, loads demo data
 #   portainer   (re)deploys Portainer, one per server (portainer-remove takes it down)
-#   whisper     (re)builds the Whisper sidecar, one per server, shared by all its instances
-#               (model: variable WHISPER_MODEL_FILE, default ggml-medium.bin; whisper-remove takes it down)
 #   destroy     DESTRUCTIVE: removes this instance (containers, database, files, Caddy site)
 on:
   workflow_dispatch:
@@ -21,7 +19,7 @@ on:
         description: 'What to run'
         required: true
         type: choice
-        options: [deploy, seed, reset-seed, destroy, portainer, portainer-remove, whisper, whisper-remove]
+        options: [deploy, seed, reset-seed, destroy, portainer, portainer-remove]
       environment: { description: 'GitHub Environment = instance (prod, preprod, test, ...)', default: 'prod' }
       image_tag: { description: 'Image tag (prefer a sha-xxxxxxx tag over latest)', default: 'latest' }
       confirmation: { description: 'seed: type SEED <environment name>. reset-seed: type RESET worktime3 public schema. destroy: type DESTROY <environment name>' }
@@ -83,7 +81,7 @@ jobs:
       - name: Stage plugin changelogs and seeds
         run: node scripts/plugins.mjs stage-changelogs && node scripts/plugins.mjs stage-seeds
       - name: Package deploy files
-        run: tar czf release.tgz compose/docker-compose.vps.yml infra/liquibase infra/keycloak infra/postgres/seeds/seed.sql infra/postgres/seeds/plugins infra/caddy/edge infra/portainer infra/whisper infra/vps
+        run: tar czf release.tgz compose/docker-compose.vps.yml infra/liquibase infra/keycloak infra/postgres/seeds/seed.sql infra/postgres/seeds/plugins infra/caddy/edge infra/portainer infra/vps
       - name: Upload to VPS
         uses: appleboy/scp-action@v1
         with:
@@ -127,8 +125,6 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           CONTACT_SITE_ORIGINS: ${{ vars.CONTACT_SITE_ORIGINS }}
           CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
-          CASES_WHISPER_URL: ${{ vars.CASES_WHISPER_URL }}
-          WHISPER_MODEL_FILE: ${{ vars.WHISPER_MODEL_FILE }}
           AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
@@ -142,9 +138,9 @@ jobs:
           host: ${{ vars.VPS_HOST }}
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          # The default is 10 min; the whisper action compiles whisper.cpp and may download a model.
+          # The default is 10 min; a deploy pulls images and waits for migrations.
           command_timeout: 25m
-          envs: ACTION,ENVIRONMENT,DOMAIN,MAIL_SUB,PORTAINER_SUB,WEB_SUB,API_SUB,AUTH_SUB,SHOW_DEMO_ACCOUNTS,GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG,REPO,POSTGRES_PASSWORD,KEYCLOAK_ADMIN,KEYCLOAK_ADMIN_PASSWORD,API_JWT_SECRET,DOCUMENTS_KEY,DOCUMENTS_KEY_PREVIOUS,PG_PORT,SMTP_HOST,SMTP_PORT,SMTP_FROM,SMTP_USER,SMTP_PASSWORD,SMTP_SECURE,GEMINI_API_KEY,GEMINI_MODEL,OPENAI_API_KEY,OPENAI_MODEL,CONTACT_SITE_ORIGINS,CONTACT_EMAIL,CASES_WHISPER_URL,WHISPER_MODEL_FILE,AZURE_OPENAI_KEY,AZURE_OPENAI_ENDPOINT,AZURE_OPENAI_DEPLOYMENT,AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT,AI_MONTHLY_BUDGET_CHF,AI_AZURE_ENABLED,AZURE_TRANSCRIBE_CHF_PER_HOUR,AZURE_OPENAI_CHF_PER_1M_INPUT,AZURE_OPENAI_CHF_PER_1M_OUTPUT
+          envs: ACTION,ENVIRONMENT,DOMAIN,MAIL_SUB,PORTAINER_SUB,WEB_SUB,API_SUB,AUTH_SUB,SHOW_DEMO_ACCOUNTS,GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG,REPO,POSTGRES_PASSWORD,KEYCLOAK_ADMIN,KEYCLOAK_ADMIN_PASSWORD,API_JWT_SECRET,DOCUMENTS_KEY,DOCUMENTS_KEY_PREVIOUS,PG_PORT,SMTP_HOST,SMTP_PORT,SMTP_FROM,SMTP_USER,SMTP_PASSWORD,SMTP_SECURE,GEMINI_API_KEY,GEMINI_MODEL,OPENAI_API_KEY,OPENAI_MODEL,CONTACT_SITE_ORIGINS,CONTACT_EMAIL,AZURE_OPENAI_KEY,AZURE_OPENAI_ENDPOINT,AZURE_OPENAI_DEPLOYMENT,AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT,AI_MONTHLY_BUDGET_CHF,AI_AZURE_ENABLED,AZURE_TRANSCRIBE_CHF_PER_HOUR,AZURE_OPENAI_CHF_PER_1M_INPUT,AZURE_OPENAI_CHF_PER_1M_OUTPUT
           script: |
             set -eu
             echo "remote.sh $ACTION, environment $ENVIRONMENT, image tag $IMAGE_TAG"

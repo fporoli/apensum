@@ -539,7 +539,7 @@ export default {
   'cases.cards.evidence.title': 'Gestion des actes et pièces',
   'cases.cards.evidence.text': 'Importez rapports médicaux, dépositions, décisions officielles et photos. Extraction automatique du texte des PDF pour une recherche intégrale instantanée.',
   'cases.cards.interviews.title': 'Auditions et transcription audio',
-  'cases.cards.interviews.text': 'Auditions enregistrées avec audio ou notes. Transcriptions et synthèses générées en toute sécurité sur serveurs suisses ou localement via Whisper.',
+  'cases.cards.interviews.text': 'Auditions enregistrées avec audio ou notes. Transcriptions générées avec Azure en Suisse, projets de synthèse tirés des phrases clés ou rédigés par l’IA choisie par votre organisation.',
   'cases.cards.templates.title': 'Modèles d’évaluation personnalisables',
   'cases.cards.templates.text': 'Modèles standardisés pour signalements APEA (art. 443+ CC), expertises de responsabilité pénale (art. 19/20 CP) ou rapports de police. L’avis d’expert reste sous le contrôle exclusif du spécialiste.',
   'cases.cards.security.title': 'Art. 321 CP & isolation de schéma',
@@ -549,7 +549,7 @@ export default {
   'cases.checkItems': [
     'Gestion complète des dossiers pour APEA, médecine légale, psychiatrie, police et services sociaux',
     'Stockage isolé des données (schéma PostgreSQL cases) garantissant le secret professionnel',
-    'Enregistrement audio et transcription IA (Whisper/Azure Suisse) pour les auditions',
+    'Enregistrement audio et transcription IA (Azure Suisse) pour les auditions',
     'Modèles de rapports personnalisables avec synthèse automatique des pièces',
     'Actuellement inclus gratuitement et sans surcoût dans Apensum',
   ],

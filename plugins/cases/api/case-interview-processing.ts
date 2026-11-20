@@ -1,4 +1,4 @@
-import { BadRequestException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 
 export const MAX_INTERVIEW_TEXT = 100_000;
 export const INTERVIEW_AUDIO_SOURCE = 'cases.case_interviews';
@@ -18,46 +18,6 @@ export function interviewAudioFormat(bytes: Buffer) {
     return { mime: 'audio/mpeg', extension: 'mp3', demuxer: 'mp3' };
   }
   throw new BadRequestException('interview-audio-format');
-}
-
-function whisperEndpoint(env = process.env) {
-  const url = env.CASES_WHISPER_URL;
-  if (url === 'http://whisper:8080') return `${url}/transcribe`;
-  if (url && /^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}$/.test(url) && Number(url.split(':').at(-1)) <= 65535) return `${url}/transcribe`;
-  return null;
-}
-
-export function interviewTranscriptionEnabled() {
-  return !!whisperEndpoint();
-}
-
-export async function transcribeInterviewAudio(audio: Buffer): Promise<string> {
-  const endpoint = whisperEndpoint();
-  if (!endpoint) throw new ServiceUnavailableException('interview-transcription-disabled');
-  const { demuxer } = interviewAudioFormat(audio);
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(370_000),
-      headers: { 'Content-Type': 'application/octet-stream', 'X-Audio-Format': demuxer },
-      body: new Blob([Uint8Array.from(audio)]),
-    });
-    if (!response.ok) await response.body?.cancel();
-    if (response.status === 429) throw new ServiceUnavailableException('interview-transcription-busy');
-    if (!response.ok) throw new Error();
-    const chunks: Uint8Array[] = [];
-    let length = 0;
-    for await (const chunk of response.body ?? []) {
-      length += chunk.length;
-      if (length > MAX_INTERVIEW_TEXT * 4) throw new Error();
-      chunks.push(chunk);
-    }
-    const text = Buffer.concat(chunks, length).toString('utf8').trim();
-    if (!text || text.includes('\0') || text.length > MAX_INTERVIEW_TEXT) throw new Error();
-    return text;
-  } catch (error) {
-    if (error instanceof ServiceUnavailableException) throw error;
-    throw new UnprocessableEntityException('interview-transcription-failed');
-  }
 }
 
 /** Extract representative source sentences, in their original order. No model, inference of facts or network. */

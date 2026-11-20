@@ -195,8 +195,10 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set only by a
   superdeveloper under Organization settings -> AI and costs, the plugin's `CaseAiSettingsPanel` shown there via
   `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`):
-  transcription Whisper on the server or Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland), summary key sentences / instance provider / Azure OpenAI, AI draft
-  instance provider or Azure OpenAI. Default: nothing goes to Azure. `case-ai.service.ts` picks the provider
+  transcription Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland; 25 MB per
+  request = `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences / instance provider / Azure OpenAI, AI draft
+  instance provider or Azure OpenAI. Default: transcription on Azure (capped by the budgets below), the rest stays off Azure.
+  There is no self-hosted Whisper any more. `case-ai.service.ts` picks the provider
   (a chosen but unconfigured one is an error, never a silent fallback). The AI budget is the core's, for every
   module and plugin: every Azure call goes through `AiBudgetService` (`ai_usage` 078, with an optional
   `subject_table`/`subject_id` and any lowercase `kind`): it reserves the estimated CHF under an advisory lock and
@@ -469,11 +471,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `seed.sql` must stay re-runnable: fixed keys on every row, `ON CONFLICT DO NOTHING`,
   and UPDATEs that only fill in unset values. Each VPS instance has its own Postgres
   container (`PG_PORT`, role/db `worktime`) and Mailpit; only Caddy is shared (`infra/caddy/edge`).
-  Portainer is its own per-server stack (`infra/portainer`, `vps` workflow action `portainer`). So is Whisper (Cases
-  transcription): one sidecar per machine, never per stack. On a VPS `infra/whisper/docker-compose.yml`
-  (action `whisper`, model `WHISPER_MODEL_FILE`), joined by every instance's API over the internal network
-  `apensum-whisper`, enabled per instance by `CASES_WHISPER_URL=http://whisper:8080`; locally
-  `compose/docker-compose.whisper.yml` (`npm run whisper:up`), used by dev (`127.0.0.1:8081`) and local (`whisper:8080`). Ports follow `8090+N` (Keycloak), `5430+N`
+  Portainer is its own per-server stack (`infra/portainer`, `vps` workflow action `portainer`). Ports follow `8090+N` (Keycloak), `5430+N`
   (pg), `3000+N` (web), `8000+N` (API). Each compose file has a one-shot
   `migrate` service that runs before the API and Keycloak start.
 - Keycloak realm config: `infra/keycloak/realm-worktime.json`.

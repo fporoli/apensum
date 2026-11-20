@@ -1,5 +1,4 @@
 import { strict as assert } from 'node:assert';
-import { createServer } from 'node:http';
 import { test } from 'node:test';
 import './register';
 import { Module } from '@nestjs/common';
@@ -8,7 +7,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { CasesController } from '../api/cases.controller';
 import { CasesService } from '../api/cases.service';
 import { CaseAiService } from '../api/case-ai.service';
-import { interviewAudioFormat, interviewTranscriptionEnabled, summarizeInterview, transcribeInterviewAudio } from '../api/case-interview-processing';
+import { interviewAudioFormat, summarizeInterview } from '../api/case-interview-processing';
 import type { AuthenticatedRequest } from '@worktime3/api/plugin';
 
 const testAudio = Buffer.from('RIFF0000WAVE');
@@ -17,7 +16,7 @@ const req = { user: { kind: 'local', sub: 'caller' } } as AuthenticatedRequest;
 
 function controller(services: object, permission: string, lead = 'caller') {
   const db = { getDb: () => ({ execute: async () => ({ rows: [{ name: 'member', permission_id: permission, modules: { cases: true } }] }) }) };
-  // The organization's AI settings read from the same mock (no `ai` column = defaults: Whisper, key sentences).
+  // The organization's AI settings read from the same mock (no `ai` column = defaults: Azure transcription, key sentences).
   return new CasesController(db as any, { getCase: async () => ({ lead_user_id: lead }), ...services } as any, {} as any, new CaseAiService(db as any, {} as any), {} as any);
 }
 
@@ -94,27 +93,9 @@ test('summary only drafts from a saved current revision and quotes existing text
   assert.equal(summarizeInterview('One repeated item.\nOne repeated item.'), 'One repeated item.');
 });
 
-test('transcription is opt-in and sends synthetic audio only to a local endpoint', async (t) => {
-  const old = process.env.CASES_WHISPER_URL;
-  t.after(() => { if (old === undefined) delete process.env.CASES_WHISPER_URL; else process.env.CASES_WHISPER_URL = old; });
-  process.env.CASES_WHISPER_URL = 'https://example.invalid';
-  assert.equal(interviewTranscriptionEnabled(), false);
-  await assert.rejects(transcribeInterviewAudio(testAudio), /interview-transcription-disabled/);
+test('interview audio is recognized by its bytes, not its name', () => {
+  assert.deepEqual(interviewAudioFormat(testAudio), { mime: 'audio/wav', extension: 'wav', demuxer: 'wav' });
   assert.throws(() => interviewAudioFormat(Buffer.from('<html>not audio</html>')), /interview-audio-format/);
-  const server = createServer(async (req, res) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk);
-    assert.equal(req.url, '/transcribe');
-    assert.equal(req.headers['x-audio-format'], 'wav');
-    assert.deepEqual(Buffer.concat(chunks), testAudio);
-    res.end('Synthetic test result.');
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.close(); });
-  const address = server.address();
-  assert.ok(address && typeof address !== 'string');
-  process.env.CASES_WHISPER_URL = `http://127.0.0.1:${address.port}`;
-  assert.equal(await transcribeInterviewAudio(testAudio), 'Synthetic test result.');
 });
 
 // Opt in only against the disposable database named here, never an application database.

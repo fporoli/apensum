@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Stack, Typography } from '@mui/material';
+import { Alert, Button, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useT } from '@worktime3/web/plugin';
+import { MAX_INTERVIEW_AUDIO_BYTES } from '../shared/cases';
 
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = MAX_INTERVIEW_AUDIO_BYTES;
+/**
+ * Recording bitrates. Speech is plenty for transcription (Azure Whisper bills by audio length, not size)
+ * and fits about 90 minutes in MAX_BYTES; high quality about 25 minutes.
+ */
+const QUALITIES = { speech: 32_000, high: 128_000 } as const;
+type Quality = keyof typeof QUALITIES;
 const recordings = [ ['audio/webm;codecs=opus', 'webm'], ['audio/mp4', 'm4a'], ['audio/ogg;codecs=opus', 'ogg'] ];
 
 export function CaseInterviewAudioInput({ file, setFile, disabled, setRecording }: {
@@ -15,6 +22,7 @@ export function CaseInterviewAudioInput({ file, setFile, disabled, setRecording 
   const [active, setActive] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
+  const [quality, setQuality] = useState<Quality>('speech');
   const recorder = useRef<MediaRecorder | null>(null);
   const alive = useRef(false);
   const supported = typeof MediaRecorder !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
@@ -57,7 +65,7 @@ export function CaseInterviewAudioInput({ file, setFile, disabled, setRecording 
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (!alive.current) return finish();
-      const current = new MediaRecorder(stream, { mimeType });
+      const current = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: QUALITIES[quality] });
       recorder.current = current;
       const chunks: Blob[] = [];
       let size = 0;
@@ -106,6 +114,10 @@ export function CaseInterviewAudioInput({ file, setFile, disabled, setRecording 
           }
           else void start();
         }}>{t(`cases.interviews.${active ? 'stopRecording' : 'recordAudio'}`)}</Button>}
+        {supported && <TextField select size="small" label={t('cases.interviews.quality')} value={quality}
+          disabled={disabled || active} sx={{ minWidth: 260 }} onChange={(e) => setQuality(e.target.value as Quality)}>
+          {(Object.keys(QUALITIES) as Quality[]).map((q) => <MenuItem key={q} value={q}>{t(`cases.interviews.quality.${q}`)}</MenuItem>)}
+        </TextField>}
         {file && <Button disabled={disabled || active} onClick={() => setFile(null)}>{t('common.cancel')} · {file.name}</Button>}
       </Stack>
     </Stack>

@@ -477,8 +477,6 @@ server or another one: production (`wt`), `preprod` (`wtpp`) and `test`
 | `GEMINI_MODEL`, `OPENAI_MODEL` | Optional, the assistant's model (defaults `gemini-3.6-flash` / `gpt-4o-mini`) |
 | `MAIL_SUB` | Optional, publishes the instance's Mailpit inbox at `<MAIL_SUB>.<DOMAIN>` |
 | `PORTAINER_SUB` | Optional, Portainer hostname `<PORTAINER_SUB>.<DOMAIN>`, default `portainer`. Set it per server when servers share a `DOMAIN`, e.g. `portainerpp`. |
-| `CASES_WHISPER_URL` | Optional, `http://whisper:8080` turns on Cases transcription with the server's shared sidecar (`whisper` action); unset = off |
-| `WHISPER_MODEL_FILE` | Optional, the model the `whisper` action downloads and runs, default `ggml-medium.bin` |
 
 **Workflow actions.** Run the `vps` workflow from `main`, naming the
 environment and an `image_tag` (prefer a `sha-` tag over `latest`):
@@ -488,8 +486,6 @@ environment and an `image_tag` (prefer a `sha-` tag over `latest`):
 | `deploy` | Ships the deploy files over SSH and runs `infra/vps/remote.sh`. |
 | `portainer` | (Re)deploys Portainer, the Docker UI for the whole server, at `portainer.<DOMAIN>`. It is its own stack in `/opt/edge/portainer`, so instance deploys never touch it. Run it once per server, with any environment of that server (it uses that environment's `DOMAIN`). |
 | `portainer-remove` | Takes Portainer down and keeps its data volume. |
-| `whisper` | (Re)builds the Whisper sidecar for Cases transcription: one per server (`apensum-whisper`, stack in `/opt/edge/whisper`), shared by all its instances over the internal network `apensum-whisper`, no host port. Downloads `WHISPER_MODEL_FILE` from the official whisper.cpp repository the first time. Run it with any environment of that server; then set `CASES_WHISPER_URL=http://whisper:8080` in each environment that should transcribe and deploy it. One transcription at a time per server (others get "busy"). |
-| `whisper-remove` | Takes the Whisper sidecar down and keeps the downloaded model. |
 | `destroy` | **Destructive.** Removes the instance (containers, its Postgres and volume, `/opt/apensum-<env>`, its Caddy site, and its database on a leftover `edge-pg` if there is one). A last dump stays in the deploy user's home. The shared edge stack and other instances stay. Confirmation text: `DESTROY <environment>`. |
 | `seed` | Loads the demo data into a deployed instance, adding only what is missing: nothing is dropped, and demo data changed since (passwords, reporting lines) is kept. Use it after a release adds demo rows. It creates demo users with known passwords, so not for production. Confirmation text: `SEED <environment>`. |
 | `reset-seed` | **Destructive.** Backs up and recreates the `public` schema, migrates, loads the demo data and checks a demo login. Needs the confirmation text. A new instance has no users until you run it once. |
@@ -653,8 +649,9 @@ available to them under the same license.
 
 Enable **Cases** for the organization and use an account with case access. An
 interview can be saved without audio or a transcript. Attach or record up to
-10 MiB of WAV, MP3, M4A, WebM or Ogg audio (recording needs microphone permission
-and HTTPS or localhost). Only users who can see that case can play its audio;
+25 MB of WAV, MP3, M4A, WebM or Ogg audio, the most Azure OpenAI Whisper takes in one request
+(recording needs microphone permission and HTTPS or localhost; the recorder offers speech quality,
+32 kbit/s for about 90 minutes, or high quality, 128 kbit/s for about 25 minutes). Only users who can see that case can play its audio;
 only editors can replace it. Audio uses the local DocumentsService store; set
 `DOCUMENTS_KEY` for encryption at rest. Transcript and summary are stored in
 Postgres, not in the encrypted file store. Back up the database and local audio
@@ -665,22 +662,12 @@ A case document's text (used by the assessment drafts) is read on upload when th
 empty: plain text as is, a PDF's text layer with `unpdf` (pdf.js, `case-document-text.ts`). A scanned PDF
 has no text layer and gives nothing (there is no OCR); the page then asks for the text by hand.
 
-Transcription is **off by default**. One Whisper sidecar per machine serves every stack on it:
-on a developer machine dev and local share `apensum-whisper` (`compose/docker-compose.whisper.yml`),
-on a VPS all instances share one (the `vps` workflow's `whisper` action, see Deploy).
-To opt in locally, place the default multilingual Whisper Medium model
-(`ggml-medium.bin`, not `ggml-medium.en.bin`) from the [official model repository](https://huggingface.co/ggerganov/whisper.cpp)
-in `data-dev/whisper-models/` and make it readable by the container. You can override
-the folder using `CASES_WHISPER_MODELS_DIR` (absolute or relative to `compose/`) and select
-another filename using `CASES_WHISPER_MODEL_FILE` (both read from `.env.dev`). The sidecar is capped at
-3 GiB; allow additional Docker memory for the rest of the stack. The running
-service does not fetch models or call cloud APIs. Start it with `npm run whisper:up`
-(`whisper:down` stops it); dev and local keep running without it, transcription just fails.
-
-- **Host dev:** add `CASES_WHISPER_URL=http://127.0.0.1:8081` to `.env.dev` and restart the host API.
-  The sidecar publishes only `127.0.0.1:${CASES_WHISPER_PORT:-8081}`; if you change the port, update the URL too.
-- **Containerized local:** add `CASES_WHISPER_URL=http://whisper:8080` to `.env.local` and run `npm run local:up`.
-  The local API joins the internal network `apensum-whisper` (`local:up` creates it if missing), where the sidecar is `whisper`.
+Transcription is Azure OpenAI Whisper (Switzerland North, `azure-transcribe.ts`) and **on by default**
+wherever the instance has Azure configured (`AZURE_OPENAI_*`, `AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT`,
+`AI_MONTHLY_BUDGET_CHF` and the prices; `infra/azure/ai-provision.sh local` fills `.env.dev`). Every call
+goes through the AI budget: the instance's monthly cap and the organization's limit. A superdeveloper can
+switch it off per organization (Organization settings -> AI and costs); without Azure on the instance the
+interview page says transcription is not set up. There is no self-hosted transcription.
 
 Transcription runs only when an editor requests a draft. Confirm or edit the draft
 before saving. The independent summary action extracts passages from a saved,

@@ -1193,7 +1193,7 @@ function CaseInterviewsTab({
   const [editable, setEditable] = useState(false);
   const mayEdit = canEdit && editable;
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(false);
-  const [aiProviders, setAiProviders] = useState<InterviewAiProviders>({ transcription: null, transcriptionSetting: 'whisper', summary: 'local' });
+  const [aiProviders, setAiProviders] = useState<InterviewAiProviders>({ transcription: null, transcriptionSetting: 'azure', summary: 'local' });
   const endpoint = `${API}/organizations/${orgId}/cases/${caseId}/interviews`;
 
   // Transcript inspect modal
@@ -1211,7 +1211,7 @@ function CaseInterviewsTab({
       setTranscriptionEnabled(data.transcriptionEnabled === true);
       setAiProviders({
         transcription: data.transcriptionProvider ?? null,
-        transcriptionSetting: data.transcriptionSetting === 'azure' ? 'azure' : 'whisper',
+        transcriptionSetting: data.transcriptionSetting === 'off' ? 'off' : 'azure',
         summary: data.summaryProvider === undefined ? 'local' : data.summaryProvider,
       });
     } catch (error) {

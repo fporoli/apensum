@@ -538,7 +538,7 @@ export default {
   'cases.cards.evidence.title': 'Gestione atti e prove',
   'cases.cards.evidence.text': 'Caricate referti medici, testimonianze, disposizioni ufficiali e foto. Estrazione automatica del testo dai PDF per ricerche full-text immediate su tutti gli atti.',
   'cases.cards.interviews.title': 'Audizioni e trascrizione audio',
-  'cases.cards.interviews.text': 'Verbalizzazione di audizioni con audio o note. Trascrizioni e bozze riassuntive generate in sicurezza su server svizzeri o localmente tramite Whisper.',
+  'cases.cards.interviews.text': 'Verbalizzazione di audizioni con audio o note. Trascrizioni generate con Azure in Svizzera, bozze riassuntive dalle frasi chiave o con l’IA scelta dalla vostra organizzazione.',
   'cases.cards.templates.title': 'Modelli di perizia personalizzabili',
   'cases.cards.templates.text': 'Modelli per segnalazioni di pericolo ARP (art. 443+ CC), perizie sull’imputabilità penale (art. 19/20 CP) o relazioni d’indagine. Il giudizio peritale resta di esclusiva competenza dello specialista.',
   'cases.cards.security.title': 'Art. 321 CP & isolamento dello schema',
@@ -548,7 +548,7 @@ export default {
   'cases.checkItems': [
     'Gestione completa dei fascicoli per ARP, medicina legale, psichiatria, polizia e consulenza sociale',
     'Archiviazione isolata dei dati (schema PostgreSQL cases) a tutela del segreto professionale',
-    'Registrazione audio e trascrizione IA (Whisper/Azure Svizzera) per le audizioni',
+    'Registrazione audio e trascrizione IA (Azure Svizzera) per le audizioni',
     'Modelli di perizia personalizzabili con sintesi automatica degli atti',
     'Attualmente incluso gratuitamente e senza costi aggiuntivi in Apensum',
   ],

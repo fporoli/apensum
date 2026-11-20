@@ -87,7 +87,7 @@ services:
     # No host port here — the shared edge Caddy (see infra/caddy/edge/) is the single
     # entrypoint, proxying API_HOST to this container over the edge network.
     container_name: ${CONTAINER_PREFIX:?required}-api
-    networks: [default, edge, whisper]
+    networks: [default, edge]
     environment:
       DATABASE_URL: postgresql://worktime:${POSTGRES_PASSWORD:?required}@${CONTAINER_PREFIX:?required}-pg:5432/worktime
       NODE_ENV: production
@@ -131,9 +131,6 @@ services:
       # (empty = apensum.ch, www.apensum.ch) and the address it mails (empty = info@apensum.ch).
       CONTACT_SITE_ORIGINS: ${CONTACT_SITE_ORIGINS:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
-      # Cases transcription: http://whisper:8080 = the server's shared sidecar (vps workflow action
-      # `whisper`); empty = transcription off.
-      CASES_WHISPER_URL: ${CASES_WHISPER_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       mailpit: { condition: service_started }
@@ -156,10 +153,6 @@ networks:
   # keycloak, api and web by container name over it. Created once via
   # `docker network create edge` (remote.sh does it), not by this project.
   edge:
-    external: true
-  # Internal network of the server's one Whisper sidecar (infra/whisper), created by remote.sh.
-  whisper:
-    name: apensum-whisper
     external: true
 volumes:
   pg_data:
