@@ -62,7 +62,7 @@ write_app_env() {
   (
     umask 077
     for name in POSTGRES_PASSWORD KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS \
-      SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS \
+      SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS DEMO_RESET_EVERY_HOURS \
       CONTACT_SITE_ORIGINS CONTACT_EMAIL \
       REALM_FILE CONTAINER_PREFIX PG_PORT WEB_HOST API_HOST AUTH_HOST; do
       printf "%s='%s'\n" "$name" "$(printenv "$name" || true)"
@@ -166,8 +166,28 @@ deploy() {
   # migrate's local Dockerfile; it never re-pulls api/web from GHCR. Without this explicit
   # pull, `up` reuses whatever is cached under the same tag and runs stale code.
   "${COMPOSE[@]}" pull api web
+  carry_documents_out
   "${COMPOSE[@]}" up -d --build --remove-orphans
+  carry_documents_in
   caddy_reload
+}
+
+# Documents used to live inside the API container (no volume), so each deploy lost them. The first deploy
+# with the documents_data volume copies what the running container still holds into it; once the volume is
+# in place this does nothing.
+DOCS_PATH=/app/apps/api/data/documents
+carry_documents_out() {
+  rm -rf "$ROOT/documents-carry"
+  docker inspect "$PREFIX-api" >/dev/null 2>&1 || return 0
+  if docker inspect -f '{{range .Mounts}}{{.Destination}} {{end}}' "$PREFIX-api" | grep -q "$DOCS_PATH"; then return 0; fi
+  if docker cp "$PREFIX-api:$DOCS_PATH" "$ROOT/documents-carry" 2>/dev/null; then
+    echo "Carrying $(find "$ROOT/documents-carry" -type f | wc -l | tr -d ' ') document file(s) into the new documents volume"
+  fi
+}
+carry_documents_in() {
+  [ -d "$ROOT/documents-carry" ] || return 0
+  docker cp "$ROOT/documents-carry/." "$PREFIX-api:$DOCS_PATH/"
+  rm -rf "$ROOT/documents-carry"
 }
 
 # Loads seed.sql, then each plugin's seed (infra/postgres/seeds/plugins/<id>.sql, staged by the
@@ -219,15 +239,26 @@ reset_seed() {
     exit 1
   fi
 
-  backup_dir="$HOME/$PREFIX-db-backups"
-  mkdir -p "$backup_dir"
-  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-  backup_file="$backup_dir/public-before-reset-$timestamp.dump"
-  # The schemas a reset drops: public and the Cases plugin's own (scripts/reset-db.mjs drops the same).
-  docker exec "$PG" pg_dump -U worktime -d worktime --schema=public --schema=cases --format=custom > "$backup_file"
-  test -s "$backup_file"
-  echo "Public-schema backup saved to $backup_file"
+  # Only prod is backed up: RESET_BACKUP=false (GitHub Environment variable, set on demo, preprod and test)
+  # skips it. Unset means a backup, so a new instance is safe until decided; the newest 10 are kept.
+  if [ "${RESET_BACKUP:-true}" = "false" ]; then
+    echo "RESET_BACKUP=false: no backup before this reset"
+  else
+    backup_dir="$HOME/$PREFIX-db-backups"
+    mkdir -p "$backup_dir"
+    timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    backup_file="$backup_dir/public-before-reset-$timestamp.dump"
+    # The schemas a reset drops: public and the Cases plugin's own (scripts/reset-db.mjs drops the same).
+    docker exec "$PG" pg_dump -U worktime -d worktime --schema=public --schema=cases --format=custom > "$backup_file"
+    test -s "$backup_file"
+    echo "Public-schema backup saved to $backup_file"
+    ls -1t "$backup_dir"/public-before-reset-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f --
+  fi
 
+  # Without a backup the files go as well: their rows are about to be dropped (only prod keeps them).
+  if [ "${RESET_BACKUP:-true}" = "false" ]; then
+    docker exec "$PREFIX-api" sh -c "find '$DOCS_PATH' -mindepth 1 -delete" 2>/dev/null || true
+  fi
   docker stop "$PREFIX-api"
   # Bring the API back even if a later step fails (set -e), so a failed reset never leaves it down.
   trap 'docker start "$PREFIX-api" >/dev/null || true' EXIT
@@ -273,7 +304,7 @@ destroy() {
 
   [ -f "$ROOT/compose/docker-compose.vps.yml" ] && "${COMPOSE[@]}" down -v --remove-orphans || true
   for n in web api keycloak mailpit pg; do docker rm -f "$PREFIX-$n" >/dev/null 2>&1 || true; done
-  docker volume rm "${PREFIX}_pg_data" "${PREFIX}_mailpit_data" >/dev/null 2>&1 || true
+  docker volume rm "${PREFIX}_pg_data" "${PREFIX}_mailpit_data" "${PREFIX}_documents_data" >/dev/null 2>&1 || true
   if [ "$legacy" = 1 ]; then
     docker exec edge-pg psql -U postgres -v ON_ERROR_STOP=1 \
       -c "DROP DATABASE IF EXISTS \"$LEGACY_DB\" WITH (FORCE)" -c "DROP ROLE IF EXISTS \"$LEGACY_DB\""

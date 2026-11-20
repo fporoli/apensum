@@ -481,6 +481,8 @@ server or another one: production (`wt`), `preprod` (`wtpp`) and `test`
 | `WEB_SUB`, `API_SUB`, `AUTH_SUB` | e.g. `apppp`, `apipp`, `authpp` |
 | `KEYCLOAK_ADMIN` | |
 | `SHOW_DEMO_ACCOUNTS` | Optional, `true`/`false` |
+| `RESET_BACKUP` | Optional, `false` skips the backup before `reset-seed` (set on demo, preprod, test; only prod is backed up) |
+| `DEMO_RESET_EVERY_HOURS` | Optional, demo only (`2`): the app warns before `demo-reset.yml` resets it and waits through the reset |
 | `GHCR_USERNAME` | Optional |
 | `SMTP_HOST/PORT/FROM/USER/SECURE` | Optional |
 | `MAIL_SUB` | Optional, publishes the instance's Mailpit inbox at `<MAIL_SUB>.<DOMAIN>` |

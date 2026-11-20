@@ -54,6 +54,10 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'nav.importExport': 'Import / Export',
 
     'usermenu.settings': 'Settings',
+    'demoReset.soon': "The demo starts over at {{time}} (in about {{minutes}} min). Everything changed since the last reset is then gone.",
+    'demoReset.title': "The demo is starting over",
+    'demoReset.body': "Its data is being set up fresh, as it is every two hours. This takes a few minutes.",
+    'demoReset.reload': "The page reloads by itself as soon as it is ready.",
     'avatar.title': "Profile picture",
     'avatar.upload': "Upload photo",
     'avatar.change': "Change photo",
@@ -1759,6 +1763,10 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'nav.importExport': 'Import / Export',
 
     'usermenu.settings': 'Einstellungen',
+    'demoReset.soon': "Die Demo wird um {{time}} zurückgesetzt (in etwa {{minutes}} Min.). Alles seit dem letzten Reset Geänderte geht dabei verloren.",
+    'demoReset.title': "Die Demo wird neu aufgesetzt",
+    'demoReset.body': "Die Daten werden frisch angelegt, wie alle zwei Stunden. Das dauert ein paar Minuten.",
+    'demoReset.reload': "Die Seite lädt von selbst neu, sobald alles bereit ist.",
     'avatar.title': "Profilbild",
     'avatar.upload': "Foto hochladen",
     'avatar.change': "Foto ändern",
@@ -3464,6 +3472,10 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'nav.importExport': 'Import / Export',
 
     'usermenu.settings': 'Paramètres',
+    'demoReset.soon': "La démo sera réinitialisée à {{time}} (dans environ {{minutes}} min). Tout ce qui a changé depuis la dernière réinitialisation sera perdu.",
+    'demoReset.title': "La démo est en cours de réinitialisation",
+    'demoReset.body': "Ses données sont recréées, comme toutes les deux heures. Cela prend quelques minutes.",
+    'demoReset.reload': "La page se recharge d’elle-même dès que tout est prêt.",
     'avatar.title': "Photo de profil",
     'avatar.upload': "Téléverser une photo",
     'avatar.change': "Changer la photo",
@@ -5169,6 +5181,10 @@ export const DICTIONARIES: Record<Locale, Record<string, string>> = {
     'nav.importExport': 'Import / Export',
 
     'usermenu.settings': 'Impostazioni',
+    'demoReset.soon': "La demo verrà reimpostata alle {{time}} (tra circa {{minutes}} min). Tutto ciò che è stato modificato dall’ultima reimpostazione andrà perso.",
+    'demoReset.title': "La demo è in fase di reimpostazione",
+    'demoReset.body': "I dati vengono ricreati, come ogni due ore. Ci vuole qualche minuto.",
+    'demoReset.reload': "La pagina si ricarica da sola appena tutto è pronto.",
     'avatar.title': "Foto del profilo",
     'avatar.upload': "Carica foto",
     'avatar.change': "Cambia foto",

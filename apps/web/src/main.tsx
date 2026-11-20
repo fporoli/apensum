@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import App from './App';
+import DemoResetNotice from './DemoResetNotice';
 import { I18nProvider } from './i18n';
 import { BrandingContext, createAppTheme, DEFAULT_BRANDING_COLORS, ThemeModeContext, type ThemeMode } from './theme';
 import type { OrgBranding } from '@worktime3/shared/branding';
@@ -64,7 +65,10 @@ function Root() {
                   <ResetPassword token={passwordReset.token} lang={passwordReset.lang} />
                 </Suspense>
               ) : (
-                <App />
+                <>
+                  <App />
+                  <DemoResetNotice />
+                </>
               )}
             </DatePickerLocalization>
           </I18nProvider>

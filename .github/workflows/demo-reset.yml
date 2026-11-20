@@ -1,0 +1,46 @@
+name: demo-reset
+# The public demo instance (GitHub Environment `demo`) starts over every two hours: this dispatches
+# vps.yml `reset-seed` on demo (without a backup: only prod is backed up, demo sets RESET_BACKUP=false), with
+# the image tag of the last successful deploy on demo, so the reset runs exactly that version's
+# migrations and seed. Run it by hand from the Actions tab as well.
+# GitHub pauses scheduled workflows of a public repository after 60 days without commits; re-enable
+# it in the Actions tab then.
+on:
+  schedule:
+    - cron: '7 */2 * * *' # UTC; minute 7 avoids the full-hour rush (GitHub may start it a few minutes late)
+  workflow_dispatch:
+permissions:
+  actions: write # dispatch vps.yml (a GITHUB_TOKEN may trigger workflow_dispatch)
+  contents: read
+concurrency:
+  group: demo-reset
+  cancel-in-progress: false
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Reset demo with the deployed version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          title=$(gh run list --workflow vps.yml --status success --limit 100 --json displayTitle \
+            --jq '[.[] | select(.displayTitle | startswith("vps: deploy on demo (tag "))][0].displayTitle // ""')
+          tag=$(printf '%s' "$title" | sed -nE 's/^vps: deploy on demo \(tag ([A-Za-z0-9_.-]+)\)$/\1/p')
+          if [ -z "$tag" ]; then echo "No successful deploy on demo found; nothing reset."; exit 1; fi
+          echo "Resetting demo with $tag"
+          since=$(date -u -d '-10 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run vps.yml --ref main -f action=reset-seed -f environment=demo -f "image_tag=$tag" \
+            -f 'confirmation=RESET worktime3 public schema'
+          # Follow the dispatched run, so this job fails when the reset fails.
+          run=""
+          for _ in $(seq 1 30); do
+            sleep 5
+            run=$(gh run list --workflow vps.yml --event workflow_dispatch --created ">=$since" --limit 10 \
+              --json databaseId,displayTitle --jq "[.[] | select(.displayTitle == \"vps: reset-seed on demo (tag $tag)\")][0].databaseId // \"\"")
+            [ -n "$run" ] && break
+          done
+          if [ -z "$run" ]; then echo "The reset run did not start."; exit 1; fi
+          gh run watch "$run" --exit-status --interval 30
