@@ -68,9 +68,13 @@ returns `{ ok: true, offline: true }`. That looks like success but does nothing.
 Demo logins (from `seed.sql`): every `<name>@acme.com` user's password is `<name>`
 (`admin@acme.com` / `admin`, `marta@acme.com` / `marta`, ...). Acme reporting line:
 Alice manages Admin and Adam; Adam manages Marta, Marco and Uma; Marta manages Ulla
-(also hr); Marco manages Ueli; Uma is also developer. The Login screen's demo-account dropdown (Admin, Manager = Marta, HR User = Ulla, User = Ueli)
+(also hr); Marco manages Ueli; Uma is also developer. The Login screen's demo-account dropdown (Admin, Manager = Marta, HR User = Ulla, User = Ueli, Team Lead = Marco)
 come from the global `static_data` row `login`/`demo_accounts` via public
 `GET auth/demo-accounts`; each value is a JSON string `{name, user, password}`.
+Teams: Platform (Alice), People & Culture (Ulla), Product Development (Marco). Cases (`plugins/cases/seed.sql`,
+**generated** by `npx tsx plugins/cases/scripts/generate-demo-seed.mts`, never hand-edited: the rows are ciphertext)
+turns the module on for Acme and adds one encrypted KESB case led by Marta; Admin, Marta, Marco and Ulla hold its key,
+Cases passphrase `<name>-cases-demo` (a person who had set up their own keeps it and sees the case locked).
 The end of `seed.sql` generates each Acme member's history from their start date to yesterday
 (absences, attendance, project time, approved timesheets); a plugin's `seed.sql` (expenses: expenses and
 reports) runs after it in the same transaction and may use its `pg_temp.seed_*` helpers. It is

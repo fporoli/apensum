@@ -78,12 +78,10 @@ The code quality across all workspaces is notably high: typed throughout, modula
 
 ## 5. Prioritized Roadmap & Recommendations
 
-### Short-Term (Immediate Enhancements)
+### Short-Term (Completed & Validated)
+- [x] **Website Modules Submenu & Plugin Developer Page:** Marketing website navigation features a dedicated "Modules" (`Module`) dropdown containing *Cases* (`/faelle-gutachten`), *Expenses* (`/spesen`), and the *Plugin Developer Guide* (`/plugins`), with clean removal of redundant sections from the core Features page.
 - [x] **Correct VPS Port Documentation:** Updated `README.md` to accurately document `5436` for Production, `5434` for Preprod, and `5437` for Demo.
-- [ ] **Enforce Clean Module Exports:** Added `"type": "module"` to plugin `package.json` files to eliminate Node ESM warnings during testing.
-- [ ] **Website Modules Submenu:** Restructure the marketing website navigation:
-  - Add a "Modules" top-level menu with sub-pages: *Cases*, *Expenses*, and *Developer Plugin Quickstart*.
-  - Clean up the main features page to focus cleanly on Core (Time, ArG, Absences, Payroll, Administration).
+- [x] **Preserve Clean Plugin Format:** Plugins remain CommonJS to seamlessly match NestJS runtime resolution and Drizzle ORM typing without dual-package hazards.
 
 ### Medium-Term (Feature & Architecture Improvements)
 - [ ] **Plugin CLI & Scaffolding Generator:** Add an `npm run plugin:create <name>` command that scaffolds a fully compliant plugin directory with manifest, sample controller, sample page, and test suite.

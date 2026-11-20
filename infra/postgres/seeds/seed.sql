@@ -141,8 +141,26 @@ INSERT INTO teams (id, organization_id, name, description, lead_user_id)
 VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Platform', 'Platform team', '22222222-2222-2222-2222-222222222222')
 ON CONFLICT (organization_id, name) DO NOTHING;
 
+-- People & Culture, led by Ulla (HR), and Product Development, led by Marco (R&D).
+INSERT INTO teams (id, organization_id, name, description, lead_user_id)
+VALUES
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'People & Culture', 'HR, onboarding and internal events', '22222222-2222-2222-2222-222222222226'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbd', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Product Development', 'Builds and runs the customer projects', '22222222-2222-2222-2222-222222222225')
+ON CONFLICT (organization_id, name) DO NOTHING;
+
+-- Members by membership (see organization_memberships above); a team's lead is set on the team.
 INSERT INTO team_members (team_id, membership_id)
-VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-333333333333')
+SELECT t.id, v.membership_id::uuid
+FROM (VALUES
+  ('Platform', 'aaaaaaaa-aaaa-aaaa-aaaa-333333333333'),            -- Marta
+  ('People & Culture', 'aaaaaaaa-aaaa-aaaa-aaaa-111111111111'),    -- Admin
+  ('People & Culture', 'aaaaaaaa-aaaa-aaaa-aaaa-333333333336'),    -- Ueli
+  ('People & Culture', 'aaaaaaaa-aaaa-aaaa-aaaa-444444444444'),    -- Uma
+  ('Product Development', 'aaaaaaaa-aaaa-aaaa-aaaa-222222222223'), -- Adam
+  ('Product Development', 'aaaaaaaa-aaaa-aaaa-aaaa-333333333336'), -- Ueli
+  ('Product Development', 'aaaaaaaa-aaaa-aaaa-aaaa-444444444444')  -- Uma
+) AS v(team_name, membership_id)
+JOIN teams t ON t.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND t.name = v.team_name
 ON CONFLICT (team_id, membership_id) DO NOTHING;
 
 INSERT INTO projects (id, organization_id, name, owner_user_id, cost_item, type)
@@ -204,9 +222,13 @@ VALUES (NULL, 'login', 'demo_accounts', '{
   "01": "{\"name\":\"Admin (Acme)\",\"user\":\"admin@acme.com\",\"password\":\"admin\"}",
   "02": "{\"name\":\"Manager (Acme)\",\"user\":\"marta@acme.com\",\"password\":\"marta\"}",
   "03": "{\"name\":\"HR User (Acme)\",\"user\":\"ulla@acme.com\",\"password\":\"ulla\"}",
-  "04": "{\"name\":\"User (Acme)\",\"user\":\"ueli@acme.com\",\"password\":\"ueli\"}"
+  "04": "{\"name\":\"User (Acme)\",\"user\":\"ueli@acme.com\",\"password\":\"ueli\"}",
+  "05": "{\"name\":\"Team Lead (Acme)\",\"user\":\"marco@acme.com\",\"password\":\"marco\"}"
 }'::jsonb, '{}'::jsonb)
 ON CONFLICT DO NOTHING;
+-- Entries added since (only where the key is missing, so edits made in Admin settings stay).
+UPDATE static_data SET "values" = "values" || jsonb_build_object('05', '{"name":"Team Lead (Acme)","user":"marco@acme.com","password":"marco"}')
+WHERE organization_id IS NULL AND entity = 'login' AND enum_name = 'demo_accounts' AND NOT ("values" ? '05');
 
 -- Pending invitation for the login screen's "invited user" demo (token: dev-invite-0001).
 INSERT INTO organization_invitations (organization_id, email, role_id, token, invited_by_user_id, status, expires_at)
