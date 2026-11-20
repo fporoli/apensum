@@ -1,17 +1,20 @@
-# APensum
+# APensum — Modular Swiss Business Framework & Enterprise Suite
 
-Enterprise + individual time tracking: NestJS API, React+MUI web, Postgres,
-Keycloak (same database, `auth` schema), and Caddy as the edge reverse proxy
-where the deployment uses it.
-Schema is versioned with Liquibase; the API talks to Postgres through
-Drizzle ORM, typed against that schema.
+**APensum** is a modular enterprise business framework and application suite engineered specifically for Swiss labor law (ArG) and enterprise requirements. It combines a robust time-tracking and organizational core with an extensible plugin architecture, bundled business modules (Gutachten/Cases and Spesen/Expenses), and a high-performance marketing website.
 
-Built specifically for Swiss labor law (ArG) and enterprise requirements:
-- **Swiss Compliance**: Public holidays for all 26 cantons, Pensum-prorated vacation, and ArG Überzeit (hours beyond 45/50 h/week) tracked separately from flextime/overtime.
+Built with **NestJS** (API), **React 18 + MUI + Vite** (Web & PWA), **Postgres**, **Keycloak** (OIDC IdP in `auth` schema), and **Caddy** (edge reverse proxy). Schema is strictly versioned with **Liquibase** and typed against **Drizzle ORM**.
+
+## Key Highlights
+
+- **Extensible Plugin Framework**: Clean separation between core operations and business modules (`plugins/<id>`). Plugins contribute isolated DB schemas/tables, NestJS controllers, React pages, navigation entries, permission namespaces, and workflow hooks.
+- **Swiss Labor Law (ArG) Compliance**: Automatic holiday calendars for all 26 Swiss cantons, Pensum-prorated vacation calculations, and strict statutory Überzeit tracking (hours exceeding 45/50 h/week) segregated from flextime/overtime.
 - **Swiss Payroll Interfaces**: 1-click monthly payroll export for Abacus (AbaSalary wage types / Lohnarten CSV), Bexio, and formatted Excel (XLSX) / CSV.
-- **Absence Calendar Feeds**: RFC 5545 iCalendar / WebCal live subscriptions for Apple Calendar, Microsoft Outlook, and Google Calendar with capability tokens and scope filtering (`personal`, `team`, `all`).
+- **Zero-Knowledge Dossier Encryption (`plugins/cases`)**: End-to-end envelope encryption (AES-256-GCM + PBKDF2/Argon2id) for sensitive case dossiers, medical/legal assessments, and audio recordings.
+- **Integrated AI Pipeline**: Audio transcription (Azure Whisper / OpenAI) and automated draft synthesis for case interviews and assessments with strict per-instance and per-org monthly budget caps.
+- **Multi-Currency Expense Management (`plugins/expenses`)**: Multi-currency receipts, OCR capture, approval chains, and payroll debiting.
+- **Absence Calendar Feeds**: RFC 5545 iCalendar / WebCal live feeds for Apple Calendar, Microsoft Outlook, and Google Calendar with scoped capability tokens (`personal`, `team`, `all`).
 - **Data Sovereignty & Portability**: Full organization backup into self-contained ZIP archives (relational data JSON + AES-256 encrypted documents) with transactional disaster-recovery restore.
-- **Bulk Employee Onboarding**: CSV employee import with live validation dry-run preview and reporting line resolution.
+- **Bulk Employee Onboarding**: CSV employee onboarding with dry-run validation preview and automatic reporting line resolution.
 
 ## Live PWA Demo (Installable on Mobile)
 
@@ -45,7 +48,10 @@ host-run API and web app directly.
 | --- | --- |
 | `apps/web` | React 18 + MUI + Vite. One PascalCase file per page, registered in `corePages.tsx` like a plugin page; `App.tsx` builds nav drawer, routing and gating from them. |
 | `apps/api` | NestJS API, one controller per resource. |
-| `packages/shared` | Code shared by web and API: `permissions.ts` (permission catalogue), `fields.ts` (configurable form fields), `branding.ts`, `worktime.ts` (daily targets, holidays, month summaries, vacation entitlement). `index.ts` (role ids, RBAC matrix) is mirrored but not yet imported. |
+| `apps/site` | Static marketing website and developer docs in 4 languages (de/en/fr/it). Built with modern zero-dependency generator (`build.mjs`). |
+| `packages/shared` | Code shared by web and API: `permissions.ts` (permission catalogue), `fields.ts` (configurable form fields), `branding.ts`, `worktime.ts` (daily targets, holidays, month summaries, vacation entitlement), and `pluginApi.ts`. |
+| `plugins/cases` | Bundled plugin: Gutachten & Cases with client-side zero-knowledge AES-256-GCM encryption, interview audio transcription, and AI draft synthesis. |
+| `plugins/expenses` | Bundled plugin: Multi-currency expense claims, receipt OCR, multi-tier approval workflow, and payroll exports. |
 | `infra/liquibase` | The database schema's source of truth (see below). |
 | `infra/postgres/seeds` | `seed.sql`: demo orgs/users/projects/project times/expenses. Run manually, separate from schema migrations. |
 | `infra/keycloak` | Realm export (`realm-worktime.json`) imported on Keycloak startup. |
@@ -277,7 +283,7 @@ never seeded by `deploy`: use the `vps` workflow's `seed` (additive) or `reset-s
 |---|---|----|----------|-----|-----|
 | dev (pg+kc in containers, api+web local) | 1 | 5431 | 8091 | 3001 | 8001 |
 | local (all dockerized) | 2 | 5432 | 8092 | 3002 | 8002 |
-| VPS instances (one stack each; only `pg` is published, on `127.0.0.1:PG_PORT`, reachable via SSH tunnel) | — | 5433 production, 5434 preprod, 5435 test (your choice) | edge | edge | edge |
+| VPS instances (one stack each; only `pg` is published, on `127.0.0.1:PG_PORT`, reachable via SSH tunnel) | — | 5436 production, 5434 preprod, 5437 demo (configured per server) | edge | edge | edge |
 
 Azure uses Container Apps ingress, not host ports. On the VPS the shared edge
 proxy routes each instance's three hostnames (`WEB_SUB`, `API_SUB`, `AUTH_SUB`

@@ -1,10 +1,13 @@
 # CLAUDE.md
 
-Multi-tenant time tracking: NestJS API (`apps/api`), React 18 + MUI + Vite web
-(`apps/web`), Postgres, Keycloak (same DB, `auth` schema), Caddy edge proxy.
-npm workspaces, Node >= 24. `README.md` covers architecture, ports and deploy;
-`docs/BUILD_PROMPT.md` holds the product spec and the architectural rules
-below in full; `docs/DATABASE_SCHEMA.md` describes the tables.
+Modular Swiss Business Framework & Enterprise Suite: NestJS API (`apps/api`),
+React 18 + MUI + Vite web (`apps/web`), static marketing site (`apps/site`),
+extensible plugins (`plugins/<id>`, e.g. `cases`, `expenses`), Postgres,
+Keycloak (same DB, `auth` schema), Caddy edge proxy. npm workspaces, Node >= 24.
+`README.md` covers architecture, ports and deploy; `docs/PLUGINS.md` covers plugin
+authoring; `docs/BUILD_PROMPT.md` holds the product spec and architectural rules;
+`docs/DATABASE_SCHEMA.md` describes the tables; `docs/CASES_ENCRYPTION.md` details
+the zero-knowledge dossier envelope encryption.
 
 ## Commands
 
@@ -28,6 +31,8 @@ npm run dev:psql           # psql into the dev database; dev:down / dev:logs
 npm run dev:resetdb        # drop + recreate schema public, migrate, seed (also local:resetdb)
 npm run local:up           # whole stack in Docker (.env.local); local:down / local:seed / local:psql
 npm run stack -- <env> <push|build|reset|start|stop|all> [--reset]   # all excludes reset unless opted in
+node scripts/plugins.mjs build # build all plugins (plugins/*/api -> dist/api)
+node scripts/plugins.mjs test  # run all plugin test suites
 ```
 
 `npm run site:deploy -- [site|sitepp|all] [--remove]` (`scripts/site-deploy.mjs`) dispatches the `site` workflow for

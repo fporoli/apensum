@@ -80,7 +80,7 @@ The code quality across all workspaces is notably high: typed throughout, modula
 
 ### Short-Term (Immediate Enhancements)
 - [x] **Correct VPS Port Documentation:** Updated `README.md` to accurately document `5436` for Production, `5434` for Preprod, and `5437` for Demo.
-- [x] **Enforce Clean Module Exports:** Added `"type": "module"` to plugin `package.json` files to eliminate Node ESM warnings during testing.
+- [ ] **Enforce Clean Module Exports:** Added `"type": "module"` to plugin `package.json` files to eliminate Node ESM warnings during testing.
 - [ ] **Website Modules Submenu:** Restructure the marketing website navigation:
   - Add a "Modules" top-level menu with sub-pages: *Cases*, *Expenses*, and *Developer Plugin Quickstart*.
   - Clean up the main features page to focus cleanly on Core (Time, ArG, Absences, Payroll, Administration).
