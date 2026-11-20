@@ -15,15 +15,16 @@ const PRICED = {
 const AZURE = { AZURE_OPENAI_ENDPOINT: 'https://apensum-openai-ch.openai.azure.com', AZURE_OPENAI_KEY: 'secret', AZURE_OPENAI_DEPLOYMENT: 'gpt-4.1-mini' };
 const MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(20)]);
 
-test('org AI settings: defaults are Azure (Switzerland) and key sentences; reading never fails', () => {
-  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'azure', summary: 'local', draft: 'azure' });
+test('org AI settings: defaults are Azure (Switzerland); reading never fails', () => {
+  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'azure', summary: 'azure', draft: 'azure' });
   assert.deepEqual(parseCaseAiSettings(undefined), DEFAULT_CASE_AI_SETTINGS);
   assert.deepEqual(parseCaseAiSettings({ transcription: 'off', summary: 'bogus', monthlyLimitChf: 10 }),
     { ...DEFAULT_CASE_AI_SETTINGS, transcription: 'off' });
   // The server Whisper is gone: a stored choice of it reads as the default.
   assert.equal(parseCaseAiSettings({ transcription: 'whisper' }).transcription, 'azure');
-  // 'instance' (the server's own provider) is gone: a summary stays local (nothing goes to Azure unasked), a draft goes to Azure.
-  assert.deepEqual(parseCaseAiSettings({ summary: 'instance', draft: 'instance' }), { ...DEFAULT_CASE_AI_SETTINGS, summary: 'local', draft: 'azure' });
+  // 'instance' (the server's own provider) is gone: it reads as Azure; key sentences stay a choice.
+  assert.deepEqual(parseCaseAiSettings({ summary: 'instance', draft: 'instance' }), DEFAULT_CASE_AI_SETTINGS);
+  assert.equal(parseCaseAiSettings({ summary: 'local' }).summary, 'local');
 });
 
 test('org AI settings: validation of what the browser sends', () => {
@@ -96,7 +97,8 @@ test('providers: an unavailable choice is null (never silently another provider)
   assert.equal(transcriptionProviderFor(DEFAULT_CASE_AI_SETTINGS, none), null);
   assert.equal(transcriptionProviderFor(DEFAULT_CASE_AI_SETTINGS, all), 'azure');
   assert.equal(transcriptionProviderFor({ ...DEFAULT_CASE_AI_SETTINGS, transcription: 'off' }, all), null);
-  assert.equal(summaryProviderFor(DEFAULT_CASE_AI_SETTINGS, none), 'local');
+  assert.equal(summaryProviderFor(DEFAULT_CASE_AI_SETTINGS, none), null);
+  assert.equal(summaryProviderFor({ ...DEFAULT_CASE_AI_SETTINGS, summary: 'local' }, none), 'local');
   assert.equal(summaryProviderFor(azure, { ...all, azureOpenai: false }), null);
   assert.equal(summaryProviderFor(azure, all), 'azure');
   assert.equal(draftProviderFor(DEFAULT_CASE_AI_SETTINGS, all), 'azure');

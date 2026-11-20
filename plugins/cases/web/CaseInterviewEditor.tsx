@@ -238,22 +238,25 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
           <TextField label={t('cases.interviews.transcriptText')} value={transcript} multiline minRows={4} maxRows={14}
             onChange={(e) => setTranscript(e.target.value)} disabled={busy}
             InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
-          {interview.summary_stale && <Alert severity="warning">{t('cases.interviews.summaryStale')}</Alert>}
-          <TextField label={t('cases.interviews.summary')} value={summary} multiline minRows={3} maxRows={9}
-            onChange={(e) => setSummary(e.target.value)} disabled={busy}
-            InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
-          {canEdit && <Stack direction="row" spacing={1} alignItems="center">
+          {/* Above the summary it fills: drafted from the transcript as it stands, saved or not. */}
+          {canEdit && <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <Button disabled={locked || !!draft || !transcript.trim() || !providers.summary}
-              variant="outlined"
+              variant="contained"
               onClick={() => void summarize()}>{t('cases.interviews.generateSummary')}</Button>
             <Typography variant="caption" color="text.secondary">
-              {providers.summary
-                ? t('cases.ai.sendsTo', { provider: providerName(providers.summary) })
-                : t('cases.ai.error.ai-provider-not-configured')}
+              {providers.summary === 'local'
+                ? t('cases.ai.localSummary')
+                : providers.summary
+                  ? t('cases.ai.sendsTo', { provider: providerName(providers.summary) })
+                  : t('cases.ai.error.ai-provider-not-configured')}
             </Typography>
             {interview.summary_stale && !interview.transcript_stale && !reviewedSummary &&
               <Button disabled={locked} onClick={() => setReviewedSummary(true)}>{t('cases.interviews.reviewSummary')}</Button>}
           </Stack>}
+          {interview.summary_stale && <Alert severity="warning">{t('cases.interviews.summaryStale')}</Alert>}
+          <TextField label={t('cases.interviews.summary')} value={summary} multiline minRows={3} maxRows={9}
+            onChange={(e) => setSummary(e.target.value)} disabled={busy}
+            InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
           {draft && <>
             <Alert severity="info">{t(draft.target === 'transcript' ? 'cases.interviews.transcriptDraft' : 'cases.interviews.summaryDraft')}</Alert>
             <TextField value={draft.text} multiline maxRows={10} InputProps={{ readOnly: true }} />

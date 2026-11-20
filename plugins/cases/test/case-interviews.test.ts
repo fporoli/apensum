@@ -15,8 +15,8 @@ const revision = '00000000-0000-0000-0000-000000000001';
 const req = { user: { kind: 'local', sub: 'caller' } } as AuthenticatedRequest;
 
 function controller(services: object, permission: string, lead = 'caller') {
-  const db = { getDb: () => ({ execute: async () => ({ rows: [{ name: 'member', permission_id: permission, modules: { cases: true } }] }) }) };
-  // The organization's AI settings read from the same mock (no `ai` column = defaults: Azure transcription, key sentences).
+  // The organization's AI settings come from the same mock row: summaries as key sentences, so no Azure call.
+  const db = { getDb: () => ({ execute: async () => ({ rows: [{ name: 'member', permission_id: permission, modules: { cases: true }, ai: { summary: 'local' } }] }) }) };
   return new CasesController(db as any, { getCase: async () => ({ lead_user_id: lead }), ...services } as any, {} as any, new CaseAiService(db as any, {} as any), {} as any);
 }
 

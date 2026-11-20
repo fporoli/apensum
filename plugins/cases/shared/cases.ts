@@ -291,11 +291,12 @@ export interface CaseAiSettings {
 }
 
 /**
- * What an organization gets until it is changed: transcription and AI drafts (templates that allow them, after
- * the user's go-ahead) by Azure, capped by the organization's and the instance's AI budget; summaries as key
- * sentences without a model. A stored value no longer offered reads as the default.
+ * What an organization gets until it is changed: transcription, interview summaries and AI drafts (templates
+ * that allow them, after the user's go-ahead) by Azure, capped by the organization's and the instance's AI
+ * budget. Key sentences without a model (summary 'local') stay a choice. A stored value no longer offered
+ * reads as the default.
  */
-export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'azure', summary: 'local', draft: 'azure' };
+export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'azure', summary: 'azure', draft: 'azure' };
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -304,11 +305,9 @@ function isOneOf<T extends string>(list: readonly T[], value: unknown): value is
 /** The stored settings with defaults for anything missing or invalid (reading never fails). */
 export function parseCaseAiSettings(raw: unknown): CaseAiSettings {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  let summary: CaseAiSummary = isOneOf(CASE_AI_SUMMARY, o.summary) ? o.summary : DEFAULT_CASE_AI_SETTINGS.summary;
-  // 'instance' (the server's own provider) is gone: key sentences, so nothing goes to Azure unasked.
-  if ((o.summary as string) === 'instance') summary = 'local';
-  let draft: CaseAiDraft = isOneOf(CASE_AI_DRAFT, o.draft) ? o.draft : DEFAULT_CASE_AI_SETTINGS.draft;
-  if ((o.draft as string) === 'instance') draft = 'azure';
+  // 'instance' (the server's own provider, gone) is not in the lists: it reads as the default (Azure).
+  const summary: CaseAiSummary = isOneOf(CASE_AI_SUMMARY, o.summary) ? o.summary : DEFAULT_CASE_AI_SETTINGS.summary;
+  const draft: CaseAiDraft = isOneOf(CASE_AI_DRAFT, o.draft) ? o.draft : DEFAULT_CASE_AI_SETTINGS.draft;
   return {
     transcription: isOneOf(CASE_AI_TRANSCRIPTION, o.transcription) ? o.transcription : DEFAULT_CASE_AI_SETTINGS.transcription,
     summary,
@@ -321,7 +320,7 @@ export function validateCaseAiSettings(raw: unknown): { ok: true; value: CaseAiS
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!o) return { ok: false, error: 'ai-settings-invalid' };
   if (!isOneOf(CASE_AI_TRANSCRIPTION, o.transcription)) return { ok: false, error: 'ai-settings-invalid' };
-  const rawSummary = o.summary === 'instance' ? 'local' : o.summary;
+  const rawSummary = o.summary === 'instance' ? 'azure' : o.summary;
   if (!isOneOf(CASE_AI_SUMMARY, rawSummary)) return { ok: false, error: 'ai-settings-invalid' };
   const rawDraft = o.draft === 'instance' ? 'azure' : o.draft;
   if (!isOneOf(CASE_AI_DRAFT, rawDraft)) return { ok: false, error: 'ai-settings-invalid' };

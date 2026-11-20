@@ -207,8 +207,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `CaseAiSettingsPanel` shown there via `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`). Cases data goes to
   Azure OpenAI in Switzerland only: transcription Azure OpenAI Whisper
   (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland; 25 MB per request =
-  `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences (no model) or Azure, AI draft Azure or off. Default:
-  transcription and drafts on Azure (capped by the budgets below), summaries as key sentences. A summary is made of the
+  `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences (no model) or Azure, AI draft Azure or off. Default: everything on Azure (capped by the budgets below). A summary is made of the
   transcript as it stands in the editor, saved or not; a generated text fills an empty field directly, else it is shown
   as a draft to accept. There is no self-hosted Whisper any more. `case-ai.service.ts` picks the provider
   (a chosen but unconfigured one is an error, never a silent fallback). The AI budget is the core's, for every
