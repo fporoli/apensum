@@ -364,8 +364,16 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   approval. Opening Documents issues the current year's missing PDFs; `npm run db:documents` does it for
   everyone (run by `dev:seed` / `dev:resetdb`, dev only: the Docker stacks keep files in the API container).
 - Directory (`nav.directory:see:all`, everyone, 058; `directory.controller.ts`, `Directory.tsx`): active
-  members with avatar, e-mail, basic-data `phone1` (deliberately shown org-wide), position and department
-  of the assignment in force, and an open check-in. Return nothing more from basic data or time records.
+  members with avatar, e-mail, basic-data `phone1` (deliberately shown org-wide), position, department and
+  manager of the assignment in force (manager card on hover), and a presence mark: an open check-in, else an
+  approved absence today (shown as "absent until", never its type), else not checked in. Return nothing more
+  from basic data or time records. Demo users get fantasy portraits (`infra/postgres/seeds/avatars/*.svg`,
+  URL-encoded in `seed.sql`: `users.avatar_url` is varchar(1024)) and internal phone numbers.
+- Profile pictures (`avatars.ts`, `avatars.controller.ts`, `AvatarEditor.tsx` in the user menu's Settings): the browser crops
+  and shrinks a photo to a 256 px JPEG and uploads it (`PUT users/me/avatar`, PNG/JPEG/WebP by their bytes, never SVG); it is
+  a document (encrypted at rest, `source_table` `users.avatar`) and `users.avatar_url` holds `doc:<id>`, which responses turn
+  into the public `public/avatars/:id` (no login, as an <img> cannot send the token; served only while it is someone's
+  current picture, cached for a year since a new picture gets a new id). Other `avatar_url` values pass through unchanged.
 - "Send by e-mail" on requests and Approvals items (`ForwardMailDialog.tsx`, `POST requests/:id/forward`,
   `POST workflows/:id/forward`, `forward-mail.service.ts`): the server mails active members of the org only
   (max 20), Reply-To the sender, with a link back; whoever may see the item may send it. It is the action

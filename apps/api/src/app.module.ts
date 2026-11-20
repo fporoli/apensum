@@ -47,6 +47,7 @@ import { WorkflowsController } from './workflows.controller';
 import { StaticDataController } from './static-data.controller';
 import { AuditController } from './audit.controller';
 import { AssistantController } from './assistant.controller';
+import { AvatarsController } from './avatars.controller';
 import { AssistantService } from './assistant.service';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
@@ -106,6 +107,7 @@ const plugins = loadApiPlugins();
     StaticDataController,
     AuditController,
     AssistantController,
+    AvatarsController,
     NotificationsController,
     ImportExportController,
     CalendarFeedController,

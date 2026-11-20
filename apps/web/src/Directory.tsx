@@ -3,7 +3,7 @@ import { Alert, Avatar, Badge, Box, Card, CardContent, Chip, CircularProgress, I
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { ContactsIcon, MailIcon, PhoneIcon, SearchIcon } from './icons';
-import { swissLocale } from './localeFormat';
+import { formatLocaleDate, swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -19,6 +19,30 @@ interface Person {
   department: string | null;
   departmentId: string | null;
   checkedInSince: string | null;
+  status: 'checkedIn' | 'absent' | 'notCheckedIn';
+  absentUntil: string | null;
+  managerId: string | null;
+  managerName: string | null;
+}
+
+/** Presence as a small mark on the picture, like a chat app: green check, purple away arrow, grey ring. */
+function StatusMark({ status }: { status: Person['status'] }) {
+  const ring = { width: 18, height: 18, borderRadius: '50%', border: 2, borderColor: 'background.paper', display: 'grid', placeItems: 'center' } as const;
+  if (status === 'checkedIn') {
+    return (
+      <Box sx={{ ...ring, bgcolor: 'success.main' }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden><path d="M2 5.2 4.2 7.4 8.2 3" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </Box>
+    );
+  }
+  if (status === 'absent') {
+    return (
+      <Box sx={{ ...ring, bgcolor: '#a855f7' }}>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden><path d="M6.5 2.5 4 5l2.5 2.5M4 5h4" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </Box>
+    );
+  }
+  return <Box sx={{ ...ring, bgcolor: 'background.paper', boxShadow: (th) => `inset 0 0 0 2px ${th.palette.grey[500]}` }} />;
 }
 
 function initials(p: Person): string {
@@ -69,13 +93,41 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], locale));
   }, [people, locale]);
 
+  const byId = useMemo(() => new Map((people ?? []).map((p) => [p.userId, p])), [people]);
+  const statusText = (p: Person) =>
+    p.status === 'checkedIn' && p.checkedInSince ? t('directory.checkedInSince', { time: time(p.checkedInSince) })
+      : p.status === 'absent' ? (p.absentUntil ? t('directory.absentUntil', { date: formatLocaleDate(p.absentUntil, locale) }) : t('directory.absent'))
+        : t('directory.notCheckedIn');
+  const statusColor = (p: Person) => (p.status === 'checkedIn' ? 'success.main' : p.status === 'absent' ? '#a855f7' : 'text.secondary');
+
+  /** The manager's card, shown when hovering "Reports to". */
+  const managerPanel = (p: Person) => {
+    const m = p.managerId ? byId.get(p.managerId) : undefined;
+    if (!m) return <Typography variant="body2">{p.managerName}</Typography>;
+    return (
+      <Box sx={{ display: 'flex', gap: 1.5, p: 0.5, minWidth: 220 }}>
+        <Badge overlap="circular" anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} badgeContent={<StatusMark status={m.status} />}>
+          <Avatar src={m.avatarUrl ?? undefined} alt={m.name} sx={{ width: 44, height: 44 }}>{initials(m)}</Avatar>
+        </Badge>
+        <Box sx={{ minWidth: 0, display: 'grid', gap: 0.25 }}>
+          <Typography variant="caption" color="text.secondary">{t('directory.reportsTo')}</Typography>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{m.name}</Typography>
+          {(m.position || m.department) && <Typography variant="caption" color="text.secondary">{[m.position, m.department].filter(Boolean).join(' · ')}</Typography>}
+          <Typography variant="caption" sx={{ color: statusColor(m) }}>{statusText(m)}</Typography>
+          {m.phone && <Link href={`tel:${m.phone.replace(/[^\d+]/g, '')}`} variant="caption" underline="hover">{m.phone}</Link>}
+          <Link href={`mailto:${m.email}`} variant="caption" underline="hover" sx={{ overflowWrap: 'anywhere' }}>{m.email}</Link>
+        </Box>
+      </Box>
+    );
+  };
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return (people ?? []).filter(
       (p) =>
         (department === 'all' || p.departmentId === department) &&
         (!onlyPresent || p.checkedInSince) &&
-        (!q || [p.name, p.email, p.phone, p.position, p.department].filter(Boolean).join(' ').toLowerCase().includes(q)),
+        (!q || [p.name, p.email, p.phone, p.position, p.department, p.managerName].filter(Boolean).join(' ').toLowerCase().includes(q)),
     );
   }, [people, query, department, onlyPresent]);
 
@@ -137,22 +189,8 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
           {visible.map((p) => (
             <Card key={p.userId} variant="outlined">
               <CardContent sx={{ display: 'flex', gap: 1.75, alignItems: 'flex-start', '&:last-child': { pb: 2 } }}>
-                <Tooltip title={p.checkedInSince ? t('directory.checkedInSince', { time: time(p.checkedInSince) }) : t('directory.notCheckedIn')}>
-                  <Badge
-                    overlap="circular"
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                    variant="dot"
-                    sx={{
-                      '& .MuiBadge-dot': {
-                        width: 14,
-                        height: 14,
-                        borderRadius: '50%',
-                        border: 2,
-                        borderColor: 'background.paper',
-                        bgcolor: p.checkedInSince ? 'success.main' : 'grey.400',
-                      },
-                    }}
-                  >
+                <Tooltip title={statusText(p)}>
+                  <Badge overlap="circular" anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} badgeContent={<StatusMark status={p.status} />}>
                     <Avatar src={p.avatarUrl ?? undefined} alt={p.name} sx={{ width: 56, height: 56, fontSize: '1.1rem' }}>
                       {initials(p)}
                     </Avatar>
@@ -167,9 +205,22 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
                       {[p.position, p.department].filter(Boolean).join(' · ')}
                     </Typography>
                   )}
-                  <Typography variant="caption" sx={{ color: p.checkedInSince ? 'success.main' : 'text.secondary' }}>
-                    {p.checkedInSince ? t('directory.checkedInSince', { time: time(p.checkedInSince) }) : t('directory.notCheckedIn')}
+                  <Typography variant="caption" sx={{ color: statusColor(p) }}>
+                    {statusText(p)}
                   </Typography>
+                  {p.managerName && (
+                    <Tooltip
+                      title={managerPanel(p)}
+                      placement="bottom-start"
+                      enterDelay={250}
+                      slotProps={{ tooltip: { sx: { bgcolor: 'background.paper', color: 'text.primary', border: 1, borderColor: 'divider', boxShadow: 3, maxWidth: 340, p: 1.25 } } }}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ cursor: 'default', width: 'fit-content' }}>
+                        {t('directory.reportsTo')}{' '}
+                        <Box component="span" sx={{ color: 'text.primary', fontWeight: 600, borderBottom: 1, borderStyle: 'dotted', borderColor: 'text.secondary' }}>{p.managerName}</Box>
+                      </Typography>
+                    </Tooltip>
+                  )}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5, minWidth: 0 }}>
                     <MailIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                     <Link href={`mailto:${p.email}`} variant="body2" underline="hover" sx={{ overflowWrap: 'anywhere' }}>

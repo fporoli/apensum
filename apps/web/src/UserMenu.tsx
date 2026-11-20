@@ -20,6 +20,7 @@ import {
 import type { Session } from './Login';
 import { LOCALES, useT, type Locale } from './i18n';
 import AboutDialog from './AboutDialog';
+import AvatarEditor from './AvatarEditor';
 import {
   ArrowDropDownIcon,
   CheckIcon,
@@ -163,6 +164,19 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
   }
 
   const initial = (session.displayName || session.email || '?').trim().charAt(0).toUpperCase();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  // The caller's profile picture (avatars.controller.ts), again for whoever this session is (switch user).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/users/me/avatar`, { headers: await authHeaders() });
+        const data = await res.json();
+        if (!cancelled && data?.ok) setAvatarUrl(data.avatarUrl ?? null);
+      } catch { /* initials */ }
+    })();
+    return () => { cancelled = true; };
+  }, [authHeaders, session.userId]);
 
   return (
     <>
@@ -174,7 +188,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
         aria-haspopup="menu"
         aria-expanded={!!anchorEl}
       >
-        <Avatar sx={{ width: 24, height: 24, fontSize: 13, bgcolor: 'primary.dark' }}>{initial}</Avatar>
+        <Avatar src={avatarUrl ?? undefined} sx={{ width: 24, height: 24, fontSize: 13, bgcolor: 'primary.dark' }}>{initial}</Avatar>
         <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
           {session.displayName}
         </Typography>
@@ -240,6 +254,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
         <DialogTitle>{t('usermenu.settings')}</DialogTitle>
         <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
           {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+          <AvatarEditor avatarUrl={avatarUrl} initial={initial} orgId={currentOrgId} authHeaders={authHeaders} onChange={setAvatarUrl} />
           <TextField
             select
             label={t('usermenu.language')}

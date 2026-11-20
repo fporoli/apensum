@@ -10,9 +10,10 @@ import { purposeKey } from './jwt';
  */
 
 /** The API's public root as the caller reached it (behind Caddy: the forwarded host and scheme). */
-export function publicApiRoot(req: Request): string {
-  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || 'localhost:8001').split(',')[0].trim();
+export function publicApiRoot(req: Pick<Request, 'headers'> & { protocol?: string } | { headers?: Record<string, string | string[] | undefined>; protocol?: string }): string {
+  const headers = req.headers ?? {};
+  const proto = String(headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = String(headers['x-forwarded-host'] || headers.host || 'localhost:8001').split(',')[0].trim();
   return `${proto}://${host}/api/v1`;
 }
 

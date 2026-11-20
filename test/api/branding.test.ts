@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { validateBranding } from '@worktime3/shared/branding';
@@ -102,5 +102,19 @@ test('seeded branding is valid and its logos match infra/postgres/seeds/branding
     assert.ok(result.ok, `${orgId}: ${JSON.stringify(result)}`);
     const svg = readFileSync(join(seedDir, 'branding', logos[orgId]), 'utf8');
     assert.equal(result.branding.logo, `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`, `${logos[orgId]} changed: regenerate its data URL in seed.sql`);
+  }
+});
+
+test('seeded demo avatars match infra/postgres/seeds/avatars/*.svg and fit users.avatar_url', () => {
+  const seedDir = join(__dirname, '../../infra/postgres/seeds');
+  const seed = readFileSync(join(seedDir, 'seed.sql'), 'utf8');
+  const rows = [...seed.matchAll(/\('([0-9a-f-]{36})', '(\+41[\d ]+)', '(data:image\/svg\+xml,(?:[^']|'')+)'\)/g)];
+  const files = readdirSync(join(seedDir, 'avatars')).filter((f) => f.endsWith('.svg'));
+  assert.equal(rows.length, files.length, 'one seeded avatar per file');
+  const seeded = new Set(rows.map(([, , , url]) => url.replace(/''/g, "'")));
+  for (const url of seeded) assert.ok(url.length <= 1024, 'users.avatar_url is varchar(1024)');
+  for (const f of files) {
+    const svg = readFileSync(join(seedDir, 'avatars', f), 'utf8').trim();
+    assert.ok(seeded.has(`data:image/svg+xml,${svg.replace(/%/g, '%25').replace(/#/g, '%23')}`), `${f} changed: regenerate its data URL in seed.sql`);
   }
 });
