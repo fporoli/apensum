@@ -10,7 +10,7 @@ Built with **NestJS** (API), **React 18 + MUI + Vite** (Web & PWA), **Postgres**
 - **Swiss Labor Law (ArG) Compliance**: Automatic holiday calendars for all 26 Swiss cantons, Pensum-prorated vacation calculations, and strict statutory Überzeit tracking (hours exceeding 45/50 h/week) segregated from flextime/overtime.
 - **Swiss Payroll Interfaces**: 1-click monthly payroll export for Abacus (AbaSalary wage types / Lohnarten CSV), Bexio, and formatted Excel (XLSX) / CSV.
 - **Zero-Knowledge Dossier Encryption (`plugins/cases`)**: End-to-end envelope encryption (AES-256-GCM + PBKDF2/Argon2id) for sensitive case dossiers, medical/legal assessments, and audio recordings.
-- **Integrated AI Pipeline**: Audio transcription (Azure Whisper / OpenAI) and automated draft synthesis for case interviews and assessments with strict per-instance and per-org monthly budget caps.
+- **Integrated AI Pipeline**: Audio transcription and drafts with Azure OpenAI in Switzerland only (Whisper, GPT), and automated draft synthesis for case interviews and assessments with strict per-instance and per-org monthly budget caps.
 - **Multi-Currency Expense Management (`plugins/expenses`)**: Multi-currency receipts, OCR capture, approval chains, and payroll debiting.
 - **Absence Calendar Feeds**: RFC 5545 iCalendar / WebCal live feeds for Apple Calendar, Microsoft Outlook, and Google Calendar with scoped capability tokens (`personal`, `team`, `all`).
 - **Data Sovereignty & Portability**: Full organization backup into self-contained ZIP archives (relational data JSON + AES-256 encrypted documents) with transactional disaster-recovery restore.
@@ -202,11 +202,11 @@ web app consumes via `useNotifications.ts` and `NotificationBell`.
 
 ### AI assistant
 
-`assistant.service.ts` uses the OpenAI SDK against Gemini's or OpenAI's
-compatible endpoint, with tool-calling. Every tool runs the same
-authorization as its REST equivalent, using the caller's real identity, so the
-assistant can never see or do more than the user could through the UI. Without
-`GEMINI_API_KEY`/`OPENAI_API_KEY` it returns
+`assistant.service.ts` uses Azure OpenAI in Switzerland (the app's only AI provider), with tool-calling.
+Each question is one reservation in the AI budget (`AiBudgetService`, kind `assistant`), like
+Cases and receipt recognition. Every tool runs the same authorization as its REST equivalent,
+using the caller's real identity, so the assistant can never see or do more than the user could
+through the UI. Without Azure OpenAI (key, budget and prices) it returns
 `{ ok: false, error: 'assistant-not-configured' }`.
 
 ### Graceful degradation
@@ -469,7 +469,6 @@ server or another one: production (`wt`), `preprod` (`wtpp`) and `test`
 | `KEYCLOAK_ADMIN_PASSWORD` | |
 | `API_JWT_SECRET` | |
 | `SMTP_PASSWORD` | Optional |
-| `GEMINI_API_KEY` or `OPENAI_API_KEY` | Optional, turns on the AI assistant (Gemini wins if both are set) |
 | `GHCR_TOKEN` | Optional, `read:packages`, only for private images |
 
 **Variables**
@@ -484,7 +483,6 @@ server or another one: production (`wt`), `preprod` (`wtpp`) and `test`
 | `SHOW_DEMO_ACCOUNTS` | Optional, `true`/`false` |
 | `GHCR_USERNAME` | Optional |
 | `SMTP_HOST/PORT/FROM/USER/SECURE` | Optional |
-| `GEMINI_MODEL`, `OPENAI_MODEL` | Optional, the assistant's model (defaults `gemini-3.6-flash` / `gpt-4o-mini`) |
 | `MAIL_SUB` | Optional, publishes the instance's Mailpit inbox at `<MAIL_SUB>.<DOMAIN>` |
 | `PORTAINER_SUB` | Optional, Portainer hostname `<PORTAINER_SUB>.<DOMAIN>`, default `portainer`. Set it per server when servers share a `DOMAIN`, e.g. `portainerpp`. |
 
@@ -574,10 +572,10 @@ takes it down.
 
 The `azure` GitHub Environment uses the same names as `azure.yml` lists
 (`AZURE_CLIENT_ID/TENANT_ID/SUBSCRIPTION_ID`, `POSTGRES_PASSWORD`, …).
-For the AI assistant, add the secret `GEMINI_API_KEY` (or `OPENAI_API_KEY`) and
-optionally the variable `GEMINI_MODEL` / `OPENAI_MODEL`; they reach the API when
-`azure.yml` provisions the apps (`azure-deploy` only swaps images, so rerun the
-apps phase after adding them).
+AI (assistant, Cases, receipts) is Azure OpenAI in Switzerland only: its key is repo-level, the budget
+and prices are Environment variables (`infra/azure/ai-provision.sh github`); they reach the API when
+`azure.yml` provisions the apps (`azure-deploy` only swaps images, so rerun the apps phase after
+changing them).
 Environment values override repo-level ones, so existing repo secrets keep
 working until you move them.
 

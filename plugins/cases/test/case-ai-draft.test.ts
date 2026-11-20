@@ -52,7 +52,7 @@ test('an unusable AI answer is rejected', () => {
 });
 
 function service(template: Record<string, unknown>) {
-  // Default org AI settings (no `ai` stored): the draft goes to the instance's provider.
+  // Default org AI settings (no `ai` stored): the draft goes to Azure OpenAI (Switzerland).
   const caseAi = new CaseAiService({ getDb: () => ({ execute: async () => ({ rows: [] }) }) } as never, {} as never);
   const svc = new CasesService({ getDb: () => ({}) } as never, {} as never, caseAi);
   Object.assign(svc, {
@@ -64,16 +64,15 @@ function service(template: Record<string, unknown>) {
   return svc;
 }
 
-test('an AI draft needs a template that allows it, then a configured provider', async () => {
-  const keys = { gemini: process.env.GEMINI_API_KEY, openai: process.env.OPENAI_API_KEY };
-  delete process.env.GEMINI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
+test('an AI draft needs a template that allows it, then Azure OpenAI set up on the server', async () => {
+  const names = ['AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_KEY', 'AZURE_OPENAI_DEPLOYMENT'];
+  const saved = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+  for (const n of names) delete process.env[n];
   try {
     await assert.rejects(service({ ai_allowed: false }).aiDraft('o1', 'c1', 't1', 'u1'), ForbiddenException);
     await assert.rejects(service({ ai_allowed: true }).aiDraft('o1', 'c1', 't1', 'u1'), ServiceUnavailableException);
   } finally {
-    if (keys.gemini !== undefined) process.env.GEMINI_API_KEY = keys.gemini;
-    if (keys.openai !== undefined) process.env.OPENAI_API_KEY = keys.openai;
+    for (const n of names) if (saved[n] === undefined) delete process.env[n]; else process.env[n] = saved[n];
   }
 });
 

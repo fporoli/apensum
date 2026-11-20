@@ -24,11 +24,11 @@ several organizations and switch between them.
 - **Email**: nodemailer, unauthenticated against a local Mailpit catcher in
   dev, switches to a real relay purely via env vars (`SMTP_USER`/`PASSWORD`
   set → auth kicks in; nothing else changes).
-- **AI assistant**: OpenAI-compatible chat completions with tool-calling.
-  Build it against the `openai` SDK's interface specifically *because*
-  multiple providers (OpenAI, Gemini, others) expose an OpenAI-compatible
-  endpoint — switching providers becomes a 3-line change (`baseURL`,
-  `apiKey`, `model`), not a rewrite.
+- **AI assistant**: OpenAI-compatible chat completions with tool-calling, on
+  Azure OpenAI in Switzerland (the only AI provider, every call through the AI
+  budget). Built against the `openai` SDK's interface, so another provider with
+  an OpenAI-compatible endpoint (e.g. a Swiss one) stays a small change
+  (`baseURL`, `apiKey`, `model`), not a rewrite.
 - **Infra**: Docker Compose, four environments (local/dev/vps/azure) at
   fixed port offsets. `local` runs only its dependencies (Postgres,
   Keycloak, Mailpit, a one-shot migration runner) in containers — `api`/

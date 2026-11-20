@@ -1510,7 +1510,8 @@ function CaseAssessmentsTab({
   const [creating, setCreating] = useState<'rules' | 'ai' | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   // AI drafts: the provider the data goes to (null = none configured) and the user's go-ahead.
-  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai' | 'azure' | null>(null);
+  const [aiProvider, setAiProvider] = useState<'azure' | null>(null);
+  const [aiDraftOff, setAiDraftOff] = useState(false);
   const [aiConsent, setAiConsent] = useState(false);
   const selectedTemplate = templates.find((tpl) => tpl.id === selectedTemplateId);
 
@@ -1537,6 +1538,7 @@ function CaseAssessmentsTab({
       if (tplData?.ok) {
         setTemplates(tplData.templates ?? []);
         setAiProvider(tplData.aiProvider ?? null);
+        setAiDraftOff(!!tplData.aiDraftOff);
         if (tplData.templates?.length > 0 && !selectedTemplateId) {
           const match = tplData.templates.find((t: AssessmentTemplate) => t.domain === caseItem.domain) || tplData.templates[0];
           setSelectedTemplateId(match.id);
@@ -1888,7 +1890,7 @@ function CaseAssessmentsTab({
                     />
                   </Alert>
                 ) : (
-                  <Alert severity="info">{t('cases.assessments.error.ai-not-configured')}</Alert>
+                  <Alert severity="info">{t(aiDraftOff ? 'cases.assessments.error.ai-draft-disabled' : 'cases.assessments.error.ai-not-configured')}</Alert>
                 ))}
                 {creating === 'ai' && (
                   <Alert severity="info" icon={<CircularProgress size={20} />}>{t('cases.assessments.aiWorking')}</Alert>

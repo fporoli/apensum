@@ -104,8 +104,8 @@ export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type Perso
 export { FieldsService } from './fields.service';
 export { WorkflowsService, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 
-// AI: the instance's provider (Gemini/OpenAI) and paid calls (Azure, Switzerland), always through AiBudgetService
-export { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from './ai-client';
+// AI: Azure OpenAI (Switzerland) only, every call through AiBudgetService
+export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
 export {
   AiBudgetService, azureAllowed, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, instanceBudgetChf,
   transcribeChf, type AiUsageKind, type AzurePrices,

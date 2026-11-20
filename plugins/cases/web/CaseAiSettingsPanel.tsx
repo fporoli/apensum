@@ -13,15 +13,15 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 interface AiSettingsResponse {
   settings: CaseAiSettings;
-  available: { azureTranscription: boolean; azureOpenai: boolean; instance: 'gemini' | 'openai' | null };
+  available: { azureTranscription: boolean; azureOpenai: boolean };
   canConfigure: boolean;
 }
 
 /**
  * Organization settings -> AI and costs, the Cases part: which providers transcribe, summarize and
- * draft for this organization. Everyone with Cases or Organization settings sees it; only a
- * superdeveloper changes it (the instance owner pays Azure). The monthly limit and spend are the
- * core's (AiSettingsPanel).
+ * draft for this organization (only Azure in Switzerland receives Cases data). Everyone with Cases or
+ * Organization settings sees it; a superdeveloper or whoever edits Organization settings changes it.
+ * The monthly limit that caps Azure, and the spend, are the core's (AiSettingsPanel, superdeveloper).
  */
 export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const { t } = useI18n();
@@ -52,15 +52,12 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
   if (!data || !form) return error ? <Alert severity="error">{error}</Alert> : null;
 
   const { available, canConfigure } = data;
-  const instanceLabel = available.instance
-    ? t('cases.ai.settings.instance', { provider: t(`cases.ai.provider.${available.instance}`) })
-    : t('cases.ai.settings.instanceNone');
-  const optionLabel = (value: string, usable: boolean) => {
-    const name = value === 'instance' ? instanceLabel : t(`cases.ai.provider.${value}`);
+  const optionLabel = (field: 'transcription' | 'summary' | 'draft', value: string, usable: boolean) => {
+    const name = field === 'draft' && value === 'off' ? t('cases.ai.settings.draftOff') : t(`cases.ai.provider.${value}`);
     return usable ? name : `${name} (${t('cases.ai.settings.notAvailable')})`;
   };
   const usableTranscription = (v: string) => (v === 'azure' ? available.azureTranscription : true);
-  const usableText = (v: string) => (v === 'azure' ? available.azureOpenai : v === 'instance' ? available.instance !== null : true);
+  const usableText = (v: string) => (v === 'azure' ? available.azureOpenai : true);
 
   const save = async () => {
     setSaving(true);
@@ -87,7 +84,7 @@ export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; aut
     <TextField id={`case-ai-${field}`} select size="small" label={label} value={form[field]} disabled={!canConfigure || saving} sx={{ minWidth: 260 }}
       onChange={(e) => setForm({ ...form, [field]: e.target.value } as CaseAiSettings)}>
       {values.map((v) => (
-        <MenuItem key={v} value={v} disabled={!usable(v) && form[field] !== v}>{optionLabel(v, usable(v))}</MenuItem>
+        <MenuItem key={v} value={v} disabled={!usable(v) && form[field] !== v}>{optionLabel(field, v, usable(v))}</MenuItem>
       ))}
     </TextField>
   );

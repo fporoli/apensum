@@ -4,6 +4,8 @@ import { useT } from './i18n';
 import { AutoAwesomeIcon, CloseIcon, RestartAltIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
+/** Budget refusals and Azure failures the API returns as codes (AiBudgetService, chatErrorCode). */
+const ASSISTANT_ERRORS = ['ai-org-limit-reached', 'ai-budget-exhausted', 'ai-user-busy', 'ai-rate-limited', 'ai-provider-busy', 'ai-provider-unavailable'];
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -45,11 +47,13 @@ export default function Assistant({ orgId, authHeaders, onClose }: AssistantProp
       const data = await res.json();
       if (!data.ok) {
         const message =
-          data.error === 'assistant-not-configured'
+          data.error === 'assistant-not-configured' || data.error === 'ai-provider-not-configured'
             ? t('assistant.notConfigured')
             : data.error === 'forbidden'
               ? t('assistant.forbidden')
-              : t('assistant.failed', { detail: data.detail ? `: ${data.detail}` : '' });
+              : ASSISTANT_ERRORS.includes(data.error)
+                ? t(`assistant.error.${data.error}`)
+                : t('assistant.failed', { detail: data.detail ? `: ${data.detail}` : '' });
         setError(message);
         return;
       }

@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import OpenAI from 'openai';
-import { aiClient, aiModel, aiProvider } from './ai-client';
+import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
+import { AiBudgetService, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 import { and, asc, eq, ilike, inArray } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
@@ -81,24 +81,28 @@ const TOOLS: ChatCompletionTool[] = [
   },
 ];
 
+/** Model rounds per question (each may call tools), and the answer tokens per round. */
+export const ASSISTANT_ROUNDS = 5;
+export const ASSISTANT_MAX_TOKENS = 1000;
+
+/**
+ * The assistant: Azure OpenAI in Switzerland only, like every AI call of the app. One question is one
+ * budget reservation (AiBudgetService: the instance's and the organization's monthly CHF, one running
+ * call per user, 20 per hour), estimated for all its rounds and settled with the tokens actually used.
+ */
 @Injectable()
 export class AssistantService {
+  private readonly logger = new Logger('Assistant');
+
   constructor(
     private readonly db: DbService,
     private readonly versions: VersionsService,
     private readonly workTime: WorkTimeModelService,
+    private readonly budget: AiBudgetService,
   ) {}
 
-  private client(): OpenAI | null {
-    return aiClient();
-  }
-
-  private model(): string {
-    return aiModel();
-  }
-
   isConfigured(): boolean {
-    return aiProvider() !== null;
+    return azureOpenAiAvailable();
   }
 
   async chat(
@@ -107,9 +111,11 @@ export class AssistantService {
     role: string,
     history: AssistantMessage[],
   ): Promise<{ reply: string; actions: string[] }> {
-    const client = this.client();
+    const config = azureOpenAiConfig();
+    const prices = azurePrices();
     const db = this.db.getDb();
-    if (!client || !db) return { reply: '', actions: [] };
+    if (!db) return { reply: '', actions: [] };
+    if (!this.isConfigured() || !config || !prices) throw new ServiceUnavailableException('assistant-not-configured');
 
     const today = new Date().toISOString().slice(0, 10);
     const sanitizedHistory = history
@@ -133,16 +139,65 @@ export class AssistantService {
 
     const ctx: ToolContext = { db, callerId, orgId };
     const actions: string[] = [];
-    const model = this.model();
 
-    for (let round = 0; round < 5; round++) {
-      const completion = await client.chat.completions.create({ model, messages: convo, tools: TOOLS });
+    const inputChars = convo.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0) + JSON.stringify(TOOLS).length;
+    const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
+    const usageId = await this.budget.reserve({
+      orgId, userId: callerId, kind: 'assistant', provider: 'azure-openai',
+      estimateChf: estimateChatChf(inputChars, ASSISTANT_MAX_TOKENS, prices) * ASSISTANT_ROUNDS, orgLimitChf,
+    });
+    const context = { orgId, orgLimitChf };
+    const client = azureOpenAiClient(config);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let settled = false;
+    const settle = async (ok: boolean, error?: string, unknownCost = false) => {
+      if (settled) return;
+      settled = true;
+      await this.budget.finish(usageId, {
+        ok, error, inputTokens, outputTokens,
+        actualChf: unknownCost ? null : chatChf(inputTokens, outputTokens, prices),
+      }, context);
+    };
+
+    try {
+      return await this.rounds(client, config.deployment, convo, ctx, actions, (u) => {
+        inputTokens += u?.prompt_tokens ?? 0;
+        outputTokens += u?.completion_tokens ?? 0;
+      }, settle);
+    } finally {
+      // A tool that threw (database) must not leave the reservation pending, which would block the user.
+      await settle(false, 'assistant-request-failed');
+    }
+  }
+
+  private async rounds(
+    client: ReturnType<typeof azureOpenAiClient>, deployment: string, convo: ChatCompletionMessageParam[], ctx: ToolContext, actions: string[],
+    count: (usage: { prompt_tokens: number; completion_tokens: number } | undefined) => void,
+    settle: (ok: boolean, error?: string, unknownCost?: boolean) => Promise<void>,
+  ): Promise<{ reply: string; actions: string[] }> {
+    for (let round = 0; round < ASSISTANT_ROUNDS; round++) {
+      let completion;
+      try {
+        completion = await retryStaleConnection(() => client.chat.completions.create({
+          model: deployment, messages: convo, tools: TOOLS, max_completion_tokens: ASSISTANT_MAX_TOKENS,
+        }));
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        const code = chatErrorCode(status, 'assistant-request-failed');
+        this.logger.warn(`Azure assistant call failed for org ${ctx.orgId}: ${error instanceof Error ? error.message : error}`);
+        // No answer (timeout) may have been billed: the estimate keeps counting.
+        await settle(false, code, status === undefined);
+        throw new HttpException(code, 503);
+      }
+      count(completion.usage);
       const message = completion.choices[0]?.message;
       if (!message) break;
       convo.push(message);
 
       const calls = message.tool_calls?.filter((c): c is typeof c & { type: 'function' } => c.type === 'function');
       if (!calls || calls.length === 0) {
+        await settle(true);
         return { reply: message.content ?? '', actions };
       }
 
@@ -156,6 +211,7 @@ export class AssistantService {
         convo.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result.data) });
       }
     }
+    await settle(true);
     return { reply: "Sorry, that took too many steps — try asking in a simpler way.", actions };
   }
 

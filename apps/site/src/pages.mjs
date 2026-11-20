@@ -940,7 +940,7 @@ const PLUGIN_STEPS = [
   "name": "@acme/demo",
   "apensum": {
     "id": "demo",
-    "apensumApi": 1,
+    "apensumApi": 2,
     "dbSchema": "demo",
     "permissions": [
       { "id": "nav.demo", "kind": "nav",

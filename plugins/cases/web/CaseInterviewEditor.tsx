@@ -28,7 +28,7 @@ export interface InterviewAiProviders {
   transcription: 'azure' | null;
   /** What the organization chose, to say which provider is missing. */
   transcriptionSetting: 'azure' | 'off';
-  summary: 'local' | 'gemini' | 'openai' | 'azure' | null;
+  summary: 'local' | 'azure' | null;
 }
 
 export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, getKey, computeUrl, onChange, onClose }: {
@@ -100,17 +100,28 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
     return interviewResponse(await fetch(`${computeUrl}/${job}`, { method: 'POST', headers, body }));
   };
 
-  const generate = (target: 'transcript' | 'summary') => run(async () => {
+  /** A generated text: straight into its field while that is empty (still to be saved), else a draft to compare first. */
+  const offer = (target: 'transcript' | 'summary', text: string) => {
+    const current = target === 'transcript' ? transcript : summary;
+    if (current.trim()) return setDraft({ target, text });
+    if (target === 'transcript') {
+      setTranscript(text);
+      setReviewedTranscript(true);
+    } else {
+      setSummary(text);
+      setReviewedSummary(true);
+    }
+  };
+
+  /** A summary of the transcript as it stands in the editor, saved or not. */
+  const summarize = () => run(async () => {
     if (getKey) {
-      if (target === 'transcript') throw new Error('locked');
       const form = new FormData();
       form.set('data', JSON.stringify({ name: interview.interviewee_name, role: interview.interviewee_role, date: interview.interview_date, transcript }));
-      const data = await computeCall('summarize', form);
-      setDraft({ target, text: data.draft });
+      offer('summary', (await computeCall('summarize', form)).draft);
       return;
     }
-    const data = await request(target === 'transcript' ? '/transcribe' : '/summarize', 'POST', { revision: interview.revision });
-    setDraft({ target, text: data.draft });
+    offer('summary', (await request('/summarize', 'POST', { revision: interview.revision, transcript })).draft);
   });
 
   /** The audio, plain: the chosen file, or the stored one (decrypted here when the case is encrypted). */
@@ -158,7 +169,7 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
         form.set('file', await plainAudio(chosen), 'interview-audio');
         data = await computeCall('transcribe', form);
       } else data = await request('/transcribe', 'POST', { revision });
-      setDraft({ target: 'transcript', text: data.draft });
+      offer('transcript', data.draft);
     } finally {
       setTranscribingSince(null);
     }
@@ -200,13 +211,13 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
           })}>{t('cases.interviews.playAudio')}</Button>)}
           {canEdit && <>
             <CaseInterviewAudioInput file={file} setFile={setFile} disabled={busy} setRecording={setRecording} />
-            {file && <Button disabled={locked || transcriptDirty || summaryDirty || !!draft} onClick={() => void run(async () => { await uploadAudio(file); })}>
+            {file && <Button disabled={locked || !!draft} onClick={() => void run(async () => { await uploadAudio(file); })}>
               {t(interview.has_audio ? 'cases.interviews.replaceAudio' : 'cases.interviews.attachAudio')}
             </Button>}
             {(interview.has_audio || file) && <Stack spacing={1}>
               <Stack direction="row" spacing={1}>
                 <Button variant="contained"
-                  disabled={locked || !!draft || !transcriptionEnabled || (!!file && (transcriptDirty || summaryDirty))}
+                  disabled={locked || !!draft || !transcriptionEnabled}
                   onClick={() => void transcribe()}>
                   {t(file ? 'cases.interviews.attachAndTranscribe' : 'cases.interviews.generateTranscript')}
                 </Button>
@@ -232,8 +243,9 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
             onChange={(e) => setSummary(e.target.value)} disabled={busy}
             InputProps={{ readOnly: !canEdit }} inputProps={{ maxLength: 100_000 }} />
           {canEdit && <Stack direction="row" spacing={1} alignItems="center">
-            <Button disabled={locked || !!draft || transcriptDirty || interview.transcript_stale || !transcript.trim() || !providers.summary}
-              onClick={() => void generate('summary')}>{t('cases.interviews.generateSummary')}</Button>
+            <Button disabled={locked || !!draft || !transcript.trim() || !providers.summary}
+              variant="outlined"
+              onClick={() => void summarize()}>{t('cases.interviews.generateSummary')}</Button>
             <Typography variant="caption" color="text.secondary">
               {providers.summary
                 ? t('cases.ai.sendsTo', { provider: providerName(providers.summary) })

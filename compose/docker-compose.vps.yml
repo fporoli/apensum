@@ -103,13 +103,8 @@ services:
       DOCUMENTS_KEY: ${DOCUMENTS_KEY:-}
       DOCUMENTS_KEY_PREVIOUS: ${DOCUMENTS_KEY_PREVIOUS:-}
       APP_BASE_URL: https://${WEB_HOST:?required}
-      # AI assistant: one pair from the GitHub Environment (GEMINI wins if both are set);
-      # none = the assistant answers assistant-not-configured.
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-}
-      # Cases on Azure (optional, paid; see env.example.*.cfg). Off unless keys, budget and prices are set.
+      # AI (assistant, Cases, receipts) on Azure OpenAI in Switzerland (optional, paid; see env.example.*.cfg).
+      # Off unless keys, budget and prices are set.
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
       AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-}

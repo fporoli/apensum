@@ -6,7 +6,7 @@
   "description": "Cases and assessments: case files, interviews with transcription and AI summaries, assessment templates and AI drafts (bundled Apensum plugin)",
   "apensum": {
     "id": "cases",
-    "apensumApi": 1,
+    "apensumApi": 2,
     "dbSchema": "cases",
     "permissions": [
       { "id": "nav.cases", "kind": "nav", "scopes": ["own", "all"], "caption": "nav.cases" }

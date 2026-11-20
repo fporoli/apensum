@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpException, Post, Req } from '@nestjs/common';
 import { DbService } from './db.service';
 import { callerUserId, isOrgMember, userOrgRole } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
@@ -30,8 +30,9 @@ export class AssistantController {
       const { reply, actions } = await this.assistant.chat(callerId, body.orgId, role, messages);
       return { ok: true, reply, actions };
     } catch (err) {
-      // Surface upstream OpenAI failures (rate limit, no credits, etc.) as a clean error
-      // instead of a 500 — same "never fail obscurely" convention as the mailer.
+      // Budget refusals and Azure failures come back as their code (ai-org-limit-reached, ai-provider-busy, ...),
+      // anything else as a clean error instead of a 500, like the mailer.
+      if (err instanceof HttpException && /^[a-z][a-z-]+$/.test(err.message)) return { ok: false, error: err.message };
       const message = err instanceof Error ? err.message : 'unknown error';
       return { ok: false, error: 'assistant-request-failed', detail: message };
     }

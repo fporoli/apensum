@@ -32,7 +32,7 @@ import { CaseAiService, caseAiAvailability } from './case-ai.service';
 import { VersionsService } from '@worktime3/api/plugin';
 import { MAX_SEALED_INTERVIEW_AUDIO_BYTES, validateCaseAiSettings, validateCustomFieldDefs } from '../shared/cases';
 import { checkComputeContent, checkWrite } from './case-encryption';
-import { interviewAudioFormat } from './case-interview-processing';
+import { interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 import type {
   CreateCaseDto,
   UpdateCaseDto,
@@ -441,6 +441,7 @@ export class CasesController {
     @Param('interviewId') interviewId: string,
     @Req() req: AuthenticatedRequest,
     @Body('revision') revision: string,
+    @Body('transcript') customTranscript?: string,
   ) {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
@@ -448,9 +449,15 @@ export class CasesController {
     this.requirePlain(caseItem);
     const interview = await this.casesService.getInterview(caseId, interviewId);
     if (interview.revision !== interviewRevision(revision)) throw new ConflictException('interview-changed');
-    if (!interview.transcript_text.trim() || interview.transcript_stale) throw new BadRequestException('interview-current-transcript-required');
+    // The transcript as shown in the editor (possibly not saved yet), else the saved one if it is current.
+    if (customTranscript != null && (typeof customTranscript !== 'string' || customTranscript.length > MAX_INTERVIEW_TEXT || customTranscript.includes('\0'))) {
+      throw new BadRequestException('interview-invalid-text');
+    }
+    const custom = customTranscript?.trim() ?? '';
+    if (!custom && (!interview.transcript_text.trim() || interview.transcript_stale)) throw new BadRequestException('interview-current-transcript-required');
+    const textToSummarize = custom || interview.transcript_text.trim();
     const draft = await this.caseAi.summarize(orgId, callerId, caseId, {
-      name: interview.interviewee_name, role: interview.interviewee_role, date: interview.interview_date, transcript: interview.transcript_text,
+      name: interview.interviewee_name, role: interview.interviewee_role, date: interview.interview_date, transcript: textToSummarize,
     });
     return { ok: true, draft };
   }
@@ -702,7 +709,8 @@ export class CasesController {
   /**
    * Which providers transcribe, summarize and draft for Cases in this organization, and what this
    * instance offers (Organization settings -> AI and costs). Who sees Organization settings or Cases
-   * sees it; only a superdeveloper may change it (canConfigure), since the instance owner pays Azure.
+   * sees it; a superdeveloper or whoever edits Organization settings changes it (canConfigure). The CHF
+   * limit that caps Azure stays the superdeveloper's (ai-settings.controller.ts).
    */
   @Get('case-ai-settings')
   @Header('Cache-Control', privateCache)
@@ -710,7 +718,9 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     // Shown in Organization settings (AI and costs): whoever sees those or Cases, and superdevelopers.
     const superdeveloper = await isSuperDeveloper(this.db, callerId);
-    if (!superdeveloper && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see')) && !(await can(this.db, orgId, callerId, 'nav.cases', 'see'))) {
+    const canOrgSettings = await can(this.db, orgId, callerId, 'nav.orgSettings', 'edit');
+    if (!superdeveloper && !canOrgSettings && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see'))
+      && !(await can(this.db, orgId, callerId, 'nav.cases', 'see'))) {
       throw new ForbiddenException('forbidden');
     }
     const providers = await this.caseAi.providers(orgId);
@@ -719,14 +729,16 @@ export class CasesController {
       settings: providers.settings,
       providers: { transcription: providers.transcription, summary: providers.summary, draft: providers.draft },
       available: caseAiAvailability(),
-      canConfigure: superdeveloper,
+      canConfigure: superdeveloper || canOrgSettings,
     };
   }
 
   @Put('case-ai-settings')
   async putAiSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Body() body: unknown) {
     const callerId = await this.requireCallerId(req);
-    if (!(await isSuperDeveloper(this.db, callerId))) throw new ForbiddenException('forbidden');
+    const superdeveloper = await isSuperDeveloper(this.db, callerId);
+    const canOrgSettings = await can(this.db, orgId, callerId, 'nav.orgSettings', 'edit');
+    if (!superdeveloper && !canOrgSettings) throw new ForbiddenException('forbidden');
     const checked = validateCaseAiSettings(body);
     if (!checked.ok) throw new BadRequestException(checked.error);
     const available = caseAiAvailability();
@@ -774,8 +786,9 @@ export class CasesController {
     const callerId = await this.requireCallerId(req);
     await this.checkSeeAccess(orgId, callerId);
     const templates = await this.casesService.listTemplates(orgId);
-    // Which provider an AI draft goes to (null = none configured), shown before anything is sent.
-    return { ok: true, templates, aiProvider: (await this.caseAi.providers(orgId)).draft };
+    // Which provider an AI draft goes to (null = switched off or not set up), shown before anything is sent.
+    const providers = await this.caseAi.providers(orgId);
+    return { ok: true, templates, aiProvider: providers.draft, aiDraftOff: providers.settings.draft === 'off' };
   }
 
   @Get('assessment-templates/:templateId')

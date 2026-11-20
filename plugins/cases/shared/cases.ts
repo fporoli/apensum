@@ -265,7 +265,8 @@ export function isValidAssessmentStatus(s: string): s is AssessmentStatus {
   return (ASSESSMENT_STATUSES as readonly string[]).includes(s as AssessmentStatus);
 }
 
-// AI providers per organization (organizations.settings.cases.ai), set by a superdeveloper only.
+// AI providers per organization (organizations.settings.cases.ai), set by a superdeveloper or whoever edits
+// Organization settings; only Azure OpenAI (Switzerland) receives Cases data. The CHF limits stay the superdeveloper's.
 // Azure calls are paid and go through the API's budget (ai-budget.service.ts): the instance's
 // AI_MONTHLY_BUDGET_CHF and the organization's limit (settings.ai, packages/shared/src/ai.ts).
 
@@ -277,11 +278,11 @@ export const MAX_SEALED_INTERVIEW_AUDIO_BYTES = MAX_INTERVIEW_AUDIO_BYTES + 1024
 /** Who transcribes interview audio: Azure OpenAI Whisper (Switzerland), or nobody (typed notes only). */
 export const CASE_AI_TRANSCRIPTION = ['azure', 'off'] as const;
 export type CaseAiTranscription = (typeof CASE_AI_TRANSCRIPTION)[number];
-/** Who drafts an interview summary: no model (key sentences), the instance's provider (Gemini/OpenAI), or Azure OpenAI. */
-export const CASE_AI_SUMMARY = ['local', 'instance', 'azure'] as const;
+/** Who drafts an interview summary: no model (key sentences) or Azure OpenAI (Switzerland). */
+export const CASE_AI_SUMMARY = ['local', 'azure'] as const;
 export type CaseAiSummary = (typeof CASE_AI_SUMMARY)[number];
-/** Who writes an assessment's AI draft (the template must still allow it): the instance's provider or Azure OpenAI. */
-export const CASE_AI_DRAFT = ['instance', 'azure'] as const;
+/** Who writes an assessment's AI draft (the template must still allow it): Azure OpenAI (Switzerland) or off. */
+export const CASE_AI_DRAFT = ['azure', 'off'] as const;
 export type CaseAiDraft = (typeof CASE_AI_DRAFT)[number];
 export interface CaseAiSettings {
   transcription: CaseAiTranscription;
@@ -290,11 +291,11 @@ export interface CaseAiSettings {
 }
 
 /**
- * What an organization gets until a superdeveloper changes it: transcription by Azure (capped by the
- * organization's and the instance's AI budget), summaries as key sentences without a model. A stored
- * value no longer offered (the server Whisper this replaced) reads as the default.
+ * What an organization gets until it is changed: transcription and AI drafts (templates that allow them, after
+ * the user's go-ahead) by Azure, capped by the organization's and the instance's AI budget; summaries as key
+ * sentences without a model. A stored value no longer offered reads as the default.
  */
-export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'azure', summary: 'local', draft: 'instance' };
+export const DEFAULT_CASE_AI_SETTINGS: CaseAiSettings = { transcription: 'azure', summary: 'local', draft: 'azure' };
 
 function isOneOf<T extends string>(list: readonly T[], value: unknown): value is T {
   return typeof value === 'string' && (list as readonly string[]).includes(value);
@@ -303,10 +304,15 @@ function isOneOf<T extends string>(list: readonly T[], value: unknown): value is
 /** The stored settings with defaults for anything missing or invalid (reading never fails). */
 export function parseCaseAiSettings(raw: unknown): CaseAiSettings {
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  let summary: CaseAiSummary = isOneOf(CASE_AI_SUMMARY, o.summary) ? o.summary : DEFAULT_CASE_AI_SETTINGS.summary;
+  // 'instance' (the server's own provider) is gone: key sentences, so nothing goes to Azure unasked.
+  if ((o.summary as string) === 'instance') summary = 'local';
+  let draft: CaseAiDraft = isOneOf(CASE_AI_DRAFT, o.draft) ? o.draft : DEFAULT_CASE_AI_SETTINGS.draft;
+  if ((o.draft as string) === 'instance') draft = 'azure';
   return {
     transcription: isOneOf(CASE_AI_TRANSCRIPTION, o.transcription) ? o.transcription : DEFAULT_CASE_AI_SETTINGS.transcription,
-    summary: isOneOf(CASE_AI_SUMMARY, o.summary) ? o.summary : DEFAULT_CASE_AI_SETTINGS.summary,
-    draft: isOneOf(CASE_AI_DRAFT, o.draft) ? o.draft : DEFAULT_CASE_AI_SETTINGS.draft,
+    summary,
+    draft,
   };
 }
 
@@ -315,9 +321,11 @@ export function validateCaseAiSettings(raw: unknown): { ok: true; value: CaseAiS
   const o = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
   if (!o) return { ok: false, error: 'ai-settings-invalid' };
   if (!isOneOf(CASE_AI_TRANSCRIPTION, o.transcription)) return { ok: false, error: 'ai-settings-invalid' };
-  if (!isOneOf(CASE_AI_SUMMARY, o.summary)) return { ok: false, error: 'ai-settings-invalid' };
-  if (!isOneOf(CASE_AI_DRAFT, o.draft)) return { ok: false, error: 'ai-settings-invalid' };
-  return { ok: true, value: { transcription: o.transcription, summary: o.summary, draft: o.draft } };
+  const rawSummary = o.summary === 'instance' ? 'local' : o.summary;
+  if (!isOneOf(CASE_AI_SUMMARY, rawSummary)) return { ok: false, error: 'ai-settings-invalid' };
+  const rawDraft = o.draft === 'instance' ? 'azure' : o.draft;
+  if (!isOneOf(CASE_AI_DRAFT, rawDraft)) return { ok: false, error: 'ai-settings-invalid' };
+  return { ok: true, value: { transcription: o.transcription, summary: rawSummary, draft: rawDraft } };
 }
 
 // Custom fields: an organization's own fields on cases and assessments (organizations.settings.cases.customFields).

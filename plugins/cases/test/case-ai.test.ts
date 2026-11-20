@@ -15,13 +15,15 @@ const PRICED = {
 const AZURE = { AZURE_OPENAI_ENDPOINT: 'https://apensum-openai-ch.openai.azure.com', AZURE_OPENAI_KEY: 'secret', AZURE_OPENAI_DEPLOYMENT: 'gpt-4.1-mini' };
 const MP3 = Buffer.concat([Buffer.from('ID3'), Buffer.alloc(20)]);
 
-test('org AI settings: defaults transcribe with Azure and summarize without a model; reading never fails', () => {
-  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'azure', summary: 'local', draft: 'instance' });
+test('org AI settings: defaults are Azure (Switzerland) and key sentences; reading never fails', () => {
+  assert.deepEqual(DEFAULT_CASE_AI_SETTINGS, { transcription: 'azure', summary: 'local', draft: 'azure' });
   assert.deepEqual(parseCaseAiSettings(undefined), DEFAULT_CASE_AI_SETTINGS);
   assert.deepEqual(parseCaseAiSettings({ transcription: 'off', summary: 'bogus', monthlyLimitChf: 10 }),
     { ...DEFAULT_CASE_AI_SETTINGS, transcription: 'off' });
   // The server Whisper is gone: a stored choice of it reads as the default.
   assert.equal(parseCaseAiSettings({ transcription: 'whisper' }).transcription, 'azure');
+  // 'instance' (the server's own provider) is gone: a summary stays local (nothing goes to Azure unasked), a draft goes to Azure.
+  assert.deepEqual(parseCaseAiSettings({ summary: 'instance', draft: 'instance' }), { ...DEFAULT_CASE_AI_SETTINGS, summary: 'local', draft: 'azure' });
 });
 
 test('org AI settings: validation of what the browser sends', () => {
@@ -30,6 +32,8 @@ test('org AI settings: validation of what the browser sends', () => {
   assert.deepEqual(validateCaseAiSettings({ ...ok, monthlyLimitChf: 12 }), { ok: true, value: ok });
   assert.deepEqual(validateCaseAiSettings({ ...ok, draft: 'local' }), { ok: false, error: 'ai-settings-invalid' });
   assert.deepEqual(validateCaseAiSettings({ ...ok, transcription: 'whisper' }), { ok: false, error: 'ai-settings-invalid' });
+  assert.deepEqual(validateCaseAiSettings({ ...ok, summary: 'openai' }), { ok: false, error: 'ai-settings-invalid' });
+  assert.deepEqual(validateCaseAiSettings({ ...ok, draft: 'off' }), { ok: true, value: { ...ok, draft: 'off' } });
   assert.deepEqual(validateCaseAiSettings(null), { ok: false, error: 'ai-settings-invalid' });
 });
 
@@ -84,8 +88,8 @@ test('AI summary: transcript in, bullet text out', () => {
 });
 
 test('providers: an unavailable choice is null (never silently another provider)', () => {
-  const none = { azureTranscription: false, azureOpenai: false, instance: null };
-  const all = { azureTranscription: true, azureOpenai: true, instance: 'gemini' as const };
+  const none = { azureTranscription: false, azureOpenai: false };
+  const all = { azureTranscription: true, azureOpenai: true };
   const azure = { transcription: 'azure', summary: 'azure', draft: 'azure' } as const;
   assert.equal(transcriptionProviderFor(azure, { ...all, azureTranscription: false }), null);
   assert.equal(transcriptionProviderFor(azure, all), 'azure');
@@ -94,8 +98,10 @@ test('providers: an unavailable choice is null (never silently another provider)
   assert.equal(transcriptionProviderFor({ ...DEFAULT_CASE_AI_SETTINGS, transcription: 'off' }, all), null);
   assert.equal(summaryProviderFor(DEFAULT_CASE_AI_SETTINGS, none), 'local');
   assert.equal(summaryProviderFor(azure, { ...all, azureOpenai: false }), null);
-  assert.equal(draftProviderFor(DEFAULT_CASE_AI_SETTINGS, all), 'gemini');
-  assert.equal(draftProviderFor(azure, all), 'azure');
+  assert.equal(summaryProviderFor(azure, all), 'azure');
+  assert.equal(draftProviderFor(DEFAULT_CASE_AI_SETTINGS, all), 'azure');
+  assert.equal(draftProviderFor(DEFAULT_CASE_AI_SETTINGS, none), null);
+  assert.equal(draftProviderFor({ ...DEFAULT_CASE_AI_SETTINGS, draft: 'off' }, all), null);
 });
 
 test('CaseAiService: Azure Whisper transcription reserves, calls Azure once and records the billed seconds', async () => {

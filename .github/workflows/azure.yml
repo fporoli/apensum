@@ -86,10 +86,6 @@ jobs:
           DOCUMENTS_KEY: ${{ secrets.DOCUMENTS_KEY }}
           DOCUMENTS_KEY_PREVIOUS: ${{ secrets.DOCUMENTS_KEY_PREVIOUS }}
           SMTP_SECURE: ${{ vars.SMTP_SECURE }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}

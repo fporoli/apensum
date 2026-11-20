@@ -323,21 +323,8 @@ EOF
           - { name: DOCUMENTS_KEY_PREVIOUS, secretRef: documents-key-previous }"
     fi
   fi
-  # AI assistant, optional: each key is wired only when set (no key = assistant off).
   local ai_secret="" ai_env=""
-  if [ -n "${GEMINI_API_KEY:-}" ]; then
-    ai_secret="      - name: gemini-api-key
-        value: \"$GEMINI_API_KEY\""
-    ai_env="          - { name: GEMINI_API_KEY, secretRef: gemini-api-key }"
-  fi
-  if [ -n "${OPENAI_API_KEY:-}" ]; then
-    ai_secret="${ai_secret:+$ai_secret
-}      - name: openai-api-key
-        value: \"$OPENAI_API_KEY\""
-    ai_env="${ai_env:+$ai_env
-}          - { name: OPENAI_API_KEY, secretRef: openai-api-key }"
-  fi
-  # Cases on Azure (optional, paid): keys as secrets, the rest as plain values (budget defaults to CHF 5).
+  # AI on Azure OpenAI, Switzerland (optional, paid): keys as secrets, the rest as plain values (budget defaults to CHF 5).
   if [ -n "${AZURE_OPENAI_KEY:-}" ]; then
     ai_secret="${ai_secret:+$ai_secret
 }      - name: azure-openai-key
@@ -377,8 +364,6 @@ $ai_secret
           - { name: SMTP_FROM, value: "${SMTP_FROM:-worktime@localhost}" }
           - { name: SMTP_USER, value: "${SMTP_USER:-}" }
           - { name: SMTP_SECURE, value: "${SMTP_SECURE:-false}" }
-          - { name: GEMINI_MODEL, value: "${GEMINI_MODEL:-}" }
-          - { name: OPENAI_MODEL, value: "${OPENAI_MODEL:-}" }
           - { name: AZURE_OPENAI_ENDPOINT, value: "${AZURE_OPENAI_ENDPOINT:-}" }
           - { name: AZURE_OPENAI_DEPLOYMENT, value: "${AZURE_OPENAI_DEPLOYMENT:-}" }
           - { name: AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT, value: "${AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT:-}" }
@@ -511,14 +496,14 @@ secrets() {
   # Config lives in the `azure` GitHub Environment (the workflows declare it). Creating it
   # is idempotent; the secrets and variables below are scoped to it, not the whole repo.
   gh api -X PUT "repos/$GITHUB_REPOSITORY/environments/azure" --silent
-  for name in GHCR_TOKEN POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS SMTP_PASSWORD GEMINI_API_KEY OPENAI_API_KEY AZURE_OPENAI_KEY; do
+  for name in GHCR_TOKEN POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS SMTP_PASSWORD AZURE_OPENAI_KEY; do
     [ -z "${!name:-}" ] || printf '%s' "${!name}" | gh secret set "$name" --repo "$GITHUB_REPOSITORY" --env azure
   done
   gh variable set AZURE_RESOURCE_GROUP --repo "$GITHUB_REPOSITORY" --env azure --body "$RESOURCE_GROUP"
   gh variable set AZURE_LOCATION --repo "$GITHUB_REPOSITORY" --env azure --body "$LOCATION"
   gh variable set AZURE_PG_SERVER_NAME --repo "$GITHUB_REPOSITORY" --env azure --body "$PG_SERVER_NAME"
   gh variable set AZURE_DOCS_STORAGE_ACCOUNT --repo "$GITHUB_REPOSITORY" --env azure --body "$DOCS_STORAGE_ACCOUNT"
-  for name in GHCR_USERNAME KEYCLOAK_ADMIN SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_SECURE GEMINI_MODEL OPENAI_MODEL AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT AI_MONTHLY_BUDGET_CHF AI_AZURE_ENABLED AZURE_TRANSCRIBE_CHF_PER_HOUR AZURE_OPENAI_CHF_PER_1M_INPUT AZURE_OPENAI_CHF_PER_1M_OUTPUT; do
+  for name in GHCR_USERNAME KEYCLOAK_ADMIN SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_SECURE AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT AI_MONTHLY_BUDGET_CHF AI_AZURE_ENABLED AZURE_TRANSCRIBE_CHF_PER_HOUR AZURE_OPENAI_CHF_PER_1M_INPUT AZURE_OPENAI_CHF_PER_1M_OUTPUT; do
     [ -z "${!name:-}" ] || gh variable set "$name" --repo "$GITHUB_REPOSITORY" --env azure --body "${!name}"
   done
   echo "  GitHub secrets and variables set in environment azure"

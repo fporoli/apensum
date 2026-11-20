@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import type OpenAI from 'openai';
 import { MAX_INTERVIEW_AUDIO_BYTES, parseCaseAiSettings, type CaseAiSettings } from '../shared/cases';
 import { DbService, type Db } from '@worktime3/api/plugin';
-import { aiModel, aiProvider, azureOpenAiClient, azureOpenAiConfig, chatErrorCode, instanceCaseClient, retryStaleConnection } from '@worktime3/api/plugin';
+import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from '@worktime3/api/plugin';
 import { AiBudgetService, azureAllowed, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, transcribeChf, type AiUsageKind } from '@worktime3/api/plugin';
 import { AzureCallError, azureTranscribeConfig, azureTranscribe } from './azure-transcribe';
 import { summarizeInterview } from './case-interview-processing';
@@ -11,15 +11,14 @@ import { AI_SUMMARY_MAX_TOKENS, buildAiSummaryMessages, parseAiSummary } from '.
 
 /** Who actually handles a job for an organization; null = what it chose isn't configured on this instance. */
 export type TranscriptionProvider = 'azure';
-export type TextProvider = 'gemini' | 'openai' | 'azure';
+export type TextProvider = 'azure';
 
-/** What this instance offers (env), independent of any organization. */
+/** What this instance offers (env), independent of any organization. Cases data goes to Azure OpenAI (Switzerland) only. */
 export function caseAiAvailability(env: NodeJS.ProcessEnv = process.env) {
   const azure = azureAllowed(env);
   return {
     azureTranscription: azure && azureTranscribeConfig(env) !== null,
     azureOpenai: azure && azureOpenAiConfig(env) !== null,
-    instance: aiProvider(),
   };
 }
 
@@ -31,13 +30,12 @@ export function transcriptionProviderFor(s: CaseAiSettings, a = caseAiAvailabili
 /** 'local' = key sentences, no model and no network. */
 export function summaryProviderFor(s: CaseAiSettings, a = caseAiAvailability()): TextProvider | 'local' | null {
   if (s.summary === 'local') return 'local';
-  if (s.summary === 'azure') return a.azureOpenai ? 'azure' : null;
-  return a.instance;
+  return a.azureOpenai ? 'azure' : null;
 }
 
 export function draftProviderFor(s: CaseAiSettings, a = caseAiAvailability()): TextProvider | null {
-  if (s.draft === 'azure') return a.azureOpenai ? 'azure' : null;
-  return a.instance;
+  if (s.draft === 'off') return null;
+  return a.azureOpenai ? 'azure' : null;
 }
 
 type Messages = OpenAI.Chat.Completions.ChatCompletionMessageParam[];
@@ -99,13 +97,13 @@ export class CaseAiService {
     }
   }
 
-  /** A summary draft of a transcript: key sentences, or the organization's model. */
+  /** A summary draft of a transcript: key sentences, or Azure OpenAI (Switzerland). */
   async summarize(orgId: string, userId: string, caseId: string, interview: { name: string; role: string; date: string; transcript: string }): Promise<string> {
     const settings = await this.settings(orgId);
     const provider = summaryProviderFor(settings);
     if (provider === 'local') return summarizeInterview(interview.transcript);
     if (!provider) throw new ServiceUnavailableException('ai-provider-not-configured');
-    const answer = await this.complete(orgId, userId, caseId, settings, provider, 'summarize', buildAiSummaryMessages(interview), AI_SUMMARY_MAX_TOKENS, false);
+    const answer = await this.complete(orgId, userId, caseId, 'summarize', buildAiSummaryMessages(interview), AI_SUMMARY_MAX_TOKENS, false);
     try {
       return parseAiSummary(answer);
     } catch {
@@ -117,8 +115,8 @@ export class CaseAiService {
   async draft(orgId: string, userId: string, caseId: string, messages: Messages, maxTokens: number): Promise<string> {
     const settings = await this.settings(orgId);
     const provider = draftProviderFor(settings);
-    if (!provider) throw new ServiceUnavailableException(settings.draft === 'azure' ? 'ai-provider-not-configured' : 'ai-not-configured');
-    return this.complete(orgId, userId, caseId, settings, provider, 'draft', messages, maxTokens, true);
+    if (!provider) throw new ServiceUnavailableException(settings.draft === 'off' ? 'ai-draft-disabled' : 'ai-provider-not-configured');
+    return this.complete(orgId, userId, caseId, 'draft', messages, maxTokens, true);
   }
 
   /** Which provider each job goes to for this organization, as shown before anything is sent. */
@@ -129,28 +127,12 @@ export class CaseAiService {
   }
 
   private async complete(
-    orgId: string, userId: string, caseId: string, settings: CaseAiSettings,
-    provider: TextProvider, kind: AiUsageKind, messages: Messages, maxTokens: number, json: boolean,
+    orgId: string, userId: string, caseId: string, kind: AiUsageKind, messages: Messages, maxTokens: number, json: boolean,
   ): Promise<string> {
     const failCode = kind === 'draft' ? 'ai-draft-failed' : 'ai-summary-failed';
-    if (provider !== 'azure') {
-      // The instance's own provider (Gemini/OpenAI): not metered here, but bounded in time.
-      const client = instanceCaseClient();
-      if (!client) throw new ServiceUnavailableException('ai-not-configured');
-      try {
-        const completion = await client.chat.completions.create({
-          model: aiModel(), messages, temperature: 0.2, ...(json ? { response_format: { type: 'json_object' as const } } : {}),
-        });
-        return completion.choices[0]?.message?.content ?? '';
-      } catch (error) {
-        const status = (error as { status?: number }).status;
-        this.logger.warn(`${kind} via ${provider} failed for case ${caseId}: ${error instanceof Error ? error.message : error}`);
-        throw new ServiceUnavailableException(chatErrorCode(status, failCode));
-      }
-    }
-
-    const prices = azurePrices()!;
-    const config = azureOpenAiConfig()!;
+    const prices = azurePrices();
+    const config = azureOpenAiConfig();
+    if (!prices || !config) throw new ServiceUnavailableException('ai-provider-not-configured');
     const inputChars = messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0);
     const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const id = await this.budget.reserve({

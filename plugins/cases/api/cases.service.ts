@@ -807,7 +807,7 @@ export class CasesService {
       })),
     });
     this.logger.log(`AI draft: case ${caseId}, template ${templateId}, user ${callerId}, ${documents.length} document(s), ${interviews.length} interview(s)`);
-    // The organization's provider (instance or Azure), bounded in time; Azure goes through the budget.
+    // Azure OpenAI (Switzerland), through the budget.
     const answer = await this.caseAi.draft(orgId, callerId, caseId, messages, AI_DRAFT_MAX_TOKENS);
     try {
       return { title: `${template.name} — ${c.subject_name} (${c.reference_number})`, sections_content: parseAiDraft(answer, sections) };

@@ -25,7 +25,7 @@ plugins/<id>/
 ```json
 "apensum": {
   "id": "expenses",
-  "apensumApi": 1,
+  "apensumApi": 2,
   "legacyNames": true,
   "permissions": [
     { "id": "nav.expenses", "kind": "nav", "scopes": ["own", "team", "reports", "all"], "caption": "nav.expenses" },

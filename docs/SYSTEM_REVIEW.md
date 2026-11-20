@@ -41,7 +41,7 @@ The code quality across all workspaces is notably high: typed throughout, modula
 - **Comprehensive Audit Trail:** All critical operations (logins, role alterations, data modifications, exports) are recorded in an append-only `audit_log` with actor metadata and serialized state diffs.
 
 ### 2.4 AI Transcription & Synthesis Pipeline
-- **Hybrid Provider Architecture:** Integrates Azure OpenAI Whisper for audio transcription and LLM inference (Azure / OpenAI / Gemini).
+- **Swiss Provider Only:** Azure OpenAI in Switzerland for audio transcription (Whisper) and LLM inference; no other AI provider receives data.
 - **Cost & Budget Control:** Enforces monthly CHF budget limits per instance and per organization with automated circuit breakers to eliminate unexpected cloud billing.
 - **Interview Workflow:** Audio interviews are uploaded, transcribed with Swiss German / German phonetic accuracy, and synthesized into structured assessment sections while maintaining strict citation of source notes.
 

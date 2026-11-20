@@ -188,10 +188,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   (`mailer.ts`, nodemailer) is best-effort and never fails a request (failures are logged; the startup
   `verifySmtp` and each send set `smtp` in the public `GET health`); the
   assistant returns `{ ok: false, error: 'assistant-not-configured' }`
-  without `GEMINI_API_KEY`/`OPENAI_API_KEY`.
-- AI assistant (`assistant.service.ts`): OpenAI SDK pointed at Gemini's or
-  OpenAI's compatible endpoint, with tool-calling. Each tool must run the same
-  authorization as its REST equivalent, using the caller's real identity.
+  without Azure OpenAI (key, budget and prices).
+- AI is Azure OpenAI in Switzerland only (no other provider anywhere), every call through `AiBudgetService`.
+  AI assistant (`assistant.service.ts`): tool-calling on the Azure deployment, one budget reservation per
+  question (kind `assistant`, up to `ASSISTANT_ROUNDS` model rounds, settled with the tokens used). Each tool
+  must run the same authorization as its REST equivalent, using the caller's real identity.
 - Cases encryption (`docs/CASES_ENCRYPTION.md`, `plugins/cases/shared/caseCrypto.ts`, `caseVault.ts`): a case is end-to-end
   encrypted in the browser (passphrase -> RSA key pair -> a case key per case, wrapped per member in `cases.case_keys`; each
   file has its own key sealed in its row). Rows carry an `enc` envelope and blanked plaintext columns; the API refuses
@@ -201,13 +202,15 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   never store a passphrase or key. A lost passphrase is unrecoverable by design.
 - Cases (plugin `plugins/cases`, module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`;
   tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).
-  Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set only by a
-  superdeveloper under Organization settings -> AI and costs, the plugin's `CaseAiSettingsPanel` shown there via
-  `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`):
-  transcription Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland; 25 MB per
-  request = `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences / instance provider / Azure OpenAI, AI draft
-  instance provider or Azure OpenAI. Default: transcription on Azure (capped by the budgets below), the rest stays off Azure.
-  There is no self-hosted Whisper any more. `case-ai.service.ts` picks the provider
+  Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set by a
+  superdeveloper or whoever edits Organization settings, under Organization settings -> AI and costs, the plugin's
+  `CaseAiSettingsPanel` shown there via `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`). Cases data goes to
+  Azure OpenAI in Switzerland only: transcription Azure OpenAI Whisper
+  (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland; 25 MB per request =
+  `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences (no model) or Azure, AI draft Azure or off. Default:
+  transcription and drafts on Azure (capped by the budgets below), summaries as key sentences. A summary is made of the
+  transcript as it stands in the editor, saved or not; a generated text fills an empty field directly, else it is shown
+  as a draft to accept. There is no self-hosted Whisper any more. `case-ai.service.ts` picks the provider
   (a chosen but unconfigured one is an error, never a silent fallback). The AI budget is the core's, for every
   module and plugin: every Azure call goes through `AiBudgetService` (`ai_usage` 078, with an optional
   `subject_table`/`subject_id` and any lowercase `kind`): it reserves the estimated CHF under an advisory lock and

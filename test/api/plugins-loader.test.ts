@@ -10,7 +10,7 @@ function withPlugin(id: string, manifest: Record<string, unknown>, run: (dir: st
   const dir = mkdtempSync(join(tmpdir(), 'apensum-plugins-'));
   try {
     mkdirSync(join(dir, id));
-    writeFileSync(join(dir, id, 'package.json'), JSON.stringify({ name: id, apensum: { id, apensumApi: 1, ...manifest } }));
+    writeFileSync(join(dir, id, 'package.json'), JSON.stringify({ name: id, apensum: { id, apensumApi: 2, ...manifest } }));
     run(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });

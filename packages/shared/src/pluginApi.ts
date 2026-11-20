@@ -10,7 +10,8 @@
 //
 // Keep this file erasable TypeScript (no enums, no imports) so Node scripts and tests can load it.
 
-export const PLUGIN_API_VERSION = 1;
+// 2: instanceCaseClient, aiClient, aiModel and aiProvider removed (AI is Azure OpenAI in Switzerland only).
+export const PLUGIN_API_VERSION = 2;
 
 /** Why a plugin's manifest does not fit this core, or null when it does. */
 export function pluginApiMismatch(id: string, declared: unknown): string | null {
