@@ -86,7 +86,20 @@ edge_up() {
     "$ROOT/infra/caddy/edge/sites/worktime3.caddy.tpl" > "$EDGE/sites/$PREFIX.caddy"
   # Optional inbox UI of this instance's Mailpit, at MAIL_SUB.DOMAIN (needs a DNS record).
   if [ -n "${MAIL_SUB:-}" ]; then
+    local mail_pw="${MAILPIT_ADMIN_PASSWORD:-${ADMIN_PASSWORD:-admin}}"
+    local mail_hash=""
+    if docker inspect edge-caddy >/dev/null 2>&1; then
+      mail_hash="$(docker exec edge-caddy caddy hash-password --plaintext "$mail_pw" 2>/dev/null || true)"
+    fi
+    if [ -z "$mail_hash" ]; then
+      mail_hash="$(docker run --rm caddy:2 caddy hash-password --plaintext "$mail_pw" 2>/dev/null || true)"
+    fi
+    if [ -z "$mail_hash" ]; then
+      # Fallback bcrypt hash of plaintext "admin"
+      mail_hash='$2y$10$bBtIOHcG3m.vS7pgWPrQNuxpDQiIPA28JEp0d7ebT8X2iP0k1RhPe'
+    fi
     sed -e "s/__MAIL_HOST__/$MAIL_SUB.$DOMAIN/g" -e "s/__PREFIX__/$PREFIX/g" \
+        -e "s#__MAIL_HASH__#$mail_hash#g" \
       "$ROOT/infra/caddy/edge/sites/worktime3-mail.caddy.tpl" >> "$EDGE/sites/$PREFIX.caddy"
   fi
   # No --remove-orphans: a leftover legacy `edge-pg` (the old shared Postgres) is not part of
