@@ -31,12 +31,14 @@ export interface InterviewAiProviders {
   summary: 'local' | 'azure' | null;
 }
 
-export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, providers, getKey, computeUrl, onChange, onClose }: {
+export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, transcriptionEnabled, autoTranscribe, providers, getKey, computeUrl, onChange, onClose }: {
   interview: CaseInterview;
   url: string;
   authHeaders: () => Promise<Record<string, string>>;
   canEdit: boolean;
   transcriptionEnabled: boolean;
+  /** Start transcribing the saved audio once, right after opening ("Save and transcribe" on a new interview). */
+  autoTranscribe?: boolean;
   providers: InterviewAiProviders;
   /** Set for an encrypted case: the case key. Text and audio are sealed in the browser; server AI gets them per request. */
   getKey?: () => Promise<CryptoKey | null>;
@@ -174,6 +176,16 @@ export function CaseInterviewEditor({ interview, url, authHeaders, canEdit, tran
       setTranscribingSince(null);
     }
   });
+
+  // "Save and transcribe": once, for the interview this editor was opened on, if its audio is stored.
+  const [autoStarted, setAutoStarted] = useState(false);
+  useEffect(() => {
+    if (!autoTranscribe || autoStarted || !canEdit || !transcriptionEnabled || !interview.has_audio) return;
+    setAutoStarted(true);
+    void transcribe();
+    // transcribe is recreated on each render; this runs once per opened interview.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTranscribe, autoStarted, canEdit, transcriptionEnabled, interview.has_audio]);
 
   const save = () => run(async () => {
     const form = new FormData();

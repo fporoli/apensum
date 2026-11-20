@@ -240,6 +240,8 @@ export function defineWebPlugin(plugin: WebPlugin): WebPlugin {
 }
 
 // The core's building blocks a plugin may use.
+/** Not a production instance: the login shows the demo accounts (VITE_SHOW_DEMO_ACCOUNTS), and plugins may show demo hints. */
+export const SHOW_DEMO_HINTS = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS !== 'false';
 export { useI18n, useT, LOCALES, type Locale, type TFunction } from './i18n';
 export {
   formatFileSize, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatMoney, parseLocaleNumber, swissLocale,

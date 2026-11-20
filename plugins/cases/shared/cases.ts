@@ -147,6 +147,8 @@ export interface Assessment {
   version: number;
   created_at: string;
   updated_at: string;
+  /** Archived instead of deleted (005): out of the case's list, restorable. */
+  archived_at?: string | null;
   template_name?: string;
   template_domain?: string;
 }

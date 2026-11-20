@@ -39,6 +39,8 @@ export function draftProviderFor(s: CaseAiSettings, a = caseAiAvailability()): T
 }
 
 type Messages = OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+/** A structured-output schema (response_format json_schema). */
+export type JsonSchema = { name: string; strict: boolean; schema: Record<string, unknown> };
 
 @Injectable()
 export class CaseAiService {
@@ -111,12 +113,15 @@ export class CaseAiService {
     }
   }
 
-  /** The raw JSON answer for an assessment draft (parsed by the caller); the template's ai_allowed is checked there. */
-  async draft(orgId: string, userId: string, caseId: string, messages: Messages, maxTokens: number): Promise<string> {
+  /**
+   * The raw JSON answer for an assessment draft (parsed by the caller); the template's ai_allowed is checked there.
+   * With a JSON schema (aiDraftSchema) Azure answers in exactly that shape.
+   */
+  async draft(orgId: string, userId: string, caseId: string, messages: Messages, maxTokens: number, schema?: JsonSchema): Promise<string> {
     const settings = await this.settings(orgId);
     const provider = draftProviderFor(settings);
     if (!provider) throw new ServiceUnavailableException(settings.draft === 'off' ? 'ai-draft-disabled' : 'ai-provider-not-configured');
-    return this.complete(orgId, userId, caseId, 'draft', messages, maxTokens, true);
+    return this.complete(orgId, userId, caseId, 'draft', messages, maxTokens, schema ?? true);
   }
 
   /** Which provider each job goes to for this organization, as shown before anything is sent. */
@@ -127,7 +132,7 @@ export class CaseAiService {
   }
 
   private async complete(
-    orgId: string, userId: string, caseId: string, kind: AiUsageKind, messages: Messages, maxTokens: number, json: boolean,
+    orgId: string, userId: string, caseId: string, kind: AiUsageKind, messages: Messages, maxTokens: number, json: boolean | JsonSchema,
   ): Promise<string> {
     const failCode = kind === 'draft' ? 'ai-draft-failed' : 'ai-summary-failed';
     const prices = azurePrices();
@@ -145,7 +150,8 @@ export class CaseAiService {
       const client = azureOpenAiClient(config);
       const completion = await retryStaleConnection(() => client.chat.completions.create({
         model: config.deployment, messages, max_completion_tokens: maxTokens,
-        ...(json ? { response_format: { type: 'json_object' as const } } : {}),
+        ...(json === true ? { response_format: { type: 'json_object' as const } }
+          : json ? { response_format: { type: 'json_schema' as const, json_schema: json } } : {}),
       }));
       const usage = completion.usage;
       await this.budget.finish(id, {

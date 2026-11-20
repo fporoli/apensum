@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import type { AssessmentTemplateSection } from '../shared/cases';
-import { AI_DOC_CHARS, AI_TOTAL_CHARS, buildAiDraftMessages, parseAiDraft, type AiDraftMaterial } from '../api/case-ai-draft';
+import { AI_DOC_CHARS, AI_TOTAL_CHARS, aiDraftSchema, buildAiDraftMessages, parseAiDraft, type AiDraftMaterial } from '../api/case-ai-draft';
 import { CasesService } from '../api/cases.service';
 import { CaseAiService } from '../api/case-ai.service';
 
@@ -83,4 +83,29 @@ test('the rule-based draft leaves findings and motions open instead of stating t
   for (const claim of ['Es wird festgestellt', 'wird die Errichtung einer Beistandschaft beantragt', 'psychische Störung', 'konsistenten Geschehensablaufs']) {
     assert.ok(!text.includes(claim), claim);
   }
+});
+
+test('the AI must answer every requested section: a strict schema with all keys required', () => {
+  const { schema, strict } = aiDraftSchema(['mandate', 'recommendation']);
+  assert.equal(strict, true);
+  const inner = (schema.properties as Record<string, { required: string[]; additionalProperties: boolean }>).sections;
+  assert.deepEqual(inner.required, ['mandate', 'recommendation']);
+  assert.equal(inner.additionalProperties, false);
+});
+
+test('one section is written again on its own; an unknown key is refused', async () => {
+  const svc = service({ ai_allowed: true });
+  const calls: { user: string; keys: string[] }[] = [];
+  Object.assign((svc as unknown as { caseAi: object }).caseAi, {
+    draft: async (_o: string, _u: string, _c: string, messages: { content: string }[], _t: number, schema: ReturnType<typeof aiDraftSchema>) => {
+      const keys = (schema.schema.properties as Record<string, { required: string[] }>).sections.required;
+      calls.push({ user: messages[1].content, keys });
+      return JSON.stringify({ sections: { recommendation: '[Offen: Beurteilung durch die Fachperson]' } });
+    },
+  });
+  const draft = await svc.aiDraft('o1', 'c1', 't1', 'u1', 'recommendation');
+  assert.deepEqual(draft.sections_content, { recommendation: '[Offen: Beurteilung durch die Fachperson]' });
+  assert.deepEqual(calls[0].keys, ['recommendation']);
+  assert.ok(calls[0].user.includes('key: recommendation') && !calls[0].user.includes('key: mandate'));
+  await assert.rejects(svc.aiDraft('o1', 'c1', 't1', 'u1', 'nope'), BadRequestException);
 });

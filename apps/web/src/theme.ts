@@ -138,6 +138,13 @@ export function createAppTheme(mode: ThemeMode = 'light', branding: OrgBranding 
             padding: '7px 11px',
             fontSize: '0.84rem',
           },
+          // Multiline: the padding sits on the root, so the first text line matches the resting label.
+          multiline: {
+            padding: '8px 12px',
+          },
+          inputMultiline: {
+            padding: 0,
+          },
         },
       },
       MuiInputLabel: {
@@ -148,9 +155,17 @@ export function createAppTheme(mode: ThemeMode = 'light', branding: OrgBranding 
             '&.Mui-focused': {
               color: primary.main,
             },
+            // The resting label (empty field) sits on the input's text line, which the compact
+            // input padding above (8px 12px) moved up from MUI's default 16.5px 14px.
+            '&.MuiInputLabel-outlined:not(.MuiInputLabel-shrink)': {
+              transform: 'translate(12px, 8px) scale(1)',
+            },
           },
           sizeSmall: {
             fontSize: '0.84rem',
+            '&.MuiInputLabel-outlined:not(.MuiInputLabel-shrink)': {
+              transform: 'translate(11px, 7px) scale(1)',
+            },
           },
         },
       },

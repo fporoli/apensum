@@ -202,6 +202,9 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   never store a passphrase or key. A lost passphrase is unrecoverable by design.
 - Cases (plugin `plugins/cases`, module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`;
   tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).
+  Assessments are archived (`archived_at`, its changeset 005, `POST .../assessments/:id/archive`), never deleted. The AI draft
+  asks Azure for a strict JSON schema of the template's section keys (`aiDraftSchema`) and can write one section again
+  (`section_key`, plain and `compute/ai-draft`): an empty section is filled, otherwise the editor shows the text to replace, add or drop.
   Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set by a
   superdeveloper or whoever edits Organization settings, under Organization settings -> AI and costs, the plugin's
   `CaseAiSettingsPanel` shown there via `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`). Cases data goes to

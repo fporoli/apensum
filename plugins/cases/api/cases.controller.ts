@@ -64,6 +64,13 @@ function interviewRevision(revision: unknown): string {
   return revision;
 }
 
+/** An optional template section key from the browser (one section written again), else undefined. */
+function sectionKeyOf(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (typeof value !== 'string' || value.length > 100) throw new BadRequestException('assessment-section-unknown');
+  return value;
+}
+
 @Controller('organizations/:orgId')
 export class CasesController {
   constructor(
@@ -531,13 +538,13 @@ export class CasesController {
     @Param('orgId') orgId: string,
     @Param('caseId') caseId: string,
     @Req() req: AuthenticatedRequest,
-    @Body() body: { template_id: string },
+    @Body() body: { template_id: string; section_key?: string },
   ) {
     const callerId = await this.requireCallerId(req);
     const caseItem = await this.casesService.getCase(orgId, caseId);
     await this.checkEditAccess(orgId, callerId, caseItem);
     this.requirePlain(caseItem);
-    const draft = await this.casesService.aiDraft(orgId, caseId, body.template_id, callerId);
+    const draft = await this.casesService.aiDraft(orgId, caseId, body.template_id, callerId, sectionKeyOf(body.section_key));
     return { ok: true, draft };
   }
 
@@ -571,6 +578,24 @@ export class CasesController {
     await this.checkEditAccess(orgId, callerId, caseItem);
     const updated = await this.casesService.updateAssessment(caseId, assessmentId, callerId, body, !!caseItem.encrypted);
     return { ok: true, assessment: updated };
+  }
+
+  /** Archives or restores an assessment; assessments are never deleted (the record of what was written stays). */
+  @Post('cases/:caseId/assessments/:assessmentId/archive')
+  async archiveAssessment(
+    @Param('orgId') orgId: string,
+    @Param('caseId') caseId: string,
+    @Param('assessmentId') assessmentId: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() body: { archived?: unknown },
+  ) {
+    const callerId = await this.requireCallerId(req);
+    const caseItem = await this.casesService.getCase(orgId, caseId);
+    await this.checkEditAccess(orgId, callerId, caseItem);
+    if (typeof body?.archived !== 'boolean') throw new BadRequestException('invalid-content');
+    const assessment = await this.casesService.archiveAssessment(caseId, assessmentId, body.archived);
+    void this.versions.record('cases.assessments', assessmentId, 'update_delta', callerId, { archived_at: assessment.archived_at ?? null }).catch(() => {});
+    return { ok: true, assessment };
   }
 
   @Get('cases/:caseId/assessments/:assessmentId/pdf')
@@ -654,9 +679,9 @@ export class CasesController {
     @Body() body: { data?: string },
   ) {
     const callerId = await this.computeAccess(orgId, caseId, req);
-    const p = interviewPayload(body) as { template_id?: unknown };
+    const p = interviewPayload(body) as { template_id?: unknown; section_key?: unknown };
     if (typeof p.template_id !== 'string') throw new BadRequestException('invalid-content');
-    const draft = await this.casesService.aiDraftFromContent(orgId, caseId, p.template_id, callerId, checkComputeContent(p));
+    const draft = await this.casesService.aiDraftFromContent(orgId, caseId, p.template_id, callerId, checkComputeContent(p), sectionKeyOf(p.section_key));
     return { ok: true, draft };
   }
 

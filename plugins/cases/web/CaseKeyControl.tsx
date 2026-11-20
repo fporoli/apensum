@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Stack, TextField } from '@mui/material';
-import { useI18n } from '@worktime3/web/plugin';
+import { SHOW_DEMO_HINTS, useI18n } from '@worktime3/web/plugin';
 import {
   KeyringError,
   WrongPassphraseError,
@@ -83,6 +83,8 @@ export function CaseKeyControl({ orgId, authHeaders }: { orgId: string; authHead
           <Stack spacing={2} sx={{ pt: 1 }}>
             <DialogContentText>{creating ? t('cases.keys.setUpHelp') : t('cases.keys.unlockHelp')}</DialogContentText>
             {creating && <Alert severity="warning">{t('cases.keys.noRecovery')}</Alert>}
+            {/* Demo instances only: the seeded passphrases (plugins/cases/scripts/generate-demo-seed.mts). */}
+            {SHOW_DEMO_HINTS && !creating && <Alert severity="info">{t('cases.keys.demoHint')}</Alert>}
             {error && <Alert severity="error">{error}</Alert>}
             {changing && <TextField type="password" label={t('cases.keys.current')} value={oldPass} onChange={(e) => setOldPass(e.target.value)} autoComplete="current-password" />}
             <TextField autoFocus type="password" label={changing ? t('cases.keys.new') : t('cases.keys.passphrase')} value={pass} onChange={(e) => setPass(e.target.value)} autoComplete={creating ? 'new-password' : 'current-password'} />

@@ -20,6 +20,8 @@ export const AI_TRANSCRIPT_CHARS = 30_000;
 export const AI_TOTAL_CHARS = 300_000;
 /** Answer tokens allowed (also what the cost estimate assumes). */
 export const AI_DRAFT_MAX_TOKENS = 8_000;
+/** Answer tokens for one section written again. */
+export const AI_SECTION_MAX_TOKENS = 3_000;
 /** Characters kept per section of the answer. */
 export const AI_SECTION_CHARS = 20_000;
 
@@ -78,6 +80,30 @@ export function buildAiDraftMessages(m: AiDraftMaterial): { role: 'system' | 'us
     { role: 'system', content: SYSTEM },
     { role: 'user', content: parts.join('\n\n') },
   ];
+}
+
+/**
+ * The answer's shape for Azure's structured outputs: an object `sections` with exactly these keys, each a
+ * string, all required. The model then cannot leave sections out or rename them (it once filled only one).
+ */
+export function aiDraftSchema(keys: string[]) {
+  return {
+    name: 'assessment_draft',
+    strict: true,
+    schema: {
+      type: 'object',
+      properties: {
+        sections: {
+          type: 'object',
+          properties: Object.fromEntries(keys.map((k) => [k, { type: 'string' }])),
+          required: keys,
+          additionalProperties: false,
+        },
+      },
+      required: ['sections'],
+      additionalProperties: false,
+    },
+  };
 }
 
 /** The model's JSON answer as section texts: only the template's keys, strings, clipped. */

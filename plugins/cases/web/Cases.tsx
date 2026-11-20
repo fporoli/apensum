@@ -44,11 +44,14 @@ import {
   CloseIcon,
   DeleteIcon,
   DescriptionIcon,
+  ArchiveIcon,
+  AutoAwesomeIcon,
   DownloadIcon,
   EditIcon,
   FolderSharedIcon,
   SaveIcon,
   SearchIcon,
+  UnarchiveIcon,
   UploadIcon,
 } from '@worktime3/web/plugin';
 import type {
@@ -1193,6 +1196,8 @@ function CaseInterviewsTab({
   const [editable, setEditable] = useState(false);
   const mayEdit = canEdit && editable;
   const [transcriptionEnabled, setTranscriptionEnabled] = useState(false);
+  // Set by "Save and transcribe": the editor that opens on the new interview starts transcribing once.
+  const [autoTranscribe, setAutoTranscribe] = useState(false);
   const [aiProviders, setAiProviders] = useState<InterviewAiProviders>({ transcription: null, transcriptionSetting: 'azure', summary: 'local' });
   const endpoint = `${API}/organizations/${orgId}/cases/${caseId}/interviews`;
 
@@ -1234,7 +1239,8 @@ function CaseInterviewsTab({
     setOpenModal(false);
   };
 
-  const handleCreate = async () => {
+  /** Saves the new interview (with its audio) and opens it; with `transcribe` the editor starts the transcription at once. */
+  const handleCreate = async (transcribe = false) => {
     if (!intervieweeName.trim() || saving || recording) return;
     try {
       setSaving(true);
@@ -1262,6 +1268,7 @@ function CaseInterviewsTab({
       setSummary('');
       setTranscript('');
       setAudioFile(null);
+      setAutoTranscribe(transcribe && !!audioFile);
       setSelectedInterview(interview);
       await loadInterviews();
       await onRefreshCase();
@@ -1414,15 +1421,13 @@ function CaseInterviewsTab({
               </Grid>
             </Grid>
 
-            <TextField
-              label={t('cases.interviews.summary')}
-              multiline
-              rows={2}
-              value={summary}
-              inputProps={{ maxLength: 100_000 }}
-              onChange={(e) => setSummary(e.target.value)}
-              placeholder="e.g. Explorand schildert akute finanzielle Engpässe..."
-            />
+            {/* Audio first: recorded or chosen, it is transcribed right after saving ("Save and transcribe"). */}
+            {openModal && <CaseInterviewAudioInput file={audioFile} setFile={setAudioFile} disabled={saving} setRecording={setRecording} />}
+            {audioFile && (
+              <Alert severity="info">
+                {t(transcriptionEnabled ? 'cases.interviews.saveToTranscribe' : 'cases.interviews.saveAudioOnly')}
+              </Alert>
+            )}
 
             <TextField
               label={t('cases.interviews.transcriptText')}
@@ -1434,14 +1439,32 @@ function CaseInterviewsTab({
               inputProps={{ maxLength: 100_000 }}
               helperText={t('cases.interviews.transcriptHelp')}
             />
-            {openModal && <CaseInterviewAudioInput file={audioFile} setFile={setAudioFile} disabled={saving} setRecording={setRecording} />}
+
+            <TextField
+              label={t('cases.interviews.summary')}
+              multiline
+              rows={2}
+              value={summary}
+              inputProps={{ maxLength: 100_000 }}
+              onChange={(e) => setSummary(e.target.value)}
+              placeholder="e.g. Explorand schildert akute finanzielle Engpässe..."
+            />
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeCreate} disabled={saving || recording}>{t('common.cancel')}</Button>
-          <Button variant="contained" onClick={handleCreate} disabled={saving || recording || !intervieweeName.trim()}>
-            {saving ? <CircularProgress size={20} /> : t('common.save')}
-          </Button>
+          {audioFile && transcriptionEnabled ? <>
+            <Button onClick={() => void handleCreate(false)} disabled={saving || recording || !intervieweeName.trim()}>
+              {t('common.save')}
+            </Button>
+            <Button variant="contained" onClick={() => void handleCreate(true)} disabled={saving || recording || !intervieweeName.trim()}>
+              {saving ? <CircularProgress size={20} /> : t('cases.interviews.saveAndTranscribe')}
+            </Button>
+          </> : (
+            <Button variant="contained" onClick={() => void handleCreate(false)} disabled={saving || recording || !intervieweeName.trim()}>
+              {saving ? <CircularProgress size={20} /> : t('common.save')}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 
@@ -1452,6 +1475,7 @@ function CaseInterviewsTab({
         authHeaders={authHeaders}
         canEdit={mayEdit}
         transcriptionEnabled={transcriptionEnabled}
+        autoTranscribe={autoTranscribe}
         providers={aiProviders}
         getKey={encrypted ? () => keyOf(orgId, authHeaders, caseId) : undefined}
         computeUrl={`${API}/organizations/${orgId}/cases/${caseId}/compute`}
@@ -1459,7 +1483,7 @@ function CaseInterviewsTab({
           setSelectedInterview(next);
           setInterviews((current) => current.map((item) => item.id === next.id ? next : item));
         }}
-        onClose={() => { setSelectedInterview(null); void loadInterviews(); }}
+        onClose={() => { setSelectedInterview(null); setAutoTranscribe(false); void loadInterviews(); }}
       />}
     </Box>
   );
@@ -1493,6 +1517,12 @@ function CaseAssessmentsTab({
   const [activeTemplate, setActiveTemplate] = useState<AssessmentTemplate | null>(null);
   const [sectionsContent, setSectionsContent] = useState<Record<string, string>>({});
   const [savingAssessment, setSavingAssessment] = useState(false);
+  // One section written again by the AI: which one is running, its result while the section already has text, the go-ahead.
+  const [sectionBusy, setSectionBusy] = useState<string | null>(null);
+  const [sectionDraft, setSectionDraft] = useState<{ key: string; text: string } | null>(null);
+  const [sectionError, setSectionError] = useState<{ key: string; text: string } | null>(null);
+  const [sectionConsent, setSectionConsent] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [assessmentStatus, setAssessmentStatus] = useState<string>('draft');
   const [assessmentCustom, setAssessmentCustom] = useState<Record<string, unknown>>({});
   const assessmentFields = useCustomFields(orgId, authHeaders, 'assessment');
@@ -1559,6 +1589,8 @@ function CaseAssessmentsTab({
   }, [loadData]);
 
   const openEditor = async (ass: Assessment) => {
+    setSectionDraft(null);
+    setSectionError(null);
     setActiveAssessment(ass);
     setAssessmentStatus(ass.status);
     setSectionsContent(ass.sections_content ?? {});
@@ -1649,6 +1681,60 @@ function CaseAssessmentsTab({
       setCreateError(t('common.cannotReachApi'));
     } finally {
       setCreating(null);
+    }
+  };
+
+  /**
+   * One section written again by the AI from the case's material (the template must allow it). An empty section is
+   * filled directly, otherwise the result is shown next to it to take or drop; nothing is saved until Save.
+   */
+  const handleSectionAi = async (sectionKey: string) => {
+    if (!activeAssessment || !activeTemplate) return;
+    if (!sectionConsent) {
+      if (!confirm(`${t('cases.assessments.aiNotice', { provider: t(`cases.assessments.aiProvider.${aiProvider}`) })}\n\n${t('cases.assessments.aiConsent')}?`)) return;
+      setSectionConsent(true);
+    }
+    setSectionBusy(sectionKey);
+    setSectionError(null);
+    try {
+      let r: { ok?: boolean; draft?: { sections_content?: Record<string, string> }; message?: string; error?: string } | null;
+      if (caseItem.enc) {
+        const form = new FormData();
+        form.set('data', JSON.stringify({ template_id: activeTemplate.id, section_key: sectionKey, case: caseItem, documents: evidenceDocs, interviews: interviewTranscripts }));
+        r = await (await compute(orgId, authHeaders, caseItem.id, 'ai-draft', form)).json().catch(() => null);
+      } else {
+        const res = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}/assessments/ai-draft`, {
+          method: 'POST',
+          headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ template_id: activeTemplate.id, section_key: sectionKey }),
+        });
+        r = await res.json().catch(() => null);
+      }
+      const text = r?.ok ? r.draft?.sections_content?.[sectionKey] : undefined;
+      if (!text) { setSectionError({ key: sectionKey, text: draftError(r?.message ?? r?.error ?? 'ai-draft-invalid') }); return; }
+      if ((sectionsContent[sectionKey] ?? '').trim()) setSectionDraft({ key: sectionKey, text });
+      else setSectionsContent((current) => ({ ...current, [sectionKey]: text }));
+    } catch {
+      setSectionError({ key: sectionKey, text: t('common.cannotReachApi') });
+    } finally {
+      setSectionBusy(null);
+    }
+  };
+
+  /** Archives or restores an assessment (never deleted). */
+  const handleArchive = async (a: Assessment, archived: boolean) => {
+    if (archived && !confirm(t('cases.assessments.archiveConfirm'))) return;
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}/assessments/${a.id}/archive`, {
+        method: 'POST',
+        headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archived }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) { setError(draftError(data?.message ?? data?.error)); return; }
+      await loadData();
+    } catch {
+      setError(t('common.cannotReachApi'));
     }
   };
 
@@ -1780,8 +1866,14 @@ function CaseAssessmentsTab({
             />
           ) : (
             <Stack spacing={2}>
-              {assessments.map((a) => (
-                <Card key={a.id} variant="outlined">
+              {assessments.some((a) => a.archived_at) && (
+                <FormControlLabel
+                  control={<Checkbox size="small" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
+                  label={t('cases.assessments.showArchived', { count: String(assessments.filter((a) => a.archived_at).length) })}
+                />
+              )}
+              {assessments.filter((a) => showArchived || !a.archived_at).map((a) => (
+                <Card key={a.id} variant="outlined" sx={a.archived_at ? { opacity: 0.65 } : undefined}>
                   <CardContent sx={{ pb: '16px !important' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <Box>
@@ -1796,6 +1888,7 @@ function CaseAssessmentsTab({
                             variant="outlined"
                           />
                           <Chip size="small" label={`v${a.version}`} />
+                          {a.archived_at && <Chip size="small" label={t('cases.assessments.archived')} />}
                         </Stack>
                         <Typography variant="caption" color="text.secondary">
                           Vorlage: {a.template_name ?? 'Standard'} • Verfasser: {a.author_name ?? t('cases.unassigned')} •{' '}
@@ -1828,6 +1921,14 @@ function CaseAssessmentsTab({
                         >
                           {t('cases.assessments.exportWord')}
                         </Button>
+                        {canEdit && (
+                          <Tooltip title={t(a.archived_at ? 'cases.assessments.restore' : 'cases.assessments.archive')}>
+                            <IconButton size="small" aria-label={t(a.archived_at ? 'cases.assessments.restore' : 'cases.assessments.archive')}
+                              onClick={() => void handleArchive(a, !a.archived_at)}>
+                              {a.archived_at ? <UnarchiveIcon fontSize="small" /> : <ArchiveIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </Stack>
                     </Box>
                   </CardContent>
@@ -2001,9 +2102,19 @@ function CaseAssessmentsTab({
                 {((activeTemplate?.sections as AssessmentTemplateSection[]) ?? []).map((sec, idx) => (
                   <Card key={sec.key} variant="outlined">
                     <CardContent>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'primary.main', mb: 0.5 }}>
-                        {sec.title}
-                      </Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'primary.main' }}>
+                          {sec.title}
+                        </Typography>
+                        {canEdit && activeTemplate?.ai_allowed && aiProvider && (
+                          <Button size="small" variant="outlined"
+                            startIcon={sectionBusy === sec.key ? <CircularProgress size={14} /> : <AutoAwesomeIcon fontSize="small" />}
+                            disabled={sectionBusy !== null || sectionDraft?.key === sec.key}
+                            onClick={() => void handleSectionAi(sec.key)}>
+                            {t((sectionsContent[sec.key] ?? '').trim() ? 'cases.assessments.sectionAiAgain' : 'cases.assessments.sectionAi')}
+                          </Button>
+                        )}
+                      </Box>
                       {sec.description && (
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                           {sec.description}
@@ -2030,6 +2141,24 @@ function CaseAssessmentsTab({
                         }
                         placeholder={t('cases.assessments.enterSectionContent')}
                       />
+                      {sectionError?.key === sec.key && <Alert severity="error" sx={{ mt: 1 }} onClose={() => setSectionError(null)}>{sectionError.text}</Alert>}
+                      {sectionDraft?.key === sec.key && (
+                        <Box sx={{ mt: 1.5 }}>
+                          <Alert severity="info" sx={{ mb: 1 }}>{t('cases.assessments.sectionDraft')}</Alert>
+                          <TextField multiline maxRows={16} fullWidth value={sectionDraft.text} InputProps={{ readOnly: true }} />
+                          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                            <Button variant="contained" size="small" onClick={() => {
+                              setSectionsContent((current) => ({ ...current, [sec.key]: sectionDraft.text }));
+                              setSectionDraft(null);
+                            }}>{t('cases.assessments.sectionReplace')}</Button>
+                            <Button size="small" onClick={() => {
+                              setSectionsContent((current) => ({ ...current, [sec.key]: `${(current[sec.key] ?? '').trimEnd()}\n\n${sectionDraft.text}` }));
+                              setSectionDraft(null);
+                            }}>{t('cases.assessments.sectionAppend')}</Button>
+                            <Button size="small" onClick={() => setSectionDraft(null)}>{t('common.cancel')}</Button>
+                          </Stack>
+                        </Box>
+                      )}
                     </CardContent>
                   </Card>
                 ))}

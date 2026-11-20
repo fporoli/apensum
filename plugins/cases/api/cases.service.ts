@@ -5,7 +5,7 @@ import PDFDocument from 'pdfkit';
 import { DbService, type Db } from '@worktime3/api/plugin';
 import { DocumentsService } from '@worktime3/api/plugin';
 import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
-import { AI_DRAFT_MAX_TOKENS, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
+import { AI_DRAFT_MAX_TOKENS, AI_SECTION_MAX_TOKENS, aiDraftSchema, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
 import { CaseAiService } from './case-ai.service';
 import { documents, users } from '@worktime3/api/schema';
 import { buildRuleDraft } from '../shared/caseDraft';
@@ -608,6 +608,7 @@ export class CasesService {
         a.version,
         a.created_at::text AS created_at,
         a.updated_at::text AS updated_at,
+        a.archived_at::text AS archived_at,
         t.name AS template_name,
         t.domain AS template_domain
       FROM cases.assessments a
@@ -636,6 +637,7 @@ export class CasesService {
         a.version,
         a.created_at::text AS created_at,
         a.updated_at::text AS updated_at,
+        a.archived_at::text AS archived_at,
         t.name AS template_name,
         t.domain AS template_domain
       FROM cases.assessments a
@@ -692,6 +694,17 @@ export class CasesService {
     await this.db.execute(sql`UPDATE cases.cases SET updated_at = now() WHERE id = ${caseId}::uuid`);
 
     return this.getAssessment(caseId, row.id);
+  }
+
+  /** Archives an assessment (it leaves the case's list but stays complete) or restores it. Never deleted. */
+  async archiveAssessment(caseId: string, assessmentId: string, archived: boolean): Promise<Assessment> {
+    await this.getAssessment(caseId, assessmentId);
+    await this.db.execute(sql`
+      UPDATE cases.assessments
+      SET archived_at = CASE WHEN ${archived} THEN COALESCE(archived_at, now()) ELSE NULL END
+      WHERE id = ${assessmentId}::uuid AND case_id = ${caseId}::uuid
+    `);
+    return this.getAssessment(caseId, assessmentId);
   }
 
   async updateAssessment(
@@ -758,12 +771,13 @@ export class CasesService {
     caseId: string,
     templateId: string,
     callerId: string,
+    sectionKey?: string,
   ): Promise<{ title: string; sections_content: Record<string, string> }> {
     const template = await this.getTemplate(orgId, templateId);
     if (!template.ai_allowed) throw new ForbiddenException('template-ai-not-allowed');
     const c = await this.getCase(orgId, caseId);
     const [documents, interviews] = await Promise.all([this.listDocuments(caseId), this.listInterviews(caseId)]);
-    return this.aiDraftFrom(orgId, caseId, templateId, callerId, template, c, documents, interviews);
+    return this.aiDraftFrom(orgId, caseId, templateId, callerId, template, c, documents, interviews, sectionKey);
   }
 
   /**
@@ -776,10 +790,11 @@ export class CasesService {
     templateId: string,
     callerId: string,
     content: ComputeContent,
+    sectionKey?: string,
   ): Promise<{ title: string; sections_content: Record<string, string> }> {
     const template = await this.getTemplate(orgId, templateId);
     if (!template.ai_allowed) throw new ForbiddenException('template-ai-not-allowed');
-    return this.aiDraftFrom(orgId, caseId, templateId, callerId, template, content.case, content.documents, content.interviews);
+    return this.aiDraftFrom(orgId, caseId, templateId, callerId, template, content.case, content.documents, content.interviews, sectionKey);
   }
 
   private async aiDraftFrom(
@@ -791,8 +806,12 @@ export class CasesService {
     c: Case,
     documents: CaseDocument[],
     interviews: CaseInterview[],
+    sectionKey?: string,
   ): Promise<{ title: string; sections_content: Record<string, string> }> {
-    const sections = template.sections as AssessmentTemplateSection[];
+    // One section only (written again from the material), or all of them.
+    const all = template.sections as AssessmentTemplateSection[];
+    const sections = sectionKey === undefined ? all : all.filter((s) => s.key === sectionKey);
+    if (sections.length === 0) throw new BadRequestException('assessment-section-unknown');
     const messages = buildAiDraftMessages({
       caseInfo: { reference: c.reference_number, title: c.title, subjectName: c.subject_name, subjectDob: c.subject_dob ?? null, domain: c.domain, lead: c.lead_user_name ?? null },
       template: { name: template.name, description: template.description, sections },
@@ -806,9 +825,10 @@ export class CasesService {
         transcript: i.transcript_text && !i.transcript_stale ? i.transcript_text : null,
       })),
     });
-    this.logger.log(`AI draft: case ${caseId}, template ${templateId}, user ${callerId}, ${documents.length} document(s), ${interviews.length} interview(s)`);
-    // Azure OpenAI (Switzerland), through the budget.
-    const answer = await this.caseAi.draft(orgId, callerId, caseId, messages, AI_DRAFT_MAX_TOKENS);
+    this.logger.log(`AI draft: case ${caseId}, template ${templateId}, user ${callerId}, ${sectionKey ? `section ${sectionKey}, ` : ''}${documents.length} document(s), ${interviews.length} interview(s)`);
+    // Azure OpenAI (Switzerland), through the budget; the schema makes it answer every requested section.
+    const maxTokens = sectionKey === undefined ? AI_DRAFT_MAX_TOKENS : AI_SECTION_MAX_TOKENS;
+    const answer = await this.caseAi.draft(orgId, callerId, caseId, messages, maxTokens, aiDraftSchema(sections.map((s) => s.key)));
     try {
       return { title: `${template.name} — ${c.subject_name} (${c.reference_number})`, sections_content: parseAiDraft(answer, sections) };
     } catch {
