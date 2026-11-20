@@ -211,14 +211,15 @@ reset_seed() {
   mkdir -p "$backup_dir"
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   backup_file="$backup_dir/public-before-reset-$timestamp.dump"
-  docker exec "$PG" pg_dump -U worktime -d worktime --schema=public --format=custom > "$backup_file"
+  # The schemas a reset drops: public and the Cases plugin's own (scripts/reset-db.mjs drops the same).
+  docker exec "$PG" pg_dump -U worktime -d worktime --schema=public --schema=cases --format=custom > "$backup_file"
   test -s "$backup_file"
   echo "Public-schema backup saved to $backup_file"
 
   docker stop "$PREFIX-api"
   # Bring the API back even if a later step fails (set -e), so a failed reset never leaves it down.
   trap 'docker start "$PREFIX-api" >/dev/null || true' EXIT
-  docker exec "$PG" psql -U worktime -d worktime -v ON_ERROR_STOP=1 -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION worktime; GRANT ALL ON SCHEMA public TO public;"
+  docker exec "$PG" psql -U worktime -d worktime -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS cases CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION worktime; GRANT ALL ON SCHEMA public TO public;"
 
   "${COMPOSE[@]}" run --rm --build --no-deps migrate
 
