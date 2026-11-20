@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { organizations, ai_usage, users, news_posts, basicdata_versions, absences, documents, field_config, work_schedules, org_holidays, balance_adjustments, vacation_entitlements, project_time_periods, projects, work_time_months, timesheet_periods, departments, employee_assignments, user_identities, organization_domains, roles, teams, organization_memberships, organization_invitations, audit_logs, subprojects, project_times, static_data, versions, workflow_definitions, workflows, notifications, work_times, work_time_balance_entries, requests, request_messages, timesheet_documents, report_schedules, saved_reports, personnel_documents, report_runs, news_post_departments, news_post_documents, role_permissions, permissions, request_message_documents, project_teams, newsletter_deliveries, newsletter_subscribers, team_members, news_post_reads, membership_roles, work_time_balances } from "./schema";
+import { organizations, ai_usage, users, news_posts, basicdata_versions, absences, documents, field_config, work_schedules, org_holidays, balance_adjustments, vacation_entitlements, assistant_prompts, project_time_periods, projects, work_time_months, timesheet_periods, departments, employee_assignments, user_identities, organization_domains, roles, teams, organization_memberships, organization_invitations, audit_logs, subprojects, project_times, static_data, versions, workflow_definitions, workflows, notifications, work_times, work_time_balance_entries, requests, request_messages, timesheet_documents, report_schedules, saved_reports, personnel_documents, report_runs, news_post_departments, news_post_documents, role_permissions, permissions, request_message_documents, project_teams, newsletter_deliveries, newsletter_subscribers, team_members, news_post_reads, membership_roles, work_time_balances } from "./schema";
 
 export const ai_usageRelations = relations(ai_usage, ({one}) => ({
 	organization: one(organizations, {
@@ -21,6 +21,7 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 	org_holidays: many(org_holidays),
 	balance_adjustments: many(balance_adjustments),
 	vacation_entitlements: many(vacation_entitlements),
+	assistant_prompts: many(assistant_prompts),
 	project_time_periods: many(project_time_periods),
 	work_time_months: many(work_time_months),
 	departments: many(departments),
@@ -85,6 +86,7 @@ export const usersRelations = relations(users, ({many}) => ({
 		relationName: "balance_adjustments_created_by_user_id_users_id"
 	}),
 	vacation_entitlements: many(vacation_entitlements),
+	assistant_prompts: many(assistant_prompts),
 	project_time_periods_user_id: many(project_time_periods, {
 		relationName: "project_time_periods_user_id_users_id"
 	}),
@@ -270,6 +272,17 @@ export const vacation_entitlementsRelations = relations(vacation_entitlements, (
 	}),
 	user: one(users, {
 		fields: [vacation_entitlements.user_id],
+		references: [users.id]
+	}),
+}));
+
+export const assistant_promptsRelations = relations(assistant_prompts, ({one}) => ({
+	organization: one(organizations, {
+		fields: [assistant_prompts.organization_id],
+		references: [organizations.id]
+	}),
+	user: one(users, {
+		fields: [assistant_prompts.user_id],
 		references: [users.id]
 	}),
 }));

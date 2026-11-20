@@ -193,6 +193,11 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   AI assistant (`assistant.service.ts`): tool-calling on the Azure deployment, one budget reservation per
   question (kind `assistant`, up to `ASSISTANT_ROUNDS` model rounds, settled with the tokens used). Each tool
   must run the same authorization as its REST equivalent, using the caller's real identity.
+  The web opens it from the header's sparkle button or Ctrl+/ as a panel sliding in from the right (an overlay; the
+  pin docks it and the page makes room; full screen on a phone). Each person's questions are kept per organization
+  (`assistant_prompts` 084, `GET/POST/DELETE assistant/prompts`, only their own): asked again = moved up, starred =
+  favourite, non-favourites beyond the newest 30 dropped; the answers are not kept. The empty panel lists favourites
+  and recent questions to ask again.
 - Cases encryption (`docs/CASES_ENCRYPTION.md`, `plugins/cases/shared/caseCrypto.ts`, `caseVault.ts`): a case is end-to-end
   encrypted in the browser (passphrase -> RSA key pair -> a case key per case, wrapped per member in `cases.case_keys`; each
   file has its own key sealed in its row). Rows carry an `enc` envelope and blanked plaintext columns; the API refuses
@@ -218,7 +223,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `subject_table`/`subject_id` and any lowercase `kind`): it reserves the estimated CHF under an advisory lock and
   refuses beyond `AI_MONTHLY_BUDGET_CHF` (instance, unset = Azure off), the org's limit (`organizations.settings.ai
   .monthlyLimitChf`, `packages/shared/src/ai.ts`, default 10; `GET/PUT ai-settings`, `AiSettingsPanel.tsx`, superdeveloper
-  only), one running call per user and 20 per hour; prices come from env (`AZURE_*_CHF_*`), `AI_AZURE_ENABLED=false` is
+  only), one running call per user and 20 per hour (the assistant is its own lane: 60 questions per hour, not counted
+  with the other calls; the CHF limits cover both); prices come from env (`AZURE_*_CHF_*`), `AI_AZURE_ENABLED=false` is
   the kill switch, no retries against Azure. Azure resources (shared by all environments, Switzerland North,
   "Standard" deployments only, resource group `apensum-ai`) are `infra/azure/ai-provision.sh`
   (`resources|github|local|rotate`); budgets per environment are GitHub Environment variables, keys repo-level.

@@ -1,6 +1,6 @@
 import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
-import { AiBudgetService, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
+import { AiBudgetService, ASSISTANT_KIND, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 import { and, asc, eq, ilike, inArray } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
@@ -87,8 +87,8 @@ export const ASSISTANT_MAX_TOKENS = 1000;
 
 /**
  * The assistant: Azure OpenAI in Switzerland only, like every AI call of the app. One question is one
- * budget reservation (AiBudgetService: the instance's and the organization's monthly CHF, one running
- * call per user, 20 per hour), estimated for all its rounds and settled with the tokens actually used.
+ * budget reservation (AiBudgetService: the instance's and the organization's monthly CHF; its own lane of
+ * one running question per user and ASSISTANT_CALLS_PER_HOUR), estimated for all its rounds and settled with the tokens actually used.
  */
 @Injectable()
 export class AssistantService {
@@ -143,7 +143,7 @@ export class AssistantService {
     const inputChars = convo.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0) + JSON.stringify(TOOLS).length;
     const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const usageId = await this.budget.reserve({
-      orgId, userId: callerId, kind: 'assistant', provider: 'azure-openai',
+      orgId, userId: callerId, kind: ASSISTANT_KIND, provider: 'azure-openai',
       estimateChf: estimateChatChf(inputChars, ASSISTANT_MAX_TOKENS, prices) * ASSISTANT_ROUNDS, orgLimitChf,
     });
     const context = { orgId, orgLimitChf };

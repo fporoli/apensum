@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  azureAllowed, azurePrices, budgetRefusal, chatChf, estimateChatChf, estimateTranscribeChf, instanceBudgetChf, transcribeChf, USER_CALLS_PER_HOUR,
+  ASSISTANT_CALLS_PER_HOUR, azureAllowed, azurePrices, budgetRefusal, callsPerHour, chatChf, estimateChatChf, estimateTranscribeChf, instanceBudgetChf, transcribeChf, USER_CALLS_PER_HOUR,
   type BudgetState,
 } from '../../apps/api/src/ai-budget.service';
 import { azureOpenAiConfig, chatErrorCode } from '../../apps/api/src/ai-client';
@@ -43,6 +43,16 @@ test('budget: refusals in order (user busy, rate, instance budget, org limit)', 
   assert.equal(budgetRefusal({ ...base, orgSpent: 9.6 }), 'ai-org-limit-reached');
   assert.equal(budgetRefusal({ ...base, orgSpent: 9.5 }), null, 'exactly at the limit is still allowed');
   assert.equal(budgetRefusal({ ...base, orgLimit: 0 }), 'ai-org-limit-reached', 'limit 0 = no Azure for this org');
+});
+
+test('budget: the assistant is its own lane with its own hourly allowance', () => {
+  const base: BudgetState = { instanceSpent: 0, instanceBudget: 30, orgSpent: 0, orgLimit: 10, estimate: 0.01, userCallsLastHour: 0, userPending: 0 };
+  assert.equal(callsPerHour('assistant'), ASSISTANT_CALLS_PER_HOUR);
+  assert.equal(callsPerHour('transcribe'), USER_CALLS_PER_HOUR);
+  assert.ok(ASSISTANT_CALLS_PER_HOUR > USER_CALLS_PER_HOUR);
+  // The counts passed in are the lane's own (the reservation query filters by kind).
+  assert.equal(budgetRefusal({ ...base, userCallsLastHour: USER_CALLS_PER_HOUR, callsPerHour: ASSISTANT_CALLS_PER_HOUR }), null);
+  assert.equal(budgetRefusal({ ...base, userCallsLastHour: ASSISTANT_CALLS_PER_HOUR, callsPerHour: ASSISTANT_CALLS_PER_HOUR }), 'ai-rate-limited');
 });
 
 test('Azure OpenAI: only Azure endpoints, v1 base URL, deployment as model', () => {

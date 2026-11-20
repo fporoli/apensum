@@ -273,6 +273,30 @@ export const vacation_entitlements = pgTable("vacation_entitlements", {
 	check("chk_vacation_entitlements_days", sql`(days >= (0)::numeric) AND (days <= (366)::numeric)`),
 ]);
 
+export const assistant_prompts = pgTable("assistant_prompts", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	prompt: text().notNull(),
+	is_favorite: boolean().default(false).notNull(),
+	use_count: integer().default(1).notNull(),
+	last_used_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_assistant_prompts_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.last_used_at.desc().nullsFirst()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "assistant_prompts_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "assistant_prompts_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_assistant_prompts").on(table.organization_id, table.user_id, table.prompt),
+	check("chk_assistant_prompts_length", sql`(char_length(prompt) >= 1) AND (char_length(prompt) <= 2000)`),
+]);
+
 export const project_time_periods = pgTable("project_time_periods", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),

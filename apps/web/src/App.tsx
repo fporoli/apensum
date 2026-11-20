@@ -1,8 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AppBar,
   Box,
-  ButtonBase,
   Chip,
   Collapse,
   Container,
@@ -18,6 +17,7 @@ import {
   MenuItem,
   Select,
   Toolbar,
+  Tooltip,
   Typography,
   useMediaQuery,
   useTheme,
@@ -42,7 +42,6 @@ import {
   ExpandLessIcon,
   ExpandMoreIcon,
   MenuIcon,
-  PushPinIcon,
   TimerIcon,
 } from './icons';
 
@@ -69,10 +68,7 @@ function sectionFromHash(): Section {
   return HASH_TO_SECTION[clean] ?? 'home';
 }
 
-const ASSISTANT_TAB_WIDTH = 40;
 const ASSISTANT_PANEL_WIDTH = 380;
-const ASSISTANT_TAB_HEIGHT = 40;
-const ASSISTANT_PANEL_HEIGHT_MOBILE = '50vh';
 
 /**
  * Whether the caller may open a page. Uses their permissions in the current organization
@@ -114,7 +110,8 @@ export default function App() {
   const [section, setSectionState] = useState<Section>(() => sectionFromHash());
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantPinned, setAssistantPinned] = useState(false);
-  const assistantCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [assistantEverOpened, setAssistantEverOpened] = useState(false);
+  useEffect(() => { if (assistantOpen) setAssistantEverOpened(true); }, [assistantOpen]);
 
   const [projectsVersion, setProjectsVersion] = useState(0);
   const [workTimeVersion, setWorkTimeVersion] = useState(0);
@@ -277,16 +274,12 @@ export default function App() {
     return () => clearInterval(timer);
   }, [activeCheckIn]);
 
-  // Ctrl+/ or Cmd+/ toggles the assistant panel cleanly.
+  // Ctrl+/ or Cmd+/ opens or closes the assistant (the header's sparkle button does the same).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
-        setAssistantPinned((pinned) => {
-          const next = !pinned;
-          setAssistantOpen(next);
-          return next;
-        });
+        setAssistantOpen((open) => !open);
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -316,10 +309,6 @@ export default function App() {
     if (session?.locale && session.locale !== locale) setLocale(session.locale as Locale);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.locale]);
-
-  useEffect(() => () => {
-    if (assistantCloseTimer.current) clearTimeout(assistantCloseTimer.current);
-  }, []);
 
   function navigateToNotification(n: Notification) {
     if (n.type === 'workflow.assigned') {
@@ -371,28 +360,12 @@ export default function App() {
     navigate('home');
   }
 
-  function openAssistantPanel() {
-    if (assistantCloseTimer.current) {
-      clearTimeout(assistantCloseTimer.current);
-      assistantCloseTimer.current = null;
-    }
-    setAssistantOpen(true);
+  function closeAssistant() {
+    setAssistantOpen(false);
+    setAssistantPinned(false);
   }
 
-  function scheduleCloseAssistantPanel() {
-    if (assistantPinned) return;
-    assistantCloseTimer.current = setTimeout(() => setAssistantOpen(false), 250);
-  }
 
-  function toggleAssistantPin() {
-    if (assistantOpen && assistantPinned) {
-      setAssistantPinned(false);
-      setAssistantOpen(false);
-    } else {
-      setAssistantPinned(true);
-      openAssistantPanel();
-    }
-  }
 
   async function logout() {
     if (session?.sso) {
@@ -644,12 +617,10 @@ export default function App() {
     </List>
   );
 
-  // Reserve space for the assistant tab always, and for the full panel ONLY when pinned open —
-  // unpinned hover overlays cleanly instead of reflowing the main workspace.
-  const assistantReservedWidth =
-    !isMobile && orgId ? (assistantPinned && assistantOpen ? ASSISTANT_TAB_WIDTH + ASSISTANT_PANEL_WIDTH : ASSISTANT_TAB_WIDTH) : 0;
-  const assistantReservedHeight =
-    isMobile && orgId ? (assistantOpen ? `calc(${ASSISTANT_TAB_HEIGHT}px + ${ASSISTANT_PANEL_HEIGHT_MOBILE})` : `${ASSISTANT_TAB_HEIGHT}px`) : '0px';
+  // The assistant takes no room while closed; open it overlays the page, pinned (desktop) it is docked
+  // and the page makes room for it.
+  const assistantDocked = !isMobile && !!orgId && assistantOpen && assistantPinned;
+  const assistantReservedWidth = assistantDocked ? ASSISTANT_PANEL_WIDTH : 0;
   const designMode = { ...designAccess, panelTop: appBarHeight, panelRight: assistantReservedWidth };
   const activeElapsed = activeCheckIn ? Math.max(0, Math.round((nowMs - new Date(activeCheckIn).getTime()) / 60000)) : 0;
 
@@ -722,6 +693,20 @@ export default function App() {
               )
             )}
 
+            {orgId && (
+              <Tooltip title={`${t('assistant.title')} (Ctrl+/)`}>
+                <IconButton
+                  color="inherit"
+                  aria-label={t('assistant.title')}
+                  aria-pressed={assistantOpen}
+                  onClick={() => setAssistantOpen((open) => !open)}
+                  sx={{ bgcolor: assistantOpen ? 'rgba(255,255,255,0.18)' : undefined }}
+                >
+                  <AutoAwesomeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+
             <NotificationBell
               items={notifications}
               unreadCount={unreadCount}
@@ -787,119 +772,46 @@ export default function App() {
               {currentPage && pageContext && currentPage.render(pageContext)}
             </Suspense>
           </Container>
-          {isMobile && orgId && (
-            <Box sx={{ height: assistantReservedHeight, flexShrink: 0, transition: 'height 0.2s ease' }} />
-          )}
         </Box>
 
-        {!isMobile && orgId && (
+        {!isMobile && (
           <Box sx={{ width: assistantReservedWidth, flexShrink: 0, transition: 'width 0.2s ease' }} />
         )}
 
-        {orgId && (isMobile ? (
+        {/* The assistant: slides in from the right below the header (full screen on a phone); overlay while
+            open, docked when pinned. Mounted once opened, so a conversation survives closing it. */}
+        {orgId && (
           <Box
-            sx={{
-              position: 'fixed',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: assistantOpen ? `calc(${ASSISTANT_TAB_HEIGHT}px + ${ASSISTANT_PANEL_HEIGHT_MOBILE})` : ASSISTANT_TAB_HEIGHT,
-              maxHeight: '85vh',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              transition: 'height 0.2s ease',
-              zIndex: (th) => th.zIndex.drawer + 2,
-              boxShadow: '0 -1px 3px rgba(16,24,40,0.08), 0 -4px 12px rgba(16,24,40,0.10)',
-            }}
-          >
-            <ButtonBase
-              onClick={toggleAssistantPin}
-              aria-label={assistantPinned ? t('app.assistantUnpin') : t('app.assistantPin')}
-              title={assistantPinned ? t('app.assistantUnpin') : t('app.assistantPinTap')}
-              sx={{
-                height: ASSISTANT_TAB_HEIGHT,
-                width: '100%',
-                flexShrink: 0,
-                backgroundImage: (th) =>
-                  `linear-gradient(135deg, ${th.palette.primary.main} 0%, ${th.palette.primary.dark} 100%)`,
-                filter: assistantPinned ? 'brightness(0.88)' : 'none',
-                color: 'primary.contrastText',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 1,
-                '&:hover': { filter: 'brightness(0.88)' },
-              }}
-            >
-              <AutoAwesomeIcon fontSize="small" />
-              <Typography variant="button" sx={{ letterSpacing: 1 }}>{t('assistant.title')}</Typography>
-            </ButtonBase>
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              <Suspense fallback={<LinearProgress sx={{ m: 2 }} />}>
-                <Assistant orgId={orgId} authHeaders={authHeaders} onClose={() => { setAssistantPinned(false); setAssistantOpen(false); }} />
-              </Suspense>
-            </Box>
-          </Box>
-        ) : (
-          <Box
-            onMouseEnter={openAssistantPanel}
-            onMouseLeave={scheduleCloseAssistantPanel}
+            role="complementary"
+            aria-label={t('assistant.title')}
+            aria-hidden={!assistantOpen}
             sx={{
               position: 'fixed',
               top: appBarHeight,
               right: 0,
               bottom: 0,
-              width: assistantOpen ? ASSISTANT_TAB_WIDTH + ASSISTANT_PANEL_WIDTH : ASSISTANT_TAB_WIDTH,
+              width: isMobile ? '100vw' : ASSISTANT_PANEL_WIDTH,
               maxWidth: '100vw',
-              display: 'flex',
-              overflow: 'hidden',
-              transition: 'width 0.2s ease',
+              transform: assistantOpen ? 'none' : 'translateX(100%)',
+              visibility: assistantOpen ? 'visible' : 'hidden',
+              transition: 'transform 0.2s ease, visibility 0.2s',
               zIndex: (th) => th.zIndex.drawer + 2,
-              boxShadow: assistantOpen ? '-4px 0 20px rgba(16,24,40,0.14)' : '0 1px 3px rgba(16,24,40,0.08)',
+              boxShadow: assistantOpen && !assistantDocked ? '-4px 0 20px rgba(16,24,40,0.14)' : 'none',
             }}
           >
-            <ButtonBase
-              onClick={toggleAssistantPin}
-              aria-label={assistantPinned ? t('app.assistantUnpin') : t('app.assistantPin')}
-              title={`${assistantPinned ? t('app.assistantUnpin') : t('app.assistantPinClick')} (Ctrl+/)`}
-              sx={{
-                width: ASSISTANT_TAB_WIDTH,
-                height: '100%',
-                flexShrink: 0,
-                backgroundImage: (th) =>
-                  `linear-gradient(135deg, ${th.palette.primary.main} 0%, ${th.palette.primary.dark} 100%)`,
-                filter: assistantPinned ? 'brightness(0.88)' : 'none',
-                color: 'primary.contrastText',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 1,
-                '&:hover': { filter: 'brightness(0.88)' },
-              }}
-            >
-              <PushPinIcon
-                fontSize="small"
-                sx={{
-                  transform: assistantPinned ? 'rotate(0deg)' : 'rotate(45deg)',
-                  transition: 'transform 0.15s ease',
-                }}
-              />
-              <Typography
-                variant="button"
-                sx={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', letterSpacing: 1, whiteSpace: 'nowrap' }}
-              >
-                {t('assistant.title')}
-              </Typography>
-            </ButtonBase>
-            <Box sx={{ width: ASSISTANT_PANEL_WIDTH, flexShrink: 0, height: '100%' }}>
+            {assistantEverOpened && (
               <Suspense fallback={<LinearProgress sx={{ m: 2 }} />}>
-                <Assistant orgId={orgId} authHeaders={authHeaders} onClose={() => { setAssistantPinned(false); setAssistantOpen(false); }} />
+                <Assistant
+                  orgId={orgId}
+                  authHeaders={authHeaders}
+                  onClose={closeAssistant}
+                  pinned={isMobile ? undefined : assistantPinned}
+                  onTogglePin={isMobile ? undefined : () => setAssistantPinned((pinned) => !pinned)}
+                />
               </Suspense>
-            </Box>
+            )}
           </Box>
-        ))}
+        )}
       </Box>
     </DesignModeProvider>
   );

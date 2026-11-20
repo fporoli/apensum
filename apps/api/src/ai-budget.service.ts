@@ -11,7 +11,9 @@ import { sendMail } from './mailer';
  * refused when it would exceed:
  *   - the instance's monthly budget, AI_MONTHLY_BUDGET_CHF (unset or 0 = Azure is off: fail closed),
  *   - the organization's monthly limit (organizations.settings.ai.monthlyLimitChf, packages/shared/src/ai.ts),
- *   - one running call per user, USER_CALLS_PER_HOUR calls per user and hour.
+ *   - one running call per user, USER_CALLS_PER_HOUR calls per user and hour. The chat assistant is its
+ *     own lane (ASSISTANT_KIND): its questions neither count towards nor wait for the other calls, and
+ *     have their own ASSISTANT_CALLS_PER_HOUR. The CHF budgets above cover both lanes together.
  * AI_AZURE_ENABLED=false switches Azure off for the whole instance at once. Prices come from the env
  * (the Azure price sheet, in CHF), never from code; without them Azure stays off as well.
  * Superdevelopers get one mail per month and threshold (80 % and exhausted) for the instance and each org.
@@ -56,6 +58,15 @@ export const ESTIMATE_AUDIO_BYTES_PER_SECOND = 4000;
 /** Characters per token assumed for the estimate (German text is ~4; 3 errs on the high side). */
 export const ESTIMATE_CHARS_PER_TOKEN = 3;
 export const USER_CALLS_PER_HOUR = 20;
+/** The chat assistant's usage kind: a lane of its own for the per-user limits (not for the CHF budgets). */
+export const ASSISTANT_KIND = 'assistant';
+/** Assistant questions per user and hour (each is one call, however many model rounds it takes). */
+export const ASSISTANT_CALLS_PER_HOUR = 60;
+
+/** The hourly allowance of a call's lane. */
+export function callsPerHour(kind: string): number {
+  return kind === ASSISTANT_KIND ? ASSISTANT_CALLS_PER_HOUR : USER_CALLS_PER_HOUR;
+}
 /** A pending call older than this no longer blocks its user (the API restarted mid-call); it still counts as spent. */
 export const PENDING_BLOCKS_MINUTES = 10;
 
@@ -81,14 +92,17 @@ export interface BudgetState {
   orgSpent: number;
   orgLimit: number;
   estimate: number;
+  /** The user's calls in the last hour and running now, in the same lane as this call (assistant or other). */
   userCallsLastHour: number;
   userPending: number;
+  /** That lane's hourly allowance (callsPerHour); USER_CALLS_PER_HOUR when left out. */
+  callsPerHour?: number;
 }
 
 /** Why a call must not be made (an error code), or null. */
 export function budgetRefusal(s: BudgetState): string | null {
   if (s.userPending > 0) return 'ai-user-busy';
-  if (s.userCallsLastHour >= USER_CALLS_PER_HOUR) return 'ai-rate-limited';
+  if (s.userCallsLastHour >= (s.callsPerHour ?? USER_CALLS_PER_HOUR)) return 'ai-rate-limited';
   if (s.instanceSpent + s.estimate > s.instanceBudget) return 'ai-budget-exhausted';
   if (s.orgSpent + s.estimate > s.orgLimit) return 'ai-org-limit-reached';
   return null;
@@ -144,9 +158,11 @@ export class AiBudgetService {
         SELECT
           COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START}), 0) AS instance_spent,
           COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START} AND organization_id = ${input.orgId}::uuid), 0) AS org_spent,
-          COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND created_at > now() - interval '1 hour') AS user_calls,
+          COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND created_at > now() - interval '1 hour'
+                             AND (kind = ${ASSISTANT_KIND}) = ${input.kind === ASSISTANT_KIND}) AS user_calls,
           COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND status = 'pending'
-                             AND created_at > now() - make_interval(mins => ${PENDING_BLOCKS_MINUTES})) AS user_pending
+                             AND created_at > now() - make_interval(mins => ${PENDING_BLOCKS_MINUTES})
+                             AND (kind = ${ASSISTANT_KIND}) = ${input.kind === ASSISTANT_KIND}) AS user_pending
         FROM ai_usage
         WHERE created_at >= LEAST(${MONTH_START}, now() - interval '1 hour')
       `);
@@ -159,6 +175,7 @@ export class AiBudgetService {
         estimate,
         userCallsLastHour: Number(row.user_calls),
         userPending: Number(row.user_pending),
+        callsPerHour: callsPerHour(input.kind),
       };
       const refusal = budgetRefusal(state);
       if (refusal) return { refusal, state };
