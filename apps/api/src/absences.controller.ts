@@ -23,7 +23,7 @@ type Status = (typeof STATUSES)[number];
  * `{approval: false}`): its own override if set, else the global row (`organization_id IS NULL`).
  * No row means no types.
  */
-async function resolveAbsenceTypes(db: Db, orgId: string): Promise<Record<string, unknown>> {
+export async function resolveAbsenceTypes(db: Db, orgId: string): Promise<Record<string, unknown>> {
   const rows = await db
     .select({ organization_id: static_data.organization_id, values: static_data.values })
     .from(static_data)

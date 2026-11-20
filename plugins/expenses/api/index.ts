@@ -11,6 +11,7 @@ import { ExpenseReportsController } from './expense-reports.controller';
 import { ExpensesController } from './expenses.controller';
 import { ReceiptHandoffController } from './receipt-handoff.controller';
 import { ReceiptHandoffService } from './receipt-handoff.service';
+import { EXPENSE_ASSISTANT_TOOLS } from './assistant-tools';
 
 export default defineApiPlugin({
   id: 'expenses',
@@ -23,4 +24,5 @@ export default defineApiPlugin({
   workflows: EXPENSE_WORKFLOWS,
   documents: { expense: expenseReceipts },
   forms: [EXPENSE_FORM],
+  assistantTools: EXPENSE_ASSISTANT_TOOLS,
 });

@@ -14,7 +14,7 @@ plugins/<id>/
   tsconfig.api.json   the build: api/ -> dist/api (against the core's built declarations)
   shared/             optional: code both parts import (e.g. a report's definition and texts)
   changelog/          Liquibase: db.changelog-master.xml + NNN-name.sql, run after the core's (below)
-  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, backup, workflows, documents })
+  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, backup, workflows, documents, assistantTools })
   web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
   web/tsconfig.json   editor only: extends apps/web/tsconfig.json
   web/texts.ts        the plugin's UI texts, en/de/fr/it with the same keys
@@ -208,6 +208,17 @@ workflows: {
 
 Its web part's `workflowKinds` entry (same `recordField` as `records.field`) gives the item its label,
 title and Inspect dialog. `plugins/expenses/api/workflow.ts` and `web/ExpenseReportReview.tsx` do it.
+
+## AI assistant tools
+
+`assistantTools: [{ name, description, parameters, object?, run(args, ctx) }]` gives the assistant
+(header sparkle button) tools for the plugin's data. Names start with the plugin's id (`expenses_add`).
+A tool is offered only to whoever may see `object` (a module switched off hides it). `run` calls the
+plugin's own controller method as the caller, `ctx.get(MyController).create(ctx.orgId, body, ctx.req)`,
+so the endpoint's checks run unchanged; it returns `{ data, action? }` (`data` goes to the model,
+`action` is a line in the "done" list). `ctx` also has `today`, `timeZone`, `instant(date, 'HH:MM')`,
+`local(iso)`, `findPerson(name)` and `findProject(name)`. Never read or write the database around the
+controller's checks. `plugins/expenses/api/assistant-tools.ts` does it.
 
 Everything a plugin adds to the API is declared in `defineApiPlugin`, so its `api/index.ts` shows all of
 it; the core registers it at startup (`plugins.ts`, `plugin-registrar.ts`). A plugin calls no

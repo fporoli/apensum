@@ -9,6 +9,7 @@ import type { ApiPlugin } from './plugin';
 import { registerApiReport } from './report-sources';
 import { registerTeamView } from './team-overview.controller';
 import { registerBackup, registerPayrollItem } from './import-export.service';
+import { registerAssistantTool } from './assistant-tools';
 
 /**
  * Finds the plugins under <repo>/plugins/<id> (a folder with a package.json that has an `apensum`
@@ -94,6 +95,7 @@ export function pluginNames(manifest: PluginManifest, plugin: ApiPlugin | undefi
   for (const a of Object.keys(plugin?.workflows?.actions ?? {})) names.push({ kind: 'workflow action', name: a });
   for (const t of Object.keys(plugin?.workflows?.sources ?? {})) names.push({ kind: 'workflow source table', name: t });
   for (const f of plugin?.forms ?? []) names.push({ kind: 'form', name: f.id });
+  for (const t of plugin?.assistantTools ?? []) names.push({ kind: 'assistant tool', name: t.name });
   return names;
 }
 
@@ -131,6 +133,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       for (const item of plugin.payroll ?? []) registerPayrollItem(item);
       if (plugin.backup) registerBackup(plugin.backup);
       for (const form of plugin.forms ?? []) registerForm(form);
+      for (const tool of plugin.assistantTools ?? []) registerAssistantTool(tool);
     }
     loaded.ids.push(manifest.id);
   }

@@ -18,6 +18,7 @@ import type { AuditService } from './audit.service';
 import type { VersionsService } from './versions.service';
 import type { PersonalDocumentSource } from './documents.service';
 import type { SourceOrgResolver, SourceRecordLoader, WorkflowActionContext } from './workflows.service';
+import type { AssistantTool } from './assistant-tools';
 
 /** Core services a plugin's declared functions get as their last argument. */
 export interface PluginCore {
@@ -71,11 +72,19 @@ export interface ApiPlugin {
   forms?: FormDef[];
   /** A person's own documents on the Documents page, by category (e.g. `expense` receipts). */
   documents?: Record<string, PersonalDocumentSource>;
+  /**
+   * Tools for the AI assistant (names start with the plugin's id). Each calls the plugin's own
+   * controller method as the caller (`ctx.get(Controller)`, `ctx.req`), so it runs the endpoint's checks.
+   */
+  assistantTools?: AssistantTool[];
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
   return plugin;
 }
+
+// Assistant tools
+export type { AssistantTool, AssistantToolContext, AssistantToolResult } from './assistant-tools';
 
 // Team tables
 export type { ApiTeamView } from './team-overview.controller';

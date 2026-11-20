@@ -27,7 +27,7 @@ DEPLOYMENT="${AI_DEPLOYMENT:-gpt-4.1-mini}"
 MODEL="${AI_MODEL:-gpt-4.1-mini}"
 MODEL_VERSION="${AI_MODEL_VERSION:-2025-04-14}"
 TRANSCRIBE_DEPLOYMENT="${AI_TRANSCRIBE_DEPLOYMENT:-whisper}"
-TPM_THOUSANDS="${AI_TPM_THOUSANDS:-20}"               # tokens-per-minute quota in thousands: caps how fast money can go
+TPM_THOUSANDS="${AI_TPM_THOUSANDS:-100}"              # tokens-per-minute quota in thousands (of 200 in the region): the assistant's tool rounds need room; spending is capped by the budgets
 AZURE_BUDGET="${AI_AZURE_BUDGET:-50}"                 # monthly alert amount for the group, billing currency
 ALERT_EMAIL="${AI_ALERT_EMAIL:-$(az account show --query user.name -o tsv)}"
 # Prices in CHF, rounded up from the Azure price sheet; the API estimates and accounts with them.
@@ -53,7 +53,10 @@ resources() {
   fi
   echo "  Azure OpenAI $OPENAI (S0)"
 
-  if ! az cognitiveservices account deployment show -g "$RG" -n "$OPENAI" --deployment-name "$DEPLOYMENT" -o none 2>/dev/null; then
+  # Created, or brought to TPM_THOUSANDS when its capacity differs (the same call updates it in place).
+  local capacity
+  capacity="$(az cognitiveservices account deployment show -g "$RG" -n "$OPENAI" --deployment-name "$DEPLOYMENT" --query sku.capacity -o tsv 2>/dev/null || true)"
+  if [ "$capacity" != "$TPM_THOUSANDS" ]; then
     az cognitiveservices account deployment create -g "$RG" -n "$OPENAI" --deployment-name "$DEPLOYMENT" \
       --model-name "$MODEL" --model-version "$MODEL_VERSION" --model-format OpenAI \
       --sku-name Standard --sku-capacity "$TPM_THOUSANDS" -o none

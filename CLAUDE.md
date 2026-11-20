@@ -191,8 +191,13 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   without Azure OpenAI (key, budget and prices).
 - AI is Azure OpenAI in Switzerland only (no other provider anywhere), every call through `AiBudgetService`.
   AI assistant (`assistant.service.ts`): tool-calling on the Azure deployment, one budget reservation per
-  question (kind `assistant`, up to `ASSISTANT_ROUNDS` model rounds, settled with the tokens used). Each tool
-  must run the same authorization as its REST equivalent, using the caller's real identity.
+  question (kind `assistant`, up to `ASSISTANT_ROUNDS` model rounds, settled with the tokens used). Tools
+  (`assistant-tools.ts` contract, core ones in `assistant-core-tools.ts`: working time, project time, absences,
+  balances, approvals, requests; plugins via `ApiPlugin.assistantTools`, e.g. expenses) call the page's
+  controller method with a request made for the caller (`ctx.get(Controller)`, `ctx.req`), so they run exactly
+  the REST checks; never query around them. A tool is offered only when the caller may see its `object`.
+  Times are wall-clock in the caller's `users.timezone` (else Europe/Zurich); `*-confirm` warnings are resent
+  only after the user agrees. The system prompt keeps working time and project time apart.
   The web opens it from the header's sparkle button or Ctrl+/ as a panel sliding in from the right (an overlay; the
   pin docks it and the page makes room; full screen on a phone). Each person's questions are kept per organization
   (`assistant_prompts` 084, `GET/POST/DELETE assistant/prompts`, only their own): asked again = moved up, starred =
