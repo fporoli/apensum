@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { Db } from './db.service';
-import { balance_adjustments, organization_memberships, timesheet_periods, users, vacation_entitlements, work_time_months } from './db/schema';
+import { balance_adjustments, balance_years, organization_memberships, timesheet_periods, users, vacation_entitlements, work_time_months } from './db/schema';
 import { WorkTimeModelService, localDate, type WorkTimeSettings } from './work-time-model.service';
 import { VersionsService } from './versions.service';
 import {
@@ -132,6 +132,45 @@ export interface BalanceInputs {
   periodStatus: ReadonlyMap<string, string>;
   adjustments: readonly Adjustment[];
   entitlementOverrides: ReadonlyMap<number, number>;
+  /**
+   * The newest year-end closing before `year` (`balance_years`): its balances open the next year and
+   * nothing before it is computed again (adjustments effective before then are in it). Null = from `start`.
+   */
+  opening?: YearClosing | null;
+}
+
+/** A year's own closing as `year()` returns it; only the newest closed year can be reopened. */
+export interface YearClosingInfo extends YearClosing {
+  closedAt: string;
+  closedByUserId: string | null;
+  incompleteMonths: number;
+  reopenable: boolean;
+}
+
+/** Where a person's year stands for the year-end closing (`yearStatus`). */
+export interface YearStatus {
+  year: number;
+  notEmployed: boolean;
+  /** The year is over in the person's zone. */
+  ended: boolean;
+  closing: YearClosingInfo | null;
+  /** The closing's balances, or the ones the year would close with now. */
+  values: { overtime: number; legalOvertime: number; vacation: number };
+  /** Months of the year (from the person's start) whose timesheet is not approved. */
+  openMonths: string[];
+  /** The year before is in employment and not closed: close it first. */
+  previousOpen: boolean;
+}
+
+/** A person's balances frozen at the end of a year (`balance_years`). */
+export interface YearClosing {
+  year: number;
+  /** Overtime balance at the end of the year (Überzeit included). */
+  overtime: number;
+  /** The Überzeit share of it. */
+  legalOvertime: number;
+  /** Vacation days left. */
+  vacation: number;
 }
 
 /** Exclusive end of what a year's balances need: the end of that year, or of the current month if later. */
@@ -161,23 +200,29 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
   const { year, today, start, model, attendance, settings } = input;
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year + 1}-01-01`;
-  const rangeStart = monthStart(start < yearStart ? start : yearStart);
+  // After a year-end closing, months are computed from the next 1 January on, from its balances.
+  const opening = input.opening && input.opening.year < year ? input.opening : null;
+  const countedFrom = opening ? `${opening.year + 1}-01-01` : null;
+  const from = countedFrom && countedFrom > start ? countedFrom : start;
+  const rangeStart = monthStart(from < yearStart ? from : yearStart);
+  const allAdjustments = countedFrom ? input.adjustments.filter((a) => a.effectiveDate >= countedFrom) : input.adjustments;
   const rangeEnd = balanceRangeEnd(year, today);
   const closedByMonth = new Map(input.closed.map((c) => [c.month, c]));
   const fullTime = settings.fullTimeWeeklyMinutes;
 
   // Adjustments dated before the first month computed still count, in that first month.
   const adjustmentIn = (balance: BalanceKind, from: string, to: string) =>
-    input.adjustments
+    allAdjustments
       .filter((a) => a.balance === balance && (from === rangeStart ? a.effectiveDate < to : a.effectiveDate >= from && a.effectiveDate < to))
       .reduce((s, a) => s + a.amount, 0);
   const legalMax = settings.legalMaxWeeklyMinutes;
-  let legalRunning = 0;
-  let legalOpening = 0;
+  let legalRunning = opening?.legalOvertime ?? 0;
+  let legalOpening = legalRunning;
 
-  let running = 0;
-  let opening = 0;
-  let booked = 0;
+  let running = opening?.overtime ?? 0;
+  let overtimeOpening = running;
+  // A closed year's balance counts as booked.
+  let booked = running;
   let pending = 0;
   let pendingSince: string | null = null;
   const all: MonthBalance[] = [];
@@ -185,7 +230,7 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
   for (const m of monthsBetween(rangeStart, rangeEnd)) {
     const next = nextMonth(m);
     if (m === yearStart) {
-      opening = running;
+      overtimeOpening = running;
       legalOpening = legalRunning;
     }
     const adjustmentMinutes = adjustmentIn('overtime', m, next);
@@ -238,7 +283,7 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
     all.push(row);
   }
   const months = all.filter((r) => r.month >= yearStart && r.month < yearEnd);
-  const closing = months.length ? months[months.length - 1].overtimeBalance : opening;
+  const closing = months.length ? months[months.length - 1].overtimeBalance : overtimeOpening;
   const legalOvertime = {
     opening: legalOpening,
     closing: months.length ? months[months.length - 1].legalOvertimeBalance : legalOpening,
@@ -249,17 +294,18 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
   };
 
   // Vacation, per year from the start year up to the one asked for.
-  const vacationAdjustments = input.adjustments.filter((a) => a.balance === 'vacation');
+  const vacationAdjustments = allAdjustments.filter((a) => a.balance === 'vacation');
   const startYear = Number(start.slice(0, 4));
-  let carryOver = 0;
+  const firstYear = opening ? opening.year + 1 : Math.min(startYear, year);
+  let carryOver = opening?.vacation ?? 0;
   let current = { entitlement: 0, overridden: false, adjustments: 0, taken: 0, planned: 0 };
-  for (let y = Math.min(startYear, year); y <= year; y++) {
+  for (let y = firstYear; y <= year; y++) {
     const ys = `${y}-01-01`;
     const ye = `${y + 1}-01-01`;
     const override = input.entitlementOverrides.get(y);
     const entitlement = y < startYear ? 0 : override ?? vacationEntitlement(y, settings.vacationDaysPerYear, model.schedules, model.fallback, start, input.until);
     const adjustments = vacationAdjustments
-      .filter((a) => (y === Math.min(startYear, year) ? a.effectiveDate < ye : a.effectiveDate >= ys && a.effectiveDate < ye))
+      .filter((a) => (y === firstYear ? a.effectiveDate < ye : a.effectiveDate >= ys && a.effectiveDate < ye))
       .reduce((s, a) => s + a.amount, 0);
     const inYear = all.filter((r) => r.month >= ys && r.month < ye);
     const taken = inYear.reduce((s, r) => s + r.vacationDays, 0);
@@ -289,7 +335,7 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
     year,
     start,
     months,
-    overtime: { opening, closing, bookedMinutes: booked, pendingMinutes: pending, pendingSince },
+    overtime: { opening: overtimeOpening, closing, bookedMinutes: booked, pendingMinutes: pending, pendingSince },
     vacation: {
       carryOver,
       entitlement: roundDays(current.entitlement),
@@ -468,17 +514,42 @@ export class BalancesService {
     return new Map(rows.map((r) => [r.year, Number(r.days)]));
   }
 
-  /** One person's balances for a year, with the adjustments behind them. */
-  async year(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearBalances & { adjustments: Adjustment[] }> {
+  /** A person's year-end closings, oldest first. */
+  async closings(db: Db, orgId: string, userId: string): Promise<Array<YearClosing & { closedAt: string; closedByUserId: string | null; incompleteMonths: number }>> {
+    const rows = await db
+      .select()
+      .from(balance_years)
+      .where(and(eq(balance_years.organization_id, orgId), eq(balance_years.user_id, userId)))
+      .orderBy(asc(balance_years.year));
+    return rows.map((r) => ({
+      year: r.year,
+      overtime: r.overtime_minutes,
+      legalOvertime: r.legal_overtime_minutes,
+      vacation: Number(r.vacation_days),
+      closedAt: r.closed_at,
+      closedByUserId: r.closed_by_user_id,
+      incompleteMonths: r.incomplete_months,
+    }));
+  }
+
+  /**
+   * One person's balances for a year, with the adjustments behind them. Computed from the newest
+   * year-end closing before it (`balance_years`), else from the person's first day; `closing` is the
+   * year's own closing when it has one.
+   */
+  async year(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearBalances & { adjustments: Adjustment[]; closing: YearClosingInfo | null }> {
     await this.closeMissing(db, orgId, userId);
-    const [settings, timeZone] = await Promise.all([this.workTime.settings(db, orgId), this.workTime.timeZone(db, userId)]);
+    const [settings, timeZone, closings] = await Promise.all([this.workTime.settings(db, orgId), this.workTime.timeZone(db, userId), this.closings(db, orgId, userId)]);
     const today = localDate(now, timeZone);
     const { start, until } = await this.startDate(db, orgId, userId, settings, timeZone, today);
+    const opening = closings.filter((c) => c.year < year).at(-1) ?? null;
+    const countedFrom = opening ? `${opening.year + 1}-01-01` : null;
+    const from = countedFrom && countedFrom > start ? countedFrom : start;
     const yearStart = `${year}-01-01`;
-    const modelFrom = start < yearStart ? start : yearStart;
+    const modelFrom = from < yearStart ? from : yearStart;
     const [model, attendance, closedRows, periods, adjustments, overrides] = await Promise.all([
       this.workTime.model(db, orgId, userId, modelFrom, balanceRangeEnd(year, today)),
-      start < today ? this.workTime.attendanceByDay(db, orgId, userId, weekStart(start), today, timeZone, false) : Promise.resolve(new Map<string, number>()),
+      from < today ? this.workTime.attendanceByDay(db, orgId, userId, weekStart(from), today, timeZone, false) : Promise.resolve(new Map<string, number>()),
       db.select().from(work_time_months).where(and(eq(work_time_months.organization_id, orgId), eq(work_time_months.user_id, userId))),
       db
         .select({ period_start: timesheet_periods.period_start, status: timesheet_periods.status })
@@ -499,8 +570,88 @@ export class BalancesService {
       periodStatus: new Map(periods.map((p) => [monthStart(p.period_start), p.status])),
       adjustments,
       entitlementOverrides: overrides,
+      opening,
     });
-    return { ...balances, adjustments: adjustments.filter((a) => a.effectiveDate >= `${year}-01-01` && a.effectiveDate < `${year + 1}-01-01`) };
+    const own = closings.find((c) => c.year === year);
+    return {
+      ...balances,
+      adjustments: adjustments.filter((a) => a.effectiveDate >= `${year}-01-01` && a.effectiveDate < `${year + 1}-01-01`),
+      closing: own ? { ...own, reopenable: !closings.some((c) => c.year > year) } : null,
+    };
+  }
+
+  /**
+   * Where a person's year stands for closing it: closed (with its balances), or open with the balances
+   * it would close with, the months whose timesheet is not approved yet, and whether the year before
+   * is still open (years close in order). `notEmployed` when the year lies before their start.
+   */
+  async yearStatus(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearStatus> {
+    const b = await this.year(db, orgId, userId, year, now);
+    const yearStart = `${year}-01-01`;
+    const today = await this.workTime.timeZone(db, userId).then((tz) => localDate(now, tz));
+    const startYear = Number(b.start.slice(0, 4));
+    const values = { overtime: b.overtime.closing, legalOvertime: b.legalOvertime.closing, vacation: b.vacation.remaining };
+    const openMonths = b.months.filter((m) => m.month >= yearStart && m.status !== 'closed' && m.status !== 'before-start').map((m) => m.month);
+    let previousOpen = false;
+    if (year - 1 >= startYear) {
+      const closings = await this.closings(db, orgId, userId);
+      previousOpen = !closings.some((c) => c.year === year - 1);
+    }
+    return {
+      year,
+      notEmployed: startYear > year,
+      ended: `${year + 1}-01-01` <= today,
+      closing: b.closing,
+      values: b.closing ? { overtime: b.closing.overtime, legalOvertime: b.closing.legalOvertime, vacation: b.closing.vacation } : values,
+      openMonths,
+      previousOpen,
+    };
+  }
+
+  /**
+   * Closes a person's year: its balances at the end are frozen in `balance_years` and the year is locked.
+   * Refused for a year not ended yet, before the person's start, already closed, after an open year, or
+   * (unless `force`) with months whose timesheet is not approved.
+   */
+  async closeYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string, force: boolean, now: Date = new Date()): Promise<{ ok: true } | { ok: false; error: string; months?: string[] }> {
+    const status = await this.yearStatus(db, orgId, userId, year, now);
+    if (status.closing) return { ok: false, error: 'year-closed' };
+    if (status.notEmployed) return { ok: false, error: 'not-employed' };
+    if (!status.ended) return { ok: false, error: 'year-not-ended' };
+    if (status.previousOpen) return { ok: false, error: 'previous-year-open' };
+    if (status.openMonths.length > 0 && !force) return { ok: false, error: 'months-open', months: status.openMonths };
+    const values = {
+      organization_id: orgId,
+      user_id: userId,
+      year,
+      overtime_minutes: Math.round(status.values.overtime),
+      legal_overtime_minutes: Math.round(status.values.legalOvertime),
+      vacation_days: String(roundDays(status.values.vacation)),
+      incomplete_months: status.openMonths.length,
+      closed_by_user_id: actorUserId,
+      closed_at: now.toISOString(),
+    };
+    const [row] = await db.insert(balance_years).values(values).onConflictDoNothing().returning({ id: balance_years.id });
+    if (!row) return { ok: false, error: 'year-closed' };
+    void this.versions.record('balance_years', row.id, 'insert', actorUserId, { id: row.id, ...values }).catch(() => {});
+    return { ok: true };
+  }
+
+  /** Reopens a person's newest closed year: it is computed live and can be changed again. */
+  async reopenYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const [later] = await db
+      .select({ id: balance_years.id })
+      .from(balance_years)
+      .where(and(eq(balance_years.organization_id, orgId), eq(balance_years.user_id, userId), gt(balance_years.year, year)))
+      .limit(1);
+    if (later) return { ok: false, error: 'later-year-closed' };
+    const removed = await db
+      .delete(balance_years)
+      .where(and(eq(balance_years.organization_id, orgId), eq(balance_years.user_id, userId), eq(balance_years.year, year)))
+      .returning({ id: balance_years.id });
+    if (removed.length === 0) return { ok: false, error: 'year-not-closed' };
+    for (const r of removed) void this.versions.record('balance_years', r.id, 'delete', actorUserId, { year }).catch(() => {});
+    return { ok: true };
   }
 
   /** The balance report for a month: every person the caller may list, with alerts. */
@@ -560,7 +711,7 @@ export class BalancesService {
 
   async findAdjustment(db: Db, id: string) {
     const [row] = await db
-      .select({ id: balance_adjustments.id, organization_id: balance_adjustments.organization_id, user_id: balance_adjustments.user_id })
+      .select({ id: balance_adjustments.id, organization_id: balance_adjustments.organization_id, user_id: balance_adjustments.user_id, effective_date: balance_adjustments.effective_date })
       .from(balance_adjustments)
       .where(eq(balance_adjustments.id, id));
     return row ?? null;

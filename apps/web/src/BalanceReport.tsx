@@ -11,14 +11,17 @@ import {
   LinearProgress,
   Paper,
   Switch,
+  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   Typography,
 } from '@mui/material';
+import YearClosing from './YearClosing';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatSignedMinutes } from './localeFormat';
 import { PageHeader, TableEmptyRow } from './components';
@@ -88,6 +91,8 @@ export default function BalanceReport({ orgId, authHeaders }: { orgId: string; a
   const [onlyAlerts, setOnlyAlerts] = useState(false);
   const [selected, setSelected] = useState<ReportRow | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // The month's report, or the year-end closing.
+  const [view, setView] = useState<'month' | 'year'>('month');
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +126,11 @@ export default function BalanceReport({ orgId, authHeaders }: { orgId: string; a
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader title={t('nav.balances')} subtitle={t('balanceReport.subtitle')} />
       <Paper sx={{ p: 2, display: 'grid', gap: 2 }}>
+        <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tab value="month" label={t('yearClosing.tabMonth')} />
+          <Tab value="year" label={t('yearClosing.tab')} />
+        </Tabs>
+        {view === 'year' ? <YearClosing orgId={orgId} authHeaders={authHeaders} /> : (<>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <IconButton size="small" aria-label={t('balanceReport.previousMonth')} onClick={() => setMonth((m) => shiftMonth(m, -1))}>
             <ChevronLeftIcon fontSize="small" />
@@ -198,6 +208,7 @@ export default function BalanceReport({ orgId, authHeaders }: { orgId: string; a
           </Table>
         </TableContainer>
         <Typography variant="caption" color="text.secondary">{t('balanceReport.help')}</Typography>
+        </>)}
       </Paper>
 
       <Dialog open={!!selected} onClose={() => setSelected(null)} fullWidth maxWidth="lg">

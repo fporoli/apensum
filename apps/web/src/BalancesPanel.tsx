@@ -78,6 +78,8 @@ interface YearBalances {
   legalOvertime: { opening: number; closing: number; accrued: number; adjustments: number; yearLimitMinutes: number; maxWeeklyMinutes: number };
   adjustments: Adjustment[];
   canEdit: boolean;
+  /** The year's year-end closing, when it has one: its balances are frozen and nothing in it changes. */
+  closing: { closedAt: string; incompleteMonths: number } | null;
 }
 
 const STATUS_COLOR: Record<MonthStatus, 'success' | 'info' | 'error' | 'warning' | 'default'> = {
@@ -143,6 +145,8 @@ export function BalancesPanel({
   const [success, setSuccess] = useState<string | null>(null);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [entitlementOpen, setEntitlementOpen] = useState(false);
+  // A closed year (year-end closing) is read-only, also for HR: it is reopened on Time balances.
+  const editable = !!data?.canEdit && !data?.closing;
 
   async function reload() {
     setLoading(true);
@@ -208,8 +212,13 @@ export function BalancesPanel({
             {t('balances.since', { date: formatLocaleDate(data.start, locale) })}
           </Typography>
         )}
+        {data?.closing && (
+          <Tooltip title={t('yearClosing.lockedHint')}>
+            <Chip size="small" color="success" label={t('yearClosing.closedOn', { date: formatLocaleDate(data.closing.closedAt.slice(0, 10), locale) })} />
+          </Tooltip>
+        )}
         <Box sx={{ flex: 1 }} />
-        {data?.canEdit && targetUserId && (
+        {editable && targetUserId && (
           <Button size="small" startIcon={<AddIcon />} onClick={() => setAdjustOpen(true)}>
             {t('balances.addAdjustment')}
           </Button>
@@ -243,7 +252,7 @@ export function BalancesPanel({
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ flex: 1 }}>{t('balances.type.vacation')}</Typography>
-                {data.canEdit && targetUserId && (
+                {editable && targetUserId && (
                   <Tooltip title={t('balances.editEntitlement')}>
                     <IconButton size="small" aria-label={t('balances.editEntitlement')} onClick={() => setEntitlementOpen(true)}>
                       <EditIcon fontSize="small" />
@@ -358,7 +367,7 @@ export function BalancesPanel({
             </Table>
           </TableContainer>
 
-          {(data.adjustments.length > 0 || data.canEdit) && (
+          {(data.adjustments.length > 0 || editable) && (
             <Fragment>
               <Typography variant="subtitle2">{t('balances.adjustments')}</Typography>
               <TableContainer>
@@ -370,7 +379,7 @@ export function BalancesPanel({
                       <TableCell>{t('balances.kind')}</TableCell>
                       <TableCell align="right">{t('balances.amount')}</TableCell>
                       <TableCell>{t('balances.note')}</TableCell>
-                      {data.canEdit && <TableCell />}
+                      {editable && <TableCell />}
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -383,7 +392,7 @@ export function BalancesPanel({
                           {a.balance !== 'vacation' ? formatSignedMinutes(a.amount) : t('balances.days', { value: formatDays(a.amount, locale) })}
                         </TableCell>
                         <TableCell>{a.note ?? ''}</TableCell>
-                        {data.canEdit && (
+                        {editable && (
                           <TableCell align="right">
                             <IconButton size="small" aria-label={t('balances.deleteAdjustment')} onClick={() => void deleteAdjustment(a.id)}>
                               <DeleteIcon fontSize="small" />
@@ -393,7 +402,7 @@ export function BalancesPanel({
                       </TableRow>
                     ))}
                     {data.adjustments.length === 0 && (
-                      <TableEmptyRow colSpan={data.canEdit ? 6 : 5} icon={<AccountBalanceWalletIcon fontSize="inherit" />} title={t('balances.noAdjustments')} />
+                      <TableEmptyRow colSpan={editable ? 6 : 5} icon={<AccountBalanceWalletIcon fontSize="inherit" />} title={t('balances.noAdjustments')} />
                     )}
                   </TableBody>
                 </Table>

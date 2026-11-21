@@ -1,7 +1,7 @@
 import { Body, Controller, Get, OnModuleInit, Param, Post, Query, Req } from '@nestjs/common';
 import { and, desc, eq, getTableColumns, inArray, type SQL } from 'drizzle-orm';
 import { DbService } from './db.service';
-import { callerUserId, canEditBeyondOwn, canEditUserData, canSeeUserData, isManagerOf, isOrgMember, listableUserIds, membershipManagerId } from './access';
+import { callerUserId, canEditBeyondOwn, canEditUserData, canSeeUserData, isManagerOf, isOrgMember, isYearClosed, listableUserIds, membershipManagerId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { timesheet_periods, users, workflows } from './db/schema';
 import { AuditService } from './audit.service';
@@ -276,7 +276,7 @@ export class TimesheetsController implements OnModuleInit {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const [period] = await db
-      .select({ organization_id: timesheet_periods.organization_id, status: timesheet_periods.status, user_id: timesheet_periods.user_id })
+      .select({ organization_id: timesheet_periods.organization_id, status: timesheet_periods.status, user_id: timesheet_periods.user_id, period_start: timesheet_periods.period_start })
       .from(timesheet_periods)
       .where(eq(timesheet_periods.id, id));
     if (!period) return { ok: false, error: 'period-not-found' };
@@ -286,6 +286,8 @@ export class TimesheetsController implements OnModuleInit {
       return { ok: false, error: 'forbidden' };
     }
     if (period.status !== 'approved' && period.status !== 'submitted') return { ok: false, error: 'not-locked' };
+    // A month of a closed year stays as it was closed (Time balances -> year-end closing reopens the year).
+    if (await isYearClosed(db, period.organization_id, period.user_id, Number(period.period_start.slice(0, 4)))) return { ok: false, error: 'year-closed' };
     await db
       .update(workflows)
       .set({ step_status: 'cancelled', workflow_finished: new Date().toISOString() })
@@ -310,7 +312,7 @@ export class TimesheetsController implements OnModuleInit {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const [period] = await db
-      .select({ organization_id: timesheet_periods.organization_id, status: timesheet_periods.status, user_id: timesheet_periods.user_id })
+      .select({ organization_id: timesheet_periods.organization_id, status: timesheet_periods.status, user_id: timesheet_periods.user_id, period_start: timesheet_periods.period_start })
       .from(timesheet_periods)
       .where(eq(timesheet_periods.id, id));
     if (!period) return { ok: false, error: 'period-not-found' };
@@ -318,6 +320,7 @@ export class TimesheetsController implements OnModuleInit {
     if (!callerId) return { ok: false, error: 'unauthenticated' };
     if (period.user_id !== callerId) return { ok: false, error: 'forbidden' };
     if (period.status !== 'approved') return { ok: false, error: 'not-approved' };
+    if (await isYearClosed(db, period.organization_id, period.user_id, Number(period.period_start.slice(0, 4)))) return { ok: false, error: 'year-closed' };
 
     const reason = (body.reason ?? '').trim();
     if (!reason) return { ok: false, error: 'reason-required' };

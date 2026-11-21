@@ -474,6 +474,37 @@ export const user_identities = pgTable("user_identities", {
 	unique("uq_provider_user_id").on(table.provider, table.provider_user_id),
 ]);
 
+export const balance_years = pgTable("balance_years", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	year: integer().notNull(),
+	overtime_minutes: integer().notNull(),
+	legal_overtime_minutes: integer().notNull(),
+	vacation_days: numeric({ precision: 8, scale:  2 }).notNull(),
+	incomplete_months: integer().default(0).notNull(),
+	closed_by_user_id: uuid(),
+	closed_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "balance_years_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "balance_years_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.closed_by_user_id],
+			foreignColumns: [users.id],
+			name: "balance_years_closed_by_user_id_fkey"
+		}).onDelete("set null"),
+	unique("uq_balance_years").on(table.organization_id, table.user_id, table.year),
+	check("chk_balance_years_year", sql`(year >= 2000) AND (year <= 2100)`),
+]);
+
 export const organization_domains = pgTable("organization_domains", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),

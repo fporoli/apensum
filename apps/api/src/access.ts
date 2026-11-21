@@ -278,12 +278,25 @@ export async function isPeriodLocked(
   until?: string | null,
 ): Promise<boolean> {
   const { first, last } = lockDays(userId, dateOrTimestamp, until);
+  // A closed year (year-end closing, balance_years) locks every month of it too.
   const rows = await db.execute(
     sql`SELECT 1 FROM timesheet_periods
         WHERE organization_id = ${organizationId} AND user_id = ${userId}
           AND status IN ('submitted', 'approved')
           AND period_start <= ${last} AND period_end > ${first}
+        UNION ALL
+        SELECT 1 FROM balance_years
+        WHERE organization_id = ${organizationId} AND user_id = ${userId}
+          AND year BETWEEN extract(year FROM ${first})::int AND extract(year FROM ${last})::int
         LIMIT 1`,
+  );
+  return rows.rows.length > 0;
+}
+
+/** True when the person's year is closed (year-end closing, `balance_years`): nothing in it changes until it is reopened. */
+export async function isYearClosed(db: Executor, organizationId: string, userId: string, year: number): Promise<boolean> {
+  const rows = await db.execute(
+    sql`SELECT 1 FROM balance_years WHERE organization_id = ${organizationId} AND user_id = ${userId} AND year = ${year} LIMIT 1`,
   );
   return rows.rows.length > 0;
 }

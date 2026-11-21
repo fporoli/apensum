@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { DbService } from './db.service';
 import { ADJUSTMENT_KINDS, BALANCE_KINDS, BalancesService, type AdjustmentKind, type BalanceKind } from './balances.service';
-import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, listableUserIds } from './access';
+import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isYearClosed, listableUserIds } from './access';
+import { and, asc, eq, inArray } from 'drizzle-orm';
+import { organization_memberships, users } from './db/schema';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { isIsoDate } from '@worktime3/shared/worktime';
 
@@ -76,6 +78,8 @@ export class BalancesController {
     if (!body.userId || !(await canEditBeyondOwn(db, orgId, callerId, OBJECT, body.userId))) return { ok: false, error: 'forbidden' };
     const error = validateAdjustment(body);
     if (error) return { ok: false, error };
+    // A closed year is not changed: a correction goes into the next open year, or the year is reopened.
+    if (await isYearClosed(db, orgId, body.userId, Number((body.effectiveDate as string).slice(0, 4)))) return { ok: false, error: 'year-closed' };
     const id = await this.balances.addAdjustment(db, {
       organizationId: orgId,
       userId: body.userId,
@@ -99,6 +103,7 @@ export class BalancesController {
     const row = await this.balances.findAdjustment(db, id);
     if (!row || row.organization_id !== orgId) return { ok: false, error: 'not-found' };
     if (!(await canEditBeyondOwn(db, orgId, callerId, OBJECT, row.user_id))) return { ok: false, error: 'forbidden' };
+    if (await isYearClosed(db, orgId, row.user_id, Number(row.effective_date.slice(0, 4)))) return { ok: false, error: 'year-closed' };
     await this.balances.deleteAdjustment(db, id, callerId);
     return { ok: true };
   }
@@ -118,7 +123,90 @@ export class BalancesController {
     if (!Number.isInteger(body.year) || (body.year as number) < 2000 || (body.year as number) > 2100) return { ok: false, error: 'invalid-year' };
     const days = body.days ?? null;
     if (days !== null && !(typeof days === 'number' && Number.isFinite(days) && days >= 0 && days <= 366)) return { ok: false, error: 'invalid-days' };
+    if (await isYearClosed(db, orgId, body.userId, body.year as number)) return { ok: false, error: 'year-closed' };
     await this.balances.setEntitlement(db, orgId, body.userId, body.year as number, days === null ? null : Math.round(days * 100) / 100, body.note?.trim() || null, callerId);
+    return { ok: true };
+  }
+
+  /**
+   * The year-end closing for a year: every active member the caller may see on the balances page, with
+   * where their year stands (`BalancesService.yearStatus`) and whether the caller may close or reopen it
+   * (an edit grant beyond own, like adjustments: HR and admin).
+   */
+  @Get('organizations/:orgId/balance-years')
+  async closingOverview(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Query('year') yearParam?: string) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true, rows: [] };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', rows: [] };
+    const year = parseYear(yearParam ?? String(new Date().getFullYear() - 1));
+    const ids = await listableUserIds(db, orgId, callerId, OBJECT);
+    if (ids !== 'all' && ids.length === 0) return { ok: true, year, rows: [] };
+    const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true)];
+    if (ids !== 'all') conditions.push(inArray(organization_memberships.user_id, ids));
+    const people = await db
+      .select({ id: users.id, name: users.display_name, email: users.email })
+      .from(organization_memberships)
+      .innerJoin(users, eq(users.id, organization_memberships.user_id))
+      .where(and(...conditions))
+      .orderBy(asc(users.display_name));
+    const rows = [];
+    for (const p of people) {
+      const status = await this.balances.yearStatus(db, orgId, p.id, year);
+      if (status.notEmployed) continue;
+      rows.push({ userId: p.id, displayName: p.name, email: p.email, ...status, canEdit: await canEditBeyondOwn(db, orgId, callerId, OBJECT, p.id) });
+    }
+    return { ok: true, year, rows };
+  }
+
+  /**
+   * Closes the year for the people given: for each, any open earlier year of their employment first
+   * (years close in order), then this one. Without `force`, a person with months whose timesheet is not
+   * approved stays open and is reported with those months. One result per person.
+   */
+  @Post('organizations/:orgId/balance-years/close')
+  async closeYears(@Param('orgId') orgId: string, @Body() body: { year?: number; userIds?: string[]; force?: boolean }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true, results: [] };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', results: [] };
+    const year = body.year;
+    if (!Number.isInteger(year) || (year as number) < 2000 || (year as number) > 2100) return { ok: false, error: 'invalid-year', results: [] };
+    const userIds = Array.isArray(body.userIds) ? [...new Set(body.userIds.filter((u): u is string => typeof u === 'string'))].slice(0, 2000) : [];
+    const results: Array<{ userId: string; ok: boolean; error?: string; year?: number; months?: string[] }> = [];
+    for (const userId of userIds) {
+      if (!(await isOrgMember(db, orgId, userId)) || !(await canEditBeyondOwn(db, orgId, callerId, OBJECT, userId))) {
+        results.push({ userId, ok: false, error: 'forbidden' });
+        continue;
+      }
+      results.push({ userId, ...(await this.closeThrough(db, orgId, userId, year as number, callerId, body.force === true)) });
+    }
+    return { ok: true, results };
+  }
+
+  /** Reopens a person's year; only their newest closed year. */
+  @Post('organizations/:orgId/balance-years/reopen')
+  async reopenYear(@Param('orgId') orgId: string, @Body() body: { year?: number; userId?: string }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId) return { ok: false, error: 'unauthenticated' };
+    if (!body.userId || !(await isOrgMember(db, orgId, body.userId)) || !(await canEditBeyondOwn(db, orgId, callerId, OBJECT, body.userId))) return { ok: false, error: 'forbidden' };
+    if (!Number.isInteger(body.year)) return { ok: false, error: 'invalid-year' };
+    return this.balances.reopenYear(db, orgId, body.userId, body.year as number, callerId);
+  }
+
+  /** Closes every open year of the person's employment up to `year`, oldest first; stops at the first that can't close. */
+  private async closeThrough(db: Db, orgId: string, userId: string, year: number, callerId: string, force: boolean) {
+    const status = await this.balances.yearStatus(db, orgId, userId, year);
+    if (status.closing) return { ok: false, error: 'year-closed' };
+    const start = Number((await this.balances.year(db, orgId, userId, year)).start.slice(0, 4));
+    const closed = new Set((await this.balances.closings(db, orgId, userId)).map((c) => c.year));
+    for (let y = start; y <= year; y++) {
+      if (closed.has(y)) continue;
+      const res = await this.balances.closeYear(db, orgId, userId, y, callerId, force);
+      if (!res.ok) return { ...res, year: y };
+    }
     return { ok: true };
   }
 

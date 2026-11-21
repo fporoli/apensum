@@ -141,7 +141,7 @@ test('project time: booked for someone else only by their manager or HR', async 
 });
 
 function timesheetSetup(status: string) {
-  const f = fakeDb({ row: { organization_id: 'org', status, user_id: 'emp' } });
+  const f = fakeDb({ row: { organization_id: 'org', status, user_id: 'emp', period_start: '2026-10-01' } });
   const reopened: string[] = [];
   const balances = { reopenMonth: async (_db: unknown, id: string) => { reopened.push(id); } } as unknown as BalancesService;
   const controller = new TimesheetsController(f.service, audit, versions, {} as WorkflowsService, balances, timesheetDocs);

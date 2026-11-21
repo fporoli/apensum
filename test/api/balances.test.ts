@@ -113,6 +113,42 @@ test('computeYearBalances: the next year opens with the previous closing', () =>
   assert.equal(b.months[0].status, 'current');
 });
 
+test('computeYearBalances: after a year-end closing, the next year opens from it and nothing before is computed', () => {
+  // Worked 20 min extra every weekday since 2026; 2026 closed at 300 min overtime (60 of it Überzeit), 4.5 vacation days.
+  const attendance = new Map(weekdays('2026-10-01', '2027-01-20').map((d) => [d, 500]));
+  const opening = { year: 2026, overtime: 300, legalOvertime: 60, vacation: 4.5 };
+  const b = computeYearBalances(
+    inputs({
+      year: 2027,
+      today: '2027-01-20',
+      attendance,
+      // Before the closing: already in it, must not count again.
+      adjustments: [
+        { id: 'o1', balance: 'overtime', kind: 'correction', effectiveDate: '2026-12-15', amount: 999, note: null },
+        { id: 'v1', balance: 'vacation', kind: 'correction', effectiveDate: '2026-12-15', amount: 9, note: null },
+        { id: 'o2', balance: 'overtime', kind: 'correction', effectiveDate: '2027-01-05', amount: 30, note: null },
+      ],
+      opening,
+    }),
+  );
+  assert.equal(b.overtime.opening, 300);
+  assert.equal(b.legalOvertime.opening, 60);
+  assert.equal(b.vacation.carryOver, 4.5);
+  // January 2027 up to the 19th: 13 weekdays × 20 min, plus the 2027 correction.
+  assert.equal(b.months[0].overtimeBalance, 300 + 13 * 20 + 30);
+  // The closed balance counts as booked; only the live days are pending.
+  assert.equal(b.overtime.bookedMinutes, 300 + 30);
+  assert.equal(b.overtime.pendingMinutes, 13 * 20);
+  assert.equal(b.vacation.entitlement, 25);
+  assert.equal(b.vacation.remaining, 29.5);
+});
+
+test('computeYearBalances: a closing of a later year is ignored for an earlier one', () => {
+  const plain = computeYearBalances(inputs());
+  const withLater = computeYearBalances(inputs({ opening: { year: 2026, overtime: 5000, legalOvertime: 0, vacation: 99 } }));
+  assert.deepEqual(withLater, plain);
+});
+
 test('computeYearBalances: vacation entitlement prorated from the start, taken and planned in days', () => {
   const b = computeYearBalances(
     inputs({
@@ -274,7 +310,7 @@ function sqlText(query: any): string {
 }
 
 /** BalancesController over a fake db; `permissions` are the caller's ids, `reports` their direct reports. */
-function setup(permissions: string[], reports: string[] = []) {
+function setup(permissions: string[], reports: string[] = [], closedYear = false) {
   const added: any[] = [];
   const db: any = {
     execute: async (q: unknown) => {
@@ -284,6 +320,7 @@ function setup(permissions: string[], reports: string[] = []) {
         return { rows: ids.map((permission_id) => ({ name: 'member', permission_id })) };
       }
       if (text.includes('manager_user_id')) return { rows: reports.map((user_id) => ({ user_id })) };
+      if (text.includes('FROM balance_years')) return { rows: closedYear ? [{ '?column?': 1 }] : [] };
       if (text.includes('FROM organization_memberships WHERE')) return { rows: [{ '?column?': 1 }] };
       return { rows: [] };
     },
@@ -315,6 +352,14 @@ test('balances: adjustments need edit beyond own', async () => {
   assert.deepEqual(await hr.controller.addAdjustment('org-1', { ...body, userId: 'user-2' }, hr.req), { ok: true, id: 'adj-1' });
   assert.equal(hr.added[0].actorUserId, 'caller');
   assert.deepEqual(await hr.controller.addAdjustment('org-1', { ...body, userId: 'user-2', amount: 0 }, hr.req), { ok: false, error: 'invalid-amount' });
+});
+
+test('balances: nothing changes in a closed year (adjustments, entitlements)', async () => {
+  const hr = setup(['nav.balances:edit:all'], [], true);
+  const body = { userId: 'user-2', balance: 'overtime', kind: 'correction', effectiveDate: '2025-11-01', amount: 60 };
+  assert.deepEqual(await hr.controller.addAdjustment('org-1', body, hr.req), { ok: false, error: 'year-closed' });
+  assert.deepEqual(await hr.controller.setEntitlement('org-1', { userId: 'user-2', year: 2025, days: 20 }, hr.req), { ok: false, error: 'year-closed' });
+  assert.equal(hr.added.length, 0);
 });
 
 test('balances report: month format checked, people limited to what the caller may list', async () => {

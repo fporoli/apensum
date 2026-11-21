@@ -66,6 +66,7 @@ const REOPEN_ERROR_MESSAGES: Record<string, (t: (key: string) => string) => stri
   'no-manager-to-ask': (t) => t('timesheet.reopenNoManager'),
   'already-requested': (t) => t('timesheet.reopenAlreadyRequested'),
   'not-approved': (t) => t('timesheet.reopenNotApproved'),
+  'year-closed': (t) => t('timesheet.yearClosed'),
 };
 
 function currentPeriodStart(): string {
@@ -237,7 +238,7 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
       const res = await fetch(`${API}/timesheet-periods/${current.id}/reopen`, { method: 'POST', headers: await authHeaders() });
       const data = await res.json();
       if (!data.ok) {
-        setError(data.error === 'forbidden' ? t('approvals.reopenForbidden') : t('approvals.reopenFailedWith', { error: data.error ?? t('common.unknownError') }));
+        setError(data.error === 'forbidden' ? t('approvals.reopenForbidden') : data.error === 'year-closed' ? t('timesheet.yearClosed') : t('approvals.reopenFailedWith', { error: data.error ?? t('common.unknownError') }));
         return;
       }
       setSuccess(t('approvals.reopened'));
