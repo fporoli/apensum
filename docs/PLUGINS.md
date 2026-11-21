@@ -308,10 +308,23 @@ are limited to the catalogue (`mergePermissionRows` in access.ts).
 
 - The API image (`apps/api/Dockerfile`) and the web image (`apps/web/Dockerfile`) copy the repository,
   `plugins/` included, and build every plugin in it.
-- A private plugin goes into an image when the workflow checks it out into `plugins/<id>` before the
-  build, e.g. with `actions/checkout` using a deploy key or a token secret. Not wired up yet.
-- An image that contains a private plugin contains its code, so push it to a **private** registry
-  package.
+- **Private plugins** are named in the repository variable `PRIVATE_PLUGINS`, separated by spaces or
+  new lines: `<id>=<owner>/<repo>[@<ref>]`, e.g. `hr=fporoli/apensum-hr`. The secret `PLUGINS_TOKEN`
+  (a fine-grained token with read access to their contents) lets `.github/actions/private-plugins`
+  clone them into `plugins/<id>`:
+  - `build-push` before building, so they are in the api, web, migrate and seed images;
+  - `vps` before staging, so their changelogs and seeds reach the server.
+
+  CI (`ci.yml`) leaves them out: the core's CI tests the core and the bundled plugins, and its logs
+  are public. A private plugin has its own CI that checks the core out and itself into
+  `plugins/<id>` (e.g. the hr plugin's `.github/workflows/test.yml`).
+- An image that contains a private plugin contains its code, so its registry package must be
+  **private**. `build-push` refuses to build while one of those images can be pulled anonymously.
+  Make the GHCR packages `api`, `web`, `migrate`, `seed` and `web-azure` private (package settings),
+  then the VPS environments need `GHCR_USERNAME` (variable) and `GHCR_TOKEN` (secret, `read:packages`)
+  to pull them; Azure has them already.
+- A plugin's module that is `licensed` stays off in every organization until a superdeveloper
+  switches it on there, so deploying it changes nothing for customers who have not bought it.
 
 ## Not yet supported
 

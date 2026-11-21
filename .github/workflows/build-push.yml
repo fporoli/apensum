@@ -18,6 +18,31 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # git describe below needs the history and tags
+      # Private plugins (repository variable PRIVATE_PLUGINS, secret PLUGINS_TOKEN) go into the
+      # api, web, migrate and seed images like the bundled ones (docs/PLUGINS.md).
+      - name: Private plugins
+        id: plugins
+        uses: ./.github/actions/private-plugins
+        with:
+          plugins: ${{ vars.PRIVATE_PLUGINS }}
+          token: ${{ secrets.PLUGINS_TOKEN }}
+      # Their code must not end up in a public image: refuse while anyone can pull one of them.
+      - name: Images with private plugins are private
+        if: steps.plugins.outputs.ids != ''
+        run: |
+          repo="${GITHUB_REPOSITORY,,}"
+          public=""
+          for img in api web migrate seed web-azure; do
+            token=$(curl -fsS "https://ghcr.io/token?scope=repository:$repo/$img:pull" | jq -r '.token // empty' || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+              "https://ghcr.io/v2/$repo/$img/manifests/latest")
+            [ "$code" = 200 ] && public="$public $img"
+          done
+          if [ -n "$public" ]; then
+            echo "::error::Public images:$public. Make these GHCR packages private (package settings -> Danger Zone) before building with private plugins."
+            exit 1
+          fi
       # What the Information screen reports. A tag names its own image and leaves `latest` alone,
       # so tagging an older commit can't roll `latest` back.
       - name: Release metadata

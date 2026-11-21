@@ -77,6 +77,13 @@ jobs:
         if: inputs.action == 'destroy' && inputs.confirmation != format('DESTROY {0}', inputs.environment)
         run: echo "Destroy not run. Type DESTROY followed by the environment name." && exit 1
       - uses: actions/checkout@v7
+      # Private plugins' changelogs and seeds go to the server like the bundled ones' (their code
+      # is in the api/web images).
+      - name: Private plugins
+        uses: ./.github/actions/private-plugins
+        with:
+          plugins: ${{ vars.PRIVATE_PLUGINS }}
+          token: ${{ secrets.PLUGINS_TOKEN }}
       # The server builds the migrate image from infra/liquibase, plugin changelogs included.
       - name: Stage plugin changelogs and seeds
         run: node scripts/plugins.mjs stage-changelogs && node scripts/plugins.mjs stage-seeds
