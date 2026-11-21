@@ -18,6 +18,8 @@ export interface DirectoryEntry {
   position: string | null;
   department: string | null;
   departmentId: string | null;
+  /** The location (work place) of the assignment in force, e.g. "Büro Zürich". */
+  location: string | null;
   /** The open check-in, if the person is checked in right now. */
   checkedInSince: string | null;
   /** Presence like a chat app: checked in, absent today (an approved absence, never its type), or neither. */
@@ -51,18 +53,19 @@ export class DirectoryController {
     const result = await db.execute(sql`
       SELECT u.id, coalesce(nullif(u.display_name, ''), u.email) AS name, u.first_name, u.last_name, u.email, u.avatar_url,
              nullif(coalesce(u.basicdata -> 'orgs' -> ${orgId} ->> 'phone1', u.basicdata ->> 'phone1'), '') AS phone,
-             a.job_function, d.id AS department_id, d.name AS department,
+             a.job_function, d.id AS department_id, d.name AS department, loc.name AS location,
              a.manager_user_id, coalesce(nullif(mu.display_name, ''), mu.email) AS manager_name,
              to_char(w.check_in AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS checked_in_since,
              ab.date_end::text AS absent_until
       FROM organization_memberships m
       JOIN users u ON u.id = m.user_id
       LEFT JOIN (
-        SELECT DISTINCT ON (user_id) user_id, department_id, job_function, manager_user_id FROM employee_assignments
+        SELECT DISTINCT ON (user_id) user_id, department_id, job_function, manager_user_id, location_id FROM employee_assignments
         WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
         ORDER BY user_id, valid_from DESC
       ) a ON a.user_id = m.user_id
       LEFT JOIN departments d ON d.id = a.department_id
+      LEFT JOIN locations loc ON loc.id = a.location_id
       LEFT JOIN users mu ON mu.id = a.manager_user_id
       LEFT JOIN LATERAL (
         SELECT check_in FROM work_times
@@ -89,6 +92,7 @@ export class DirectoryController {
       position: (r.job_function as string | null) ?? null,
       department: (r.department as string | null) ?? null,
       departmentId: (r.department_id as string | null) ?? null,
+      location: (r.location as string | null) ?? null,
       checkedInSince: (r.checked_in_since as string | null) ?? null,
       status: r.checked_in_since ? 'checkedIn' : r.absent_until ? 'absent' : 'notCheckedIn',
       absentUntil: (r.absent_until as string | null) ?? null,

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Avatar, Badge, Box, Card, CardContent, Chip, CircularProgress, InputAdornment, Link, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
-import { ContactsIcon, MailIcon, PhoneIcon, SearchIcon } from './icons';
+import { ContactsIcon, MailIcon, PhoneIcon, PlaceIcon, SearchIcon } from './icons';
 import { formatLocaleDate, swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -18,6 +18,7 @@ interface Person {
   position: string | null;
   department: string | null;
   departmentId: string | null;
+  location?: string | null;
   checkedInSince: string | null;
   status: 'checkedIn' | 'absent' | 'notCheckedIn';
   absentUntil: string | null;
@@ -94,6 +95,8 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
   }, [people, locale]);
 
   const byId = useMemo(() => new Map((people ?? []).map((p) => [p.userId, p])), [people]);
+  /** The presence line: only checked in or absent; "not checked in" is just the grey ring (its tooltip). */
+  const presenceLine = (p: Person) => (p.status === 'notCheckedIn' ? null : statusText(p));
   const statusText = (p: Person) =>
     p.status === 'checkedIn' && p.checkedInSince ? t('directory.checkedInSince', { time: time(p.checkedInSince) })
       : p.status === 'absent' ? (p.absentUntil ? t('directory.absentUntil', { date: formatLocaleDate(p.absentUntil, locale) }) : t('directory.absent'))
@@ -113,7 +116,8 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
           <Typography variant="caption" color="text.secondary">{t('directory.reportsTo')}</Typography>
           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{m.name}</Typography>
           {(m.position || m.department) && <Typography variant="caption" color="text.secondary">{[m.position, m.department].filter(Boolean).join(' · ')}</Typography>}
-          <Typography variant="caption" sx={{ color: statusColor(m) }}>{statusText(m)}</Typography>
+          {presenceLine(m) && <Typography variant="caption" sx={{ color: statusColor(m) }}>{presenceLine(m)}</Typography>}
+          {m.location && <LocationLine name={m.location} />}
           {m.phone && <Link href={`tel:${m.phone.replace(/[^\d+]/g, '')}`} variant="caption" underline="hover">{m.phone}</Link>}
           <Link href={`mailto:${m.email}`} variant="caption" underline="hover" sx={{ overflowWrap: 'anywhere' }}>{m.email}</Link>
         </Box>
@@ -127,7 +131,7 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
       (p) =>
         (department === 'all' || p.departmentId === department) &&
         (!onlyPresent || p.checkedInSince) &&
-        (!q || [p.name, p.email, p.phone, p.position, p.department, p.managerName].filter(Boolean).join(' ').toLowerCase().includes(q)),
+        (!q || [p.name, p.email, p.phone, p.position, p.department, p.location, p.managerName].filter(Boolean).join(' ').toLowerCase().includes(q)),
     );
   }, [people, query, department, onlyPresent]);
 
@@ -205,9 +209,12 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
                       {[p.position, p.department].filter(Boolean).join(' · ')}
                     </Typography>
                   )}
-                  <Typography variant="caption" sx={{ color: statusColor(p) }}>
-                    {statusText(p)}
-                  </Typography>
+                  {presenceLine(p) && (
+                    <Typography variant="caption" sx={{ color: statusColor(p) }}>
+                      {presenceLine(p)}
+                    </Typography>
+                  )}
+                  {p.location && <LocationLine name={p.location} />}
                   {p.managerName && (
                     <Tooltip
                       title={managerPanel(p)}
@@ -241,6 +248,16 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
           ))}
         </Box>
       )}
+    </Box>
+  );
+}
+
+/** Where the person works (their location), with a pin. */
+function LocationLine({ name }: { name: string }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+      <PlaceIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+      <Typography variant="caption" color="text.secondary" noWrap>{name}</Typography>
     </Box>
   );
 }
