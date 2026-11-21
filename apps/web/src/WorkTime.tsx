@@ -118,6 +118,11 @@ interface SessionDraft {
   open: boolean;
   comment: string;
   homeOffice: boolean;
+  /**
+   * The day, start, end or duration was changed in the dialog. A new entry's default times (08:00-16:00)
+   * are not counted for the day below until then, so no hint appears before anything was entered.
+   */
+  touched: boolean;
 }
 
 function draftFromSession(s: Pick<Session, 'id' | 'check_in' | 'check_out' | 'comment' | 'home_office'>): SessionDraft {
@@ -135,6 +140,7 @@ function draftFromSession(s: Pick<Session, 'id' | 'check_in' | 'check_out' | 'co
     open: !s.check_out,
     comment: s.comment ?? '',
     homeOffice: !!s.home_office,
+    touched: false,
   };
 }
 
@@ -146,7 +152,7 @@ function draftSessionOf(d: SessionDraft) {
 
 /** Applies a change and recomputes the value the user did not set (end from duration or the other way). */
 function updateDraft(d: SessionDraft, patch: Partial<SessionDraft>): SessionDraft {
-  const next = { ...d, ...patch };
+  const next = { ...d, ...patch, touched: true };
   const session = draftSessionOf(next);
   if (!session) return next;
   if (next.source === 'end') {
@@ -392,12 +398,14 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
   const draftSession = draft ? draftSessionOf(draft) : null;
   const draftOverlaps = !!dayContext && dayContext.overlaps.length > 0;
   // Past midnight is one entry on its first day; past a month end it is refused (each month is its own timesheet).
-  const draftCrossesMonth = !!draftSession?.checkOut && dayjs(draftSession.checkIn).format('YYYY-MM') !== dayjs(draftSession.checkOut).subtract(1, 'millisecond').format('YYYY-MM');
-  const draftPastMidnight = !!draftSession?.checkOut && !draftCrossesMonth && dayjs(draftSession.checkIn).format('YYYY-MM-DD') !== dayjs(draftSession.checkOut).subtract(1, 'millisecond').format('YYYY-MM-DD');
+  // A new entry counts once its times were entered; an existing one always (it is what is stored).
+  const countDraft = !!draft && (!!draft.id || draft.touched);
+  const draftCrossesMonth = countDraft && !!draftSession?.checkOut && dayjs(draftSession.checkIn).format('YYYY-MM') !== dayjs(draftSession.checkOut).subtract(1, 'millisecond').format('YYYY-MM');
+  const draftPastMidnight = countDraft && !!draftSession?.checkOut && !draftCrossesMonth && dayjs(draftSession.checkIn).format('YYYY-MM-DD') !== dayjs(draftSession.checkOut).subtract(1, 'millisecond').format('YYYY-MM-DD');
   const draftValid = !!draftSession && (!!draftSession.checkOut || draft!.open) && !draftOverlaps && !draftCrossesMonth;
 
   // The day under the dialog, checked again (shortly after typing stops) whenever the draft moves.
-  const dayKey = draft && draftSession ? `${draft.id}|${draft.date}|${draftSession.checkIn}|${draftSession.checkOut ?? ''}` : draft ? `${draft.id}|${draft.date}` : '';
+  const dayKey = draft && draftSession && countDraft ? `${draft.id}|${draft.date}|${draftSession.checkIn}|${draftSession.checkOut ?? ''}` : draft ? `${draft.id}|${draft.date}` : '';
   useEffect(() => {
     if (!draft) {
       setDayContext(null);
@@ -406,7 +414,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
     let cancelled = false;
     const timer = setTimeout(async () => {
       const q = new URLSearchParams({ date: draft.date });
-      if (draftSession) {
+      if (draftSession && countDraft) {
         q.set('checkIn', draftSession.checkIn);
         if (draftSession.checkOut) q.set('checkOut', draftSession.checkOut);
       }
