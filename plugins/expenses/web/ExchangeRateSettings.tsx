@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, IconButton, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
+  Alert, Box, Button, Chip, IconButton, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
 import dayjs from 'dayjs';
 import {
@@ -9,7 +9,7 @@ import {
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-interface RateRow { id: string; currency: string; targetCurrency: string; validFrom: string; rate: number }
+interface RateRow { id: string; currency: string; targetCurrency: string; validFrom: string; rate: number; standard?: boolean }
 
 /**
  * Organization settings -> Exchange rates: rates kept by hand, with history (exchange_rates).
@@ -119,10 +119,18 @@ export default function ExchangeRateSettings({ orgId, authHeaders }: { orgId: st
           <TableBody>
             {rates.map((r) => (
               <TableRow key={r.id}>
-                <TableCell>{r.currency}</TableCell>
+                <TableCell>
+                  {r.currency}
+                  {r.standard && (
+                    <Tooltip title={t('exchangeRates.standardHint')}>
+                      <Chip size="small" variant="outlined" label={t('exchangeRates.standard')} sx={{ ml: 1 }} />
+                    </Tooltip>
+                  )}
+                </TableCell>
                 <TableCell>{formatLocaleDate(r.validFrom, locale)}</TableCell>
                 <TableCell align="right">1 {r.currency} = {formatLocaleNumber(r.rate, locale)} {r.targetCurrency}</TableCell>
-                {editable && (
+                {editable && r.standard && <TableCell />}
+                {editable && !r.standard && (
                   <TableCell align="right">
                     <Tooltip title={t('common.remove')}>
                       <IconButton size="small" color="error" aria-label={t('common.remove')} onClick={() => void remove(r.id)}><DeleteIcon fontSize="small" /></IconButton>

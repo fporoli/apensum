@@ -6,7 +6,7 @@ import { documents, organizations, projects, subprojects, users } from '@worktim
 
 export const exchange_rates = pgTable("exchange_rates", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
+	organization_id: uuid(),
 	currency: char({ length: 3 }).notNull(),
 	target_currency: char({ length: 3 }).notNull(),
 	valid_from: date().notNull(),

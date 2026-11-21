@@ -12,13 +12,22 @@ export interface BookingContext {
   mileageRates: Record<string, unknown>;
 }
 
+/**
+ * The exchange rates in force for an organization: its own, and the defaults for every organization
+ * (organization_id NULL, from changesets) for each currency pair it keeps none of. `r` is the row alias.
+ */
+export function effectiveRates(orgId: string) {
+  return sql`(r.organization_id = ${orgId}::uuid OR (r.organization_id IS NULL AND NOT EXISTS (
+    SELECT 1 FROM exchange_rates o WHERE o.organization_id = ${orgId}::uuid AND o.currency = r.currency AND o.target_currency = r.target_currency)))`;
+}
+
 /** What booking an expense of this organization needs, read in one go. */
 export async function bookingContext(db: Db, orgId: string): Promise<BookingContext> {
   const [org, rates, mileage] = await Promise.all([
     db.execute(sql`SELECT settings->>'defaultCurrency' AS currency FROM organizations WHERE id = ${orgId}::uuid`),
     db.execute(sql`
       SELECT currency, target_currency, valid_from::text AS valid_from, rate::float8 AS rate
-      FROM exchange_rates WHERE organization_id = ${orgId}::uuid
+      FROM exchange_rates r WHERE ${effectiveRates(orgId)}
     `),
     db.execute(sql`
       SELECT "values" FROM static_data

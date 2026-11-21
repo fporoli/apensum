@@ -2,10 +2,11 @@ import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common'
 import { sql } from 'drizzle-orm';
 import { validateExchangeRate } from '../shared/booking';
 import { DbService, VersionsService, callerUserId, can, isOrgMember, type AuthenticatedRequest } from '@worktime3/api/plugin';
-import { bookingContext } from './expense-booking';
+import { bookingContext, effectiveRates } from './expense-booking';
 
 /**
- * Exchange rates an organization keeps by hand, with history (exchange_rates, 077): read by every
+ * Exchange rates an organization keeps by hand, with history (exchange_rates, 077), over the defaults
+ * for every organization (organization_id NULL, changeset 002; read-only): read by every
  * member (the expense form previews the booked amount with them), changed with Organization
  * settings rights (`nav.orgSettings:edit`). Booked expenses keep the rate they were booked with.
  */
@@ -24,8 +25,8 @@ export class ExchangeRatesController {
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: true, rates: [], reportingCurrency: null, mileageRates: {} };
     const ctx = await bookingContext(db, orgId);
     const rows = await db.execute(sql`
-      SELECT id, currency, target_currency, valid_from::text AS valid_from, rate::float8 AS rate
-      FROM exchange_rates WHERE organization_id = ${orgId}::uuid
+      SELECT id, currency, target_currency, valid_from::text AS valid_from, rate::float8 AS rate, (organization_id IS NULL) AS standard
+      FROM exchange_rates r WHERE ${effectiveRates(orgId)}
       ORDER BY currency, valid_from DESC
     `);
     const editable = await can(db, orgId, callerId, 'nav.orgSettings', 'edit');
@@ -34,8 +35,9 @@ export class ExchangeRatesController {
       reportingCurrency: ctx.reportingCurrency,
       mileageRates: ctx.mileageRates,
       editable,
-      rates: (rows.rows as { id: string; currency: string; target_currency: string; valid_from: string; rate: number }[]).map((r) => ({
-        id: r.id, currency: r.currency, targetCurrency: r.target_currency, validFrom: r.valid_from, rate: Number(r.rate),
+      // `standard`: a default for every organization (read-only), in force while this one keeps none for the currency.
+      rates: (rows.rows as { id: string; currency: string; target_currency: string; valid_from: string; rate: number; standard: boolean }[]).map((r) => ({
+        id: r.id, currency: r.currency, targetCurrency: r.target_currency, validFrom: r.valid_from, rate: Number(r.rate), standard: r.standard === true,
       })),
     };
   }
