@@ -1,4 +1,4 @@
-# APensum — Comprehensive System Review & Architecture Assessment
+# Apensum — Comprehensive System Review & Architecture Assessment
 
 **Author:** Antigravity Engineering Review  
 **Date:** November 2026  
@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-APensum has matured from an enterprise time-tracking application into a **modular, extensible Swiss enterprise framework and business suite**. It solves two core enterprise pain points simultaneously:
+Apensum has matured from an enterprise time-tracking application into a **modular, extensible Swiss enterprise framework and business suite**. It solves two core enterprise pain points simultaneously:
 1. **Strict Swiss Regulatory & Payroll Precision:** Uncompromising adherence to Swiss labor law (ArG — Arbeitsgesetz), cantonal public holidays (26 cantons), Pensum proration, and standard Swiss payroll exports (Abacus AbaSalary, Bexio).
 2. **Extensible Modular Architecture:** A clean plugin system (`plugins/<id>`) allowing organizations to add domain-specific business applications (e.g. legal/medical dossier assessments, expense management, project billing) without touching or destabilizing the core.
 
@@ -25,7 +25,7 @@ The code quality across all workspaces is notably high: typed throughout, modula
 - **Schema Ownership:** Plugins maintain their own Liquibase changelog tree (`plugins/<id>/changelog/`) and run after the core changelogs, isolating schema evolution.
 
 ### 2.2 Swiss Compliance & Business Logic
-- **ArG Überzeit vs. Flextime:** APensum tracks Überzeit (statutory overtime beyond 45 or 50 hours per week) in a distinct account from regular flextime, honoring Swiss labor law requirements.
+- **ArG Überzeit vs. Flextime:** Apensum tracks Überzeit (statutory overtime beyond 45 or 50 hours per week) in a distinct account from regular flextime, honoring Swiss labor law requirements.
 - **Cantonal Holiday Engine:** Evaluates floating and fixed holidays across all 26 Swiss cantons, respecting regional variations and part-time employee workload percentages.
 - **Payroll Interfaces:** Built-in generators for Abacus AbaSalary Lohnarten CSV and Bexio payroll, ensuring direct integration with Swiss accounting systems.
 - **Absence Calendar Feeds:** Implements compliant RFC 5545 iCalendar feeds (`personal`, `team`, `all`) with secure capability tokens, allowing employees and managers to subscribe via Apple Calendar, Outlook, and Google Calendar.
@@ -50,7 +50,7 @@ The code quality across all workspaces is notably high: typed throughout, modula
 ## 3. Website & Product Positioning Review (`apps/site`)
 
 ### 3.1 Framework vs. Single App Narrative
-- The website now clearly positions APensum as a **Modular Swiss Business Suite & Framework**:
+- The website now clearly positions Apensum as a **Modular Swiss Business Suite & Framework**:
   - The core delivers time-tracking, ArG compliance, employee management, and payroll exports.
   - Modules extend the suite: **Fälle & Gutachten (Cases & Assessments)** and **Spesen & Quittungen (Expenses & Receipts)** are highlighted as bundled, production-ready modules.
 - **Opportunities:**

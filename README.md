@@ -1,6 +1,6 @@
-# APensum — Modular Swiss Business Framework & Enterprise Suite
+# Apensum — Modular Swiss Business Framework & Enterprise Suite
 
-**APensum** is a modular enterprise business framework and application suite engineered specifically for Swiss labor law (ArG) and enterprise requirements.\
+**Apensum** is a modular enterprise business framework and application suite engineered specifically for Swiss labor law (ArG) and enterprise requirements.\
 It combines a robust time-tracking and organizational core with an extensible plugin architecture, bundled business modules (Gutachten/Cases and Spesen/Expenses), and a high-performance marketing website.
 
 Built with **NestJS** (API), **React 18 + MUI + Vite** (Web & PWA), **Postgres**, **Keycloak** (OIDC IdP in `auth` schema), and **Caddy** (edge reverse proxy).\
@@ -21,11 +21,11 @@ Schema is strictly versioned with **Liquibase** and typed against **Drizzle ORM*
 
 ## Live PWA Demo (Installable on Mobile)
 
-Experience APensum as a native-like Progressive Web App (PWA) on your smartphone or desktop: 👉 **[https://appdemo.apensum.ch](https://appdemo.apensum.ch)**
+Experience Apensum as a native-like Progressive Web App (PWA) on your smartphone or desktop: 👉 **[https://appdemo.apensum.ch](https://appdemo.apensum.ch)**
 
 - **Install on iOS (iPhone / iPad)**: Open [https://appdemo.apensum.ch](https://appdemo.apensum.ch) in Safari, tap the **Share** button (box with upward arrow), and select **"Add to Home Screen"**.
 - **Install on Android**: Open [https://appdemo.apensum.ch](https://appdemo.apensum.ch) in Chrome, tap the menu (three dots) or install prompt, and select **"Install app"** / **"Add to Home screen"**.
-- **Desktop (Chrome / Edge / macOS)**: Click the install icon in the URL address bar to run APensum in its own dedicated, native-feeling window.
+- **Desktop (Chrome / Edge / macOS)**: Click the install icon in the URL address bar to run Apensum in its own dedicated, native-feeling window.
 - **Instant Demo Logins**: The login page provides 1-click logins for **Admin**, **Manager (Marta)**, and **Employee (Ulla)** with pre-seeded demo hours, absences, and expenses.
 
 ## Architecture
