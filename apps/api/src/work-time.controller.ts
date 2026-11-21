@@ -296,7 +296,7 @@ export class WorkTimeController {
     @Query('checkOut') checkOut?: string,
     @Query('excludeId') excludeId?: string,
   ) {
-    const empty = { entries: [], absences: [], overlaps: [], findings: [] };
+    const empty = { entries: [], absences: [], holiday: null, overlaps: [], findings: [] };
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, ...empty };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
@@ -307,7 +307,11 @@ export class WorkTimeController {
       ? { id: excludeId || null, checkIn, checkOut: checkOut && !Number.isNaN(Date.parse(checkOut)) ? checkOut : null }
       : null;
 
-    const [settings, timeZone] = await Promise.all([this.model.settings(db, orgId), this.model.timeZone(db, targetUserId)]);
+    const [settings, timeZone, holidays] = await Promise.all([
+      this.model.settings(db, orgId),
+      this.model.timeZone(db, targetUserId),
+      this.model.holidays(db, orgId, date, addDays(date, 1)),
+    ]);
     const [sessions, dayAbsences] = await Promise.all([
       db
         .select({ id: work_times.id, check_in: work_times.check_in, check_out: work_times.check_out, comment: work_times.comment, home_office: work_times.home_office })
@@ -343,7 +347,7 @@ export class WorkTimeController {
       maxWeeklyMinutes: settings.legalMaxWeeklyMinutes,
       yearLimitMinutes: settings.legalOvertimeYearLimitMinutes,
     });
-    return { ok: true, timeZone, entries, absences: dayAbsences, overlaps, findings };
+    return { ok: true, timeZone, entries, absences: dayAbsences, holiday: holidays.get(date) ?? null, overlaps, findings };
   }
 
   /** The person's first session in this organization that [start, end) overlaps (end null = still running), `excludeId` left out. */

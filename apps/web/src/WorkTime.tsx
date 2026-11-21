@@ -37,6 +37,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { ClockTimeField, DurationField } from './TimeFields';
 import { sessionFromParts } from './timeInput';
+import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -52,6 +53,8 @@ interface Session {
 interface DayContext {
   entries: Session[];
   absences: { id: string; absence_type: string; status: string; half_day: boolean }[];
+  /** The public or organization holiday on the day, if any. */
+  holiday: Holiday | null;
   overlaps: string[];
   findings: { check: string; minutes: number; after?: boolean }[];
 }
@@ -411,7 +414,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
       try {
         const res = await fetch(`${API}/organizations/${orgId}/users/${personId}/work-time/day?${q}`, { headers: await authHeaders() });
         const data = await res.json();
-        if (!cancelled && data?.ok) setDayContext({ entries: data.entries ?? [], absences: data.absences ?? [], overlaps: data.overlaps ?? [], findings: data.findings ?? [] });
+        if (!cancelled && data?.ok) setDayContext({ entries: data.entries ?? [], absences: data.absences ?? [], holiday: data.holiday ?? null, overlaps: data.overlaps ?? [], findings: data.findings ?? [] });
       } catch { /* offline: nothing under the dialog */ }
     }, 250);
     return () => {
@@ -722,7 +725,12 @@ function DayPanel({ context, date, homeOfficeEnabled, absenceLabel }: {
   const hiddenClash = context.overlaps.length > clashes.length;
   const sameDay = (iso: string) => dayjs(iso).format('YYYY-MM-DD') === date;
   const timeOf = (iso: string) => (sameDay(iso) ? formatTime(iso, locale) : formatDateTime(iso, locale));
-  const hasDay = context.entries.length > 0 || context.absences.length > 0;
+  const hasDay = context.entries.length > 0 || context.absences.length > 0 || !!context.holiday;
+  // Working on a day off is allowed (it counts as attendance), but worth a word: holiday or approved absence.
+  const approvedAbsence = context.absences.find((a) => a.status === 'approved');
+  const holidayLabel = context.holiday
+    ? `${holidayName(context.holiday, locale)}${context.holiday.fraction < 1 ? ` (${t('workTime.holidayPart', { share: new Intl.NumberFormat(swissLocale(locale), { style: 'percent' }).format(context.holiday.fraction) })})` : ''}`
+    : null;
   if (!hasDay && context.findings.length === 0 && context.overlaps.length === 0) return null;
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
@@ -734,6 +742,13 @@ function DayPanel({ context, date, homeOfficeEnabled, absenceLabel }: {
                 to: clashes[0].check_out ? timeOf(clashes[0].check_out) : t('workTime.running'),
               })
             : t('workTime.overlapRefused')}
+        </Alert>
+      )}
+      {(holidayLabel || approvedAbsence) && (
+        <Alert severity="info" sx={{ py: 0 }}>
+          {holidayLabel
+            ? t('workTime.dayOffHoliday', { name: holidayLabel })
+            : t(approvedAbsence!.half_day ? 'workTime.dayOffAbsenceHalf' : 'workTime.dayOffAbsence', { type: absenceLabel(approvedAbsence!.absence_type) })}
         </Alert>
       )}
       {hasDay && (
@@ -768,8 +783,9 @@ function DayPanel({ context, date, homeOfficeEnabled, absenceLabel }: {
               })}
             </Box>
           )}
-          {context.absences.length > 0 && (
+          {(context.absences.length > 0 || holidayLabel) && (
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.75 }}>
+              {holidayLabel && <Chip size="small" color="secondary" variant="outlined" label={holidayLabel} />}
               {context.absences.map((a) => (
                 <Chip
                   key={a.id}
