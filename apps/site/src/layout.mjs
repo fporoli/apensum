@@ -211,6 +211,7 @@ export function layout(ctx, { title, description, body, noindex = false, reveal 
   ${reveal && config.operator.phone ? `<script src="${assets.reveal}" defer></script>` : ''}
   ${form ? `<script src="${assets.contact}" defer></script>` : ''}
   ${news ? `<script src="${assets.news}" defer></script>` : ''}
+  ${news || body.includes('class="shot') ? `<script src="${assets.zoom}" data-close="${t('shot.close')}" defer></script>` : ''}
 </head>
 <body>
   <a class="skip" href="#main">${t('nav.skip')}</a>

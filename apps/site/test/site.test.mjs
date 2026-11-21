@@ -237,6 +237,8 @@ test('news posts: the News page loads them from the API with news.js; nothing wi
     const fr = readFileSync(join(out, 'a', 'fr', DICTS.fr['slug.news'], 'index.html'), 'utf8');
     assert.match(fr, /<div id="news-posts" class="news-posts" data-api="https:\/\/api\.example\.ch\/api\/v1\/public\/news" data-lang="fr" data-locale="fr-CH"/);
     assert.match(fr, /<script src="\/assets\/news\.js\?v=[0-9a-f]{10}" defer><\/script>/);
+    // Pictures enlarge in a dialog (Esc, × or a click beside it closes it), on News and wherever screenshots are.
+    assert.match(fr, /<script src="\/assets\/zoom\.js\?v=[0-9a-f]{10}" data-close="Fermer" defer><\/script>/);
     assert.match(fr, /<noscript>/);
     assert.doesNotMatch(readFileSync(join(out, 'a', 'fr', 'index.html'), 'utf8'), /news\.js/, 'only on the News page');
     build({ outDir: join(out, 'b'), config: { ...fullConfig, contactUrl: '' }, log: { warn() {} } });

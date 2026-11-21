@@ -318,6 +318,7 @@ export default {
   'features.shot.access-2': "Selbstregistrierung: Konto und Organisation in einem Schritt",
   'features.shot.languages': "Dieselbe Übersicht in einer anderen Sprache",
   'features.shot.enlarge': "Bild vergrössern",
+  'shot.close': "Schliessen",
   'features.languages.title': 'Sprachen & Assistent',
   'features.languages.lead': 'Alle arbeiten in ihrer eigenen Sprache.',
   'features.languages.items': [

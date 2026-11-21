@@ -548,3 +548,23 @@ a.phone { font-weight: 600; font-variant-numeric: tabular-nums; }
 .post-body code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--bg-alt); padding: 1px 5px; border-radius: 5px; }
 .post-title { font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 4px 0 12px; }
 .card .checklist + .small { margin-top: 14px; }
+
+/* Enlarged picture (assets/zoom.js): a modal dialog, closed by Esc, the × or a click beside it. */
+.news-posts img { cursor: zoom-in; }
+.zoom-open { overflow: hidden; }
+dialog.zoom {
+  border: 0; padding: 0; background: transparent; max-width: 100vw; max-height: 100vh;
+  width: 100vw; height: 100vh; display: none; align-items: center; justify-content: center; cursor: zoom-out;
+}
+dialog.zoom[open] { display: flex; }
+dialog.zoom::backdrop { background: rgba(10, 20, 40, 0.82); }
+dialog.zoom img {
+  max-width: calc(100vw - 32px); max-height: calc(100vh - 32px); width: auto; height: auto;
+  border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); background: #fff; cursor: default;
+}
+.zoom-close {
+  position: fixed; top: 14px; right: 14px; width: 44px; height: 44px; border-radius: 50%;
+  border: 0; background: rgba(255, 255, 255, 0.95); color: #0f172a; font-size: 28px; line-height: 1;
+  cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center;
+}
+.zoom-close:hover, .zoom-close:focus-visible { background: #fff; outline: 2px solid #3b82f6; outline-offset: 2px; }

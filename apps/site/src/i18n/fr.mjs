@@ -319,6 +319,7 @@ export default {
   'features.shot.access-2': "Inscription en libre-service : compte et organisation en une étape",
   'features.shot.languages': "Le même tableau de bord dans une autre langue",
   'features.shot.enlarge': "Agrandir l’image",
+  'shot.close': "Fermer",
   'features.languages.title': 'Langues & assistant',
   'features.languages.lead': 'Chacun travaille dans sa propre langue.',
   'features.languages.items': [

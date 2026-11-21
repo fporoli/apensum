@@ -318,6 +318,7 @@ export default {
   'features.shot.access-2': "Registrazione autonoma: account e organizzazione in un solo passo",
   'features.shot.languages': "La stessa dashboard in un’altra lingua",
   'features.shot.enlarge': "Ingrandire l’immagine",
+  'shot.close': "Chiudi",
   'features.languages.title': 'Lingue & assistente',
   'features.languages.lead': 'Ognuno lavora nella propria lingua.',
   'features.languages.items': [

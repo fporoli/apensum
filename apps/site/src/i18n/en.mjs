@@ -319,6 +319,7 @@ export default {
   'features.shot.access-2': "Self-registration: account and organization in one step",
   'features.shot.languages': "The same dashboard in another language",
   'features.shot.enlarge': "Enlarge image",
+  'shot.close': "Close",
   'features.languages.title': 'Languages & assistant',
   'features.languages.lead': 'Everyone works in their own language.',
   'features.languages.items': [

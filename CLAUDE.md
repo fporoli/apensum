@@ -298,7 +298,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Ports follow `8090+N` (Keycloak), `5430+N` (pg), `3000+N` (web), `8000+N` (API).\
   Each compose file has a one-shot `migrate` service that runs before the API and Keycloak start.
 - Keycloak realm config: `infra/keycloak/realm-worktime.json`.
-- Website (`apps/site`, apensum.ch): static marketing pages in de/fr/it/en, built by `build.mjs` with no dependencies (no framework, nothing loaded from third parties; the only scripts are `assets/reveal.js`, which shows the phone number on click so it is not in the HTML, `assets/contact.js` on the contact page: topic from `?topic=`, time trap, and `assets/news.js` on the News page: the posts from the API).\
+- Website (`apps/site`, apensum.ch): static marketing pages in de/fr/it/en, built by `build.mjs` with no dependencies (no framework, nothing loaded from third parties; the only scripts are `assets/reveal.js`, which shows the phone number on click so it is not in the HTML, `assets/contact.js` on the contact page: topic from `?topic=`, time trap, `assets/news.js` on the News page: the posts from the API, and `assets/zoom.js` on pages with screenshots and on News: a picture enlarges in a dialog closed by Esc, × or a click beside it).\
   No `mailto:` links (they do nothing without a mail program): buttons open the contact form with a topic (`ctx.contactLink`), the address is plain text (`ctx.email`).\
   Texts are in `src/i18n/<lang>.mjs`, all four with the same keys, list lengths and `{{placeholders}}` (`test/site.test.mjs`); German is Swiss (no ß).\
   The holiday card imports `packages/shared/src/worktime.ts`.\
