@@ -248,8 +248,8 @@ reset_seed() {
     mkdir -p "$backup_dir"
     timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
     backup_file="$backup_dir/public-before-reset-$timestamp.dump"
-    # The schemas a reset drops: public and the Cases plugin's own (scripts/reset-db.mjs drops the same).
-    docker exec "$PG" pg_dump -U worktime -d worktime --schema=public --schema=cases --format=custom > "$backup_file"
+    # The schemas a reset drops: everything but Keycloak's `auth` (public and the plugins' own, e.g. cases, hr).
+    docker exec "$PG" pg_dump -U worktime -d worktime --exclude-schema=auth --format=custom > "$backup_file"
     test -s "$backup_file"
     echo "Public-schema backup saved to $backup_file"
     ls -1t "$backup_dir"/public-before-reset-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f --
@@ -262,7 +262,10 @@ reset_seed() {
   docker stop "$PREFIX-api"
   # Bring the API back even if a later step fails (set -e), so a failed reset never leaves it down.
   trap 'docker start "$PREFIX-api" >/dev/null || true' EXIT
-  docker exec "$PG" psql -U worktime -d worktime -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS cases CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION worktime; GRANT ALL ON SCHEMA public TO public;"
+  # Every schema but Keycloak's `auth` and the system ones goes: public and the plugins' own schemas
+  # (apensum.dbSchema, e.g. cases, hr), whose changesets run again (Liquibase's history is in public).
+  # scripts/reset-db.mjs drops the same.
+  docker exec "$PG" psql -U worktime -d worktime -v ON_ERROR_STOP=1 -c "DO \$\$ DECLARE s text; BEGIN FOR s IN SELECT nspname FROM pg_namespace WHERE nspname NOT IN ('public', 'auth', 'information_schema') AND nspname NOT LIKE 'pg\_%' LOOP EXECUTE format('DROP SCHEMA %I CASCADE', s); END LOOP; END \$\$; DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION worktime; GRANT ALL ON SCHEMA public TO public;"
 
   "${COMPOSE[@]}" run --rm --build --no-deps migrate
 
