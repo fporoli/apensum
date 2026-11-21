@@ -62,6 +62,7 @@ async function prepare() {
   if (!reqs.some((r) => r.subject === subject)) {
     const r = await api(ueli.token, 'POST', `/organizations/${ueli.orgId}/requests`, {
       target: 'manager',
+      type: 'other',
       subject,
       message: 'Hallo Marco, ich möchte ab Januar auf 80 % reduzieren, freitags frei. Wäre das möglich?',
     });
@@ -76,6 +77,13 @@ async function prepare() {
 const SHOTS = {
   'time-1': { user: 'ueli', hash: '#/home' },
   'time-2': { user: 'ulla', hash: '#/work-time', tab: 1 },
+  // The entry dialog of an existing session: the day under it (other sessions, absences, hints).
+  'time-3': { user: 'ueli', hash: '#/work-time', dialog: true, async go(p) {
+    // an afternoon session after lunch: the morning one shows as the same day's entry
+    const row = p.locator('main tbody tr').filter({ hasText: /1[23]:\d\d.*1[67]:\d\d/ }).first();
+    await row.getByRole('button', { name: /^(Bearbeiten|Modifier|Modifica|Edit)$/ }).click();
+    await p.getByRole('dialog').waitFor();
+  } },
   'project-1': { user: 'ueli', hash: '#/time', async go(p) {
     await p.getByRole('button', { name: /^(Monat|Mois|Mese|Month)$/ }).first().click();
     await sleep(1200);
@@ -86,15 +94,14 @@ const SHOTS = {
   } },
   'balances-1': { user: 'ulla', hash: '#/balances' },
   'balances-2': { user: 'ueli', hash: '#/timesheet' },
+  'balances-3': { user: 'ulla', hash: '#/balances', tab: 1 },
   'timesheets-1': { user: 'marco', hash: '#/approvals' },
   'expenses-1': { user: 'ueli', hash: '#/expenses' },
   'requests-1': { user: 'marco', hash: '#/requests', tab: 1, async go(p) {
     await p.getByText('Änderung Arbeitspensum ab Januar').first().click();
   } },
   'documents-1': { user: 'ueli', hash: '#/documents' },
-  'admin-1': { user: 'admin', hash: '#/admin', async go(p) {
-    await p.getByRole('tab').nth(1).click();
-  } },
+  'admin-1': { user: 'admin', hash: '#/admin/roles' },
   'admin-2': { user: 'admin', hash: '#/org-settings' },
   'tenants-1': { user: 'admin', hash: '#/home', full: true, async go(p) {
     await p.getByRole('combobox').first().click();
@@ -185,6 +192,14 @@ async function shoot(page, id, shot, file) {
   const right = Math.min(b.x + b.width, vp.width);
   if (shot.phone) {
     await page.screenshot({ path: file, type: 'jpeg', quality: 82 });
+    return;
+  }
+  if (shot.dialog) {
+    // The dialog alone, with a margin of the dimmed page around it; closed again afterwards.
+    const d = await page.locator('.MuiDialog-paper').first().boundingBox();
+    const m = 24;
+    await page.screenshot({ path: file, type: 'jpeg', quality: 82, clip: { x: d.x - m, y: Math.max(0, d.y - m), width: d.width + 2 * m, height: Math.min(vp.height, d.height + 2 * m) } });
+    await page.keyboard.press('Escape');
     return;
   }
   const clip = shot.full

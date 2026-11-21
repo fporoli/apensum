@@ -48,11 +48,11 @@ export const FEATURE_GROUPS = [
  * The languages group shows the dashboard in two other languages; customize and cases have their video.
  */
 export const FEATURE_SHOTS = {
-  time: ['time-1', 'time-2'],
+  time: ['time-1', 'time-2', 'time-3'],
   mobile: ['mobile-1', 'mobile-2'],
   project: ['project-1'],
   absences: ['absences-1'],
-  balances: ['balances-1', 'balances-2'],
+  balances: ['balances-1', 'balances-2', 'balances-3'],
   timesheets: ['timesheets-1'],
   expenses: ['expenses-1'],
   requests: ['requests-1'],
@@ -439,6 +439,7 @@ const LAW = [
   ['recording', 'clock'],
   ['mobile', 'phone'],
   ['retention', 'history'],
+  ['entry', 'check'],
   ['checks', 'scale'],
   ['overtime', 'sliders'],
   ['night', 'calendar'],
