@@ -79,6 +79,8 @@ interface Overview {
   rows: unknown[];
   absences?: TeamAbsence[];
   holidays?: Holiday[];
+  /** People at a location whose holidays differ from the organization's (087), by user id. */
+  personHolidays?: Record<string, Holiday[]>;
 }
 
 /**
@@ -184,7 +186,7 @@ function TeamOverview({
         const body = await res.json();
         if (cancelled) return;
         if (body.ok === false) setError(t('team.loadFailed'));
-        setData({ people: body.people ?? [], rows: body.rows ?? [], absences: body.absences ?? [], holidays: body.holidays ?? [] });
+        setData({ people: body.people ?? [], rows: body.rows ?? [], absences: body.absences ?? [], holidays: body.holidays ?? [], personHolidays: body.personHolidays ?? {} });
       } catch {
         if (!cancelled) setError(t('team.loadFailed'));
       } finally {
@@ -225,7 +227,7 @@ function TeamOverview({
       {loading && <LinearProgress />}
       {error && <Alert severity="error">{error}</Alert>}
       {data && kind === 'absences' && layout === 'calendar' && (
-        <AbsenceCalendar month={month} people={people} absences={data.absences ?? []} holidays={data.holidays ?? []} />
+        <AbsenceCalendar month={month} people={people} absences={data.absences ?? []} holidays={data.holidays ?? []} personHolidays={data.personHolidays ?? {}} />
       )}
       {data && !(kind === 'absences' && layout === 'calendar') && (
         <TeamTable
@@ -447,12 +449,15 @@ export function DetailTable({ headers, rows }: { headers: string[]; rows: ReactN
 }
 
 /** Month grid: one row per person, one column per day; weekends, holidays and absences marked. */
-function AbsenceCalendar({ month, people, absences, holidays }: { month: string; people: Person[]; absences: TeamAbsence[]; holidays: Holiday[] }) {
+function AbsenceCalendar({ month, people, absences, holidays, personHolidays }: { month: string; people: Person[]; absences: TeamAbsence[]; holidays: Holiday[]; personHolidays: Record<string, Holiday[]> }) {
   const { t, locale } = useI18n();
   const theme = useTheme();
   const typeLabel = useAbsenceTypeLabel();
   const days = daysOfMonth(month);
   const holidayOf = new Map(holidays.map((h) => [h.date, h]));
+  // Each person's own holidays where their location's differ; the header shows the organization's.
+  const personHolidayOf = new Map(Object.entries(personHolidays).map(([id, list]) => [id, new Map(list.map((h) => [h.date, h]))]));
+  const holidayFor = (personId: string, d: string) => (personHolidayOf.get(personId) ?? holidayOf).get(d);
   const palette = [theme.palette.primary.main, theme.palette.secondary.main, theme.palette.info.main, theme.palette.success.main, theme.palette.warning.main];
   const types = [...new Set(absences.filter((a) => a.status !== 'rejected').map((a) => a.absence_type ?? 'other'))].sort();
   const colorOf = (type: string | null) => {
@@ -466,7 +471,10 @@ function AbsenceCalendar({ month, people, absences, holidays }: { month: string;
   const offBg = alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.12 : 0.06);
   const holidayBg = alpha(theme.palette.warning.main, 0.22);
   const cell = { p: 0, width: 26, minWidth: 26, height: 30, textAlign: 'center' as const, borderLeft: `1px solid ${theme.palette.divider}` };
-  const monthHolidays = days.map((d) => holidayOf.get(d)).filter((h): h is Holiday => !!h);
+  // Every holiday of the month someone shown has, the organization's and the locations' (once per date and name).
+  const monthHolidays = [...new Map(
+    [holidayOf, ...personHolidayOf.values()].flatMap((m) => days.map((d) => m.get(d)).filter((h): h is Holiday => !!h)).map((h) => [`${h.date}|${h.key ?? ''}|${h.name ?? ''}`, h]),
+  ).values()].sort((a, b) => a.date.localeCompare(b.date));
 
   return (
     <Box sx={{ display: 'grid', gap: 1.5 }}>
@@ -496,7 +504,7 @@ function AbsenceCalendar({ month, people, absences, holidays }: { month: string;
                   <Typography variant="body2">{p.name ?? p.email}</Typography>
                 </TableCell>
                 {days.map((d) => {
-                  const h = holidayOf.get(d);
+                  const h = holidayFor(p.id, d);
                   const a = absenceOn(absences, p.id, d);
                   const off = isWeekend(d);
                   const color = a ? colorOf(a.absence_type) : null;

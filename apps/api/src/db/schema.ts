@@ -179,6 +179,29 @@ export const field_config = pgTable("field_config", {
 		}).onDelete("cascade"),
 ]);
 
+export const org_holidays = pgTable("org_holidays", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	date: date().notNull(),
+	name: text(),
+	fraction: numeric({ precision: 3, scale:  2 }).default('1').notNull(),
+	observed: boolean().default(true).notNull(),
+	location_id: uuid(),
+}, (table) => [
+	uniqueIndex("uq_org_holidays").using("btree", sql`organization_id`, sql`date`, sql`COALESCE(location_id, '00000000-0000-0000-0000-000000000000'::uuid)`),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "org_holidays_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.location_id],
+			foreignColumns: [locations.id],
+			name: "org_holidays_location_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_org_holidays_fraction", sql`(fraction > (0)::numeric) AND (fraction <= (1)::numeric)`),
+]);
+
 export const work_schedules = pgTable("work_schedules", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -200,23 +223,6 @@ export const work_schedules = pgTable("work_schedules", {
 	unique("uq_work_schedules").on(table.organization_id, table.user_id, table.valid_from),
 	check("chk_work_schedules_days", sql`array_length(day_minutes, 1) = 7`),
 	check("chk_work_schedules_workload", sql`(workload_percent >= (0)::numeric) AND (workload_percent <= (100)::numeric)`),
-]);
-
-export const org_holidays = pgTable("org_holidays", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	date: date().notNull(),
-	name: text(),
-	fraction: numeric({ precision: 3, scale:  2 }).default('1').notNull(),
-	observed: boolean().default(true).notNull(),
-}, (table) => [
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "org_holidays_organization_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_org_holidays").on(table.organization_id, table.date),
-	check("chk_org_holidays_fraction", sql`(fraction > (0)::numeric) AND (fraction <= (1)::numeric)`),
 ]);
 
 export const balance_adjustments = pgTable("balance_adjustments", {
@@ -295,6 +301,46 @@ export const assistant_prompts = pgTable("assistant_prompts", {
 		}).onDelete("cascade"),
 	unique("uq_assistant_prompts").on(table.organization_id, table.user_id, table.prompt),
 	check("chk_assistant_prompts_length", sql`(char_length(prompt) >= 1) AND (char_length(prompt) <= 2000)`),
+]);
+
+export const employee_assignments = pgTable("employee_assignments", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	valid_from: date().notNull(),
+	department_id: uuid(),
+	job_function: text(),
+	manager_user_id: uuid(),
+	location_id: uuid(),
+}, (table) => [
+	index("idx_employee_assignments_manager").using("btree", table.organization_id.asc().nullsLast(), table.manager_user_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "employee_assignments_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "employee_assignments_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.department_id],
+			foreignColumns: [departments.id],
+			name: "employee_assignments_department_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.manager_user_id],
+			foreignColumns: [users.id],
+			name: "employee_assignments_manager_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.location_id],
+			foreignColumns: [locations.id],
+			name: "employee_assignments_location_id_fkey"
+		}).onDelete("restrict"),
+	unique("uq_employee_assignments").on(table.organization_id, table.user_id, table.valid_from),
+	check("chk_employee_assignments_manager", sql`(manager_user_id IS NULL) OR (manager_user_id <> user_id)`),
 ]);
 
 export const project_time_periods = pgTable("project_time_periods", {
@@ -396,40 +442,6 @@ export const departments = pgTable("departments", {
 		}).onDelete("set null"),
 	unique("uq_departments_name").on(table.organization_id, table.name),
 	check("chk_departments_name", sql`length(btrim(name)) > 0`),
-]);
-
-export const employee_assignments = pgTable("employee_assignments", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	valid_from: date().notNull(),
-	department_id: uuid(),
-	job_function: text(),
-	manager_user_id: uuid(),
-}, (table) => [
-	index("idx_employee_assignments_manager").using("btree", table.organization_id.asc().nullsLast(), table.manager_user_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "employee_assignments_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "employee_assignments_user_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.department_id],
-			foreignColumns: [departments.id],
-			name: "employee_assignments_department_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.manager_user_id],
-			foreignColumns: [users.id],
-			name: "employee_assignments_manager_user_id_fkey"
-		}).onDelete("set null"),
-	unique("uq_employee_assignments").on(table.organization_id, table.user_id, table.valid_from),
-	check("chk_employee_assignments_manager", sql`(manager_user_id IS NULL) OR (manager_user_id <> user_id)`),
 ]);
 
 export const databasechangelog = pgTable("databasechangelog", {
@@ -666,6 +678,23 @@ export const audit_logs = pgTable("audit_logs", {
 			foreignColumns: [users.id],
 			name: "audit_logs_actor_user_id_fkey"
 		}).onDelete("set null"),
+]);
+
+export const locations = pgTable("locations", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	name: text().notNull(),
+	canton: varchar({ length: 2 }).notNull(),
+	municipality: text(),
+}, (table) => [
+	uniqueIndex("uq_locations_name").using("btree", sql`organization_id`, sql`lower(name)`),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "locations_organization_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_locations_name", sql`(char_length(name) >= 1) AND (char_length(name) <= 100)`),
+	check("chk_locations_canton", sql`(canton)::text ~ '^[A-Z]{2}$'::text`),
 ]);
 
 export const projects = pgTable("projects", {

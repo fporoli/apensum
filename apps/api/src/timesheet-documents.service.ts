@@ -593,7 +593,7 @@ export class TimesheetDocumentsService {
     const [targets, attended, holidays] = await Promise.all([
       this.workTime.targets(db, p.organization_id, p.user_id, p.period_start, p.period_end),
       this.workTime.attendanceByDay(db, p.organization_id, p.user_id, p.period_start, p.period_end, timeZone, false),
-      this.workTime.holidays(db, p.organization_id, p.period_start, p.period_end),
+      this.workTime.holidays(db, p.organization_id, p.period_start, p.period_end, { userId: p.user_id }),
     ]);
     // The closed month (balances.service closeMonth) holds the approved totals.
     const closed = await db.execute(sql`

@@ -36,6 +36,15 @@ interface Assignment {
   job_function: string | null;
   manager_user_id: string | null;
   manager_name: string | null;
+  location_id?: string | null;
+  location_name?: string | null;
+}
+
+/** A work place (Organization settings): its canton's holidays apply to the people there. */
+interface Location {
+  id: string;
+  name: string;
+  canton: string;
 }
 
 interface Employment {
@@ -64,6 +73,7 @@ interface Draft {
   departmentId: string;
   jobFunction: string;
   managerUserId: string;
+  locationId: string;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -87,6 +97,7 @@ export default function EmploymentPanel({
   const [forbidden, setForbidden] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -121,11 +132,13 @@ export default function EmploymentPanel({
     (async () => {
       try {
         const headers = await authHeaders();
-        const [deps, mems] = await Promise.all([
+        const [deps, mems, locs] = await Promise.all([
           fetch(`${API}/organizations/${orgId}/departments`, { headers }).then((r) => r.json()),
           fetch(`${API}/organizations/${orgId}/members`, { headers }).then((r) => r.json()),
+          fetch(`${API}/organizations/${orgId}/locations`, { headers }).then((r) => r.json()),
         ]);
         if (cancelled) return;
+        setLocations(Array.isArray(locs?.locations) ? locs.locations : []);
         setDepartments(Array.isArray(deps?.departments) ? deps.departments : []);
         setMembers(Array.isArray(mems) ? mems : []);
       } catch { /* the dialog then offers no choices */ }
@@ -135,6 +148,9 @@ export default function EmploymentPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, data?.canEdit]);
+
+  // The location column and field only once the organization has locations (or an assignment names one).
+  const hasLocations = locations.length > 0 || !!data?.assignments.some((a) => a.location_id);
 
   function errorMessage(code: string | undefined): string {
     const key = `employment.error.${code}`;
@@ -174,6 +190,7 @@ export default function EmploymentPanel({
       departmentId: current?.department_id ?? '',
       jobFunction: current?.job_function ?? '',
       managerUserId: current?.manager_user_id ?? '',
+      locationId: current?.location_id ?? '',
     });
   }
 
@@ -193,6 +210,7 @@ export default function EmploymentPanel({
       departmentId: draft.departmentId || null,
       jobFunction: draft.jobFunction,
       managerUserId: draft.managerUserId || null,
+      locationId: draft.locationId || null,
     };
     const ok = draft.id
       ? await send(`/organizations/${orgId}/assignments/${draft.id}`, 'PATCH', body)
@@ -258,13 +276,14 @@ export default function EmploymentPanel({
               <TableCell>{t('employment.department')}</TableCell>
               <TableCell>{t('employment.function')}</TableCell>
               <TableCell>{t('employment.manager')}</TableCell>
+              {hasLocations && <TableCell>{t('locations.location')}</TableCell>}
               {data.canEdit && <TableCell />}
             </TableRow>
           </TableHead>
           <TableBody>
             {data.assignments.length === 0 && (
               <TableRow>
-                <TableCell colSpan={data.canEdit ? 5 : 4}>
+                <TableCell colSpan={(data.canEdit ? 5 : 4) + (hasLocations ? 1 : 0)}>
                   <Typography variant="body2" color="text.secondary">{t('employment.none')}</Typography>
                 </TableCell>
               </TableRow>
@@ -281,6 +300,7 @@ export default function EmploymentPanel({
                   <TableCell>{a.department_name ?? '—'}</TableCell>
                   <TableCell>{a.job_function ?? '—'}</TableCell>
                   <TableCell>{a.manager_name ?? t('employment.noManager')}</TableCell>
+                  {hasLocations && <TableCell>{a.location_name ?? t('locations.none')}</TableCell>}
                   {data.canEdit && (
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap', width: 90 }}>
                       <Tooltip title={t('common.edit')}>
@@ -295,6 +315,7 @@ export default function EmploymentPanel({
                               departmentId: a.department_id ?? '',
                               jobFunction: a.job_function ?? '',
                               managerUserId: a.manager_user_id ?? '',
+                              locationId: a.location_id ?? '',
                             })
                           }
                         >
@@ -337,6 +358,19 @@ export default function EmploymentPanel({
                     <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
                   ))}
               </TextField>
+              {hasLocations && (
+                <TextField
+                  select
+                  size="small"
+                  label={t('locations.location')}
+                  value={draft.locationId}
+                  onChange={(e) => setDraft({ ...draft, locationId: e.target.value })}
+                  helperText={t('locations.assignmentHint')}
+                >
+                  <MenuItem value=""><em>{t('locations.none')}</em></MenuItem>
+                  {locations.map((l) => <MenuItem key={l.id} value={l.id}>{`${l.name} (${l.canton})`}</MenuItem>)}
+                </TextField>
+              )}
               <TextField
                 size="small"
                 label={t('employment.function')}

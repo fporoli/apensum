@@ -5,14 +5,13 @@ import type { Db } from './db.service';
 import {
   absences,
   employee_assignments,
-  org_holidays,
   organization_memberships,
   organizations,
   users,
 } from './db/schema';
 import { directReportUserIds, isOrgMember, listableUserIds } from './access';
-import { cantonHolidays, HOLIDAY_NAMES, holidaysBetween, type Canton } from '@worktime3/shared/worktime';
-import { parseWorkTimeSettings } from './work-time-model.service';
+import { HOLIDAY_NAMES } from '@worktime3/shared/worktime';
+import { holidaysFor, parseWorkTimeSettings } from './work-time-model.service';
 
 export type CalendarFeedScope = 'personal' | 'team' | 'all';
 
@@ -472,31 +471,8 @@ export class CalendarFeedService {
     if (feed.include_holidays !== false) {
       try {
         const wtSettings = parseWorkTimeSettings(member.org_settings);
-        const orgHolidayRows = await db
-          .select({
-            id: org_holidays.id,
-            date: org_holidays.date,
-            name: org_holidays.name,
-            fraction: org_holidays.fraction,
-            observed: org_holidays.observed,
-          })
-          .from(org_holidays)
-          .where(
-            and(
-              eq(org_holidays.organization_id, member.organization_id),
-              gte(org_holidays.date, fromDate),
-              lte(org_holidays.date, toDate),
-            ),
-          );
-
-        const mappedOrgRows = orgHolidayRows.map((h) => ({
-          date: h.date,
-          name: h.name,
-          fraction: Number(h.fraction),
-          observed: h.observed,
-        }));
-
-        const holidaysMap = holidaysBetween(fromDate, addDaysIso(toDate, 1), wtSettings.holidayRegion, mappedOrgRows);
+        // The feed owner's holidays: their location's (087) on each day, else the organization's.
+        const holidaysMap = await holidaysFor(db, member.organization_id, fromDate, addDaysIso(toDate, 1), { userId: member.user_id }, wtSettings);
 
         for (const [date, h] of holidaysMap.entries()) {
           const holidayName = h.name ?? (h.key && HOLIDAY_NAMES[h.key] ? HOLIDAY_NAMES[h.key].de || HOLIDAY_NAMES[h.key].en : 'Public Holiday');

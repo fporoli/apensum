@@ -7,7 +7,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService } from './workflows.service';
-import { departments, employee_assignments, organization_memberships, users } from './db/schema';
+import { departments, employee_assignments, locations, organization_memberships, users } from './db/schema';
 import { isIsoDate } from '@worktime3/shared/worktime';
 
 /** Permission object of a person's employment (start date, department, function, manager). */
@@ -28,6 +28,8 @@ interface AssignmentBody {
   departmentId?: string | null;
   jobFunction?: string | null;
   managerUserId?: string | null;
+  /** The location (work place, 087): its canton's holidays apply from `validFrom` on. */
+  locationId?: string | null;
 }
 
 /**
@@ -187,10 +189,13 @@ export class EmploymentController {
         job_function: employee_assignments.job_function,
         manager_user_id: employee_assignments.manager_user_id,
         manager_name: manager.display_name,
+        location_id: employee_assignments.location_id,
+        location_name: locations.name,
       })
       .from(employee_assignments)
       .leftJoin(departments, eq(departments.id, employee_assignments.department_id))
       .leftJoin(manager, eq(manager.id, employee_assignments.manager_user_id))
+      .leftJoin(locations, eq(locations.id, employee_assignments.location_id))
       .where(and(eq(employee_assignments.organization_id, orgId), eq(employee_assignments.user_id, userId)))
       .orderBy(desc(employee_assignments.valid_from));
     const today = new Date().toISOString().slice(0, 10);
@@ -265,6 +270,7 @@ export class EmploymentController {
       departmentId: body.departmentId !== undefined ? body.departmentId : row.department_id,
       jobFunction: body.jobFunction !== undefined ? body.jobFunction : row.job_function,
       managerUserId: body.managerUserId !== undefined ? body.managerUserId : row.manager_user_id,
+      locationId: body.locationId !== undefined ? body.locationId : row.location_id,
     };
     const checked = await this.checkAssignment(db, orgId, row.user_id, merged);
     if ('error' in checked) return { ok: false, error: checked.error };
@@ -336,6 +342,7 @@ export class EmploymentController {
         department_id: employee_assignments.department_id,
         job_function: employee_assignments.job_function,
         manager_user_id: employee_assignments.manager_user_id,
+        location_id: employee_assignments.location_id,
       })
       .from(employee_assignments)
       .where(and(eq(employee_assignments.id, id), eq(employee_assignments.organization_id, orgId)));
@@ -348,7 +355,7 @@ export class EmploymentController {
     orgId: string,
     userId: string,
     body: AssignmentBody,
-  ): Promise<{ valid_from: string; department_id: string | null; job_function: string | null; manager_user_id: string | null } | { error: string }> {
+  ): Promise<{ valid_from: string; department_id: string | null; job_function: string | null; manager_user_id: string | null; location_id: string | null } | { error: string }> {
     if (!isIsoDate(body.validFrom)) return { error: 'invalid-date' };
     const jobFunction = cleanText(body.jobFunction);
     if (jobFunction === undefined) return { error: 'invalid-function' };
@@ -356,6 +363,11 @@ export class EmploymentController {
     if (departmentId) {
       const [dep] = await db.select({ id: departments.id }).from(departments).where(and(eq(departments.id, departmentId), eq(departments.organization_id, orgId)));
       if (!dep) return { error: 'unknown-department' };
+    }
+    const locationId = body.locationId || null;
+    if (locationId) {
+      const [loc] = await db.select({ id: locations.id }).from(locations).where(and(eq(locations.id, locationId), eq(locations.organization_id, orgId)));
+      if (!loc) return { error: 'unknown-location' };
     }
     const managerUserId = body.managerUserId || null;
     if (managerUserId) {
@@ -368,6 +380,6 @@ export class EmploymentController {
         if (current === userId) return { error: 'manager-cycle' };
       }
     }
-    return { valid_from: body.validFrom, department_id: departmentId, job_function: jobFunction, manager_user_id: managerUserId };
+    return { valid_from: body.validFrom, department_id: departmentId, job_function: jobFunction, manager_user_id: managerUserId, location_id: locationId };
   }
 }

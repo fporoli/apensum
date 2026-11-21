@@ -22,7 +22,7 @@ import { CANTONS, holidayName, type Holiday, type OrgHolidayRow } from '@worktim
 import { useI18n } from './i18n';
 import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber, swissLocale } from './localeFormat';
 import { formatHm } from './WorkSchedulePanel';
-import { ChevronLeftIcon, ChevronRightIcon, DeleteIcon } from './icons';
+import { AddIcon, ChevronLeftIcon, ChevronRightIcon, DeleteIcon, EditIcon } from './icons';
 import { TableEmptyRow } from './components';
 import { SectionPaper } from './SettingsSection';
 
@@ -51,6 +51,17 @@ function parseHours(text: string): number | null {
 
 interface OrgRow extends OrgHolidayRow {
   id: string;
+  /** The location the row applies to; null = everyone. */
+  locationId: string | null;
+}
+
+/** A work place (087): its people get its canton's holidays. */
+interface Location {
+  id: string;
+  name: string;
+  canton: string;
+  municipality: string | null;
+  members?: number;
 }
 
 interface WorkTimeSettingsProps {
@@ -68,6 +79,9 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [rows, setRows] = useState<OrgRow[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
+  // Whose holidays the calendar shows and new days go to: the organization's ('') or one location's.
+  const [viewLocation, setViewLocation] = useState('');
   const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -92,7 +106,9 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
 
   async function reload(y = year) {
     try {
-      const res = await fetch(`${API}/organizations/${orgId}/work-time-settings?year=${y}`, { headers: await authHeaders() });
+      const q = new URLSearchParams({ year: String(y) });
+      if (viewLocation) q.set('locationId', viewLocation);
+      const res = await fetch(`${API}/organizations/${orgId}/work-time-settings?${q}`, { headers: await authHeaders() });
       const data = await res.json();
       if (!data?.ok) return;
       if (data.settings) {
@@ -110,6 +126,8 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
       }
       setHolidays(data.holidays ?? []);
       setRows(data.rows ?? []);
+      setLocations(data.locations ?? []);
+      if (viewLocation && !(data.locations ?? []).some((l: Location) => l.id === viewLocation)) setViewLocation('');
       setCanEdit(!!data.canEdit);
     } catch {
       setError(t('common.cannotReachApi'));
@@ -119,7 +137,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
   useEffect(() => {
     void reload(year);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, year]);
+  }, [orgId, year, viewLocation]);
 
   function errorMessage(code: string | undefined): string {
     const known = [
@@ -183,8 +201,12 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
     legalLimitMinutes !== null &&
     startValid;
 
-  const rowByDate = new Map(rows.map((r) => [r.date, r]));
-  const notObserved = rows.filter((r) => !r.observed);
+  // The rows of the scope shown: the organization's for everyone, or one location's own.
+  const scopeRows = rows.filter((r) => (r.locationId ?? '') === viewLocation);
+  const rowByDate = new Map(scopeRows.map((r) => [r.date, r]));
+  const notObserved = scopeRows.filter((r) => !r.observed);
+  const shownLocation = locations.find((l) => l.id === viewLocation) ?? null;
+  const locationId = viewLocation || null;
 
   return (
     <SectionPaper title={t('workTimeSettings.title')} subtitle={t('workTimeSettings.subtitle')}>
@@ -329,8 +351,16 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
         )}
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+      <LocationsEditor orgId={orgId} authHeaders={authHeaders} canEdit={canEdit} onChanged={() => void reload()} />
+
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, flexWrap: 'wrap' }}>
         <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>{t('workTimeSettings.holidays', { year: String(year) })}</Typography>
+        {locations.length > 0 && (
+          <TextField select size="small" label={t('locations.holidaysFor')} value={viewLocation} onChange={(e) => setViewLocation(e.target.value)} sx={{ minWidth: 220 }}>
+            <MenuItem value="">{t('locations.organization', { canton: region || '—' })}</MenuItem>
+            {locations.map((l) => <MenuItem key={l.id} value={l.id}>{`${l.name} (${l.canton})`}</MenuItem>)}
+          </TextField>
+        )}
         <IconButton size="small" aria-label={t('workTimeSettings.prevYear')} onClick={() => setYear((y) => y - 1)}><ChevronLeftIcon fontSize="small" /></IconButton>
         <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>{year}</Typography>
         <IconButton size="small" aria-label={t('workTimeSettings.nextYear')} onClick={() => setYear((y) => y + 1)}><ChevronRightIcon fontSize="small" /></IconButton>
@@ -358,7 +388,11 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
                   <TableCell>{holidayName(h, locale)}</TableCell>
                   <TableCell>{h.fraction < 1 ? t('workTimeSettings.halfDay') : t('workTimeSettings.fullDay')}</TableCell>
                   <TableCell>
-                    <Chip size="small" variant="outlined" label={h.source === 'canton' ? region || '—' : t('workTimeSettings.sourceOrg')} />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      label={h.source === 'canton' ? (shownLocation?.canton ?? region) || '—' : own && shownLocation ? shownLocation.name : t('workTimeSettings.sourceOrg')}
+                    />
                   </TableCell>
                   {canEdit && (
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
@@ -369,7 +403,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
                           </IconButton>
                         </Tooltip>
                       ) : (
-                        <Button size="small" color="inherit" disabled={busy} onClick={() => void send(`/organizations/${orgId}/holidays`, 'POST', { date: h.date, observed: false })}>
+                        <Button size="small" color="inherit" disabled={busy} onClick={() => void send(`/organizations/${orgId}/holidays`, 'POST', { date: h.date, observed: false, locationId })}>
                           {t('workTimeSettings.notObserved')}
                         </Button>
                       )}
@@ -403,7 +437,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
           onSubmit={(e) => {
             e.preventDefault();
             if (!newDate) return;
-            void send(`/organizations/${orgId}/holidays`, 'POST', { date: newDate, name: newName.trim() || null, fraction: newHalf ? 0.5 : 1 }).then((ok) => {
+            void send(`/organizations/${orgId}/holidays`, 'POST', { date: newDate, name: newName.trim() || null, fraction: newHalf ? 0.5 : 1, locationId }).then((ok) => {
               if (ok) {
                 setNewDate('');
                 setNewName('');
@@ -416,7 +450,9 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
           <TextField type="date" size="small" label={t('time.date')} value={newDate} onChange={(e) => setNewDate(e.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
           <TextField size="small" label={t('workTimeSettings.holidayName')} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t('workTimeSettings.namePlaceholder')} />
           <FormControlLabel control={<Checkbox size="small" checked={newHalf} onChange={(e) => setNewHalf(e.target.checked)} />} label={t('workTimeSettings.halfDay')} />
-          <Button type="submit" variant="outlined" size="small" disabled={!newDate || busy}>{t('workTimeSettings.addDay')}</Button>
+          <Button type="submit" variant="outlined" size="small" disabled={!newDate || busy}>
+            {shownLocation ? t('locations.addDayFor', { name: shownLocation.name }) : t('workTimeSettings.addDay')}
+          </Button>
         </Box>
       )}
       <Typography variant="caption" color="text.secondary">{t('workTimeSettings.disclaimer')}</Typography>
@@ -432,3 +468,137 @@ function parseHmWeek(text: string): number | null {
   return Number.isFinite(minutes) && minutes > 0 && minutes <= 7 * 24 * 60 ? minutes : null;
 }
 
+
+/**
+ * The organization's locations (work places): name, canton and municipality. Their people get the
+ * canton's holidays, plus the days added for the location (e.g. Knabenschiessen in Zurich); a person's
+ * location is set in their assignment (Users -> Employment). A location in use can't be deleted.
+ */
+function LocationsEditor({ orgId, authHeaders, canEdit, onChanged }: {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  canEdit: boolean;
+  onChanged: () => void;
+}) {
+  const { t } = useI18n();
+  const [list, setList] = useState<Location[]>([]);
+  const [draft, setDraft] = useState<{ id: string | null; name: string; canton: string; municipality: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function load() {
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/locations`, { headers: await authHeaders() });
+      const data = await res.json();
+      if (data?.ok) setList(data.locations ?? []);
+    } catch { /* shown empty */ }
+  }
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
+
+  async function call(path: string, method: string, body?: unknown): Promise<boolean> {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        const key = `locations.error.${data?.error}`;
+        const text = t(key);
+        setError(text === key ? t('workTimeSettings.saveFailed') : text);
+        return false;
+      }
+      await load();
+      onChanged();
+      return true;
+    } catch {
+      setError(t('common.cannotReachApi'));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canEdit && list.length === 0) return null;
+  return (
+    <Box sx={{ display: 'grid', gap: 1, mt: 1 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Typography variant="subtitle2" sx={{ flexGrow: 1 }}>{t('locations.title')}</Typography>
+        {canEdit && !draft && (
+          <Button size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => setDraft({ id: null, name: '', canton: '', municipality: '' })}>
+            {t('locations.add')}
+          </Button>
+        )}
+      </Box>
+      <Typography variant="caption" color="text.secondary">{t('locations.help')}</Typography>
+      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {list.length > 0 && (
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('locations.name')}</TableCell>
+                <TableCell>{t('locations.canton')}</TableCell>
+                <TableCell>{t('locations.municipality')}</TableCell>
+                <TableCell align="right">{t('locations.people')}</TableCell>
+                {canEdit && <TableCell />}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {list.map((l) => (
+                <TableRow key={l.id}>
+                  <TableCell>{l.name}</TableCell>
+                  <TableCell>{l.canton}</TableCell>
+                  <TableCell>{l.municipality ?? '—'}</TableCell>
+                  <TableCell align="right">{l.members ?? 0}</TableCell>
+                  {canEdit && (
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      <Tooltip title={t('common.edit')}>
+                        <IconButton size="small" aria-label={t('common.edit')} onClick={() => setDraft({ id: l.id, name: l.name, canton: l.canton, municipality: l.municipality ?? '' })}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title={l.members ? t('locations.inUse') : t('common.delete')}>
+                        <span>
+                          <IconButton size="small" color="error" aria-label={t('common.delete')} disabled={busy || !!l.members} onClick={() => void call(`locations/${l.id}`, 'DELETE')}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      {draft && (
+        <Box
+          component="form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const body = { name: draft.name, canton: draft.canton, municipality: draft.municipality.trim() || null };
+            void (draft.id ? call(`locations/${draft.id}`, 'PATCH', body) : call('locations', 'POST', body)).then((ok) => ok && setDraft(null));
+          }}
+          sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', alignItems: 'center' }}
+        >
+          <TextField size="small" required label={t('locations.name')} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder={t('locations.namePlaceholder')} />
+          <TextField select size="small" required label={t('locations.canton')} value={draft.canton} onChange={(e) => setDraft({ ...draft, canton: e.target.value })} sx={{ width: 120 }}>
+            {CANTONS.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+          </TextField>
+          <TextField size="small" label={t('locations.municipality')} value={draft.municipality} onChange={(e) => setDraft({ ...draft, municipality: e.target.value })} />
+          <Button type="submit" variant="contained" size="small" disabled={busy || !draft.name.trim() || !draft.canton}>{t('common.save')}</Button>
+          <Button size="small" onClick={() => setDraft(null)}>{t('common.cancel')}</Button>
+        </Box>
+      )}
+    </Box>
+  );
+}

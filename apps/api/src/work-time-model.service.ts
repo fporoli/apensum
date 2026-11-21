@@ -3,7 +3,7 @@ import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Db } from './db.service';
 import { zonedDate, zonedTime } from './report-schedule';
 import { zoneFormatter } from './zone-format';
-import { absences, org_holidays, organizations, users, work_schedules } from './db/schema';
+import { absences, employee_assignments, locations, org_holidays, organizations, users, work_schedules } from './db/schema';
 import {
   DEFAULT_FULL_TIME_WEEKLY_MINUTES,
   DEFAULT_PROJECT_TIME_TOLERANCE_MINUTES,
@@ -173,22 +173,23 @@ export class WorkTimeModelService {
     return rows.map((r) => ({ id: r.id, validFrom: r.valid_from, workloadPercent: Number(r.workload_percent), dayMinutes: r.day_minutes }));
   }
 
-  async orgHolidayRows(db: Db, orgId: string, from?: string, toExclusive?: string): Promise<(OrgHolidayRow & { id: string })[]> {
-    const conditions = [eq(org_holidays.organization_id, orgId)];
-    if (from) conditions.push(gte(org_holidays.date, from));
-    if (toExclusive) conditions.push(lte(org_holidays.date, addDays(toExclusive, -1)));
-    const rows = await db
-      .select({ id: org_holidays.id, date: org_holidays.date, name: org_holidays.name, fraction: org_holidays.fraction, observed: org_holidays.observed })
-      .from(org_holidays)
-      .where(and(...conditions))
-      .orderBy(org_holidays.date);
-    return rows.map((r) => ({ id: r.id, date: r.date, name: r.name, fraction: Number(r.fraction), observed: r.observed }));
+  /** The organization's own holiday rows (every location's too; `location_id` null = for everyone). */
+  async orgHolidayRows(db: Db, orgId: string, from?: string, toExclusive?: string): Promise<OrgHolidayRowWithLocation[]> {
+    return orgHolidayRows(db, orgId, from, toExclusive);
   }
 
-  /** The organization's holidays: its canton's, with its own rows applied. */
-  async holidays(db: Db, orgId: string, from: string, toExclusive: string): Promise<Map<string, Holiday>> {
-    const settings = await this.settings(db, orgId);
-    return holidaysBetween(from, toExclusive, settings.holidayRegion, await this.orgHolidayRows(db, orgId, from, toExclusive));
+  /** The organization's locations (work places), by name. */
+  async locations(db: Db, orgId: string): Promise<LocationRow[]> {
+    return orgLocations(db, orgId);
+  }
+
+  /**
+   * Holidays in [from, toExclusive): a person's (`userId`: their location's canton and rows on each day,
+   * by their assignments), one location's (`locationId`), or the organization's (neither, or a null
+   * location): its canton, with the rows for everyone applied.
+   */
+  async holidays(db: Db, orgId: string, from: string, toExclusive: string, who: { userId?: string; locationId?: string | null } = {}): Promise<Map<string, Holiday>> {
+    return holidaysFor(db, orgId, from, toExclusive, who, await this.settings(db, orgId));
   }
 
   /** Approved absences of any type overlapping the range: they all count against the target. */
@@ -212,7 +213,7 @@ export class WorkTimeModelService {
     const settings = await this.settings(db, orgId);
     const [schedules, holidays, spans] = await Promise.all([
       this.schedules(db, orgId, userId),
-      this.holidays(db, orgId, from, toExclusive),
+      this.holidays(db, orgId, from, toExclusive, { userId }),
       this.approvedAbsences(db, orgId, userId, from, toExclusive),
     ]);
     return { schedules, fallback: defaultSchedule(settings.fullTimeWeeklyMinutes), holidays, absences: spans };
@@ -278,4 +279,107 @@ export class WorkTimeModelService {
     }
     return { ok: true };
   }
+}
+
+/** A location (work place): its holidays follow its canton (087). */
+export interface LocationRow {
+  id: string;
+  name: string;
+  canton: Canton;
+  municipality: string | null;
+}
+
+export type OrgHolidayRowWithLocation = OrgHolidayRow & { id: string; locationId: string | null };
+
+export async function orgLocations(db: Db, orgId: string): Promise<LocationRow[]> {
+  const rows = await db
+    .select({ id: locations.id, name: locations.name, canton: locations.canton, municipality: locations.municipality })
+    .from(locations)
+    .where(eq(locations.organization_id, orgId))
+    .orderBy(locations.name);
+  return rows.filter((r) => isCanton(r.canton)).map((r) => ({ ...r, canton: r.canton as Canton }));
+}
+
+export async function orgHolidayRows(db: Db, orgId: string, from?: string, toExclusive?: string): Promise<OrgHolidayRowWithLocation[]> {
+  const conditions = [eq(org_holidays.organization_id, orgId)];
+  if (from) conditions.push(gte(org_holidays.date, from));
+  if (toExclusive) conditions.push(lte(org_holidays.date, addDays(toExclusive, -1)));
+  const rows = await db
+    .select({ id: org_holidays.id, date: org_holidays.date, name: org_holidays.name, fraction: org_holidays.fraction, observed: org_holidays.observed, location_id: org_holidays.location_id })
+    .from(org_holidays)
+    .where(and(...conditions))
+    .orderBy(org_holidays.date);
+  return rows.map((r) => ({ id: r.id, date: r.date, name: r.name, fraction: Number(r.fraction), observed: r.observed, locationId: r.location_id }));
+}
+
+/**
+ * Which location a person works at over [from, toExclusive): spans from their dated assignments
+ * (employee_assignments.location_id; null = none, the organization's canton). Pure.
+ */
+export function locationSpans(
+  assignments: readonly { validFrom: string; locationId: string | null }[],
+  from: string,
+  toExclusive: string,
+): Array<{ from: string; toExclusive: string; locationId: string | null }> {
+  const sorted = [...assignments].sort((a, b) => (a.validFrom < b.validFrom ? -1 : 1));
+  const spans: Array<{ from: string; toExclusive: string; locationId: string | null }> = [];
+  let current: string | null = null;
+  let start = from;
+  for (const a of sorted) {
+    if (a.validFrom <= from) {
+      current = a.locationId;
+      continue;
+    }
+    if (a.validFrom >= toExclusive) break;
+    if (a.locationId !== current) {
+      spans.push({ from: start, toExclusive: a.validFrom, locationId: current });
+      start = a.validFrom;
+      current = a.locationId;
+    }
+  }
+  spans.push({ from: start, toExclusive, locationId: current });
+  return spans.filter((x) => x.from < x.toExclusive);
+}
+
+/**
+ * Holidays of one location, or the organization's (null): the location's canton (else the organization's
+ * region), the rows for everyone, then the location's own rows, which win on the same date. Pure.
+ */
+export function locationHolidays(
+  from: string,
+  toExclusive: string,
+  locationId: string | null,
+  locationsById: ReadonlyMap<string, LocationRow>,
+  orgRegion: Canton | null,
+  rows: readonly OrgHolidayRowWithLocation[],
+): Map<string, Holiday> {
+  const location = locationId ? locationsById.get(locationId) : undefined;
+  const region = location ? location.canton : orgRegion;
+  const own = location ? rows.filter((r) => r.locationId === location.id) : [];
+  return holidaysBetween(from, toExclusive, region, [...rows.filter((r) => r.locationId === null), ...own]);
+}
+
+/** Holidays for a person, a location or the organization (see WorkTimeModelService.holidays). */
+export async function holidaysFor(
+  db: Db,
+  orgId: string,
+  from: string,
+  toExclusive: string,
+  who: { userId?: string; locationId?: string | null },
+  settings: Pick<WorkTimeSettings, 'holidayRegion'>,
+): Promise<Map<string, Holiday>> {
+  const [locs, rows] = await Promise.all([orgLocations(db, orgId), orgHolidayRows(db, orgId, from, toExclusive)]);
+  const byId = new Map(locs.map((l) => [l.id, l]));
+  if (!who.userId) return locationHolidays(from, toExclusive, who.locationId ?? null, byId, settings.holidayRegion, rows);
+  // No locations: everyone has the organization's holidays, no need to read the assignments.
+  if (locs.length === 0) return locationHolidays(from, toExclusive, null, byId, settings.holidayRegion, rows);
+  const assignments = await db
+    .select({ validFrom: employee_assignments.valid_from, locationId: employee_assignments.location_id })
+    .from(employee_assignments)
+    .where(and(eq(employee_assignments.organization_id, orgId), eq(employee_assignments.user_id, who.userId)));
+  const out = new Map<string, Holiday>();
+  for (const span of locationSpans(assignments, from, toExclusive)) {
+    for (const [date, h] of locationHolidays(span.from, span.toExclusive, span.locationId, byId, settings.holidayRegion, rows)) out.set(date, h);
+  }
+  return out;
 }

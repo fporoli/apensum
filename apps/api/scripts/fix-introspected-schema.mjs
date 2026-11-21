@@ -6,7 +6,8 @@
 //    and emits an uncompilable `unknown("col")` placeholder for each column.
 //  - drizzle-kit 0.31 truncates expression index elements at the `'::` of a cast, so
 //    `COALESCE(organization_id, '0000…'::uuid)` (uq_static_data_org_entity_enum,
-//    uq_field_config) comes out as `COALESCE(organization_id, '0000…`.
+//    uq_field_config) comes out as `COALESCE(organization_id, '0000…`, or cut a little later
+//    (`COALESCE(location_id, '0000…'::u`, uq_org_holidays).
 //  - drizzle-kit pairs the operator classes of a multi-column index with its columns in the
 //    order the catalog returns them, which varies between databases (a fresh CI database writes
 //    `check_in ... .op("uuid_ops")` for a timestamp column). They are all default classes and
@@ -26,9 +27,10 @@ src = src.replace(/\bunknown\((["'])(\w+)\1\)/g, 'citext($1$2$1)');
 const patchedCitext = src !== before;
 
 const afterCitext = src;
+// Cut anywhere after the zero uuid's quote (`'::u` too, uq_org_holidays), for any column.
 src = src.replace(
-  /sql`COALESCE\(organization_id, '00000000-0000-0000-0000-000000000000`/g,
-  "sql`COALESCE(organization_id, '00000000-0000-0000-0000-000000000000'::uuid)`",
+  /sql`COALESCE\((\w+), '00000000-0000-0000-0000-000000000000(?:'[:uid]*)?`/g,
+  (_m, column) => `sql\`COALESCE(${column}, '00000000-0000-0000-0000-000000000000'::uuid)\``,
 );
 const patchedCoalesce = src !== afterCitext;
 
@@ -55,5 +57,5 @@ if (patchedCitext) {
 
 writeFileSync(schemaPath, src);
 if (patchedCitext) console.log('fix-introspected-schema: patched citext columns (users.email, organizations.slug, and others).');
-if (patchedCoalesce) console.log('fix-introspected-schema: repaired truncated COALESCE(organization_id, ...) index expressions.');
+if (patchedCoalesce) console.log('fix-introspected-schema: repaired truncated COALESCE(..., zero uuid) index expressions.');
 if (patchedOps) console.log('fix-introspected-schema: dropped index operator classes (drizzle-kit pairs them with the wrong columns).');

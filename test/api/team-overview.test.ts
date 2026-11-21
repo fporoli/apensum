@@ -43,7 +43,7 @@ function controller() {
     // Membership filtering happens in SQL; the fake returns everyone and the controller drops the caller.
     orderBy: async () => MEMBERS,
   };
-  const holidays = { holidays: async () => new Map() } as unknown as WorkTimeModelService;
+  const holidays = { holidays: async () => new Map(), locations: async () => [] } as unknown as WorkTimeModelService;
   return new TeamOverviewController({ getDb: () => db } as unknown as DbService, holidays);
 }
 const as = (sub: string) => ({ user: { kind: 'local', sub } }) as unknown as AuthenticatedRequest;

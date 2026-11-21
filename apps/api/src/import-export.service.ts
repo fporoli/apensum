@@ -13,6 +13,7 @@ import {
   field_config,
   membership_roles,
   notifications,
+  locations,
   org_holidays,
   organization_domains,
   organization_invitations,
@@ -963,6 +964,7 @@ export class ImportExportService {
     const invitations = await db.select().from(organization_invitations).where(eq(organization_invitations.organization_id, orgId));
 
     const assignments = await db.select().from(employee_assignments).where(eq(employee_assignments.organization_id, orgId));
+    const locationsData = await db.select().from(locations).where(eq(locations.organization_id, orgId));
     const schedules = await db.select().from(work_schedules).where(eq(work_schedules.organization_id, orgId));
     // Without client_ip: the address is never shown, so it does not leave the database either.
     const workTimes = (await db.select().from(work_times).where(eq(work_times.organization_id, orgId))).map(({ client_ip: _ip, ...row }) => row);
@@ -1118,6 +1120,7 @@ export class ImportExportService {
       jsonFile('database/organization_memberships.json', orgMemberships),
       jsonFile('database/membership_roles.json', membershipRolesData),
       jsonFile('database/organization_invitations.json', invitations),
+      jsonFile('database/locations.json', locationsData),
       jsonFile('database/employee_assignments.json', assignments),
       jsonFile('database/work_schedules.json', schedules),
       jsonFile('database/work_times.json', workTimes),
@@ -1348,6 +1351,25 @@ export class ImportExportService {
       restored.departments = (restored.departments || 0) + 1;
     }
 
+    // 2b. Locations (087; older backups have none): matched by name, like departments.
+    const locationIdMap = new Map<string, string>();
+    for (const l of readJson<any>('database/locations.json')) {
+      if (!l.name || !l.canton) continue;
+      const [existing] = await db
+        .select({ id: locations.id })
+        .from(locations)
+        .where(and(eq(locations.organization_id, targetOrgId), sql`lower(${locations.name}) = lower(${l.name})`));
+      if (existing) locationIdMap.set(l.id, existing.id);
+      else {
+        const [created] = await db
+          .insert(locations)
+          .values({ organization_id: targetOrgId, name: l.name, canton: l.canton, municipality: l.municipality || null })
+          .returning({ id: locations.id });
+        locationIdMap.set(l.id, created.id);
+      }
+      restored.locations = (restored.locations || 0) + 1;
+    }
+
     // 3. Roles & Role Permissions
     const existingRoles = await db.select().from(roles).where(eq(roles.organization_id, targetOrgId));
     const rolesList = readJson<any>('database/roles.json');
@@ -1524,6 +1546,7 @@ export class ImportExportService {
           department_id: ea.department_id ? deptIdMap.get(ea.department_id) ?? null : null,
           job_function: ea.job_function || null,
           manager_user_id: ea.manager_user_id ? userIdMap.get(ea.manager_user_id) ?? null : null,
+          location_id: ea.location_id ? locationIdMap.get(ea.location_id) ?? null : null,
         })
         .onConflictDoUpdate({
           target: [employee_assignments.organization_id, employee_assignments.user_id, employee_assignments.valid_from],
@@ -1531,6 +1554,7 @@ export class ImportExportService {
             department_id: ea.department_id ? deptIdMap.get(ea.department_id) ?? null : null,
             job_function: ea.job_function || null,
             manager_user_id: ea.manager_user_id ? userIdMap.get(ea.manager_user_id) ?? null : null,
+            location_id: ea.location_id ? locationIdMap.get(ea.location_id) ?? null : null,
           },
         });
       restored.employeeAssignments = (restored.employeeAssignments || 0) + 1;
@@ -1695,20 +1719,16 @@ export class ImportExportService {
     // 13. Org Holidays
     const holidaysList = readJson<any>('database/org_holidays.json');
     for (const oh of holidaysList) {
-      await db
-        .insert(org_holidays)
-        .values({
-          id: oh.id,
-          organization_id: targetOrgId,
-          date: oh.date,
-          name: oh.name || null,
-          fraction: String(oh.fraction ?? '1'),
-          observed: oh.observed ?? true,
-        })
-        .onConflictDoUpdate({
-          target: [org_holidays.organization_id, org_holidays.date],
-          set: { name: oh.name || null, fraction: String(oh.fraction ?? '1') },
-        });
+      // One row per date and location (uq_org_holidays is an expression index): replace, else insert.
+      const locationId = oh.location_id ? locationIdMap.get(oh.location_id) ?? null : null;
+      if (oh.location_id && !locationId) continue;
+      const values = { name: oh.name || null, fraction: String(oh.fraction ?? '1'), observed: oh.observed ?? true };
+      const [existing] = await db
+        .select({ id: org_holidays.id })
+        .from(org_holidays)
+        .where(and(eq(org_holidays.organization_id, targetOrgId), eq(org_holidays.date, oh.date), locationId ? eq(org_holidays.location_id, locationId) : isNull(org_holidays.location_id)));
+      if (existing) await db.update(org_holidays).set(values).where(eq(org_holidays.id, existing.id));
+      else await db.insert(org_holidays).values({ organization_id: targetOrgId, date: oh.date, location_id: locationId, ...values });
       restored.orgHolidays = (restored.orgHolidays || 0) + 1;
     }
 

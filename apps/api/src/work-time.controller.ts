@@ -310,7 +310,7 @@ export class WorkTimeController {
     const [settings, timeZone, holidays] = await Promise.all([
       this.model.settings(db, orgId),
       this.model.timeZone(db, targetUserId),
-      this.model.holidays(db, orgId, date, addDays(date, 1)),
+      this.model.holidays(db, orgId, date, addDays(date, 1), { userId: targetUserId }),
     ]);
     const [sessions, dayAbsences] = await Promise.all([
       db

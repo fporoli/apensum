@@ -135,6 +135,23 @@ ON CONFLICT (organization_id, user_id, valid_from) DO UPDATE
 SET department_id = COALESCE(employee_assignments.department_id, EXCLUDED.department_id),
     job_function = COALESCE(employee_assignments.job_function, EXCLUDED.job_function);
 
+-- Acme's locations (087): the Zurich office, where everyone works, with Zurich's own Knabenschiessen
+-- (Monday afternoon after the second weekend of September), and a Geneva office, nobody there yet, to show
+-- another canton's holidays. Assignments only get the location while they have none.
+INSERT INTO locations (id, organization_id, name, canton, municipality) VALUES
+  ('10ca7100-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Büro Zürich', 'ZH', 'Zürich'),
+  ('10ca7100-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Bureau Genève', 'GE', 'Genève')
+ON CONFLICT DO NOTHING;
+
+UPDATE employee_assignments SET location_id = '10ca7100-0000-0000-0000-000000000001'
+WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND location_id IS NULL;
+
+INSERT INTO org_holidays (organization_id, date, name, fraction, observed, location_id) VALUES
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '2025-09-15', 'Knabenschiessen', 0.5, true, '10ca7100-0000-0000-0000-000000000001'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '2026-09-14', 'Knabenschiessen', 0.5, true, '10ca7100-0000-0000-0000-000000000001'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '2027-09-13', 'Knabenschiessen', 0.5, true, '10ca7100-0000-0000-0000-000000000001')
+ON CONFLICT DO NOTHING;
+
 -- Roles per membership (a membership can hold more than one). Everyone who manages someone
 -- above holds the manager role; Ulla is also hr, Uma also developer.
 INSERT INTO membership_roles (membership_id, role_id)

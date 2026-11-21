@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { VersionsService } from './versions.service';
 import { WorkTimeModelService, localDate } from './work-time-model.service';
-import { org_holidays, organizations, work_schedules } from './db/schema';
+import { locations, org_holidays, organizations, work_schedules } from './db/schema';
 import { addDays, isCanton, isIsoDate, validateSchedule } from '@worktime3/shared/worktime';
 
 /** Whether a submitted or approved timesheet of this person ends after `date` (its target is settled). */
@@ -130,7 +130,7 @@ export class WorkSchedulesController {
     const timeZone = await this.workTime.timeZone(db, target);
     const [targets, holidays, attendance] = await Promise.all([
       this.workTime.targets(db, orgId, target, from, toExclusive),
-      this.workTime.holidays(db, orgId, from, toExclusive),
+      this.workTime.holidays(db, orgId, from, toExclusive, { userId: target }),
       this.workTime.attendanceByDay(db, orgId, target, from, toExclusive, timeZone, true),
     ]);
     return {
@@ -143,24 +143,32 @@ export class WorkSchedulesController {
   // -------------------------------------------------------------------------------------------
   // Organization: work-time settings and holiday calendar
 
-  /** Settings and the year's holidays (built-in and the organization's), for any member. */
+  /**
+   * Settings and the year's holidays (built-in and the organization's), for any member: the organization's,
+   * or with `locationId` that location's (its canton, the rows for everyone and its own rows). `rows` are
+   * all of the year's own rows, each with its `locationId` (null = everyone); `locations` the organization's.
+   */
   @Get('organizations/:orgId/work-time-settings')
-  async getOrgSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Query('year') yearParam?: string) {
+  async getOrgSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Query('year') yearParam?: string, @Query('locationId') locationId?: string) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, holidays: [], rows: [] };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', holidays: [], rows: [] };
     const year = /^\d{4}$/.test(yearParam ?? '') ? Number(yearParam) : new Date().getFullYear();
     const [from, toExclusive] = yearRange(year);
+    const locs = await this.workTime.locations(db, orgId);
+    const location = locationId ? locs.find((l) => l.id === locationId) ?? null : null;
     const [settings, holidays, rows] = await Promise.all([
       this.workTime.settings(db, orgId),
-      this.workTime.holidays(db, orgId, from, toExclusive),
+      this.workTime.holidays(db, orgId, from, toExclusive, { locationId: location?.id ?? null }),
       this.workTime.orgHolidayRows(db, orgId, from, toExclusive),
     ]);
     return {
       ok: true,
       year,
       settings,
+      locations: locs,
+      locationId: location?.id ?? null,
       holidays: [...holidays.values()].sort((a, b) => a.date.localeCompare(b.date)),
       rows,
       canEdit: await can(db, orgId, callerId, 'nav.orgSettings', 'edit'),
@@ -251,7 +259,7 @@ export class WorkSchedulesController {
   @Post('organizations/:orgId/holidays')
   async saveHoliday(
     @Param('orgId') orgId: string,
-    @Body() body: { date?: string; name?: string | null; fraction?: number; observed?: boolean },
+    @Body() body: { date?: string; name?: string | null; fraction?: number; observed?: boolean; locationId?: string | null },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -263,15 +271,28 @@ export class WorkSchedulesController {
     const fraction = body.fraction ?? 1;
     if (fraction !== 1 && fraction !== 0.5) return { ok: false, error: 'invalid-fraction' };
     const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 100) : null;
+    // For one location only (e.g. a municipality's own day), or (null) for everyone.
+    const locationId = body.locationId || null;
+    if (locationId) {
+      const [loc] = await db.select({ id: locations.id }).from(locations).where(and(eq(locations.id, locationId), eq(locations.organization_id, orgId)));
+      if (!loc) return { ok: false, error: 'unknown-location' };
+    }
 
-    const values = { organization_id: orgId, date: body.date, name, fraction: String(fraction), observed };
-    const [row] = await db
-      .insert(org_holidays)
-      .values(values)
-      .onConflictDoUpdate({ target: [org_holidays.organization_id, org_holidays.date], set: { name, fraction: values.fraction, observed } })
-      .returning({ id: org_holidays.id });
-    void this.versions.record('org_holidays', row.id, 'update', callerId, { id: row.id, ...values }).catch(() => {});
-    return { ok: true, id: row.id };
+    const values = { organization_id: orgId, date: body.date, name, fraction: String(fraction), observed, location_id: locationId };
+    // One row per date and location (uq_org_holidays): replace the existing one.
+    const [existing] = await db
+      .select({ id: org_holidays.id })
+      .from(org_holidays)
+      .where(and(eq(org_holidays.organization_id, orgId), eq(org_holidays.date, body.date), locationId ? eq(org_holidays.location_id, locationId) : isNull(org_holidays.location_id)));
+    let id: string;
+    if (existing) {
+      await db.update(org_holidays).set({ name, fraction: values.fraction, observed }).where(eq(org_holidays.id, existing.id));
+      id = existing.id;
+    } else {
+      [{ id }] = await db.insert(org_holidays).values(values).returning({ id: org_holidays.id });
+    }
+    void this.versions.record('org_holidays', id, 'update', callerId, { id, ...values }).catch(() => {});
+    return { ok: true, id };
   }
 
   @Delete('organizations/:orgId/holidays/:id')

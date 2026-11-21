@@ -5,7 +5,7 @@ import { callerUserId, isOrgMember, listableUserIds } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { WorkTimeModelService, localDate } from './work-time-model.service';
 import { organization_memberships, timesheet_periods, users } from './db/schema';
-import { addDays } from '@worktime3/shared/worktime';
+import { addDays, type Holiday } from '@worktime3/shared/worktime';
 
 /** Which permission object decides whose records each of the core's team tables lists. */
 export const TEAM_OBJECTS: Record<string, string> = {
@@ -179,7 +179,16 @@ export class TeamOverviewController {
         AND date_start <= ${addDays(toExclusive, -1)} AND date_end >= ${from}
       ORDER BY date_start`);
     const holidays = await this.workTime.holidays(db, orgId, from, toExclusive);
-    return { absences: result.rows, holidays: [...holidays.values()] };
+    // People at a location (087) may have other holidays than the organization's: theirs, where they differ.
+    const personHolidays: Record<string, Holiday[]> = {};
+    if ((await this.workTime.locations(db, orgId)).length > 0) {
+      const sameAsOrg = (m: Map<string, Holiday>) => m.size === holidays.size && [...m].every(([d, h]) => holidays.get(d)?.fraction === h.fraction && holidays.get(d)?.name === h.name && holidays.get(d)?.key === h.key);
+      for (const id of ids) {
+        const own = await this.workTime.holidays(db, orgId, from, toExclusive, { userId: id });
+        if (!sameAsOrg(own)) personHolidays[id] = [...own.values()];
+      }
+    }
+    return { absences: result.rows, holidays: [...holidays.values()], personHolidays };
   }
 
   /** Project minutes per person and project, with that project month's timesheet status. */

@@ -24,6 +24,7 @@ import { BalancesController } from './balances.controller';
 import { WorkSchedulesController } from './work-schedules.controller';
 import { TeamOverviewController } from './team-overview.controller';
 import { EmploymentController } from './employment.controller';
+import { LocationsController } from './locations.controller';
 import { RequestsController } from './requests.controller';
 import { NewsController } from './news.controller';
 import { PublicNewsController } from './public-news.controller';
@@ -90,6 +91,7 @@ const plugins = loadApiPlugins();
     WorkSchedulesController,
     TeamOverviewController,
     EmploymentController,
+    LocationsController,
     RequestsController,
     NewsController,
     PublicNewsController,
