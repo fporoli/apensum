@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanRequestLink, requestTypeKeys, requestTypeLabel, requestTypeOptions } from './requests.ts';
+import { cleanDueDate, cleanRequestLink, isRequestOverdue, requestTypeKeys, requestTypeLabel, requestTypeOptions } from './requests.ts';
 
 test('cleanRequestLink accepts http(s) links and adds https to a bare host', () => {
   assert.equal(cleanRequestLink('https://jira.example.com/browse/IT-42'), 'https://jira.example.com/browse/IT-42');
@@ -45,4 +45,22 @@ test('requestTypeKeys and requestTypeLabel', () => {
   assert.deepEqual(requestTypeKeys([]), []);
   assert.equal(requestTypeLabel(translation, 'it', 'support'), 'Support');
   assert.equal(requestTypeLabel(undefined, 'de', 'x'), 'x');
+});
+
+test('due dates: a real day, empty means none', () => {
+  assert.equal(cleanDueDate('2026-12-31'), '2026-12-31');
+  assert.equal(cleanDueDate(''), null);
+  assert.equal(cleanDueDate(null), null);
+  assert.equal(cleanDueDate('2026-02-30'), undefined);
+  assert.equal(cleanDueDate('31.12.2026'), undefined);
+  assert.equal(cleanDueDate('1999-12-31'), undefined);
+  assert.equal(cleanDueDate(20261231), undefined);
+});
+
+test('overdue: past the due date and still open', () => {
+  assert.equal(isRequestOverdue({ due_date: '2026-11-20', status: 'open' }, '2026-11-21'), true);
+  assert.equal(isRequestOverdue({ due_date: '2026-11-21', status: 'open' }, '2026-11-21'), false);
+  assert.equal(isRequestOverdue({ due_date: '2026-11-20', status: 'resolved' }, '2026-11-21'), false);
+  assert.equal(isRequestOverdue({ due_date: '2026-11-20', status: 'in_progress', archived_at: '2026-11-20T10:00:00Z' }, '2026-11-21'), false);
+  assert.equal(isRequestOverdue({ due_date: null, status: 'open' }, '2026-11-21'), false);
 });

@@ -9,7 +9,8 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
-import { cleanRequestLink, requestTypeKeys } from '@worktime3/shared/requests';
+import { cleanDueDate, cleanRequestLink, requestTypeKeys } from '@worktime3/shared/requests';
+import { RequestsService, currentAssignments } from './requests.service';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -22,6 +23,10 @@ import { cleanRequestLink, requestTypeKeys } from '@worktime3/shared/requests';
  * - plus anyone with `nav.requests:edit:all` (admin), for the whole organization.
  * Everyone involved needs `nav.requests` (which a switched-off module takes away); sending
  * needs `nav.requests:edit`. Every change notifies the other side (NotificationsService).
+ *
+ * A request may have a due date (RequestsService mails the handlers once it has passed while the
+ * request is open), and modules or plugins open requests themselves (`RequestsService.openTask`):
+ * those have no requester but a `source` (shown as the sender) and the page they are about.
  */
 
 export type RequestStatus = 'open' | 'in_progress' | 'resolved';
@@ -63,6 +68,7 @@ export interface RequestDetails {
   request_type?: string | null;
   urgent?: boolean;
   link_url?: string | null;
+  due_date?: string | null;
 }
 
 /** A flag from JSON (`true`) or a multipart form (`'true'`). */
@@ -78,7 +84,7 @@ function flag(value: unknown): boolean | undefined {
  * org no longer lists, but can't be moved to one.
  */
 export function validateRequestDetails(
-  input: { type?: unknown; urgent?: unknown; link?: unknown },
+  input: { type?: unknown; urgent?: unknown; link?: unknown; dueDate?: unknown },
   typeKeys: string[],
   current?: { request_type: string | null },
 ): { ok: true; value: RequestDetails } | { ok: false; error: string } {
@@ -98,14 +104,12 @@ export function validateRequestDetails(
     if (link === undefined) return { ok: false, error: 'invalid-link' };
     value.link_url = link;
   }
+  if (!current || input.dueDate !== undefined) {
+    const due = cleanDueDate(input.dueDate);
+    if (due === undefined) return { ok: false, error: 'invalid-due-date' };
+    value.due_date = due;
+  }
   return { ok: true, value };
-}
-
-/** Assignments in force today, one row per person of the organization. */
-function currentAssignments(orgId: string): SQL {
-  return sql`SELECT DISTINCT ON (user_id) user_id, department_id, manager_user_id FROM employee_assignments
-             WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
-             ORDER BY user_id, valid_from DESC`;
 }
 
 /**
@@ -123,6 +127,8 @@ function handlesCondition(orgId: string, callerId: string, handlesAll: boolean):
 const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
 
 const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.request_type, r.urgent, r.link_url, r.target_kind, r.target_department_id, d.name AS department_name,
+  r.due_date::text AS due_date, r.source, r.source_section,
+  (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved' AND r.archived_at IS NULL) AS overdue,
   r.requester_user_id, ru.display_name AS requester_name, ru.email AS requester_email,
   r.assignee_user_id, au.display_name AS assignee_name,
   ${iso('r.opened_at')} AS opened_at, ${iso('r.last_activity_at')} AS last_activity_at,
@@ -132,13 +138,13 @@ const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.request_type, r.urgent, r.
 const LIST_FROM = (orgId: string) => sql`FROM requests r
   LEFT JOIN (${currentAssignments(orgId)}) rc ON rc.user_id = r.requester_user_id
   LEFT JOIN departments d ON d.id = r.target_department_id
-  JOIN users ru ON ru.id = r.requester_user_id
+  LEFT JOIN users ru ON ru.id = r.requester_user_id
   LEFT JOIN users au ON au.id = r.assignee_user_id`;
 
 interface RequestRow {
   id: string;
   organization_id: string;
-  requester_user_id: string;
+  requester_user_id: string | null;
   target_kind: 'manager' | 'department';
   target_department_id: string | null;
   subject: string;
@@ -146,11 +152,13 @@ interface RequestRow {
   request_type: string | null;
   urgent: boolean;
   link_url: string | null;
+  due_date: string | null;
   assignee_user_id: string | null;
   archived_at: string | null;
 }
 
-const ROW_COLUMNS = sql`id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, request_type, urgent, link_url, assignee_user_id, archived_at`;
+const ROW_COLUMNS = sql`id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, request_type, urgent, link_url,
+  due_date::text AS due_date, assignee_user_id, archived_at`;
 
 @Controller('organizations/:orgId/requests')
 export class RequestsController {
@@ -160,6 +168,7 @@ export class RequestsController {
     private readonly versions: VersionsService,
     private readonly documents: DocumentsService,
     private readonly forwardMail: ForwardMailService,
+    private readonly requests: RequestsService,
   ) {}
 
   /** Inserts a message with its attachments (stored through DocumentsService). */
@@ -184,19 +193,8 @@ export class RequestsController {
   }
 
   /** Who handles `r` today (ids), not counting `nav.requests:edit:all`. */
-  private async handlerIds(db: Executor, r: RequestRow): Promise<string[]> {
-    if (r.target_kind === 'manager') {
-      const manager = await membershipManagerId(db, r.organization_id, r.requester_user_id);
-      return manager ? [manager] : [];
-    }
-    const rows = await db.execute(
-      sql`SELECT a.user_id FROM (${currentAssignments(r.organization_id)}) a
-            JOIN organization_memberships m ON m.organization_id = ${r.organization_id} AND m.user_id = a.user_id AND m.status = 'active'
-            WHERE a.department_id = ${r.target_department_id}
-          UNION
-          SELECT leader_user_id FROM departments WHERE id = ${r.target_department_id} AND leader_user_id IS NOT NULL`,
-    );
-    return rows.rows.map((x: Record<string, unknown>) => x.user_id as string);
+  private handlerIds(db: Executor, r: RequestRow): Promise<string[]> {
+    return this.requests.handlerIds(db, r);
   }
 
   private async load(db: Executor, orgId: string, id: string): Promise<RequestRow | null> {
@@ -220,7 +218,7 @@ export class RequestsController {
   /** Notifies everyone on the other side of `actorId`: the requester, or the assignee (else every handler). */
   private async notifyOthers(db: Executor, r: RequestRow, actorId: string, type: string, title: string, body?: string) {
     const recipients = new Set<string>();
-    if (r.requester_user_id !== actorId) recipients.add(r.requester_user_id);
+    if (r.requester_user_id && r.requester_user_id !== actorId) recipients.add(r.requester_user_id);
     if (r.assignee_user_id) recipients.add(r.assignee_user_id);
     else if (r.requester_user_id === actorId) for (const id of await this.handlerIds(db, r)) recipients.add(id);
     recipients.delete(actorId);
@@ -286,13 +284,14 @@ export class RequestsController {
     const handles = handlesCondition(orgId, callerId, all);
     const where =
       box === 'inbox'
-        ? sql`r.archived_at IS NULL AND NOT ${mine} AND ${handles}`
+        ? sql`r.archived_at IS NULL AND r.requester_user_id IS DISTINCT FROM ${callerId} AND ${handles}`
         : box === 'archived'
           ? sql`r.archived_at IS NOT NULL AND (${mine} OR ${handles})`
           : sql`r.archived_at IS NULL AND ${mine}`;
     const rows = await db.execute(
       sql`SELECT ${LIST_COLUMNS} ${LIST_FROM(orgId)} WHERE r.organization_id = ${orgId} AND ${where}
-          ORDER BY (r.urgent AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`,
+          ORDER BY (r.urgent AND r.status <> 'resolved') DESC,
+            (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`,
     );
     return { ok: true, requests: rows.rows };
   }
@@ -308,7 +307,7 @@ export class RequestsController {
     const rows = await db.execute(
       sql`SELECT count(*)::int AS n ${LIST_FROM(orgId)}
           WHERE r.organization_id = ${orgId} AND r.archived_at IS NULL AND r.status <> 'resolved'
-            AND r.requester_user_id <> ${callerId} AND ${handlesCondition(orgId, callerId, all)}
+            AND r.requester_user_id IS DISTINCT FROM ${callerId} AND ${handlesCondition(orgId, callerId, all)}
             AND (r.assignee_user_id IS NULL OR r.assignee_user_id = ${callerId})`,
     );
     return { ok: true, inbox: (rows.rows[0]?.n as number) ?? 0 };
@@ -356,7 +355,7 @@ export class RequestsController {
   }
 
   /**
-   * Sends a request: `{ target: 'manager' | 'department', departmentId?, subject, message, type, urgent?, link? }`,
+   * Sends a request: `{ target: 'manager' | 'department', departmentId?, subject, message, type, urgent?, link?, dueDate? }`,
    * as JSON or multipart with attachments in `files`. A message needs text or at least one file;
    * `type` is one of the org's request types (`validateRequestDetails`).
    */
@@ -364,7 +363,7 @@ export class RequestsController {
   @UseInterceptors(Attachments())
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; link?: string },
+    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; link?: string; dueDate?: string },
     @UploadedFiles() uploaded: Express.Multer.File[] | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
@@ -380,7 +379,7 @@ export class RequestsController {
     if (!message && files.length === 0) return { ok: false, error: 'message-required' };
     const details = validateRequestDetails(body, await this.typeKeys(db, orgId));
     if (!details.ok) return details;
-    const { request_type, urgent, link_url } = details.value;
+    const { request_type, urgent, link_url, due_date } = details.value;
 
     let departmentId: string | null = null;
     if (body.target === 'manager') {
@@ -397,8 +396,8 @@ export class RequestsController {
 
     const [created] = (
       await db.execute(
-        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, request_type, urgent, link_url)
-            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null})
+        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, request_type, urgent, link_url, due_date)
+            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date)
             RETURNING ${ROW_COLUMNS}`,
       )
     ).rows as unknown as RequestRow[];
@@ -478,14 +477,15 @@ export class RequestsController {
   }
 
   /**
-   * Changes the type, urgency or link (`{ type?, urgent?, link? }`, only the fields given). The
-   * requester and the handlers may, while the request is not archived.
+   * Changes the type, urgency, link or due date (`{ type?, urgent?, link?, dueDate? }`, only the fields
+   * given). The requester and the handlers may, while the request is not archived; a new due date arms
+   * the overdue alert again.
    */
   @Post(':id/details')
   async setDetails(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
-    @Body() body: { type?: string; urgent?: boolean; link?: string | null },
+    @Body() body: { type?: string; urgent?: boolean; link?: string | null; dueDate?: string | null },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -499,13 +499,14 @@ export class RequestsController {
     if (!details.ok) return details;
     // Only what actually changes goes into the thread and the history.
     const changed: RequestDetails = {};
-    for (const k of ['request_type', 'urgent', 'link_url'] as const) {
+    for (const k of ['request_type', 'urgent', 'link_url', 'due_date'] as const) {
       if (details.value[k] !== undefined && details.value[k] !== a.r[k]) (changed as Record<string, unknown>)[k] = details.value[k];
     }
     if (Object.keys(changed).length === 0) return { ok: true };
     const next = { ...a.r, ...changed };
     await db.execute(
-      sql`UPDATE requests SET request_type = ${next.request_type}, urgent = ${next.urgent}, link_url = ${next.link_url}, last_activity_at = now()
+      sql`UPDATE requests SET request_type = ${next.request_type}, urgent = ${next.urgent}, link_url = ${next.link_url}, due_date = ${next.due_date}::date,
+            overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${next.due_date}::date THEN NULL ELSE overdue_alerted_at END, last_activity_at = now()
           WHERE id = ${id}`,
     );
     await this.event(db, id, callerId, { details: changed });

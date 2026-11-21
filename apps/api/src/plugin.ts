@@ -119,6 +119,11 @@ export { NotificationsService } from './notifications.service';
 export { sendMail, type MailOptions } from './mailer';
 export { appBaseUrl } from './app-url';
 
+// Requests as tasks: a plugin opens a task for a department (`openTask`, one per key; e.g. a deadline)
+// and resolves the ones that no longer apply (`closeTasks`); past its due date an open task alerts its
+// handlers by e-mail. `requests-off` when the organization has the Requests module off.
+export { RequestsService, type SystemTaskInput, type SystemTaskResult } from './requests.service';
+
 // Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
 export { BalancesService, type YearBalances, type YearClosing } from './balances.service';
 

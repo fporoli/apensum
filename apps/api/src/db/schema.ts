@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, check, uuid, text, numeric, integer, timestamp, jsonb, boolean, uniqueIndex, unique, date, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, numeric, integer, jsonb, unique, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -18,6 +18,59 @@ export const subproject_type = pgEnum("subproject_type", ['phase', 'work_package
 export const timesheet_status = pgEnum("timesheet_status", ['open', 'submitted', 'approved', 'rejected'])
 export const user_status = pgEnum("user_status", ['active', 'suspended', 'deactivated'])
 
+
+export const requests = pgTable("requests", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	requester_user_id: uuid(),
+	target_kind: text().notNull(),
+	target_department_id: uuid(),
+	subject: text().notNull(),
+	status: text().default('open').notNull(),
+	assignee_user_id: uuid(),
+	opened_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	last_activity_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
+	archived_at: timestamp({ withTimezone: true, mode: 'string' }),
+	request_type: text(),
+	urgent: boolean().default(false).notNull(),
+	link_url: text(),
+	due_date: date(),
+	overdue_alerted_at: timestamp({ withTimezone: true, mode: 'string' }),
+	source: text(),
+	source_key: text(),
+	source_section: text(),
+}, (table) => [
+	index("idx_requests_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
+	index("idx_requests_due").using("btree", table.due_date.asc().nullsLast()).where(sql`((due_date IS NOT NULL) AND (overdue_alerted_at IS NULL))`),
+	index("idx_requests_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
+	uniqueIndex("uq_requests_source_key").using("btree", table.organization_id.asc().nullsLast(), table.source_key.asc().nullsLast()).where(sql`(source_key IS NOT NULL)`),
+	foreignKey({
+			columns: [table.requester_user_id],
+			foreignColumns: [users.id],
+			name: "requests_requester_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.target_department_id],
+			foreignColumns: [departments.id],
+			name: "requests_target_department_id_fkey"
+		}).onDelete("restrict"),
+	foreignKey({
+			columns: [table.assignee_user_id],
+			foreignColumns: [users.id],
+			name: "requests_assignee_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "requests_organization_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_requests_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND (target_kind = 'department'::text))`),
+	check("chk_requests_subject", sql`length(btrim(subject)) > 0`),
+	check("chk_requests_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL))`),
+	check("chk_requests_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
+	check("chk_requests_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
+]);
 
 export const ai_usage = pgTable("ai_usage", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
@@ -1082,51 +1135,6 @@ export const request_messages = pgTable("request_messages", {
 			name: "request_messages_author_user_id_fkey"
 		}).onDelete("set null"),
 	check("chk_request_messages_kind", sql`kind = ANY (ARRAY['message'::text, 'event'::text])`),
-]);
-
-export const requests = pgTable("requests", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	requester_user_id: uuid().notNull(),
-	target_kind: text().notNull(),
-	target_department_id: uuid(),
-	subject: text().notNull(),
-	status: text().default('open').notNull(),
-	assignee_user_id: uuid(),
-	opened_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	last_activity_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
-	archived_at: timestamp({ withTimezone: true, mode: 'string' }),
-	request_type: text(),
-	urgent: boolean().default(false).notNull(),
-	link_url: text(),
-}, (table) => [
-	index("idx_requests_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
-	index("idx_requests_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.requester_user_id],
-			foreignColumns: [users.id],
-			name: "requests_requester_user_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.target_department_id],
-			foreignColumns: [departments.id],
-			name: "requests_target_department_id_fkey"
-		}).onDelete("restrict"),
-	foreignKey({
-			columns: [table.assignee_user_id],
-			foreignColumns: [users.id],
-			name: "requests_assignee_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "requests_organization_id_fkey"
-		}).onDelete("cascade"),
-	check("chk_requests_subject", sql`length(btrim(subject)) > 0`),
-	check("chk_requests_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL))`),
-	check("chk_requests_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
-	check("chk_requests_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
 ]);
 
 export const timesheet_documents = pgTable("timesheet_documents", {

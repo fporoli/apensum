@@ -148,6 +148,10 @@ A plugin's files that belong to a person (expenses: receipts) appear on that per
 A plugin's providers and controllers may inject the core's `NotificationsService` (`notifyMany`: one row per recipient, pushed live; the web part's `notificationSections` maps the source table to the section a click opens) and `BalancesService` (a person's `year` and `closings`, the year-end closings of the Time balances page).\
 `sendMail` sends through the instance's SMTP and `appBaseUrl()` gives the web app's address for links; mail is best effort: catch and log, never fail a request on it, and never send a document itself, only a link.
 
+Tasks for people go through the Requests module (`RequestsService`, injected like the others): `openTask({ organizationId, source: '<id>', key: '<id>:...', section, departmentId, subject, message, dueDate })` opens one request per key for a department, or brings an open one up to date; `closeTasks(db, orgId, '<id>', keepKeys, dueFrom)` resolves the open ones that no longer apply.\
+The request shows the module's name (`modules.<id>`) as its sender and an "Open in" button for `section`; past its due date an open task mails its handlers once.\
+A task resolved or archived by a person is never opened again; `requests-off` means the organization has the Requests module off (the HR plugin's tasks are the example).
+
 ## Team tab (TeamView)
 
 A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab for managers and HR:

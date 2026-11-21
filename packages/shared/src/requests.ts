@@ -72,3 +72,21 @@ export function requestTypeOptions(
     .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, locale))
     .map(({ value, label }) => ({ value, label }));
 }
+
+/**
+ * A request's due date: `YYYY-MM-DD` (a real calendar day between 2000 and 2100), `null` when empty,
+ * `undefined` when invalid. Once it has passed while the request is open, the handlers get an e-mail.
+ */
+export function cleanDueDate(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const d = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) return undefined;
+  const year = Number(value.slice(0, 4));
+  return year >= 2000 && year <= 2100 ? value : undefined;
+}
+
+/** Whether an open request's due date has passed (`today` = the local day, YYYY-MM-DD). */
+export function isRequestOverdue(r: { due_date: string | null; status: string; archived_at?: string | null }, today: string): boolean {
+  return !!r.due_date && r.due_date < today && r.status !== 'resolved' && !r.archived_at;
+}

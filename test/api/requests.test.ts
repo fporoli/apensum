@@ -48,14 +48,16 @@ test('validateRequestDetails on create: type required when the org has types, li
   const keys = ['service', 'support', 'other'];
   assert.deepEqual(validateRequestDetails({ type: 'support', urgent: 'true', link: 'jira.example.com/IT-1' }, keys), {
     ok: true,
-    value: { request_type: 'support', urgent: true, link_url: 'https://jira.example.com/IT-1' },
+    value: { request_type: 'support', urgent: true, link_url: 'https://jira.example.com/IT-1', due_date: null },
   });
-  assert.deepEqual(validateRequestDetails({ type: 'service' }, keys), { ok: true, value: { request_type: 'service', urgent: false, link_url: null } });
+  assert.deepEqual(validateRequestDetails({ type: 'service' }, keys), { ok: true, value: { request_type: 'service', urgent: false, link_url: null, due_date: null } });
   assert.deepEqual(validateRequestDetails({}, keys), { ok: false, error: 'request-type-required' });
   assert.deepEqual(validateRequestDetails({ type: 'hack' }, keys), { ok: false, error: 'unknown-request-type' });
   assert.deepEqual(validateRequestDetails({ type: 'service', link: 'javascript:alert(1)' }, keys), { ok: false, error: 'invalid-link' });
   // An org without types sends requests without one.
-  assert.deepEqual(validateRequestDetails({}, []), { ok: true, value: { request_type: null, urgent: false, link_url: null } });
+  assert.deepEqual(validateRequestDetails({}, []), { ok: true, value: { request_type: null, urgent: false, link_url: null, due_date: null } });
+  assert.deepEqual(validateRequestDetails({ dueDate: '2026-12-15' }, []), { ok: true, value: { request_type: null, urgent: false, link_url: null, due_date: '2026-12-15' } });
+  assert.deepEqual(validateRequestDetails({ dueDate: '15.12.2026' }, []), { ok: false, error: 'invalid-due-date' });
 });
 
 test('validateRequestDetails on update: only given fields, an older type may stay', async () => {
@@ -65,4 +67,17 @@ test('validateRequestDetails on update: only given fields, an older type may sta
   assert.deepEqual(validateRequestDetails({ type: 'retired' }, keys, { request_type: 'retired' }), { ok: true, value: { request_type: 'retired' } });
   assert.deepEqual(validateRequestDetails({ type: 'other' }, keys, { request_type: 'service' }), { ok: false, error: 'unknown-request-type' });
   assert.deepEqual(validateRequestDetails({ link: '' }, keys, { request_type: 'service' }), { ok: true, value: { link_url: null } });
+  assert.deepEqual(validateRequestDetails({ dueDate: '' }, keys, { request_type: 'service' }), { ok: true, value: { due_date: null } });
+  assert.deepEqual(validateRequestDetails({ dueDate: '2027-01-04' }, keys, { request_type: 'service' }), { ok: true, value: { due_date: '2027-01-04' } });
+});
+
+test('the overdue alert mail is in the recipient\'s language and links to the request', async () => {
+  const { overdueMail } = await import('../../apps/api/src/requests.service');
+  const r = { id: 'abc', subject: 'Sperrfrist endet: Uma A', due_date: '2026-12-15' };
+  const de = overdueMail(r, 'de');
+  assert.equal(de.subject, 'Überfällig: Sperrfrist endet: Uma A');
+  assert.match(de.text, /am 15\.12\.2026 fällig/);
+  assert.match(de.text, /#\/requests\?id=abc/);
+  assert.match(overdueMail(r, 'fr').subject, /^En retard/);
+  assert.match(overdueMail(r, null).subject, /^Überfällig/);
 });

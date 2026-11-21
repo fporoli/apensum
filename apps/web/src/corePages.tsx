@@ -373,6 +373,7 @@ export const CORE_PAGES: AppPage[] = [
         focusId={c.requestFocus}
         refreshKey={c.liveNotification}
         onChanged={c.onBadgesChanged}
+        navigate={c.navigate}
       />
     ),
   },

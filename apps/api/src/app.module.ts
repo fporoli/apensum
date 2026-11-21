@@ -40,6 +40,7 @@ import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { ForwardMailService } from './forward-mail.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
+import { RequestsService } from './requests.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
 import { SiteContactController } from './site-contact.controller';
@@ -124,6 +125,7 @@ const plugins = loadApiPlugins();
     ProjectTimeService,
     WorkTimeService,
     BalancesService,
+    RequestsService,
     ReportsService,
     ReportSchedulesService,
     WorkTimeModelService,

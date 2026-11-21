@@ -31,9 +31,9 @@ import {
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { AddIcon, ChevronLeftIcon, EditIcon, MailIcon, PublicIcon } from './icons';
-import { cleanRequestLink, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
+import { cleanDueDate, cleanRequestLink, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
 import ForwardMailDialog, { type Recipient } from './ForwardMailDialog';
-import { formatLocaleDateTime, formatRelativeTime } from './localeFormat';
+import { formatLocaleDate, formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -50,9 +50,15 @@ interface RequestItem {
   link_url: string | null;
   target_kind: 'manager' | 'department';
   department_name: string | null;
-  requester_user_id: string;
+  /** Null for a task a module or plugin opened (`source`). */
+  requester_user_id: string | null;
   requester_name: string | null;
-  requester_email: string;
+  requester_email: string | null;
+  due_date: string | null;
+  /** The module or plugin that opened it, and the page it is about. */
+  source: string | null;
+  source_section: string | null;
+  overdue: boolean;
   assignee_user_id: string | null;
   assignee_name: string | null;
   opened_at: string;
@@ -70,7 +76,8 @@ interface Message {
     status?: Status;
     archived?: boolean;
     assignee?: string | null;
-    details?: { request_type?: string | null; urgent?: boolean; link_url?: string | null };
+    details?: { request_type?: string | null; urgent?: boolean; link_url?: string | null; due_date?: string | null; subject?: string };
+    obsolete?: boolean;
   };
   posted_at: string;
   author_user_id: string | null;
@@ -97,7 +104,11 @@ interface DetailsDraft {
   type: string;
   urgent: boolean;
   link: string;
+  /** YYYY-MM-DD or empty. */
+  due: string;
 }
+
+const EMPTY_DETAILS: DetailsDraft = { type: '', urgent: false, link: '', due: '' };
 
 interface Targets {
   manager: { id: string; name: string } | null;
@@ -125,6 +136,8 @@ interface RequestsProps {
   refreshKey?: unknown;
   /** After a change, so the navbar badge can refresh. */
   onChanged?: () => void;
+  /** Opens another page by its section id (a task's source page). */
+  navigate?: (section: string) => void;
 }
 
 /**
@@ -133,7 +146,7 @@ interface RequestsProps {
  * member), "Archived" the archived ones of both. Handlers take a request, answer, set its status
  * and archive it; every change notifies the other side.
  */
-export default function Requests({ orgId, userId, authHeaders, focusId, refreshKey, onChanged }: RequestsProps) {
+export default function Requests({ orgId, userId, authHeaders, focusId, refreshKey, onChanged, navigate }: RequestsProps) {
   const { t, locale } = useI18n();
   const [box, setBox] = useState<Box_>('mine');
   const [items, setItems] = useState<RequestItem[]>([]);
@@ -278,11 +291,34 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const r = detail?.request;
   const target = (item: RequestItem) =>
     item.target_kind === 'manager' ? t('requests.toManager') : t('requests.toDepartment', { department: item.department_name ?? '' });
+  /** A module's or plugin's name (its `modules.<id>` text), for the tasks it opens. */
+  const sourceLabel = (source: string | null) => {
+    if (!source) return t('requests.system');
+    const label = t(`modules.${source}`);
+    return label === `modules.${source}` ? source : label;
+  };
+  const sender = (item: RequestItem) => item.requester_name ?? item.requester_email ?? sourceLabel(item.source);
+  const dueChip = (item: RequestItem) =>
+    item.due_date && item.status !== 'resolved' ? (
+      <Chip
+        size="small"
+        color={item.overdue ? 'error' : 'default'}
+        variant={item.overdue ? 'filled' : 'outlined'}
+        label={t(item.overdue ? 'requests.overdueSince' : 'requests.dueOn', { date: formatLocaleDate(item.due_date, locale) })}
+      />
+    ) : null;
+
+  /** A message's author: the person, or the module or plugin that opened the task. */
+  const authorOf = (m: Message) => m.author_name ?? (m.author_user_id === null && r?.source ? sourceLabel(r.source) : t('requests.someone'));
 
   function eventText(m: Message): string {
-    const who = m.author_name ?? t('requests.someone');
+    const who = authorOf(m);
+    if (m.data.obsolete) return t('requests.event.obsolete', { who });
     if (m.data.details) {
       const d = m.data.details;
+      if (d.due_date !== undefined && Object.keys(d).every((k) => k === 'due_date' || k === 'subject')) {
+        return d.due_date ? t('requests.event.due', { who, date: formatLocaleDate(d.due_date, locale) }) : t('requests.event.noDue', { who });
+      }
       if (Object.keys(d).length === 1 && d.urgent !== undefined) return t(d.urgent ? 'requests.event.urgent' : 'requests.event.notUrgent', { who });
       return t('requests.event.details', { who });
     }
@@ -310,7 +346,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                   secondary={
                     <>
                       {item.request_type ? `${typeLabel(item.request_type)} · ` : ''}
-                      {box === 'mine' ? target(item) : `${item.requester_name ?? item.requester_email} · ${target(item)}`}
+                      {box === 'mine' ? target(item) : `${sender(item)} · ${target(item)}`}
                       <br />
                       {formatRelativeTime(item.last_activity_at, locale)}
                       {item.assignee_name ? ` · ${t('requests.handledBy', { name: item.assignee_name })}` : ''}
@@ -320,6 +356,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
                   <Chip size="small" color={STATUS_COLOR[item.status]} label={t(`requests.status.${item.status}`)} />
                   {item.urgent && item.status !== 'resolved' && <Chip size="small" color="error" variant="outlined" label={t('requests.urgent')} />}
+                  {dueChip(item)}
                 </Box>
               </ListItemButton>
             </Box>
@@ -336,7 +373,9 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   function forwardSuggested(req: RequestItem, d: Detail): Recipient[] {
     return d.isRequester
       ? d.handlers.filter((h) => h.id !== userId).map((h) => ({ id: h.id, name: h.name, email: h.email }))
-      : [{ id: req.requester_user_id, name: req.requester_name ?? req.requester_email, email: req.requester_email }];
+      : req.requester_user_id && req.requester_email
+        ? [{ id: req.requester_user_id, name: req.requester_name ?? req.requester_email, email: req.requester_email }]
+        : [];
   }
 
   function forwardMessage(req: RequestItem, d: Detail): string {
@@ -350,8 +389,9 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     return [
       t('requests.mail.intro', { subject: req.subject }),
       [
-        t('requests.from', { name: req.requester_name ?? req.requester_email }),
+        t('requests.from', { name: sender(req) }),
         target(req),
+        req.due_date ? t('requests.dueOn', { date: formatLocaleDate(req.due_date, locale) }) : null,
         req.request_type ? typeLabel(req.request_type) : null,
         req.urgent ? t('requests.urgent') : null,
         t(`requests.status.${req.status}`),
@@ -370,7 +410,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         <Box sx={{ flex: 1, minWidth: 200 }}>
           <Typography variant="h6" sx={{ fontSize: '1.1rem', overflowWrap: 'anywhere' }}>{r.subject}</Typography>
           <Typography variant="body2" color="text.secondary">
-            {t('requests.from', { name: r.requester_name ?? r.requester_email })} · {target(r)}
+            {t('requests.from', { name: sender(r) })} · {target(r)}
             {r.target_kind === 'manager' && detail.handlers.length > 0 ? ` (${detail.handlers.map((h) => h.name).join(', ')})` : ''}
             {' · '}
             {formatLocaleDateTime(r.opened_at, locale)}
@@ -378,6 +418,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {r.urgent && <Chip size="small" color="error" label={t('requests.urgent')} />}
+          {dueChip(r)}
           {r.request_type && <Chip size="small" variant="outlined" label={typeLabel(r.request_type)} />}
           <Chip size="small" color={STATUS_COLOR[r.status]} label={t(`requests.status.${r.status}`)} />
           {r.archived_at && <Chip size="small" label={t('requests.archived')} />}
@@ -399,6 +440,14 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
               {r.link_url.replace(/^https?:\/\//, '')}
             </Link>
           </Tooltip>
+        </Box>
+      )}
+
+      {r.source_section && navigate && (
+        <Box>
+          <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string)}>
+            {t('requests.openSource', { name: sourceLabel(r.source) })}
+          </Button>
         </Box>
       )}
 
@@ -471,7 +520,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                 }}
               >
                 <Typography variant="caption" sx={{ display: 'block', opacity: 0.8 }}>
-                  {m.author_name ?? t('requests.someone')} · {formatLocaleDateTime(m.posted_at, locale)}
+                  {authorOf(m)} · {formatLocaleDateTime(m.posted_at, locale)}
                 </Typography>
                 {m.body && <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.body}</Typography>}
                 {m.attachments?.length > 0 && (
@@ -593,7 +642,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           busy={busy}
           onClose={() => setEditingDetails(false)}
           onSave={async (d) => {
-            const ok = await post(`/${r.id}/details`, { type: d.type || undefined, urgent: d.urgent, link: d.link });
+            const ok = await post(`/${r.id}/details`, { type: d.type || undefined, urgent: d.urgent, link: d.link, dueDate: d.due || null });
             if (ok) setEditingDetails(false);
           }}
         />
@@ -667,13 +716,24 @@ function DetailsFields({
         onChange={(e) => onChange({ ...value, link: e.target.value })}
         slotProps={{ htmlInput: { maxLength: 2000, inputMode: 'url', autoComplete: 'off', spellCheck: false } }}
       />
+      <TextField
+        type="date"
+        size="small"
+        label={t('requests.due')}
+        value={value.due}
+        error={cleanDueDate(value.due) === undefined}
+        helperText={t('requests.dueHint')}
+        onChange={(e) => onChange({ ...value, due: e.target.value })}
+        slotProps={{ inputLabel: { shrink: true } }}
+        sx={{ maxWidth: 240 }}
+      />
     </>
   );
 }
 
 /** Whether the drafted details can be sent: a type when the org has types, and a usable link. */
 function detailsReady(d: DetailsDraft, types: TypeRow): boolean {
-  return (Object.keys(types.values).length === 0 || !!d.type) && cleanRequestLink(d.link) !== undefined;
+  return (Object.keys(types.values).length === 0 || !!d.type) && cleanRequestLink(d.link) !== undefined && cleanDueDate(d.due) !== undefined;
 }
 
 function EditDetailsDialog({
@@ -692,12 +752,12 @@ function EditDetailsDialog({
   onSave: (d: DetailsDraft) => void | Promise<void>;
 }) {
   const { t } = useI18n();
-  const [draft, setDraft] = useState<DetailsDraft>({ type: '', urgent: false, link: '' });
+  const [draft, setDraft] = useState<DetailsDraft>(EMPTY_DETAILS);
   useEffect(() => {
-    if (open) setDraft({ type: request.request_type ?? '', urgent: request.urgent, link: request.link_url ?? '' });
+    if (open) setDraft({ type: request.request_type ?? '', urgent: request.urgent, link: request.link_url ?? '', due: request.due_date ?? '' });
   }, [open, request]);
   // A request from before types existed may be saved without choosing one.
-  const ready = cleanRequestLink(draft.link) !== undefined && (!!draft.type || !request.request_type);
+  const ready = cleanRequestLink(draft.link) !== undefined && cleanDueDate(draft.due) !== undefined && (!!draft.type || !request.request_type);
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>{t('requests.editDetails')}</DialogTitle>
@@ -735,7 +795,7 @@ function NewRequestDialog({
   const [departmentId, setDepartmentId] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
-  const [details, setDetails] = useState<DetailsDraft>({ type: '', urgent: false, link: '' });
+  const [details, setDetails] = useState<DetailsDraft>(EMPTY_DETAILS);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = useAttachmentDraft(setError);
@@ -747,7 +807,7 @@ function NewRequestDialog({
     setError(null);
     setSubject('');
     setMessage('');
-    setDetails({ type: '', urgent: false, link: '' });
+    setDetails(EMPTY_DETAILS);
     draft.clear();
     (async () => {
       try {
@@ -784,6 +844,7 @@ function NewRequestDialog({
           type: details.type || undefined,
           urgent: details.urgent ? 'true' : undefined,
           link: details.link.trim() || undefined,
+          dueDate: details.due || undefined,
         },
         draft.files,
       );
