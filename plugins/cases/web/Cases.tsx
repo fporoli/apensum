@@ -885,6 +885,10 @@ function CaseDocumentsTab({
   const [extractedText, setExtractedText] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  // Reading the chosen file's text right away (stateless server call), so the dialog shows it before the upload.
+  const [reading, setReading] = useState(false);
+  const [readResult, setReadResult] = useState<'pdf' | 'text' | 'pdf-no-text' | 'none' | 'failed' | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   // Preview extracted text modal
   const [previewDoc, setPreviewDoc] = useState<CaseDocument | null>(null);
@@ -908,6 +912,41 @@ function CaseDocumentsTab({
     void loadDocs();
   }, [loadDocs]);
 
+  const resetUpload = () => {
+    setOpenUpload(false);
+    setTitle('');
+    setCategory('evidence');
+    setExtractedText('');
+    setSelectedFile(null);
+    setReadResult(null);
+  };
+
+  /** A file was chosen: take its name as the title and read its text now, so it shows before uploading. */
+  const chooseFile = async (file: File) => {
+    setSelectedFile(file);
+    setReadResult(null);
+    if (!title.trim()) setTitle(file.name.replace(/\.[^/.]+$/, ''));
+    const readable = file.type === 'application/pdf' || /\.pdf$/i.test(file.name) || file.type.startsWith('text/') || /\.txt$/i.test(file.name);
+    if (!readable) { setReadResult('none'); return; }
+    setReading(true);
+    try {
+      const probe = new FormData();
+      probe.set('file', file);
+      const r = await (await compute(orgId, authHeaders, caseId, 'extract-text', probe)).json().catch(() => null);
+      if (!r?.ok) { setReadResult('failed'); return; }
+      if (r.text) {
+        setExtractedText((prev) => (prev.trim() ? `${prev.trim()}\n\n${r.text}` : r.text));
+        setReadResult(r.extraction === 'pdf' ? 'pdf' : 'text');
+      } else {
+        setReadResult(r.extraction === 'pdf-no-text' ? 'pdf-no-text' : 'none');
+      }
+    } catch {
+      setReadResult('failed');
+    } finally {
+      setReading(false);
+    }
+  };
+
   const handleUpload = async () => {
     if (!title.trim() && !selectedFile) return;
     try {
@@ -921,7 +960,7 @@ function CaseDocumentsTab({
         const id = crypto.randomUUID();
         let text: string | null = extractedText.trim() || null;
         let extraction: string | null = null;
-        if (!text && selectedFile) {
+        if (!text && selectedFile && readResult === null) {
           const probe = new FormData();
           probe.set('file', selectedFile);
           const r = await (await compute(orgId, authHeaders, caseId, 'extract-text', probe)).json().catch(() => null);
@@ -934,7 +973,7 @@ function CaseDocumentsTab({
           file_key: sealedFile?.fileKey ?? null,
         })).enc));
         if (sealedFile) formData.set('file', sealedFile.blob, 'document.bin');
-        setNotice(extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
+        setNotice(extraction === 'pdf-no-text' && readResult === null ? t('cases.documents.pdfNoText') : null);
       } else {
         formData.set('title', title.trim() || selectedFile?.name || 'Document');
         if (extractedText.trim()) formData.set('extracted_text', extractedText.trim());
@@ -953,12 +992,8 @@ function CaseDocumentsTab({
       });
       const data = await res.json();
       if (data?.ok) {
-        if (!key) setNotice(data.extraction === 'pdf-no-text' ? t('cases.documents.pdfNoText') : null);
-        setOpenUpload(false);
-        setTitle('');
-        setCategory('evidence');
-        setExtractedText('');
-        setSelectedFile(null);
+        if (!key) setNotice(data.extraction === 'pdf-no-text' && readResult === null ? t('cases.documents.pdfNoText') : null);
+        resetUpload();
         await loadDocs();
         await onRefreshCase();
       } else {
@@ -1085,16 +1120,59 @@ function CaseDocumentsTab({
       )}
 
       {/* Upload Dialog */}
-      <Dialog open={openUpload} onClose={() => setOpenUpload(false)} maxWidth="sm" fullWidth>
+      <Dialog open={openUpload} onClose={() => !saving && resetUpload()} maxWidth="sm" fullWidth>
         <DialogTitle>{t('cases.documents.uploadModalTitle')}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {/* 1. The file: chosen or dropped; a PDF or text file is read at once. */}
+            <Box
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) void chooseFile(f);
+              }}
+              sx={{ p: 2, border: '1px dashed', borderColor: dragOver ? 'primary.main' : 'divider', bgcolor: dragOver ? 'action.hover' : undefined, borderRadius: 1, textAlign: 'center' }}
+            >
+              <input
+                type="file"
+                id="case-doc-file-input"
+                style={{ display: 'none' }}
+                onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                  const f = e.target.files?.[0];
+                  if (f) void chooseFile(f);
+                  e.target.value = '';
+                }}
+              />
+              <label htmlFor="case-doc-file-input">
+                <Button variant="outlined" component="span" startIcon={<UploadIcon fontSize="small" />} disabled={reading || saving}>
+                  {selectedFile ? selectedFile.name : t('cases.documents.chooseFile')}
+                </Button>
+              </label>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                {selectedFile ? t('cases.documents.fileHintChosen') : t('cases.documents.fileHint')}
+              </Typography>
+            </Box>
+            {reading && (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <CircularProgress size={16} />
+                <Typography variant="body2" color="text.secondary">{t('cases.documents.reading')}</Typography>
+              </Stack>
+            )}
+            {!reading && readResult === 'pdf' && <Alert severity="success">{t('cases.documents.readPdf')}</Alert>}
+            {!reading && readResult === 'text' && <Alert severity="success">{t('cases.documents.readText')}</Alert>}
+            {!reading && readResult === 'pdf-no-text' && <Alert severity="warning">{t('cases.documents.pdfNoText')}</Alert>}
+            {!reading && readResult === 'none' && <Alert severity="info">{t('cases.documents.readNone')}</Alert>}
+            {!reading && readResult === 'failed' && <Alert severity="warning">{t('cases.documents.readFailed')}</Alert>}
+
+            {/* 2. What it is. */}
             <TextField
               label={t('cases.documents.docTitle')}
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Psychiatrischer Verlaufsbericht"
             />
             <TextField
               select
@@ -1111,40 +1189,29 @@ function CaseDocumentsTab({
               <MenuItem value="other">{t('cases.docCategory.other')}</MenuItem>
             </TextField>
 
-            <Box sx={{ p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 1, textAlign: 'center' }}>
-              <input
-                type="file"
-                id="case-doc-file-input"
-                style={{ display: 'none' }}
-                onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                  if (e.target.files?.[0]) {
-                    setSelectedFile(e.target.files[0]);
-                    if (!title) setTitle(e.target.files[0].name.replace(/\.[^/.]+$/, ''));
-                  }
-                }}
-              />
-              <label htmlFor="case-doc-file-input">
-                <Button variant="outlined" component="span" startIcon={<UploadIcon fontSize="small" />}>
-                  {selectedFile ? selectedFile.name : t('cases.documents.chooseFile')}
-                </Button>
-              </label>
-            </Box>
-
+            {/* 3. The text the drafts use: read from the file above, or typed. */}
             <TextField
               label={t('cases.documents.extractedText')}
               multiline
-              rows={4}
+              minRows={4}
+              maxRows={12}
               placeholder={t('cases.documents.extractedTextPlaceholder')}
               value={extractedText}
               onChange={(e) => setExtractedText(e.target.value)}
               helperText={t('cases.documents.extractedTextHelp')}
+              disabled={reading}
             />
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpenUpload(false)}>{t('common.cancel')}</Button>
-          <Button variant="contained" onClick={handleUpload} disabled={saving || (!title && !selectedFile)}>
-            {saving ? <CircularProgress size={20} /> : t('common.upload')}
+          <Button onClick={resetUpload} disabled={saving}>{t('common.cancel')}</Button>
+          <Button
+            variant="contained"
+            startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <UploadIcon fontSize="small" />}
+            onClick={handleUpload}
+            disabled={saving || reading || (!title.trim() && !selectedFile)}
+          >
+            {selectedFile ? t('cases.documents.uploadSave') : t('cases.documents.saveNote')}
           </Button>
         </DialogActions>
       </Dialog>
