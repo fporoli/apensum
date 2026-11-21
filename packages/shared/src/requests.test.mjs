@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanDueDate, cleanRequestLink, isRequestOverdue, requestTypeKeys, requestTypeLabel, requestTypeOptions } from './requests.ts';
+import { cleanDueDate, cleanRequestLink, isRequestOverdue, requestTypeConfidential, requestTypeKeys, requestTypeLabel, requestTypeOptions } from './requests.ts';
 
 test('cleanRequestLink accepts http(s) links and adds https to a bare host', () => {
   assert.equal(cleanRequestLink('https://jira.example.com/browse/IT-42'), 'https://jira.example.com/browse/IT-42');
@@ -63,4 +63,13 @@ test('overdue: past the due date and still open', () => {
   assert.equal(isRequestOverdue({ due_date: '2026-11-20', status: 'resolved' }, '2026-11-21'), false);
   assert.equal(isRequestOverdue({ due_date: '2026-11-20', status: 'in_progress', archived_at: '2026-11-20T10:00:00Z' }, '2026-11-21'), false);
   assert.equal(isRequestOverdue({ due_date: null, status: 'open' }, '2026-11-21'), false);
+});
+
+test('a type is confidential by its attribute', () => {
+  const values = { hr: { sort: 4, confidential: true }, service: { sort: 1 }, odd: 'x' };
+  assert.equal(requestTypeConfidential(values, 'hr'), true);
+  assert.equal(requestTypeConfidential(values, 'service'), false);
+  assert.equal(requestTypeConfidential(values, 'odd'), false);
+  assert.equal(requestTypeConfidential(values, null), false);
+  assert.equal(requestTypeConfidential(undefined, 'hr'), false);
 });

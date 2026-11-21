@@ -194,10 +194,70 @@ export const BASICDATA_FORM: FormDef = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// Requests: the organization's own fields on a request (no fields of its own, only custom ones a
+// template adds in design mode on the Requests page; values in requests.custom).
+// ---------------------------------------------------------------------------
+
+export const REQUEST_FORM: FormDef = {
+  id: 'request',
+  groups: [{ key: 'custom', caption: 'requests.customFields', order: 10 }],
+  fields: [],
+  customStorage: { table: 'requests', column: 'custom' },
+};
+
 /** The configurable forms: the core's, then the plugins' (registerForm; expenses: its expense form). */
 export const FORMS: Record<string, FormDef> = {
   [BASICDATA_FORM.id]: BASICDATA_FORM,
+  [REQUEST_FORM.id]: REQUEST_FORM,
 };
+
+// ---------------------------------------------------------------------------
+// Forms made of custom fields only (requests, the Cases plugin's cases and assessments): their values
+// are one JSON object, checked as a whole.
+// ---------------------------------------------------------------------------
+
+/** Longest text value of a custom field. */
+export const MAX_CUSTOM_TEXT = 50_000;
+
+/** The fields a row's form shows and writes: custom, not retired. */
+export function activeCustomFields(form: ResolvedForm) {
+  return form.fields.filter((f) => f.custom && !f.retired);
+}
+
+/**
+ * What is wrong with a row's custom values (empty when nothing): every key a field of the form (a
+ * retired field's stored value passes unchecked), each value of its type and rules, required ones set.
+ * The values are the row's whole custom object, as the form saves it.
+ */
+export function customValuesErrors(form: ResolvedForm, values: unknown): FieldError[] {
+  if (values === null || values === undefined) values = {};
+  if (typeof values !== 'object' || Array.isArray(values)) return [{ field: '', rule: 'type' }];
+  const given = values as Record<string, unknown>;
+  const byKey = new Map(form.fields.filter((f) => f.custom).map((f) => [f.key, f]));
+  const errors: FieldError[] = [];
+  for (const [key, value] of Object.entries(given)) {
+    const field = byKey.get(key);
+    if (!field) errors.push({ field: key, rule: 'unknown' });
+    else if (!field.retired && typeof value === 'string' && value.length > MAX_CUSTOM_TEXT) errors.push({ field: key, rule: 'max' });
+  }
+  for (const field of activeCustomFields(form)) {
+    const r = validateValue(field, given[field.key] ?? null);
+    if (!r.ok) errors.push({ field: field.key, rule: r.rule });
+  }
+  return errors;
+}
+
+/** The values the form saves: its active fields' values, plus retired fields' stored ones (kept as they were). */
+export function customValuesToSave(form: ResolvedForm, values: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const f of form.fields) {
+    if (!f.custom || !(f.key in values)) continue;
+    const v = values[f.key];
+    out[f.key] = v === undefined || (typeof v === 'string' && v.trim() === '') ? null : v;
+  }
+  return out;
+}
 
 /** Adds a plugin's configurable form (ApiPlugin.forms); its templates then work like the core's. */
 export function registerForm(form: FormDef): void {

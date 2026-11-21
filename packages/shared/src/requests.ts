@@ -90,3 +90,14 @@ export function cleanDueDate(value: unknown): string | null | undefined {
 export function isRequestOverdue(r: { due_date: string | null; status: string; archived_at?: string | null }, today: string): boolean {
   return !!r.due_date && r.due_date < today && r.status !== 'resolved' && !r.archived_at;
 }
+
+/**
+ * Whether requests of type `key` are confidential (its attributes in the static_data row: `{"confidential": true}`):
+ * only the requester and the handlers see them, not `nav.requests:edit:all`, notifications carry no text,
+ * and neither "Send by e-mail" nor the AI assistant touch them.
+ */
+export function requestTypeConfidential(values: unknown, key: string | null | undefined): boolean {
+  if (!key || !values || typeof values !== 'object' || Array.isArray(values)) return false;
+  const attrs = (values as Record<string, unknown>)[key];
+  return !!attrs && typeof attrs === 'object' && (attrs as Record<string, unknown>).confidential === true;
+}

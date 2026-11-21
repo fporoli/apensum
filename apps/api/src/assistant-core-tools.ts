@@ -445,7 +445,8 @@ const requestsList: AssistantTool = {
   parameters: { type: 'object', properties: { box: { type: 'string', enum: ['mine', 'inbox', 'archived'] } } },
   async run(args, ctx) {
     const res = await ctx.get(RequestsController).list(ctx.orgId, str(args.box), ctx.req) as { requests: Record<string, unknown>[] };
-    const requests = res.requests.slice(0, 40).map((r) => ({
+    // Confidential requests stay out of the assistant (they would go to the model).
+    const requests = res.requests.filter((r) => r.confidential !== true).slice(0, 40).map((r) => ({
       id: r.id, subject: r.subject, status: r.status, type: r.request_type, urgent: r.urgent, to: r.target_kind === 'manager' ? 'manager' : r.department_name,
       from: r.requester_name, takenBy: r.assignee_name, lastActivity: r.last_activity_at, messages: r.message_count,
     }));
@@ -463,6 +464,7 @@ const requestsGet: AssistantTool = {
       ok: boolean; error?: string; request?: Record<string, unknown>; messages?: Record<string, unknown>[];
     };
     if (!res.ok) return { data: res };
+    if (res.request?.confidential === true) return { data: { ok: false, error: 'request-confidential' } };
     return {
       data: {
         request: { subject: res.request?.subject, status: res.request?.status, type: res.request?.request_type, from: res.request?.requester_name, link: res.request?.link_url },

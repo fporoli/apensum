@@ -9,7 +9,9 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
-import { cleanDueDate, cleanRequestLink, requestTypeKeys } from '@worktime3/shared/requests';
+import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeKeys } from '@worktime3/shared/requests';
+import { REQUEST_FORM, customValuesErrors, customValuesToSave, mergeForm } from '@worktime3/shared/fields';
+import { FieldsService } from './fields.service';
 import { RequestsService, currentAssignments } from './requests.service';
 
 /**
@@ -27,6 +29,11 @@ import { RequestsService, currentAssignments } from './requests.service';
  * A request may have a due date (RequestsService mails the handlers once it has passed while the
  * request is open), and modules or plugins open requests themselves (`RequestsService.openTask`):
  * those have no requester but a `source` (shown as the sender) and the page they are about.
+ *
+ * A request of a confidential type (static_data attribute `confidential`, copied onto the request) is
+ * seen only by the requester and its handlers: `nav.requests:edit:all` does not reach it, notifications
+ * carry no text, and "Send by e-mail" and the AI assistant leave it alone. The organization's own
+ * fields (configurable form `request`, design mode on the Requests page) are in `custom`.
  */
 
 export type RequestStatus = 'open' | 'in_progress' | 'resolved';
@@ -117,7 +124,12 @@ export function validateRequestDetails(
  * target department) for "the caller handles this request".
  */
 function handlesCondition(orgId: string, callerId: string, handlesAll: boolean): SQL {
-  if (handlesAll) return sql`TRUE`;
+  const own = ownHandlesCondition(orgId, callerId);
+  // `nav.requests:edit:all` reaches every request but the confidential ones.
+  return handlesAll ? sql`(NOT r.confidential OR ${own})` : own;
+}
+
+function ownHandlesCondition(orgId: string, callerId: string): SQL {
   return sql`((r.target_kind = 'manager' AND rc.manager_user_id = ${callerId})
           OR (r.target_kind = 'department' AND (d.leader_user_id = ${callerId}
               OR r.target_department_id = (SELECT department_id FROM (${currentAssignments(orgId)}) me WHERE me.user_id = ${callerId}))))`;
@@ -127,7 +139,7 @@ function handlesCondition(orgId: string, callerId: string, handlesAll: boolean):
 const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
 
 const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.request_type, r.urgent, r.link_url, r.target_kind, r.target_department_id, d.name AS department_name,
-  r.due_date::text AS due_date, r.source, r.source_section,
+  r.due_date::text AS due_date, r.source, r.source_section, r.confidential, r.custom,
   (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved' AND r.archived_at IS NULL) AS overdue,
   r.requester_user_id, ru.display_name AS requester_name, ru.email AS requester_email,
   r.assignee_user_id, au.display_name AS assignee_name,
@@ -153,12 +165,13 @@ interface RequestRow {
   urgent: boolean;
   link_url: string | null;
   due_date: string | null;
+  confidential: boolean;
   assignee_user_id: string | null;
   archived_at: string | null;
 }
 
 const ROW_COLUMNS = sql`id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, request_type, urgent, link_url,
-  due_date::text AS due_date, assignee_user_id, archived_at`;
+  due_date::text AS due_date, confidential, assignee_user_id, archived_at`;
 
 @Controller('organizations/:orgId/requests')
 export class RequestsController {
@@ -169,7 +182,36 @@ export class RequestsController {
     private readonly documents: DocumentsService,
     private readonly forwardMail: ForwardMailService,
     private readonly requests: RequestsService,
+    private readonly fields: FieldsService,
   ) {}
+
+  /**
+   * The custom values as the organization's form saves them, or an error. `given` may be a JSON string
+   * (multipart). Without `given` (undefined) nothing is checked.
+   */
+  private async customValues(orgId: string, given: unknown): Promise<{ ok: true; value: Record<string, unknown> | undefined } | { ok: false; error: string }> {
+    if (given === undefined || given === null || given === '') return { ok: true, value: undefined };
+    let values = given;
+    if (typeof given === 'string') {
+      try {
+        values = JSON.parse(given);
+      } catch {
+        return { ok: false, error: 'invalid-custom' };
+      }
+    }
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return { ok: false, error: 'invalid-custom' };
+    const form = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+    const value = customValuesToSave(form, values as Record<string, unknown>);
+    const unknown = Object.keys(values as Record<string, unknown>).filter((k) => !(k in value));
+    if (unknown.length || customValuesErrors(form, value).length) return { ok: false, error: 'invalid-custom' };
+    return { ok: true, value };
+  }
+
+  /** Whether the organization's form has a required custom field (then a new request must fill it). */
+  private async customRequired(orgId: string): Promise<boolean> {
+    const form = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+    return customValuesErrors(form, {}).length > 0;
+  }
 
   /** Inserts a message with its attachments (stored through DocumentsService). */
   private async addMessage(db: Db, r: { id: string; organization_id: string }, authorId: string, text: string | null, files: Express.Multer.File[]) {
@@ -210,7 +252,7 @@ export class RequestsController {
     if (!r) return null;
     const requester = r.requester_user_id === callerId;
     const handler =
-      (await reachesAll(db, orgId, callerId, 'nav.requests', 'edit')) || (await this.handlerIds(db, r)).includes(callerId);
+      (!r.confidential && (await reachesAll(db, orgId, callerId, 'nav.requests', 'edit'))) || (await this.handlerIds(db, r)).includes(callerId);
     if (!requester && !handler) return null;
     return { r, requester, handler };
   }
@@ -227,7 +269,8 @@ export class RequestsController {
       recipientUserIds: [...recipients],
       type,
       title,
-      body,
+      // A confidential request's notifications carry no text.
+      body: r.confidential ? undefined : body,
       sourceTable: 'requests',
       sourceTableUuid: r.id,
       data: { requestId: r.id },
@@ -240,14 +283,14 @@ export class RequestsController {
     );
   }
 
-  /** The org's request type keys: its own static_data row, else the global one. */
-  private async typeKeys(db: Executor, orgId: string): Promise<string[]> {
+  /** The org's request types (attributes by key): its own static_data row, else the global one. */
+  private async typeValues(db: Executor, orgId: string): Promise<unknown> {
     const rows = await db.execute(
       sql`SELECT "values" FROM static_data
           WHERE entity = 'requests' AND enum_name = 'request_type' AND (organization_id = ${orgId} OR organization_id IS NULL)
           ORDER BY organization_id NULLS LAST LIMIT 1`,
     );
-    return requestTypeKeys(rows.rows[0]?.values);
+    return rows.rows[0]?.values;
   }
 
   /** Where the caller can send a request: their manager in force, and the organization's active departments. */
@@ -363,7 +406,7 @@ export class RequestsController {
   @UseInterceptors(Attachments())
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; link?: string; dueDate?: string },
+    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; link?: string; dueDate?: string; custom?: unknown },
     @UploadedFiles() uploaded: Express.Multer.File[] | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
@@ -377,9 +420,13 @@ export class RequestsController {
     const message = cleanRequestText(body.message, MAX_BODY);
     if (!subject) return { ok: false, error: 'subject-required' };
     if (!message && files.length === 0) return { ok: false, error: 'message-required' };
-    const details = validateRequestDetails(body, await this.typeKeys(db, orgId));
+    const types = await this.typeValues(db, orgId);
+    const details = validateRequestDetails(body, requestTypeKeys(types));
     if (!details.ok) return details;
     const { request_type, urgent, link_url, due_date } = details.value;
+    const custom = await this.customValues(orgId, body.custom ?? (await this.customRequired(orgId) ? {} : undefined));
+    if (!custom.ok) return custom;
+    const confidential = requestTypeConfidential(types, request_type);
 
     let departmentId: string | null = null;
     if (body.target === 'manager') {
@@ -396,14 +443,15 @@ export class RequestsController {
 
     const [created] = (
       await db.execute(
-        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, request_type, urgent, link_url, due_date)
-            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date)
+        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, request_type, urgent, link_url, due_date, confidential, custom)
+            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date,
+                    ${confidential}, ${JSON.stringify(custom.value ?? {})}::jsonb)
             RETURNING ${ROW_COLUMNS}`,
       )
     ).rows as unknown as RequestRow[];
     await this.addMessage(db, created, callerId, message, files);
     const fileNames = files.map((f) => f.originalname);
-    void this.versions.record('requests', created.id, 'insert', callerId, { ...created, message, attachments: fileNames }).catch(() => {});
+    void this.versions.record('requests', created.id, 'insert', callerId, { ...created, custom: custom.value ?? {}, message, attachments: fileNames }).catch(() => {});
     const who = await this.displayName(db, callerId);
     const title = created.urgent ? `Urgent request from ${who}: ${subject}` : `New request from ${who}: ${subject}`;
     await this.notifyOthers(db, created, callerId, 'request.created', title, messagePreview(message, fileNames)).catch(() => {});
@@ -477,15 +525,15 @@ export class RequestsController {
   }
 
   /**
-   * Changes the type, urgency, link or due date (`{ type?, urgent?, link?, dueDate? }`, only the fields
-   * given). The requester and the handlers may, while the request is not archived; a new due date arms
-   * the overdue alert again.
+   * Changes the type, urgency, link, due date or custom values (`{ type?, urgent?, link?, dueDate?, custom? }`,
+   * only the fields given). The requester and the handlers may, while the request is not archived; a new
+   * due date arms the overdue alert again, a new type brings its confidentiality.
    */
   @Post(':id/details')
   async setDetails(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
-    @Body() body: { type?: string; urgent?: boolean; link?: string | null; dueDate?: string | null },
+    @Body() body: { type?: string; urgent?: boolean; link?: string | null; dueDate?: string | null; custom?: unknown },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -495,22 +543,30 @@ export class RequestsController {
     const a = await this.access(db, orgId, callerId, id);
     if (!a) return { ok: false, error: 'not-found' };
     if (a.r.archived_at) return { ok: false, error: 'request-archived' };
-    const details = validateRequestDetails(body ?? {}, await this.typeKeys(db, orgId), a.r);
+    const types = await this.typeValues(db, orgId);
+    const details = validateRequestDetails(body ?? {}, requestTypeKeys(types), a.r);
     if (!details.ok) return details;
+    const custom = await this.customValues(orgId, body?.custom);
+    if (!custom.ok) return custom;
     // Only what actually changes goes into the thread and the history.
     const changed: RequestDetails = {};
     for (const k of ['request_type', 'urgent', 'link_url', 'due_date'] as const) {
       if (details.value[k] !== undefined && details.value[k] !== a.r[k]) (changed as Record<string, unknown>)[k] = details.value[k];
     }
-    if (Object.keys(changed).length === 0) return { ok: true };
+    const current = ((await db.execute(sql`SELECT custom FROM requests WHERE id = ${id}`)).rows[0]?.custom ?? {}) as Record<string, unknown>;
+    const customChanged = custom.value !== undefined && JSON.stringify(custom.value) !== JSON.stringify(current);
+    if (Object.keys(changed).length === 0 && !customChanged) return { ok: true };
     const next = { ...a.r, ...changed };
+    // The type brings its confidentiality (a request moved to a confidential type leaves admins' sight).
+    const confidential = changed.request_type !== undefined ? requestTypeConfidential(types, next.request_type) : a.r.confidential;
     await db.execute(
       sql`UPDATE requests SET request_type = ${next.request_type}, urgent = ${next.urgent}, link_url = ${next.link_url}, due_date = ${next.due_date}::date,
+            confidential = ${confidential}, custom = ${JSON.stringify(customChanged ? custom.value : current)}::jsonb,
             overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${next.due_date}::date THEN NULL ELSE overdue_alerted_at END, last_activity_at = now()
           WHERE id = ${id}`,
     );
-    await this.event(db, id, callerId, { details: changed });
-    void this.versions.record('requests', id, 'update_delta', callerId, changed).catch(() => {});
+    await this.event(db, id, callerId, { details: { ...changed, ...(customChanged ? { custom: true } : {}) } });
+    void this.versions.record('requests', id, 'update_delta', callerId, { ...changed, ...(customChanged ? { custom: custom.value } : {}), confidential }).catch(() => {});
     const who = await this.displayName(db, callerId);
     const title = changed.urgent === true ? `${who} marked "${a.r.subject}" as urgent` : `${who} updated "${a.r.subject}"`;
     await this.notifyOthers(db, a.r, callerId, 'request.status', title).catch(() => {});
@@ -563,7 +619,9 @@ export class RequestsController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = await this.caller(db, orgId, req);
-    if (!callerId || !(await this.access(db, orgId, callerId, id))) return { ok: false, error: 'not-found' };
+    const a = callerId ? await this.access(db, orgId, callerId, id) : null;
+    if (!callerId || !a) return { ok: false, error: 'not-found' };
+    if (a.r.confidential) return { ok: false, error: 'request-confidential' };
     return this.forwardMail.send(db, orgId, callerId, body ?? {}, { type: 'request', id, path: `#/requests?id=${id}` });
   }
 

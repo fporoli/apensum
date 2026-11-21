@@ -40,6 +40,8 @@ export interface SystemTaskInput {
   message: string;
   /** YYYY-MM-DD; after it, an open task alerts its handlers by e-mail. */
   dueDate?: string | null;
+  /** Only the department sees it, not `nav.requests:edit:all`; notifications carry no text. */
+  confidential?: boolean;
 }
 
 export type SystemTaskResult =
@@ -181,6 +183,8 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     const old = existing[0];
     if (old) {
       if (old.status === 'resolved' || old.archived_at) return { ok: true, id: old.id, created: false, changed: false };
+      // Confidentiality follows the source's wish (also for tasks opened before it asked for it).
+      await db.execute(sql`UPDATE requests SET confidential = ${input.confidential === true} WHERE id = ${old.id} AND confidential <> ${input.confidential === true}`);
       const changed = old.subject !== subject || old.due_date !== due || old.target_department_id !== input.departmentId;
       if (!changed) return { ok: true, id: old.id, created: false, changed: false };
       await db.execute(
@@ -198,8 +202,9 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
 
     const inserted = (
       await db.execute(
-        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section)
-            VALUES (${input.organizationId}, NULL, 'department', ${input.departmentId}::uuid, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null})
+        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section, confidential)
+            VALUES (${input.organizationId}, NULL, 'department', ${input.departmentId}::uuid, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null},
+                    ${input.confidential === true})
             ON CONFLICT (organization_id, source_key) WHERE source_key IS NOT NULL DO NOTHING
             RETURNING id`,
       )
@@ -224,7 +229,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         recipientUserIds: handlers,
         type: 'request.created',
         title: subject,
-        body: message.slice(0, 200),
+        body: input.confidential ? undefined : message.slice(0, 200),
         sourceTable: 'requests',
         sourceTableUuid: id,
         data: { requestId: id },

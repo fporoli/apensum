@@ -30,8 +30,11 @@ import {
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
-import { AddIcon, ChevronLeftIcon, EditIcon, MailIcon, PublicIcon } from './icons';
-import { cleanDueDate, cleanRequestLink, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
+import { AddIcon, ChevronLeftIcon, EditIcon, LockIcon, MailIcon, PublicIcon } from './icons';
+import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
+import { REQUEST_FORM } from '@worktime3/shared/fields';
+import { useFormTemplate, type FormTemplate } from './designMode';
+import { RequestCustomFields, checkRequestCustom, hasCustomValues } from './RequestCustomFields';
 import ForwardMailDialog, { type Recipient } from './ForwardMailDialog';
 import { formatLocaleDate, formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
@@ -59,6 +62,10 @@ interface RequestItem {
   source: string | null;
   source_section: string | null;
   overdue: boolean;
+  /** Only the requester and the handlers see it (its type is confidential). */
+  confidential: boolean;
+  /** The organization's own fields (form `request`). */
+  custom: Record<string, unknown> | null;
   assignee_user_id: string | null;
   assignee_name: string | null;
   opened_at: string;
@@ -163,6 +170,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const [editingDetails, setEditingDetails] = useState(false);
   const [types, setTypes] = useState<TypeRow>({ values: {}, translation: {} });
   const replyFiles = useAttachmentDraft(setError);
+  const template = useFormTemplate(orgId, REQUEST_FORM, authHeaders);
 
   useEffect(() => {
     let cancelled = false;
@@ -357,6 +365,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                   <Chip size="small" color={STATUS_COLOR[item.status]} label={t(`requests.status.${item.status}`)} />
                   {item.urgent && item.status !== 'resolved' && <Chip size="small" color="error" variant="outlined" label={t('requests.urgent')} />}
                   {dueChip(item)}
+                  {item.confidential && <LockIcon fontSize="small" color="action" titleAccess={t('requests.confidential')} />}
                 </Box>
               </ListItemButton>
             </Box>
@@ -419,6 +428,11 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {r.urgent && <Chip size="small" color="error" label={t('requests.urgent')} />}
           {dueChip(r)}
+          {r.confidential && (
+            <Tooltip title={t('requests.confidentialHint')}>
+              <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('requests.confidential')} />
+            </Tooltip>
+          )}
           {r.request_type && <Chip size="small" variant="outlined" label={typeLabel(r.request_type)} />}
           <Chip size="small" color={STATUS_COLOR[r.status]} label={t(`requests.status.${r.status}`)} />
           {r.archived_at && <Chip size="small" label={t('requests.archived')} />}
@@ -431,6 +445,10 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           )}
         </Box>
       </Box>
+
+      {hasCustomValues(template, r.custom) && (
+        <RequestCustomFields template={{ ...template, designer: null }} values={r.custom ?? {}} editing={false} />
+      )}
 
       {r.link_url && (
         <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', minWidth: 0 }}>
@@ -483,11 +501,13 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
             <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'resolved' })}>{t('requests.markResolved')}</Button>
           )
         )}
-        <Tooltip title={t('requests.mail.hint')}>
-          <Button size="small" startIcon={<MailIcon />} onClick={() => setForwarding(true)}>
-            {t('requests.mail')}
-          </Button>
-        </Tooltip>
+        {!r.confidential && (
+          <Tooltip title={t('requests.mail.hint')}>
+            <Button size="small" startIcon={<MailIcon />} onClick={() => setForwarding(true)}>
+              {t('requests.mail')}
+            </Button>
+          </Tooltip>
+        )}
         {detail.isHandler && (
           <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/archive`, { archived: !r.archived_at })}>
             {r.archived_at ? t('requests.unarchive') : t('requests.archive')}
@@ -588,6 +608,20 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
+      {template.designer && (
+        <Paper variant="outlined" sx={{ p: 2 }}>
+          <RequestCustomFields template={template} values={{}} withPanel>
+            {(fields, title) => (
+              <Box sx={{ display: 'grid', gap: 1 }}>
+                <Typography variant="subtitle2">{title}</Typography>
+                <Typography variant="body2" color="text.secondary">{t('requests.customFieldsDesign')}</Typography>
+                {fields}
+              </Box>
+            )}
+          </RequestCustomFields>
+        </Paper>
+      )}
+
       <Tabs
         value={box}
         onChange={(_, v: Box_) => {
@@ -639,10 +673,11 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           open={editingDetails}
           request={r}
           types={types}
+          template={template}
           busy={busy}
           onClose={() => setEditingDetails(false)}
-          onSave={async (d) => {
-            const ok = await post(`/${r.id}/details`, { type: d.type || undefined, urgent: d.urgent, link: d.link, dueDate: d.due || null });
+          onSave={async (d, custom) => {
+            const ok = await post(`/${r.id}/details`, { type: d.type || undefined, urgent: d.urgent, link: d.link, dueDate: d.due || null, custom });
             if (ok) setEditingDetails(false);
           }}
         />
@@ -651,6 +686,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       <NewRequestDialog
         open={composeOpen}
         types={types}
+        template={template}
         orgId={orgId}
         authHeaders={authHeaders}
         errorText={errorText}
@@ -699,6 +735,9 @@ function DetailsFields({
             ))}
           </TextField>
         )}
+        {requestTypeConfidential(types.values, value.type) && (
+          <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('requests.confidential')} />
+        )}
         <Tooltip title={t('requests.urgentHint')}>
           <FormControlLabel
             control={<Checkbox size="small" color="error" checked={value.urgent} onChange={(e) => onChange({ ...value, urgent: e.target.checked })} />}
@@ -706,6 +745,9 @@ function DetailsFields({
           />
         </Tooltip>
       </Box>
+      {requestTypeConfidential(types.values, value.type) && (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>{t('requests.confidentialHint')}</Typography>
+      )}
       <TextField
         size="small"
         label={t('requests.link')}
@@ -740,6 +782,7 @@ function EditDetailsDialog({
   open,
   request,
   types,
+  template,
   busy,
   onClose,
   onSave,
@@ -747,15 +790,29 @@ function EditDetailsDialog({
   open: boolean;
   request: RequestItem;
   types: TypeRow;
+  template: FormTemplate;
   busy: boolean;
   onClose: () => void;
-  onSave: (d: DetailsDraft) => void | Promise<void>;
+  onSave: (d: DetailsDraft, custom: Record<string, unknown>) => void | Promise<void>;
 }) {
   const { t } = useI18n();
   const [draft, setDraft] = useState<DetailsDraft>(EMPTY_DETAILS);
+  const [custom, setCustom] = useState<Record<string, unknown>>({});
+  const [customErrors, setCustomErrors] = useState<Record<string, string>>({});
   useEffect(() => {
-    if (open) setDraft({ type: request.request_type ?? '', urgent: request.urgent, link: request.link_url ?? '', due: request.due_date ?? '' });
+    if (!open) return;
+    setDraft({ type: request.request_type ?? '', urgent: request.urgent, link: request.link_url ?? '', due: request.due_date ?? '' });
+    setCustom(request.custom ?? {});
+    setCustomErrors({});
   }, [open, request]);
+  function save() {
+    const checked = checkRequestCustom(template, custom);
+    if (!checked.ok) {
+      setCustomErrors(checked.errors);
+      return;
+    }
+    void onSave(draft, checked.value);
+  }
   // A request from before types existed may be saved without choosing one.
   const ready = cleanRequestLink(draft.link) !== undefined && cleanDueDate(draft.due) !== undefined && (!!draft.type || !request.request_type);
   return (
@@ -763,10 +820,11 @@ function EditDetailsDialog({
       <DialogTitle>{t('requests.editDetails')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         <DetailsFields value={draft} onChange={setDraft} types={types} keepType={request.request_type} />
+        <RequestCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
-        <Button variant="contained" disabled={busy || !ready} onClick={() => void onSave(draft)}>{t('common.save')}</Button>
+        <Button variant="contained" disabled={busy || !ready} onClick={save}>{t('common.save')}</Button>
       </DialogActions>
     </Dialog>
   );
@@ -775,6 +833,7 @@ function EditDetailsDialog({
 function NewRequestDialog({
   open,
   types,
+  template,
   orgId,
   authHeaders,
   errorText,
@@ -783,6 +842,7 @@ function NewRequestDialog({
 }: {
   open: boolean;
   types: TypeRow;
+  template: FormTemplate;
   orgId: string;
   authHeaders: () => Promise<Record<string, string>>;
   errorText: (code: string | undefined) => string;
@@ -796,6 +856,8 @@ function NewRequestDialog({
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [details, setDetails] = useState<DetailsDraft>(EMPTY_DETAILS);
+  const [custom, setCustom] = useState<Record<string, unknown>>({});
+  const [customErrors, setCustomErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = useAttachmentDraft(setError);
@@ -808,6 +870,8 @@ function NewRequestDialog({
     setSubject('');
     setMessage('');
     setDetails(EMPTY_DETAILS);
+    setCustom({});
+    setCustomErrors({});
     draft.clear();
     (async () => {
       try {
@@ -832,6 +896,12 @@ function NewRequestDialog({
   }, [open, firstType]);
 
   async function submit() {
+    const checked = checkRequestCustom(template, custom);
+    if (!checked.ok) {
+      setCustomErrors(checked.errors);
+      return;
+    }
+    setCustomErrors({});
     setBusy(true);
     setError(null);
     try {
@@ -845,6 +915,7 @@ function NewRequestDialog({
           urgent: details.urgent ? 'true' : undefined,
           link: details.link.trim() || undefined,
           dueDate: details.due || undefined,
+          custom: Object.keys(checked.value).length ? JSON.stringify(checked.value) : undefined,
         },
         draft.files,
       );
@@ -896,6 +967,7 @@ function NewRequestDialog({
         )}
         <TextField size="small" label={t('requests.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
         <DetailsFields value={details} onChange={setDetails} types={types} />
+        <RequestCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
         <DropZone dragging={draft.dragging} dropProps={draft.dropProps}>
           <Box sx={{ display: 'grid', gap: 1 }}>
             <TextField

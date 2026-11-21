@@ -1,4 +1,4 @@
-import { pgTable, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, numeric, integer, jsonb, unique, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, jsonb, numeric, integer, unique, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -40,6 +40,8 @@ export const requests = pgTable("requests", {
 	source: text(),
 	source_key: text(),
 	source_section: text(),
+	confidential: boolean().default(false).notNull(),
+	custom: jsonb().default({}).notNull(),
 }, (table) => [
 	index("idx_requests_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
 	index("idx_requests_due").using("btree", table.due_date.asc().nullsLast()).where(sql`((due_date IS NOT NULL) AND (overdue_alerted_at IS NULL))`),

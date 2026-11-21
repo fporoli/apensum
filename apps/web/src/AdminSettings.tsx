@@ -64,6 +64,11 @@ function isAbsenceTypes(entity: string, enumName: string): boolean {
   return entity.trim() === 'absences' && enumName.trim() === 'absence_type';
 }
 
+/** Request types map each key to attributes (`sort`, `confidential`); their labels live in the translations. */
+function isRequestTypes(entity: string, enumName: string): boolean {
+  return entity.trim() === 'requests' && enumName.trim() === 'request_type';
+}
+
 /** `attributeRow`: every value is an attribute object; otherwise each value is its label. */
 function kvListToValues(list: KV[], attributeRow: boolean): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -114,7 +119,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   const [translationLocale, setTranslationLocale] = useState<Locale>('de');
   const [kvFilter, setKvFilter] = useState('');
   const absenceTypesRow = isAbsenceTypes(enumEntity, enumName);
-  const attributeRow = absenceTypesRow || enumKvList.some((kv) => kv.attrs !== null);
+  const requestTypesRow = isRequestTypes(enumEntity, enumName);
+  const attributeRow = absenceTypesRow || requestTypesRow || enumKvList.some((kv) => kv.attrs !== null);
 
   function makeKv(key = '', value: unknown = '', attributeRow = false): KV {
     nextRowId.current += 1;
@@ -184,6 +190,17 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
         if (kv.rowId !== rowId) return kv;
         const { approval: _approval, ...rest } = kv.attrs ?? {};
         return { ...kv, attrs: needsApproval ? rest : { ...rest, approval: false } };
+      }),
+    );
+  }
+
+  /** Request types: `confidential: true` is stored only when the type is confidential. */
+  function updateConfidential(rowId: number, confidential: boolean) {
+    setEnumKvList((prev) =>
+      prev.map((kv) => {
+        if (kv.rowId !== rowId) return kv;
+        const { confidential: _confidential, ...rest } = kv.attrs ?? {};
+        return { ...kv, attrs: confidential ? { ...rest, confidential: true } : rest };
       }),
     );
   }
@@ -282,6 +299,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   function valuePreview(row: StaticDataRow, key: string, value: unknown): string {
     if (!isAttributes(value)) return `${key}: ${value}`;
     if (isAbsenceTypes(row.entity, row.enum_name)) return value.approval === false ? `${key} · ${t('staticdata.noApproval')}` : key;
+    if (isRequestTypes(row.entity, row.enum_name)) return value.confidential === true ? `${key} · ${t('requests.confidential')}` : key;
     return Object.keys(value).length > 0 ? `${key}: ${JSON.stringify(value)}` : key;
   }
 
@@ -506,6 +524,12 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                     sx={{ flex: 1, m: 0 }}
                     control={<Checkbox size="small" checked={kv.attrs?.approval !== false} onChange={(e) => updateApproval(kv.rowId, e.target.checked)} />}
                     label={t('staticdata.needsApproval')}
+                  />
+                ) : requestTypesRow ? (
+                  <FormControlLabel
+                    sx={{ flex: 1, m: 0 }}
+                    control={<Checkbox size="small" checked={kv.attrs?.confidential === true} onChange={(e) => updateConfidential(kv.rowId, e.target.checked)} />}
+                    label={t('requests.confidential')}
                   />
                 ) : attributeRow ? (
                   <TextField label={t('staticdata.attributes')} value={JSON.stringify(kv.attrs ?? {})} size="small" disabled sx={{ flex: 1 }} />
