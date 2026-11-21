@@ -964,7 +964,8 @@ export class ImportExportService {
 
     const assignments = await db.select().from(employee_assignments).where(eq(employee_assignments.organization_id, orgId));
     const schedules = await db.select().from(work_schedules).where(eq(work_schedules.organization_id, orgId));
-    const workTimes = await db.select().from(work_times).where(eq(work_times.organization_id, orgId));
+    // Without client_ip: the address is never shown, so it does not leave the database either.
+    const workTimes = (await db.select().from(work_times).where(eq(work_times.organization_id, orgId))).map(({ client_ip: _ip, ...row }) => row);
     const timesheetPeriods = await db.select().from(timesheet_periods).where(eq(timesheet_periods.organization_id, orgId));
     const timesheetDocs = await db.select().from(timesheet_documents).where(eq(timesheet_documents.organization_id, orgId));
 
@@ -1573,6 +1574,7 @@ export class ImportExportService {
           check_in: wt.check_in,
           check_out: wt.check_out || null,
           comment: wt.comment || null,
+          home_office: wt.home_office === true,
         })
         .onConflictDoUpdate({
           target: work_times.id,
@@ -1580,6 +1582,7 @@ export class ImportExportService {
             check_in: wt.check_in,
             check_out: wt.check_out || null,
             comment: wt.comment || null,
+            home_office: wt.home_office === true,
           },
         });
       restored.workTimes = (restored.workTimes || 0) + 1;

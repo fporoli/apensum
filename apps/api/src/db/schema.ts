@@ -921,6 +921,8 @@ export const work_times = pgTable("work_times", {
 	check_in: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 	check_out: timestamp({ withTimezone: true, mode: 'string' }),
 	comment: text(),
+	home_office: boolean().default(false).notNull(),
+	client_ip: varchar({ length: 64 }),
 }, (table) => [
 	index("idx_work_times_org_check_in").using("btree", table.organization_id.asc().nullsLast(), table.check_in.asc().nullsLast()),
 	index("idx_work_times_user_check_in").using("btree", table.user_id.asc().nullsLast(), table.check_in.asc().nullsLast()),

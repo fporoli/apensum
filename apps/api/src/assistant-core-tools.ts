@@ -98,8 +98,8 @@ const workTimeList: AssistantTool = {
     const range = instantRange(args, ctx);
     if ('error' in range) return { data: range };
     const res = await ctx.get(WorkTimeController).list(ctx.orgId, ctx.req, who.id, range.from, range.to);
-    const rows = (res.entries as { id: string; check_in: string; check_out: string | null; comment: string | null }[])
-      .map((r) => ({ id: r.id, start: r.check_in, end: r.check_out, comment: r.comment }));
+    const rows = (res.entries as { id: string; check_in: string; check_out: string | null; comment: string | null; home_office?: boolean }[])
+      .map((r) => ({ id: r.id, start: r.check_in, end: r.check_out, comment: r.comment, ...(r.home_office ? { homeOffice: true } : {}) }));
     return { data: { person: who.name ?? 'you', from: range.fromDay, to: range.toDay, ...entryList(rows, ctx) } };
   },
 };
@@ -109,12 +109,14 @@ const workTimeAdd: AssistantTool = {
   object: 'nav.workTime',
   description:
     'WORKING TIME: record completed attendance sessions (as on the Work time page, e.g. a forgotten check-in). ' +
-    'This is what overtime and the monthly timesheet count. It does NOT book hours on a project: for that use project_time_add as well.',
+    'This is what overtime and the monthly timesheet count. It does NOT book hours on a project: for that use project_time_add as well. ' +
+    "A session overlapping another of the person's is refused (error overlap, naming the other session): tell the user, never delete the other one on your own.",
   parameters: {
     type: 'object',
     properties: {
       entries: entriesParam({}),
       ...person,
+      homeOffice: { type: 'boolean', description: 'The sessions were worked from home (only when the user says so; default: not).' },
       confirmLongSession: { type: 'boolean', description: 'Only after the user confirmed a session over 16 hours is meant.' },
     },
     required: ['entries'],
@@ -131,7 +133,7 @@ const workTimeAdd: AssistantTool = {
       const s = span(e, ctx);
       if ('error' in s) { results.push({ date: e.date, ok: false, error: s.error }); continue; }
       const res = await controller.addEntry(ctx.orgId, who.id, {
-        checkIn: s.start, checkOut: s.end, comment: str(e.comment), acknowledgeLongSession: args.confirmLongSession === true,
+        checkIn: s.start, checkOut: s.end, comment: str(e.comment), homeOffice: args.homeOffice === true, acknowledgeLongSession: args.confirmLongSession === true,
       }, ctx.req) as { ok: boolean; error?: string; id?: string };
       if (res.ok) created += 1;
       results.push({ date: e.date, startTime: e.startTime, endTime: e.endTime, ok: res.ok, ...(res.error ? { error: res.error } : { id: res.id }) });
@@ -144,9 +146,9 @@ const workTimeCheckIn: AssistantTool = {
   name: 'work_time_check_in',
   object: 'nav.workTime',
   description: 'WORKING TIME: check the user in now (starts an attendance session).',
-  parameters: { type: 'object', properties: { comment: { type: 'string' } } },
+  parameters: { type: 'object', properties: { comment: { type: 'string' }, homeOffice: { type: 'boolean', description: 'Working from home today (only when the user says so)' } } },
   async run(args, ctx) {
-    const res = await ctx.get(WorkTimeController).checkIn(ctx.orgId, { comment: str(args.comment) }, ctx.req) as { ok: boolean; error?: string; checkIn?: string };
+    const res = await ctx.get(WorkTimeController).checkIn(ctx.orgId, { comment: str(args.comment), homeOffice: args.homeOffice === true }, ctx.req) as { ok: boolean; error?: string; checkIn?: string };
     return { data: res.checkIn ? { ...res, checkIn: ctx.local(res.checkIn) } : res, action: res.ok ? 'Checked in.' : undefined };
   },
 };

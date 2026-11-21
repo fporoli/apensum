@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNo
 import {
   AppBar,
   Box,
+  Button,
   Chip,
   Collapse,
   Container,
@@ -695,15 +696,28 @@ export default function App() {
 
             {orgId && (
               <Tooltip title={`${t('assistant.title')} (Ctrl+/)`}>
-                <IconButton
+                {/* A labelled pill, not a bare icon, so the assistant is found; just the icon on a phone. */}
+                <Button
                   color="inherit"
+                  variant="outlined"
                   aria-label={t('assistant.title')}
                   aria-pressed={assistantOpen}
                   onClick={() => setAssistantOpen((open) => !open)}
-                  sx={{ bgcolor: assistantOpen ? 'rgba(255,255,255,0.18)' : undefined }}
+                  startIcon={<AutoAwesomeIcon />}
+                  sx={{
+                    borderRadius: 999,
+                    borderColor: 'rgba(255,255,255,0.6)',
+                    bgcolor: assistantOpen ? 'rgba(255,255,255,0.24)' : 'rgba(255,255,255,0.1)',
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    minWidth: 0,
+                    px: { xs: 1, sm: 1.75 },
+                    '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.75 }, ml: { xs: 0, sm: -0.25 } },
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.28)', borderColor: 'common.white' },
+                  }}
                 >
-                  <AutoAwesomeIcon fontSize="small" />
-                </IconButton>
+                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('assistant.title')}</Box>
+                </Button>
               </Tooltip>
             )}
 

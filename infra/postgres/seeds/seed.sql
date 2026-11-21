@@ -64,6 +64,10 @@ SET settings = o.settings || jsonb_build_object('holidayRegion', v.region)
 FROM (VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'ZH'), ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'GE')) AS v(id, region)
 WHERE o.id = v.id::uuid AND NOT jsonb_exists(o.settings, 'holidayRegion');
 
+-- Acme marks home-office sessions (work-time settings `homeOffice`, off by default). Only set while unset.
+UPDATE organizations SET settings = settings || '{"homeOffice": true}'::jsonb
+WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid AND NOT jsonb_exists(settings, 'homeOffice');
+
 INSERT INTO roles(id, organization_id, "name", description, is_system_role, settings, translations, admin_user_ids) VALUES
   ('00000000-0000-0000-0000-000000000001'::uuid, NULL, 'owner', 'Full organization owner and legal contact', true, '{}'::jsonb, '{}'::jsonb, '{}'),
   ('00000000-0000-0000-0000-000000000002'::uuid, NULL, 'admin', 'Organization administrator', true, '{}'::jsonb, '{}'::jsonb, '{}'),

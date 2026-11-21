@@ -90,6 +90,7 @@ test('parseWorkTimeSettings applies defaults and ignores bad values', () => {
     balancesStartDate: null,
     legalMaxWeeklyMinutes: 2700,
     legalOvertimeYearLimitMinutes: 10200,
+    homeOffice: false,
   });
   assert.deepEqual(
     parseWorkTimeSettings({
@@ -112,6 +113,7 @@ test('parseWorkTimeSettings applies defaults and ignores bad values', () => {
       balancesStartDate: '2026-01-01',
       legalMaxWeeklyMinutes: 3000,
       legalOvertimeYearLimitMinutes: 8400,
+      homeOffice: false,
     },
   );
   assert.equal(parseWorkTimeSettings({ holidayRegion: 'XX' }).holidayRegion, null);

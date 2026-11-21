@@ -181,6 +181,7 @@ export class WorkSchedulesController {
       balancesStartDate?: string | null;
       legalMaxWeeklyMinutes?: number;
       legalOvertimeYearLimitMinutes?: number | null;
+      homeOffice?: boolean;
     },
     @Req() req: AuthenticatedRequest,
   ) {
@@ -222,6 +223,10 @@ export class WorkSchedulesController {
       if (l === null) remove.push('legalOvertimeYearLimitMinutes');
       else if (!Number.isInteger(l) || l < 0 || l > 500 * 60) return { ok: false, error: 'invalid-legal-limit' };
       else patch.legalOvertimeYearLimitMinutes = l;
+    }
+    if (body.homeOffice !== undefined) {
+      if (typeof body.homeOffice !== 'boolean') return { ok: false, error: 'invalid-home-office' };
+      patch.homeOffice = body.homeOffice;
     }
     if (body.balancesStartDate !== undefined) {
       if (body.balancesStartDate === null) remove.push('balancesStartDate');

@@ -40,7 +40,7 @@ test('WorkTimeController.list rejects non-admin/non-manager querying peer entrie
     return { rows: [] };
   });
 
-  const controller = new WorkTimeController(mockDb, mockWorkTimeService, mockVersionsService);
+  const controller = new WorkTimeController(mockDb, mockWorkTimeService, mockVersionsService, {} as never);
   const req: AuthenticatedRequest = {
     user: { kind: 'local', sub: 'employee-1' },
   } as any;
@@ -59,7 +59,7 @@ test('WorkTimeController.list permits manager querying direct report entries', a
     return { rows: [] };
   });
 
-  const controller = new WorkTimeController(mockDb, mockWorkTimeService, mockVersionsService);
+  const controller = new WorkTimeController(mockDb, mockWorkTimeService, mockVersionsService, {} as never);
   const req: AuthenticatedRequest = {
     user: { kind: 'local', sub: 'manager-1' },
   } as any;

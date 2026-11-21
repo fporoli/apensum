@@ -1,12 +1,30 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { and, asc, eq, getTableColumns, gte, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, gte, inArray, isNull, lt, lte, ne, or } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { WorkTimeService } from './work-time.service';
 import { VersionsService } from './versions.service';
-import { isLongSession } from '@worktime3/shared/worktime';
+import { addDays, isLongSession } from '@worktime3/shared/worktime';
 import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, listableUserIds, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { organization_memberships, users, work_times } from './db/schema';
+import { absences, organization_memberships, users, work_times } from './db/schema';
+import { clientIp } from './client-ip';
+import { crossesMonthEnd, dayContextFrom, dayContextTo, dayFindings, overlappingSessions, splitAtMonthEnds } from './work-time-day';
+import { WorkTimeModelService } from './work-time-model.service';
+import { zonedTime } from './report-schedule';
+
+/** A session as the API returns it: everything but `client_ip`, which is stored and never shown (085). */
+const { client_ip: _hiddenIp, ...SESSION_COLUMNS } = getTableColumns(work_times);
+
+/** A session's values for the version history, without the client's address. */
+function historyValues<T extends { client_ip?: unknown }>(values: T): Omit<T, 'client_ip'> {
+  const { client_ip: _ip, ...rest } = values;
+  return rest;
+}
+
+/** The refusal for a session that overlaps another of the person's (open sessions run until closed). */
+function overlapError(other: { id: string; check_in: string; check_out: string | null }) {
+  return { ok: false as const, error: 'overlap', overlap: { id: other.id, checkIn: other.check_in, checkOut: other.check_out } };
+}
 
 /** The permission object behind each page's time records (`time-record-people?kind=`). */
 export const TIME_RECORD_OBJECTS: Record<string, string> = {
@@ -22,11 +40,12 @@ export class WorkTimeController {
     private readonly db: DbService,
     private readonly wt: WorkTimeService,
     private readonly versions: VersionsService,
+    private readonly model: WorkTimeModelService,
   ) {}
 
   /** Starts a new session. Only one may be open (no `check_out`) per person at a time, across every org. */
   @Post('organizations/:orgId/work-time/check-in')
-  async checkIn(@Param('orgId') orgId: string, @Body() body: { comment?: string }, @Req() req: AuthenticatedRequest) {
+  async checkIn(@Param('orgId') orgId: string, @Body() body: { comment?: string; homeOffice?: boolean }, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const userId = req.user ? await callerUserId(db, req.user) : null;
@@ -38,10 +57,16 @@ export class WorkTimeController {
 
     const open = await this.findOpenSession(db, userId);
     if (open) return { ok: false, error: 'already-checked-in' };
+    // A session that runs from now on must not meet one recorded later (an entry added by hand).
+    const clash = await this.overlapping(db, orgId, userId, now, null);
+    if (clash) return overlapError(clash);
 
-    const values = { user_id: userId, organization_id: orgId, check_in: now, comment: body.comment ?? null };
+    const values = {
+      user_id: userId, organization_id: orgId, check_in: now, comment: body.comment ?? null,
+      home_office: body.homeOffice === true && (await this.model.settings(db, orgId)).homeOffice, client_ip: clientIp(req),
+    };
     const [row] = await db.insert(work_times).values(values).returning({ id: work_times.id });
-    void this.versions.record('work_times', row.id, 'insert', userId, { id: row.id, ...values }).catch(() => {});
+    void this.versions.record('work_times', row.id, 'insert', userId, { id: row.id, ...historyValues(values) }).catch(() => {});
     return { ok: true, id: row.id, checkIn: now };
   }
 
@@ -64,10 +89,21 @@ export class WorkTimeController {
     if (isLongSession(open.check_in, now) && !body?.acknowledgeLongSession) {
       return { ok: false, error: 'long-session-confirm', checkIn: open.check_in };
     }
-    const patch = { check_out: now };
+    // A session past a month end is cut there (each month is its own timesheet): the open row ends at
+    // midnight of the 1st, the rest becomes a session of the new month, home office and comment kept.
+    const pieces = splitAtMonthEnds(open.check_in, now, await this.model.timeZone(db, userId));
+    const patch = { check_out: pieces[0].end };
     await db.update(work_times).set(patch).where(eq(work_times.id, open.id));
     void this.versions.record('work_times', open.id, 'update_delta', userId, patch).catch(() => {});
-    return { ok: true, id: open.id, checkOut: now };
+    for (const piece of pieces.slice(1)) {
+      const values = {
+        user_id: userId, organization_id: open.organization_id, check_in: piece.start, check_out: piece.end,
+        comment: open.comment, home_office: open.home_office, client_ip: clientIp(req),
+      };
+      const [row] = await db.insert(work_times).values(values).returning({ id: work_times.id });
+      void this.versions.record('work_times', row.id, 'insert', userId, { id: row.id, ...historyValues(values) }).catch(() => {});
+    }
+    return { ok: true, id: open.id, checkOut: now, ...(pieces.length > 1 ? { splitAtMonthEnd: pieces.length - 1 } : {}) };
   }
 
   /** The caller's currently-open session, if any — drives the frontend button's initial state. */
@@ -88,7 +124,7 @@ export class WorkTimeController {
   async addEntry(
     @Param('orgId') orgId: string,
     @Param('userId') targetUserId: string,
-    @Body() body: { checkIn?: string; checkOut?: string; comment?: string; acknowledgeLongSession?: boolean },
+    @Body() body: { checkIn?: string; checkOut?: string; comment?: string; homeOffice?: boolean; acknowledgeLongSession?: boolean },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -104,10 +140,16 @@ export class WorkTimeController {
     }
     // Every month the session touches must be open (a night shift on the 31st reaches the 1st).
     if (await isPeriodLocked(db, orgId, targetUserId, checkIn, checkOut)) return { ok: false, error: 'period-locked' };
+    if (crossesMonthEnd(checkIn, checkOut, await this.model.timeZone(db, targetUserId))) return { ok: false, error: 'crosses-month' };
+    const clash = await this.overlapping(db, orgId, targetUserId, checkIn, checkOut);
+    if (clash) return overlapError(clash);
     if (isLongSession(checkIn, checkOut) && !body.acknowledgeLongSession) return { ok: false, error: 'long-session-confirm' };
-    const values = { user_id: targetUserId, organization_id: orgId, check_in: checkIn, check_out: checkOut, comment: body.comment?.trim() || null };
+    const values = {
+      user_id: targetUserId, organization_id: orgId, check_in: checkIn, check_out: checkOut, comment: body.comment?.trim() || null,
+      home_office: body.homeOffice === true && (await this.model.settings(db, orgId)).homeOffice, client_ip: clientIp(req),
+    };
     const [row] = await db.insert(work_times).values(values).returning({ id: work_times.id });
-    void this.versions.record('work_times', row.id, 'insert', callerId, { id: row.id, ...values }).catch(() => {});
+    void this.versions.record('work_times', row.id, 'insert', callerId, { id: row.id, ...historyValues(values) }).catch(() => {});
     return { ok: true, id: row.id };
   }
 
@@ -169,7 +211,7 @@ export class WorkTimeController {
     if (to) conditions.push(lt(work_times.check_in, to));
 
     const rows = await db
-      .select(getTableColumns(work_times))
+      .select(SESSION_COLUMNS)
       .from(work_times)
       .where(and(...conditions))
       .orderBy(asc(work_times.check_in));
@@ -185,7 +227,7 @@ export class WorkTimeController {
   @Patch('work-time/:id')
   async update(
     @Param('id') id: string,
-    @Body() body: { checkIn?: string; checkOut?: string | null; comment?: string; acknowledgeLongSession?: boolean },
+    @Body() body: { checkIn?: string; checkOut?: string | null; comment?: string; homeOffice?: boolean; acknowledgeLongSession?: boolean },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -204,6 +246,11 @@ export class WorkTimeController {
       if (owned.entry.organization_id && (await isPeriodLocked(db, owned.entry.organization_id, owned.entry.user_id, checkIn, checkOut))) {
         return { ok: false, error: 'period-locked' };
       }
+      if (checkOut && crossesMonthEnd(checkIn, checkOut, await this.model.timeZone(db, owned.entry.user_id))) return { ok: false, error: 'crosses-month' };
+      if (owned.entry.organization_id) {
+        const clash = await this.overlapping(db, owned.entry.organization_id, owned.entry.user_id, checkIn, checkOut, id);
+        if (clash) return overlapError(clash);
+      }
       if (checkOut && isLongSession(checkIn, checkOut) && !body.acknowledgeLongSession) return { ok: false, error: 'long-session-confirm' };
     }
 
@@ -211,8 +258,12 @@ export class WorkTimeController {
     if (body.checkIn !== undefined) patch.check_in = body.checkIn;
     if (body.checkOut !== undefined) patch.check_out = body.checkOut;
     if (body.comment !== undefined) patch.comment = body.comment;
+    // The mark only changes while the organization uses it (work-time settings `homeOffice`).
+    if (typeof body.homeOffice === 'boolean' && owned.entry.organization_id && (await this.model.settings(db, owned.entry.organization_id)).homeOffice) {
+      patch.home_office = body.homeOffice;
+    }
     if (Object.keys(patch).length === 0) return { ok: true };
-    await db.update(work_times).set(patch).where(eq(work_times.id, id));
+    await db.update(work_times).set({ ...patch, client_ip: clientIp(req) }).where(eq(work_times.id, id));
     void this.versions.record('work_times', id, 'update_delta', owned.userId, patch).catch(() => {});
     return { ok: true };
   }
@@ -228,9 +279,94 @@ export class WorkTimeController {
     return { ok: true };
   }
 
+  /**
+   * What the entry dialog shows under a session of `date` (the person's local day) while it is edited:
+   * the day's sessions, the person's absences that day, which sessions the draft (`checkIn`/`checkOut`,
+   * empty end = still running; `excludeId` = the session being edited) overlaps, which refuses a save,
+   * and the Working Hours Act hints for the day with the draft in place (work-time-day.ts). Read access
+   * as for the person's work time.
+   */
+  @Get('organizations/:orgId/users/:userId/work-time/day')
+  async day(
+    @Param('orgId') orgId: string,
+    @Param('userId') targetUserId: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('date') date?: string,
+    @Query('checkIn') checkIn?: string,
+    @Query('checkOut') checkOut?: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    const empty = { entries: [], absences: [], overlaps: [], findings: [] };
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true, ...empty };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', ...empty };
+    if (targetUserId !== callerId && !(await canSeeUserData(db, orgId, callerId, 'nav.workTime', targetUserId))) return { ok: false, error: 'forbidden', ...empty };
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'invalid-date', ...empty };
+    const draft = checkIn && !Number.isNaN(Date.parse(checkIn))
+      ? { id: excludeId || null, checkIn, checkOut: checkOut && !Number.isNaN(Date.parse(checkOut)) ? checkOut : null }
+      : null;
+
+    const [settings, timeZone] = await Promise.all([this.model.settings(db, orgId), this.model.timeZone(db, targetUserId)]);
+    const [sessions, dayAbsences] = await Promise.all([
+      db
+        .select({ id: work_times.id, check_in: work_times.check_in, check_out: work_times.check_out, comment: work_times.comment, home_office: work_times.home_office })
+        .from(work_times)
+        .where(and(
+          eq(work_times.organization_id, orgId),
+          eq(work_times.user_id, targetUserId),
+          gte(work_times.check_in, `${dayContextFrom(date)}T00:00:00Z`),
+          lt(work_times.check_in, `${addDays(dayContextTo(date), 1)}T00:00:00Z`),
+        ))
+        .orderBy(asc(work_times.check_in)),
+      db
+        .select({ id: absences.id, absence_type: absences.absence_type, status: absences.status, half_day: absences.half_day, date_start: absences.date_start, date_end: absences.date_end })
+        .from(absences)
+        .where(and(
+          eq(absences.organization_id, orgId),
+          eq(absences.user_id, targetUserId),
+          lte(absences.date_start, date),
+          gte(absences.date_end, date),
+          inArray(absences.status, ['pending', 'approved']),
+        )),
+    ]);
+    // The day's sessions: those that start on it or reach into it, in the person's zone.
+    const dayStart = zonedTime(date, 0, timeZone).getTime();
+    const dayEnd = zonedTime(addDays(date, 1), 0, timeZone).getTime();
+    const entries = sessions.filter((x) => Date.parse(x.check_in) < dayEnd && (x.check_out === null || Date.parse(x.check_out) > dayStart) && x.id !== draft?.id);
+    // An open session that began before the loaded weeks still meets the draft.
+    const open = await this.findOpenSession(db, targetUserId);
+    const candidates = open && open.organization_id === orgId && !sessions.some((x) => x.id === open.id) ? [...sessions, open] : sessions;
+    const overlaps = draft ? overlappingSessions(candidates, draft.checkIn, draft.checkOut, draft.id).map((x) => x.id) : [];
+    const findings = dayFindings(sessions, draft, date, {
+      timeZone,
+      maxWeeklyMinutes: settings.legalMaxWeeklyMinutes,
+      yearLimitMinutes: settings.legalOvertimeYearLimitMinutes,
+    });
+    return { ok: true, timeZone, entries, absences: dayAbsences, overlaps, findings };
+  }
+
+  /** The person's first session in this organization that [start, end) overlaps (end null = still running), `excludeId` left out. */
+  private async overlapping(db: Db, orgId: string, userId: string, start: string, end: string | null, excludeId?: string) {
+    const conditions = [
+      eq(work_times.organization_id, orgId),
+      eq(work_times.user_id, userId),
+      or(isNull(work_times.check_out), gt(work_times.check_out, start)),
+    ];
+    if (end !== null) conditions.push(lt(work_times.check_in, end));
+    if (excludeId) conditions.push(ne(work_times.id, excludeId));
+    const [row] = await db
+      .select({ id: work_times.id, check_in: work_times.check_in, check_out: work_times.check_out })
+      .from(work_times)
+      .where(and(...conditions))
+      .orderBy(asc(work_times.check_in))
+      .limit(1);
+    return row ?? null;
+  }
+
   private async findOpenSession(db: Db, userId: string) {
     const [row] = await db
-      .select(getTableColumns(work_times))
+      .select(SESSION_COLUMNS)
       .from(work_times)
       .where(and(eq(work_times.user_id, userId), isNull(work_times.check_out)));
     return row ?? null;

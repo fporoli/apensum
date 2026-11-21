@@ -44,7 +44,7 @@ function sqlParams(query: any): any[] {
 }
 
 /** Answers access.ts's raw queries from the cast above; `locked` makes every month submitted. */
-function fakeDb(opts: { locked?: boolean; row?: Record<string, unknown> } = {}) {
+function fakeDb(opts: { locked?: boolean; row?: Record<string, unknown>; clash?: Record<string, unknown> } = {}) {
   const updates: any[] = [];
   const inserts: any[] = [];
   const db: any = {
@@ -64,7 +64,10 @@ function fakeDb(opts: { locked?: boolean; row?: Record<string, unknown> } = {}) 
     from: () => db,
     leftJoin: () => db,
     innerJoin: () => db,
-    where: async () => (opts.row ? [opts.row] : []),
+    // A plain where answers the row; ordered and limited, it is the overlap check (work-time.controller.ts).
+    where: () => Object.assign(Promise.resolve(opts.row ? [opts.row] : []), {
+      orderBy: () => ({ limit: async () => (opts.clash ? [opts.clash] : []) }),
+    }),
     update: () => ({ set: (v: any) => ({ where: async () => { updates.push(v); } }) }),
     delete: () => ({ where: async () => {} }),
     insert: () => ({ values: (v: any) => { inserts.push(v); return { returning: async () => [{ id: 'new' }] }; } }),
@@ -74,6 +77,7 @@ function fakeDb(opts: { locked?: boolean; row?: Record<string, unknown> } = {}) 
 
 const as = (sub: string) => ({ user: { kind: 'local', sub } }) as unknown as AuthenticatedRequest;
 const versions = { record: async () => {} } as unknown as VersionsService;
+const zurich = { timeZone: async () => 'Europe/Zurich', settings: async () => ({ homeOffice: false }) } as unknown as WorkTimeModelService;
 const audit = { record: async () => {} } as unknown as AuditService;
 
 test('canEditUserData: the person, their manager and HR; not a peer', async () => {
@@ -87,7 +91,7 @@ test('canEditUserData: the person, their manager and HR; not a peer', async () =
 test('work time: manager and HR correct an entry while the month is open, a peer may not', async () => {
   const entry = { user_id: 'emp', organization_id: 'org', check_in: '2026-11-02T07:00:00Z', check_out: '2026-11-02T16:00:00Z' };
   const patch = { checkOut: '2026-11-02T17:00:00Z' };
-  const controller = (locked = false) => new WorkTimeController(fakeDb({ row: entry, locked }).service, {} as WorkTimeService, versions);
+  const controller = (locked = false) => new WorkTimeController(fakeDb({ row: entry, locked }).service, {} as WorkTimeService, versions, zurich);
   assert.deepEqual(await controller().update('w1', patch, as('boss')), { ok: true });
   assert.deepEqual(await controller().update('w1', patch, as('hr')), { ok: true });
   assert.deepEqual(await controller().update('w1', patch, as('peer')), { ok: false, error: 'forbidden' });
@@ -100,7 +104,7 @@ test('work time: a manual entry for someone else needs their manager or HR, and 
   const body = { checkIn: '2026-11-03T07:00:00Z', checkOut: '2026-11-03T15:00:00Z' };
   const setup = (locked = false) => {
     const f = fakeDb({ locked });
-    return { ...f, controller: new WorkTimeController(f.service, {} as WorkTimeService, versions) };
+    return { ...f, controller: new WorkTimeController(f.service, {} as WorkTimeService, versions, zurich) };
   };
   const ok = setup();
   assert.deepEqual(await ok.controller.addEntry('org', 'emp', body, as('hr')), { ok: true, id: 'new' });
@@ -111,6 +115,16 @@ test('work time: a manual entry for someone else needs their manager or HR, and 
     await setup().controller.addEntry('org', 'emp', { checkIn: body.checkOut, checkOut: body.checkIn }, as('emp')),
     { ok: false, error: 'invalid-range' },
   );
+});
+
+test('work time: a session overlapping another of the person is refused, naming the other one', async () => {
+  const clash = { id: 'w9', check_in: '2026-11-03T12:00:00Z', check_out: '2026-11-03T16:00:00Z' };
+  const f = fakeDb({ clash, row: { user_id: 'emp', organization_id: 'org', check_in: '2026-11-03T07:00:00Z', check_out: '2026-11-03T11:00:00Z' } });
+  const controller = new WorkTimeController(f.service, {} as WorkTimeService, versions, zurich);
+  const refused = { ok: false, error: 'overlap', overlap: { id: 'w9', checkIn: clash.check_in, checkOut: clash.check_out } };
+  assert.deepEqual(await controller.addEntry('org', 'emp', { checkIn: '2026-11-03T13:00:00Z', checkOut: '2026-11-03T14:00:00Z' }, as('emp')), refused);
+  assert.deepEqual(await controller.update('w1', { checkOut: '2026-11-03T13:00:00Z' }, as('emp')), refused);
+  assert.equal(f.inserts.length + f.updates.length, 0);
 });
 
 test('project time: booked for someone else only by their manager or HR', async () => {

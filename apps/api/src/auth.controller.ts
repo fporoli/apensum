@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { clientIp } from './client-ip';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { Public, type AuthenticatedRequest } from './jwt.guard';
@@ -486,8 +487,3 @@ export class AuthController {
   }
 }
 
-/** Behind the edge Caddy, which sets X-Forwarded-For to the client it saw. */
-function clientIp(req: Request): string {
-  const forwarded = String(req.headers?.['x-forwarded-for'] ?? '').split(',')[0].trim();
-  return forwarded || req.socket?.remoteAddress || 'unknown';
-}

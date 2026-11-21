@@ -102,7 +102,7 @@ test('work_time_add records each slot through the Work time endpoint as the call
     ],
   }, ctx);
   assert.equal(calls.length, 3, 'the slot ending before it starts is refused without a call');
-  assert.deepEqual(calls[0], ['org-1', 'me', { checkIn: '2026-11-19T07:00:00.000Z', checkOut: '2026-11-19T11:00:00.000Z', comment: 'morning', acknowledgeLongSession: false }, ctx.req]);
+  assert.deepEqual(calls[0], ['org-1', 'me', { checkIn: '2026-11-19T07:00:00.000Z', checkOut: '2026-11-19T11:00:00.000Z', comment: 'morning', homeOffice: false, acknowledgeLongSession: false }, ctx.req]);
   assert.deepEqual((calls[2][2] as { checkOut: string }).checkOut, '2026-11-19T01:00:00.000Z');
   const results = (result.data as { results: { ok: boolean; error?: string }[] }).results;
   assert.deepEqual(results.map((r) => r.ok), [true, false, false, true]);

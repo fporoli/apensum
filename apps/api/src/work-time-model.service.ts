@@ -45,6 +45,8 @@ export interface WorkTimeSettings {
   legalMaxWeeklyMinutes: number;
   /** Überzeit allowed per year (ArG art. 12): 170 h at a 45 h maximum, 140 h at 50 h, unless set. */
   legalOvertimeYearLimitMinutes: number;
+  /** Sessions can be marked as home office (check-in and entry form); off by default. */
+  homeOffice: boolean;
 }
 
 export const DEFAULT_OVERTIME_ALERT_MINUTES = 50 * 60;
@@ -67,6 +69,7 @@ export function parseWorkTimeSettings(settings: unknown): WorkTimeSettings {
     balancesStartDate: isIsoDate(s.balancesStartDate) ? s.balancesStartDate : null,
     legalMaxWeeklyMinutes: legalMax,
     legalOvertimeYearLimitMinutes: nonNegative(s.legalOvertimeYearLimitMinutes, defaultLegalOvertimeYearLimit(legalMax)),
+    homeOffice: s.homeOffice === true,
   };
 }
 

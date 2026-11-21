@@ -38,6 +38,7 @@ interface Settings {
   balancesStartDate: string | null;
   legalMaxWeeklyMinutes: number;
   legalOvertimeYearLimitMinutes: number;
+  homeOffice: boolean;
 }
 
 /** The Swiss legal yearly Überzeit limit for a weekly maximum (mirrors the shared worktime rule). */
@@ -76,6 +77,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
   const [fullTime, setFullTime] = useState('40:00');
   const [region, setRegion] = useState('');
   const [tolerance, setTolerance] = useState('15');
+  const [homeOffice, setHomeOffice] = useState(false);
   const [vacationDays, setVacationDays] = useState('25');
   const [overtimeAlert, setOvertimeAlert] = useState('50');
   const [undertimeAlert, setUndertimeAlert] = useState('20');
@@ -98,6 +100,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
         setFullTime(formatHm(s.fullTimeWeeklyMinutes));
         setRegion(s.holidayRegion ?? '');
         setTolerance(String(s.projectTimeToleranceMinutes));
+        setHomeOffice(!!s.homeOffice);
         setVacationDays(formatLocaleNumber(s.vacationDaysPerYear, locale));
         setOvertimeAlert(String(Math.round(s.overtimeAlertMinutes / 60)));
         setUndertimeAlert(String(Math.round(s.undertimeAlertMinutes / 60)));
@@ -202,6 +205,7 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
               overtimeAlertMinutes,
               undertimeAlertMinutes,
               balancesStartDate: balancesStart || null,
+              homeOffice,
               legalMaxWeeklyMinutes: legalMax,
               // The law's value is stored as "default", so it follows a change of the weekly maximum.
               legalOvertimeYearLimitMinutes: legalLimitMinutes === legalDefaultLimitHours(legalMax) * 60 ? null : legalLimitMinutes,
@@ -313,6 +317,13 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
           InputLabelProps={{ shrink: true }}
           sx={{ width: 260 }}
         />
+        <Box sx={{ width: 300 }}>
+          <FormControlLabel
+            control={<Checkbox size="small" checked={homeOffice} onChange={(e) => setHomeOffice(e.target.checked)} disabled={!canEdit} />}
+            label={t('workTimeSettings.homeOffice')}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 4 }}>{t('workTimeSettings.homeOfficeHelper')}</Typography>
+        </Box>
         {canEdit && (
           <Button type="submit" variant="contained" sx={{ height: 40 }} disabled={!settingsValid || busy}>{t('common.save')}</Button>
         )}

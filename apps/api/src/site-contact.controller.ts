@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 import { Public } from './jwt.guard';
 import { sendMail, type MailOptions } from './mailer';
 import { isValidEmail } from './auth.controller';
+import { clientIp } from './client-ip';
 
 /** Per sender address (IP) and per hour. */
 export const CONTACT_LIMIT_PER_IP = 5;
@@ -169,8 +170,4 @@ export class SiteContactController {
   }
 }
 
-/** Behind the edge Caddy, which sets X-Forwarded-For to the client it saw. */
-export function clientIp(req: Request): string {
-  const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-  return forwarded || req.socket?.remoteAddress || 'unknown';
-}
+export { clientIp };
