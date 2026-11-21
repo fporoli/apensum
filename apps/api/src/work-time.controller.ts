@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { and, asc, eq, getTableColumns, gt, gte, inArray, isNull, lt, lte, ne, or } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { WorkTimeService } from './work-time.service';
 import { VersionsService } from './versions.service';
@@ -348,12 +348,14 @@ export class WorkTimeController {
 
   /** The person's first session in this organization that [start, end) overlaps (end null = still running), `excludeId` left out. */
   private async overlapping(db: Db, orgId: string, userId: string, start: string, end: string | null, excludeId?: string) {
+    // Shared time of a minute or more (MIN_OVERLAP_MS): seconds from check-in/check-out don't count.
     const conditions = [
       eq(work_times.organization_id, orgId),
       eq(work_times.user_id, userId),
-      or(isNull(work_times.check_out), gt(work_times.check_out, start)),
+      or(isNull(work_times.check_out), gt(work_times.check_out, sql`${start}::timestamptz + interval '1 minute'`)),
     ];
-    if (end !== null) conditions.push(lt(work_times.check_in, end));
+    if (end !== null) conditions.push(lt(work_times.check_in, sql`${end}::timestamptz - interval '1 minute'`));
+    conditions.push(sql`least(coalesce(${work_times.check_out}, 'infinity'::timestamptz), ${end ?? 'infinity'}::timestamptz) - greatest(${work_times.check_in}, ${start}::timestamptz) >= interval '1 minute'`);
     if (excludeId) conditions.push(ne(work_times.id, excludeId));
     const [row] = await db
       .select({ id: work_times.id, check_in: work_times.check_in, check_out: work_times.check_out })

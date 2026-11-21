@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -714,15 +715,19 @@ function DayPanel({ context, date, homeOfficeEnabled, absenceLabel }: {
   absenceLabel: (type: string) => string;
 }) {
   const { t, locale } = useI18n();
+  // The Act hints take room only when asked for: one line with their number, opened on a click.
+  const [hintsOpen, setHintsOpen] = useState(false);
   const clashes = context.entries.filter((e) => context.overlaps.includes(e.id));
   // An open session from an earlier day is not in the day's list but still blocks.
   const hiddenClash = context.overlaps.length > clashes.length;
   const sameDay = (iso: string) => dayjs(iso).format('YYYY-MM-DD') === date;
   const timeOf = (iso: string) => (sameDay(iso) ? formatTime(iso, locale) : formatDateTime(iso, locale));
+  const hasDay = context.entries.length > 0 || context.absences.length > 0;
+  if (!hasDay && context.findings.length === 0 && context.overlaps.length === 0) return null;
   return (
-    <Box sx={{ display: 'grid', gap: 1, mt: 0.5 }}>
+    <Box sx={{ display: 'grid', gap: 1 }}>
       {(clashes.length > 0 || hiddenClash) && (
-        <Alert severity="error">
+        <Alert severity="error" sx={{ py: 0 }}>
           {clashes.length > 0
             ? t('workTime.overlap', {
                 from: timeOf(clashes[0].check_in),
@@ -731,63 +736,82 @@ function DayPanel({ context, date, homeOfficeEnabled, absenceLabel }: {
             : t('workTime.overlapRefused')}
         </Alert>
       )}
-      <Typography variant="subtitle2">{t('workTime.sameDay')}</Typography>
-      {context.entries.length === 0 && context.absences.length === 0 && (
-        <Typography variant="body2" color="text.secondary">{t('workTime.sameDayNothing')}</Typography>
-      )}
-      {context.entries.length > 0 && (
-        <Table size="small">
-          <TableBody>
-            {context.entries.map((e) => {
-              const clash = context.overlaps.includes(e.id);
-              return (
-                <TableRow key={e.id} sx={clash ? { bgcolor: 'error.light', '& td': { color: 'error.contrastText' } } : undefined}>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {timeOf(e.check_in)} – {e.check_out ? timeOf(e.check_out) : t('workTime.running')}
-                  </TableCell>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDuration(e.check_in, e.check_out)}</TableCell>
-                  <TableCell sx={{ width: '100%' }}>
-                    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
-                      {homeOfficeEnabled && e.home_office && <HomeIcon fontSize="small" aria-label={t('workTime.homeOffice')} />}
-                      {e.comment || ''}
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
-      {context.absences.length > 0 && (
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          {context.absences.map((a) => (
-            <Chip
-              key={a.id}
-              size="small"
-              color={a.status === 'approved' ? 'info' : 'default'}
-              variant="outlined"
-              label={[
-                absenceLabel(a.absence_type),
-                a.half_day ? t('workTime.absenceHalfDay') : null,
-                a.status === 'pending' ? t('workTime.absencePending') : null,
-              ].filter(Boolean).join(' · ')}
-            />
-          ))}
+      {hasDay && (
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            {t('workTime.sameDay')}
+          </Typography>
+          {context.entries.length > 0 && (
+            // About five rows; more scroll within the list, not the dialog.
+            <Box sx={{ maxHeight: 150, overflowY: 'auto', border: 1, borderColor: 'divider', borderRadius: 1, mt: 0.5 }}>
+              {context.entries.map((e) => {
+                const clash = context.overlaps.includes(e.id);
+                return (
+                  <Box
+                    key={e.id}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.5, px: 1.25, py: 0.5,
+                      '& + &': { borderTop: 1, borderColor: 'divider' },
+                      ...(clash ? { bgcolor: 'error.main', color: 'error.contrastText' } : {}),
+                    }}
+                  >
+                    <Typography variant="body2" sx={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      {timeOf(e.check_in)} – {e.check_out ? timeOf(e.check_out) : t('workTime.running')}
+                    </Typography>
+                    <Typography variant="body2" sx={{ whiteSpace: 'nowrap', opacity: 0.8, fontVariantNumeric: 'tabular-nums' }}>
+                      {formatDuration(e.check_in, e.check_out)}
+                    </Typography>
+                    {homeOfficeEnabled && e.home_office && <HomeIcon fontSize="small" aria-label={t('workTime.homeOffice')} />}
+                    <Typography variant="body2" noWrap sx={{ minWidth: 0, opacity: 0.8 }}>{e.comment || ''}</Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+          {context.absences.length > 0 && (
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 0.75 }}>
+              {context.absences.map((a) => (
+                <Chip
+                  key={a.id}
+                  size="small"
+                  color={a.status === 'approved' ? 'info' : 'default'}
+                  variant="outlined"
+                  label={[
+                    absenceLabel(a.absence_type),
+                    a.half_day ? t('workTime.absenceHalfDay') : null,
+                    a.status === 'pending' ? t('workTime.absencePending') : null,
+                  ].filter(Boolean).join(' · ')}
+                />
+              ))}
+            </Box>
+          )}
         </Box>
       )}
       {context.findings.length > 0 && (
-        <Alert severity="warning">
-          <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{t('workTime.actHints')}</Typography>
-          <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
-            {context.findings.map((f, i) => (
-              <li key={i}>
-                <Typography variant="body2">
-                  {t(f.check === 'dailyRest' && f.after ? 'workTime.act.dailyRestAfter' : `workTime.act.${f.check}`, { duration: formatDurationMinutes(f.minutes) })}
-                </Typography>
-              </li>
-            ))}
-          </Box>
-          <Typography variant="caption" color="text.secondary">{t('workTime.actHintsNote')}</Typography>
+        <Alert
+          severity="warning"
+          sx={{ py: 0, '& .MuiAlert-message': { width: '100%' } }}
+          action={
+            <Button color="inherit" size="small" onClick={() => setHintsOpen((o) => !o)} aria-expanded={hintsOpen}>
+              {hintsOpen ? t('workTime.actHintsHide') : t('workTime.actHintsShow')}
+            </Button>
+          }
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: '30px' }}>
+            {t('workTime.actHintsCount', { count: String(context.findings.length) })}
+          </Typography>
+          <Collapse in={hintsOpen} unmountOnExit>
+            <Box component="ul" sx={{ m: 0, mb: 0.5, pl: 2.5 }}>
+              {context.findings.map((f, i) => (
+                <li key={i}>
+                  <Typography variant="body2">
+                    {t(f.check === 'dailyRest' && f.after ? 'workTime.act.dailyRestAfter' : `workTime.act.${f.check}`, { duration: formatDurationMinutes(f.minutes) })}
+                  </Typography>
+                </li>
+              ))}
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{t('workTime.actHintsNote')}</Typography>
+          </Collapse>
         </Alert>
       )}
     </Box>

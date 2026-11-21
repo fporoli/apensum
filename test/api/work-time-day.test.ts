@@ -87,3 +87,10 @@ test('night work of a shift past midnight counts in full on the day it starts', 
   const weekend = dayFindings([], { checkIn: at('2026-11-21', '22:00'), checkOut: at('2026-11-22', '02:00') }, '2026-11-21', opts);
   assert.deepEqual(weekend.find((f) => f.check === 'sunday')?.minutes, 120);
 });
+
+test('seconds from check-in and check-out are no overlap; a shared minute is', () => {
+  // Checked out at 02:02:18, the next session typed from 02:02.
+  const other = { id: 'c', check_in: '2026-11-19T00:58:05Z', check_out: '2026-11-19T01:02:18Z' };
+  assert.equal(sessionsOverlap('2026-11-19T01:02:00Z', '2026-11-19T08:03:00Z', other), false);
+  assert.equal(sessionsOverlap('2026-11-19T01:01:00Z', '2026-11-19T08:03:00Z', other), true);
+});

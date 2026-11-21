@@ -19,13 +19,19 @@ export interface StoredSession {
   check_out: string | null;
 }
 
-/** Whether [start, end) meets a session; an open end (null) on either side runs on indefinitely. */
+/**
+ * Sessions overlap only when they share at least this long: check-in and check-out keep their seconds,
+ * while entries are typed to the minute, so a session shown as "until 02:02" may end at 02:02:18.
+ */
+export const MIN_OVERLAP_MS = 60_000;
+
+/** Whether [start, end) shares a minute or more with a session; an open end (null) on either side runs on indefinitely. */
 export function sessionsOverlap(start: string, end: string | null, other: Pick<StoredSession, 'check_in' | 'check_out'>): boolean {
   const s = Date.parse(start);
   const e = end === null ? Infinity : Date.parse(end);
   const os = Date.parse(other.check_in);
   const oe = other.check_out === null ? Infinity : Date.parse(other.check_out);
-  return s < oe && os < e;
+  return Math.min(e, oe) - Math.max(s, os) >= MIN_OVERLAP_MS;
 }
 
 /** The sessions [start, end) overlaps, the session being edited (`excludeId`) left out. */
