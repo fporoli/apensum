@@ -46,6 +46,9 @@ plugins/<id>/
 - `module` (optional) appears under Organization settings -> Modules. Switching it off removes the
   listed permission objects for everyone in the organization, so the plugin's pages disappear and its
   endpoints refuse (`can()` fails). Its texts are `modules.<id>` and `modules.<id>.description`.
+  `"licensed": true` makes it a paid module: off by default, switched only by a superdeveloper (the
+  instance's operator); admins see it marked "License" (`PUT organizations/:id/modules` returns
+  `module-licensed` to anyone else).
 - `permissions` (optional) adds permission objects to the catalogue (`packages/shared/src/permissions.ts`,
   `registerPermissionObjects`): the API grants and checks them, the roles editor lists them (navbar
   objects under Pages, sections under "Plugin sections"), `owner` holds them. An id the core or another

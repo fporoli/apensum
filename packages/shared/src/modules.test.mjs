@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { MODULES, resolveModules, validateModules, withoutDisabledModules } from './modules.ts';
+import { MODULES, licensedIn, registerModule, resolveModules, validateModules, withoutDisabledModules } from './modules.ts';
 import { permissionObject } from './permissions.ts';
 
 test('every module object is in the permission catalogue', () => {
@@ -25,4 +25,16 @@ test('a switched-off module takes its permissions away', () => {
   const held = new Set(['nav.requests:edit:own', 'nav.time:edit:own']);
   assert.deepEqual([...withoutDisabledModules(held, { requests: false })], ['nav.time:edit:own']);
   assert.equal(withoutDisabledModules(held, { requests: true }), held);
+});
+
+test('a licensed module is off by default and named by licensedIn', () => {
+  assert.throws(() => registerModule({ id: 'paid', caption: 'modules.paid', defaultEnabled: true, objects: [], licensed: true }), /off by default/);
+  registerModule({ id: 'paid', caption: 'modules.paid', defaultEnabled: false, objects: [], licensed: true });
+  try {
+    assert.equal(resolveModules(undefined).paid, false);
+    assert.deepEqual(licensedIn({ paid: true, requests: false }), ['paid']);
+    assert.deepEqual(licensedIn({ requests: false }), []);
+  } finally {
+    MODULES.splice(MODULES.findIndex((m) => m.id === 'paid'), 1);
+  }
 });

@@ -16,6 +16,11 @@ export interface ModuleDefinition {
   defaultEnabled: boolean;
   /** Permission objects (packages/shared/src/permissions.ts) that belong to the module. */
   objects: readonly string[];
+  /**
+   * A licensed (paid) module: only a superdeveloper (the instance's operator) switches it on or
+   * off for an organization; everyone else sees its state. It is off until switched on.
+   */
+  licensed?: boolean;
 }
 
 /** The core's modules, then the plugins' (registerModule). */
@@ -38,8 +43,11 @@ export function registerModule(def: ModuleDefinition): void {
   if (typeof def.caption !== 'string' || typeof def.defaultEnabled !== 'boolean' || !Array.isArray(def.objects)) {
     throw new Error(`invalid module definition: ${def.id}`);
   }
+  if (def.licensed !== undefined && typeof def.licensed !== 'boolean') throw new Error(`invalid module definition: ${def.id}`);
+  if (def.licensed && def.defaultEnabled) throw new Error(`a licensed module is off by default: ${def.id}`);
   const at = MODULES.findIndex((m) => m.id === def.id);
   const copy: ModuleDefinition = { id: def.id, caption: def.caption, defaultEnabled: def.defaultEnabled, objects: [...def.objects] };
+  if (def.licensed) copy.licensed = true;
   if (at >= 0) MODULES[at] = copy;
   else MODULES.push(copy);
 }
@@ -64,6 +72,11 @@ export function validateModules(body: unknown): { ok: true; modules: ModuleSetti
     out[id] = value;
   }
   return { ok: true, modules: out };
+}
+
+/** The licensed modules a patch switches (only a superdeveloper may). */
+export function licensedIn(patch: ModuleSettings): string[] {
+  return Object.keys(patch).filter((id) => MODULES.some((m) => m.id === id && m.licensed));
 }
 
 /** Permission objects of the modules switched off. */

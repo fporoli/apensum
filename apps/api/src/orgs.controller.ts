@@ -3,14 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { alias } from 'drizzle-orm/pg-core';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
-import { callerUserId, can, canManageRole, isOrgMember, reachesAll } from './access';
+import { callerUserId, can, canManageRole, isOrgMember, isSuperDeveloper, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { sendMail } from './mailer';
 import { isValidEmail } from './auth.controller';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { parseBranding, validateBranding, type OrgBranding } from '@worktime3/shared/branding';
-import { MODULES, resolveModules, validateModules } from '@worktime3/shared/modules';
+import { MODULES, licensedIn, resolveModules, validateModules } from '@worktime3/shared/modules';
 import {
   organizations,
   organization_memberships,
@@ -141,30 +141,36 @@ export class OrgsController {
 
   /**
    * Which optional modules (packages/shared/src/modules.ts) the organization uses, for every member
-   * (the web app hides switched-off ones); `catalogue` lists every module with its default.
+   * (the web app hides switched-off ones); `catalogue` lists every module with its default and
+   * whether it is licensed; `superDeveloper` = the caller may switch the licensed ones.
    */
   @Get(':id/modules')
   async getModules(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const catalogue = MODULES.map((m) => ({ id: m.id, caption: m.caption, defaultEnabled: m.defaultEnabled }));
+    const catalogue = MODULES.map((m) => ({ id: m.id, caption: m.caption, defaultEnabled: m.defaultEnabled, licensed: m.licensed === true }));
     const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, modules: resolveModules(undefined), catalogue };
+    if (!db) return { ok: true, offline: true, modules: resolveModules(undefined), catalogue, superDeveloper: false };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await isOrgMember(db, id, callerId))) return { ok: true, modules: resolveModules(undefined), catalogue };
+    if (!callerId || !(await isOrgMember(db, id, callerId))) return { ok: true, modules: resolveModules(undefined), catalogue, superDeveloper: false };
     const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, id));
     const settings = (org?.settings ?? {}) as Record<string, unknown>;
-    return { ok: true, modules: resolveModules(settings.modules), catalogue };
+    return { ok: true, modules: resolveModules(settings.modules), catalogue, superDeveloper: await isSuperDeveloper(db, callerId) };
   }
 
-  /** Switches modules on or off: `{ "<module id>": true|false, ... }`, merged into the stored choice. */
+  /**
+   * Switches modules on or off: `{ "<module id>": true|false, ... }`, merged into the stored choice.
+   * A licensed module (`licensed` in its definition) is switched by a superdeveloper only.
+   */
   @Put(':id/modules')
   async setModules(@Param('id') id: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    if (!(await can(db, id, callerId, 'nav.orgSettings', 'edit'))) return { ok: false, error: 'forbidden' };
+    const superDeveloper = await isSuperDeveloper(db, callerId);
+    if (!superDeveloper && !(await can(db, id, callerId, 'nav.orgSettings', 'edit'))) return { ok: false, error: 'forbidden' };
     const result = validateModules(body);
     if (!result.ok) return result;
+    if (licensedIn(result.modules).length > 0 && !superDeveloper) return { ok: false, error: 'module-licensed' };
     const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, id));
     if (!org) return { ok: false, error: 'not-found' };
     const stored = ((org.settings ?? {}) as Record<string, unknown>).modules;

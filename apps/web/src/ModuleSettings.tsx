@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, FormControlLabel, Switch, Typography } from '@mui/material';
+import { Alert, Box, Chip, FormControlLabel, Switch, Tooltip, Typography } from '@mui/material';
 import { useT } from './i18n';
 import { SectionPaper } from './SettingsSection';
 
@@ -9,6 +9,8 @@ interface ModuleEntry {
   id: string;
   caption: string;
   defaultEnabled: boolean;
+  /** Switched by a superdeveloper only (a paid module). */
+  licensed?: boolean;
 }
 
 /**
@@ -27,6 +29,7 @@ export default function ModuleSettings({
   const t = useT();
   const [catalogue, setCatalogue] = useState<ModuleEntry[]>([]);
   const [modules, setModules] = useState<Record<string, boolean>>({});
+  const [superDeveloper, setSuperDeveloper] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -37,6 +40,7 @@ export default function ModuleSettings({
         const data = await res.json();
         setCatalogue(Array.isArray(data?.catalogue) ? data.catalogue : []);
         setModules(data?.modules ?? {});
+        setSuperDeveloper(data?.superDeveloper === true);
       } catch {
         setError(t('common.cannotReachApi'));
       }
@@ -73,10 +77,23 @@ export default function ModuleSettings({
         <FormControlLabel
           key={m.id}
           sx={{ alignItems: 'flex-start', ml: 0, gap: 1 }}
-          control={<Switch checked={modules[m.id] ?? m.defaultEnabled} disabled={busy} onChange={(e) => void toggle(m.id, e.target.checked)} />}
+          control={
+            <Switch
+              checked={modules[m.id] ?? m.defaultEnabled}
+              disabled={busy || (m.licensed === true && !superDeveloper)}
+              onChange={(e) => void toggle(m.id, e.target.checked)}
+            />
+          }
           label={
             <Box sx={{ pt: 0.75 }}>
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>{t(m.caption)}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {t(m.caption)}
+                {m.licensed && (
+                  <Tooltip title={t('modules.licensedHint')}>
+                    <Chip size="small" variant="outlined" label={t('modules.licensed')} sx={{ ml: 1, height: 20 }} />
+                  </Tooltip>
+                )}
+              </Typography>
               <Typography variant="caption" color="text.secondary">{t(`${m.caption}.description`)}</Typography>
             </Box>
           }

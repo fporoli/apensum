@@ -204,7 +204,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Never cache one global role.
 - Modules (`packages/shared/src/modules.ts`): optional feature areas an org switches on or off (Organization settings -> Modules, `GET/PUT organizations/:id/modules`, stored in `organizations.settings.modules`, unset = the module's default).\
   A module owns permission objects; `permissionIdsOf` drops them when it is off, so its navbar entries disappear and every `can()` on them fails, with no per-endpoint module check.\
-  A new module: a registry entry, its permission objects (with a changelog as usual) and i18n `modules.<id>` / `modules.<id>.description`.
+  A new module: a registry entry, its permission objects (with a changelog as usual) and i18n `modules.<id>` / `modules.<id>.description`.\
+  A licensed module (`licensed: true`, e.g. the private `hr` plugin: salary continuation and protection periods) is off by default and only a superdeveloper switches it (`module-licensed` otherwise); the web shows it with a "License" chip.
 - Requests (module `requests`, `requests.controller.ts`, `Requests.tsx`, tables 052): tickets to the line manager or a department, with a message thread (`request_messages`, kind `message` or `event`).\
   Handlers are worked out per call, never stored: the requester's manager in force, or the department's members in force and its leader, plus `nav.requests:edit:all` (admin).\
   Any handler takes, answers, sets the status, archives; the requester answers and resolves/reopens.\
