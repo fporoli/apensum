@@ -143,6 +143,11 @@ A plugin's files that belong to a person (expenses: receipts) appear on that per
 - Web: `documentCategories: [{ category, color, after, staticData?, describe }]`; `describe` turns the
   context into the line under the file name; its name is the text `documents.category.<category>`.
 
+## Notifications, mail and balances
+
+A plugin's providers and controllers may inject the core's `NotificationsService` (`notifyMany`: one row per recipient, pushed live; the web part's `notificationSections` maps the source table to the section a click opens) and `BalancesService` (a person's `year` and `closings`, the year-end closings of the Time balances page).\
+`sendMail` sends through the instance's SMTP and `appBaseUrl()` gives the web app's address for links; mail is best effort: catch and log, never fail a request on it, and never send a document itself, only a link.
+
 ## Team tab (TeamView)
 
 A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab for managers and HR:

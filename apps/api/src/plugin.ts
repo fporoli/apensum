@@ -113,6 +113,15 @@ export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type Perso
 export { FieldsService } from './fields.service';
 export { WorkflowsService, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 
+// Notifications (the bell; a click opens the section the web part's `notificationSections` names
+// for the source table) and mail (best effort: catch and log, never fail a request on it).
+export { NotificationsService } from './notifications.service';
+export { sendMail, type MailOptions } from './mailer';
+export { appBaseUrl } from './app-url';
+
+// Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
+export { BalancesService, type YearBalances, type YearClosing } from './balances.service';
+
 // AI: Azure OpenAI (Switzerland) only, every call through AiBudgetService
 export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
 export {

@@ -21,9 +21,9 @@ import {
   membership_roles,
 } from './db/schema';
 
-export function appBaseUrl(): string {
-  return (process.env.APP_BASE_URL ?? 'http://localhost:3001').replace(/\/+$/, '');
-}
+import { appBaseUrl } from './app-url';
+
+export { appBaseUrl };
 
 export function buildInviteEmail(orgName: string, token: string): { subject: string; text: string } {
   const link = `${appBaseUrl()}/?invite=${encodeURIComponent(token)}`;
