@@ -1,61 +1,50 @@
-import { useEffect, useState } from 'react';
-import { MenuItem, Stack, TextField } from '@mui/material';
-import type { CaseCustomField, CustomFieldTarget } from '../shared/cases';
+import { Box } from '@mui/material';
+import { ConfigFieldGroup, FieldDesignScope, FormDesignPanel, useGroupTitle, type FormTemplate } from '@worktime3/web/plugin';
+import { activeCustomFields, customValuesErrors, customValuesToSave } from '../shared/forms';
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
-
-/** The organization's custom fields for a case or an assessment (none until its settings define some). */
-export function useCustomFields(orgId: string, authHeaders: () => Promise<Record<string, string>>, target: CustomFieldTarget): CaseCustomField[] {
-  const [fields, setFields] = useState<CaseCustomField[]>([]);
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      try {
-        const res = await fetch(`${API}/organizations/${orgId}/case-custom-fields`, { headers: await authHeaders(), cache: 'no-store' });
-        const data = await res.json();
-        if (live && data?.ok) setFields((data.fields as CaseCustomField[]).filter((f) => f.target === target));
-      } catch {
-        /* no custom fields shown */
-      }
-    })();
-    return () => { live = false; };
-  }, [orgId, authHeaders, target]);
-  return fields;
-}
-
-/** Inputs for custom field values. Numbers are kept as numbers and empty inputs as null, as the validation expects. */
-export function CustomFieldsForm({ fields, values, onChange, disabled }: {
-  fields: CaseCustomField[];
+/**
+ * The organization's own fields on a case or an assessment: a configurable form (shared/forms.ts) whose
+ * fields are defined in design mode right here, like My Data. Shows nothing while there are none, except
+ * in design mode, where the empty section is there to add the first field.
+ */
+export function CustomFieldsSection({ template, values, onChange, errors, disabled, children }: {
+  template: FormTemplate;
   values: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  errors?: Record<string, string>;
   disabled?: boolean;
+  /** Title and buttons around the fields (shown with them); `title` is the section's, a template may rename it. */
+  children?: (fields: React.ReactNode, title: string) => React.ReactNode;
 }) {
-  const set = (key: string, v: unknown) => onChange({ ...values, [key]: v });
-  return (
-    <Stack spacing={2}>
-      {fields.map((f) => {
-        const v = values[f.key];
-        const common = { key: f.key, label: f.label, disabled, fullWidth: true, size: 'small' as const };
-        if (f.type === 'select') {
-          return (
-            <TextField {...common} select value={typeof v === 'string' ? v : ''} onChange={(e) => set(f.key, e.target.value || null)}>
-              <MenuItem value="">—</MenuItem>
-              {(f.options ?? []).map((o) => <MenuItem key={o} value={o}>{o}</MenuItem>)}
-            </TextField>
-          );
-        }
-        if (f.type === 'number') {
-          return <TextField {...common} type="number" value={typeof v === 'number' ? v : ''} onChange={(e) => set(f.key, e.target.value === '' ? null : Number(e.target.value))} />;
-        }
-        if (f.type === 'date') {
-          return <TextField {...common} type="date" InputLabelProps={{ shrink: true }} value={typeof v === 'string' ? v : ''} onChange={(e) => set(f.key, e.target.value || null)} />;
-        }
-        return (
-          <TextField {...common} multiline={f.type === 'longtext'} minRows={f.type === 'longtext' ? 3 : undefined}
-            inputProps={{ maxLength: f.type === 'longtext' ? 50_000 : 2000 }}
-            value={typeof v === 'string' ? v : ''} onChange={(e) => set(f.key, e.target.value || null)} />
-        );
-      })}
-    </Stack>
+  const { form, designer } = template;
+  const title = useGroupTitle(form, 'custom');
+  if (!designer && activeCustomFields(form).filter((f) => !f.hidden).length === 0) return null;
+  const fields = (
+    <ConfigFieldGroup
+      form={form}
+      group="custom"
+      values={values}
+      editing={!disabled}
+      onChange={(key, v) => onChange({ ...values, [key]: v })}
+      errors={errors}
+    />
   );
+  return (
+    <FieldDesignScope designer={designer}>
+      {designer && <FormDesignPanel designer={designer} />}
+      <Box>{children ? children(fields, title) : fields}</Box>
+    </FieldDesignScope>
+  );
+}
+
+/**
+ * Checks the values against the saved template (as the API does for a plain case, and as nobody else can
+ * for an encrypted one) and returns what to save, or the errors by field.
+ */
+export function checkCustomValues(template: FormTemplate, values: Record<string, unknown>):
+  { ok: true; value: Record<string, unknown> } | { ok: false; errors: Record<string, string> } {
+  const value = customValuesToSave(template.savedForm, values);
+  const errors = customValuesErrors(template.savedForm, value);
+  if (errors.length) return { ok: false, errors: Object.fromEntries(errors.map((e) => [e.field, e.rule])) };
+  return { ok: true, value };
 }

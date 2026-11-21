@@ -3,13 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import PDFDocument from 'pdfkit';
 import { DbService, type Db } from '@worktime3/api/plugin';
-import { DocumentsService } from '@worktime3/api/plugin';
+import { DocumentsService, FieldsService } from '@worktime3/api/plugin';
 import { INTERVIEW_AUDIO_SOURCE, interviewAudioFormat, MAX_INTERVIEW_TEXT } from './case-interview-processing';
 import { AI_DRAFT_MAX_TOKENS, AI_SECTION_MAX_TOKENS, aiDraftSchema, buildAiDraftMessages, parseAiDraft } from './case-ai-draft';
 import { CaseAiService } from './case-ai.service';
 import { documents, users } from '@worktime3/api/schema';
 import { buildRuleDraft } from '../shared/caseDraft';
-import { MAX_INTERVIEW_AUDIO_BYTES, MAX_SEALED_INTERVIEW_AUDIO_BYTES, validateCustomFieldDefs, validateCustomValues, type CaseCustomField, type CustomFieldTarget } from '../shared/cases';
+import { MAX_INTERVIEW_AUDIO_BYTES, MAX_SEALED_INTERVIEW_AUDIO_BYTES } from '../shared/cases';
+import { ASSESSMENT_FORM, CASE_FORM, customValuesErrors } from '../shared/forms';
+import { mergeForm, type FormDef } from '@worktime3/shared/fields';
 import type { ComputeContent } from './case-encryption';
 import { checkCustom, checkNewEncryptedCase, checkWrite } from './case-encryption';
 import { casesInCases, case_documentsInCases, case_interviewsInCases, assessment_templatesInCases, assessmentsInCases } from './db/schema';
@@ -38,6 +40,7 @@ export class CasesService {
     private readonly dbService: DbService,
     private readonly documentsService: DocumentsService,
     private readonly caseAi: CaseAiService,
+    private readonly fields: FieldsService,
   ) {}
 
   private get db(): Db {
@@ -46,25 +49,17 @@ export class CasesService {
     return d;
   }
 
-  /** The organization's own fields on cases and assessments (Organization settings), never failing: a bad stored value reads as none. */
-  async customFields(orgId: string): Promise<CaseCustomField[]> {
-    const { rows } = await this.db.execute<{ f: unknown }>(sql`SELECT settings->'cases'->'customFields' AS f FROM organizations WHERE id = ${orgId}::uuid`);
-    const checked = validateCustomFieldDefs(rows[0]?.f ?? []);
-    return checked.ok ? checked.value : [];
-  }
-
-  async saveCustomFields(orgId: string, fields: CaseCustomField[]): Promise<void> {
-    await this.db.execute(sql`
-      UPDATE organizations
-      SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{cases}',
-                               COALESCE(settings->'cases', '{}'::jsonb) || jsonb_build_object('customFields', ${JSON.stringify(fields)}::jsonb))
-      WHERE id = ${orgId}::uuid`);
-  }
-
-  /** Plain rows: the values must match the definitions. (An encrypted row's values are checked by the browser.) */
-  private async assertCustomValues(orgId: string, target: CustomFieldTarget, custom: unknown): Promise<void> {
+  /**
+   * Plain rows: the values must fit the organization's form (shared/forms.ts, defined in design mode). With
+   * `partial` (a new row) fields left out are not checked, so a required field does not block creating it.
+   * An encrypted row's values are checked by the browser.
+   */
+  private async assertCustomValues(orgId: string, formDef: FormDef, custom: unknown, partial = false): Promise<void> {
     if (custom === undefined) return;
-    if (validateCustomValues(await this.customFields(orgId), target, custom)) throw new BadRequestException('invalid-custom');
+    const form = (await this.fields.resolved(orgId, formDef.id)) ?? mergeForm(formDef);
+    const given = custom && typeof custom === 'object' ? (custom as Record<string, unknown>) : {};
+    const errors = customValuesErrors(form, custom).filter((e) => !partial || e.rule !== 'required' || e.field in given);
+    if (errors.length) throw new BadRequestException('invalid-custom');
   }
 
   /** List cases for an organization, optionally restricted to those led by callerId. */
@@ -187,7 +182,7 @@ export class CasesService {
     const existing = await this.getCase(orgId, caseId);
     checkWrite('case', !!existing.encrypted, dto as Record<string, unknown>, { requireEnc: false });
     const custom = checkCustom(dto.custom);
-    if (!existing.encrypted) await this.assertCustomValues(orgId, 'case', custom);
+    if (!existing.encrypted) await this.assertCustomValues(orgId, CASE_FORM, custom);
 
     const dob = dto.subject_dob !== undefined
       ? (dto.subject_dob && String(dto.subject_dob).trim() ? String(dto.subject_dob).trim() : null)
@@ -667,7 +662,7 @@ export class CasesService {
       return this.getAssessment(caseId, dto.id as string);
     }
     const custom = checkCustom(dto.custom) ?? {};
-    await this.assertCustomValues(orgId, 'assessment', custom);
+    await this.assertCustomValues(orgId, ASSESSMENT_FORM, custom, true);
 
     // Initial section content defaults if not provided
     const initialSections: Record<string, string> = dto.sections_content ?? {};
@@ -719,7 +714,7 @@ export class CasesService {
     const custom = checkCustom(dto.custom);
     if (!encrypted && custom) {
       const { rows: [own] } = await this.db.execute<{ organization_id: string }>(sql`SELECT organization_id FROM cases.cases WHERE id = ${caseId}::uuid`);
-      if (own) await this.assertCustomValues(own.organization_id, 'assessment', custom);
+      if (own) await this.assertCustomValues(own.organization_id, ASSESSMENT_FORM, custom);
     }
 
     await this.db.execute(sql`

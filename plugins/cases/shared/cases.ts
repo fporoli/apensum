@@ -75,7 +75,7 @@ export interface Case {
   lead_user_name?: string | null;
   confidentiality: CaseConfidentiality;
   metadata: Record<string, unknown>;
-  /** The organization's own fields (settings.cases.customFields); inside `enc` when the case is encrypted. */
+  /** Values of the organization's own fields (shared/forms.ts, defined in design mode); inside `enc` when the case is encrypted. */
   custom?: Record<string, unknown>;
   /** Set when the case is encrypted: the sensitive fields as a sealed envelope (caseVault.ts). */
   enc?: Envelope | null;
@@ -329,62 +329,3 @@ export function validateCaseAiSettings(raw: unknown): { ok: true; value: CaseAiS
   return { ok: true, value: { transcription: o.transcription, summary: rawSummary, draft: rawDraft } };
 }
 
-// Custom fields: an organization's own fields on cases and assessments (organizations.settings.cases.customFields).
-// The definitions are plain settings; the values live in the row's `custom` JSON, which for an encrypted case is
-// sealed inside `enc` (so the server cannot check them there: the browser does, with the same functions).
-
-export const CUSTOM_FIELD_TYPES = ['text', 'longtext', 'number', 'date', 'select'] as const;
-export type CustomFieldType = (typeof CUSTOM_FIELD_TYPES)[number];
-export const CUSTOM_FIELD_TARGETS = ['case', 'assessment'] as const;
-export type CustomFieldTarget = (typeof CUSTOM_FIELD_TARGETS)[number];
-
-export interface CaseCustomField {
-  key: string;
-  target: CustomFieldTarget;
-  label: string;
-  type: CustomFieldType;
-  /** For `select`. */
-  options?: string[];
-}
-
-const FIELD_KEY = /^[a-z][a-zA-Z0-9_]{0,39}$/;
-
-/** Checks the definitions as sent by the settings page; the error is a kebab code. */
-export function validateCustomFieldDefs(raw: unknown): { ok: true; value: CaseCustomField[] } | { ok: false; error: string } {
-  if (!Array.isArray(raw) || raw.length > 40) return { ok: false, error: 'custom-fields-invalid' };
-  const seen = new Set<string>();
-  const value: CaseCustomField[] = [];
-  for (const f of raw as Record<string, unknown>[]) {
-    if (!f || typeof f !== 'object') return { ok: false, error: 'custom-fields-invalid' };
-    const label = typeof f.label === 'string' ? f.label.trim() : '';
-    if (typeof f.key !== 'string' || !FIELD_KEY.test(f.key) || !label || label.length > 100) return { ok: false, error: 'custom-fields-invalid' };
-    if (!(CUSTOM_FIELD_TARGETS as readonly string[]).includes(f.target as string) || !(CUSTOM_FIELD_TYPES as readonly string[]).includes(f.type as string)) return { ok: false, error: 'custom-fields-invalid' };
-    const id = `${f.target}:${f.key}`;
-    if (seen.has(id)) return { ok: false, error: 'custom-fields-duplicate' };
-    seen.add(id);
-    let options: string[] | undefined;
-    if (f.type === 'select') {
-      options = Array.isArray(f.options) ? (f.options as unknown[]).map((o) => (typeof o === 'string' ? o.trim() : '')).filter(Boolean) : [];
-      if (!options.length || options.length > 30 || options.some((o) => o.length > 100) || new Set(options).size !== options.length) return { ok: false, error: 'custom-fields-invalid' };
-    }
-    value.push({ key: f.key, target: f.target as CustomFieldTarget, label, type: f.type as CustomFieldType, ...(options ? { options } : {}) });
-  }
-  return { ok: true, value };
-}
-
-/** The values of one row against its definitions: null when fine, else a kebab code. Empty values are allowed. */
-export function validateCustomValues(defs: readonly CaseCustomField[], target: CustomFieldTarget, values: unknown): string | null {
-  if (values == null) return null;
-  if (typeof values !== 'object' || Array.isArray(values)) return 'invalid-custom';
-  const mine = new Map(defs.filter((d) => d.target === target).map((d) => [d.key, d]));
-  for (const [key, v] of Object.entries(values as Record<string, unknown>)) {
-    const def = mine.get(key);
-    if (!def) return 'invalid-custom';
-    if (v === null || v === '' || v === undefined) continue;
-    if (def.type === 'number' && !(typeof v === 'number' && Number.isFinite(v))) return 'invalid-custom';
-    if (def.type === 'date' && !(typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))) return 'invalid-custom';
-    if (def.type === 'select' && !(typeof v === 'string' && def.options?.includes(v))) return 'invalid-custom';
-    if ((def.type === 'text' && !(typeof v === 'string' && v.length <= 2000)) || (def.type === 'longtext' && !(typeof v === 'string' && v.length <= 50_000))) return 'invalid-custom';
-  }
-  return null;
-}

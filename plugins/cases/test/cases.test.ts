@@ -123,7 +123,7 @@ test('cases service: synthesizeDraft weaves case details, evidence documents and
     }),
   };
 
-  const service = new CasesService(mockDbService, {} as any);
+  const service = new CasesService(mockDbService, {} as any, {} as any, { resolved: async () => null } as any);
   // Mock internal calls
   (service as any).getCase = async () => mockCase;
   (service as any).getTemplate = async () => mockTemplate;
@@ -204,7 +204,7 @@ test('cases service: generateAssessmentPdf renders valid PDF buffer with Swiss c
     }),
   };
 
-  const service = new CasesService(mockDbService, {} as any);
+  const service = new CasesService(mockDbService, {} as any, {} as any, { resolved: async () => null } as any);
   (service as any).getCase = async () => mockCase;
   (service as any).getTemplate = async () => mockTemplate;
   (service as any).getAssessment = async () => mockAssessment;
@@ -218,27 +218,31 @@ test('cases service: generateAssessmentPdf renders valid PDF buffer with Swiss c
   assert.equal(pdfBuffer.subarray(0, 5).toString('ascii'), '%PDF-');
 });
 
-test('custom field definitions and values are validated', async () => {
-  const { validateCustomFieldDefs, validateCustomValues } = await import('../shared/cases');
-  const ok = validateCustomFieldDefs([
-    { key: 'court', target: 'case', label: 'Court', type: 'text' },
-    { key: 'risk', target: 'assessment', label: 'Risk', type: 'select', options: ['low', 'high'] },
-    { key: 'hearing', target: 'case', label: 'Hearing', type: 'date' },
-    { key: 'n', target: 'case', label: 'Number', type: 'number' },
-  ]);
-  assert.ok(ok.ok);
-  if (!ok.ok) return;
-  assert.equal(validateCustomFieldDefs([{ key: 'Bad Key', target: 'case', label: 'x', type: 'text' }]).ok, false);
-  assert.equal(validateCustomFieldDefs([{ key: 'a', target: 'case', label: 'x', type: 'select', options: [] }]).ok, false);
-  assert.deepEqual(validateCustomFieldDefs([{ key: 'a', target: 'case', label: 'x', type: 'text' }, { key: 'a', target: 'case', label: 'y', type: 'text' }]), { ok: false, error: 'custom-fields-duplicate' });
-  // the same key may exist for a case and an assessment
-  assert.ok(validateCustomFieldDefs([{ key: 'a', target: 'case', label: 'x', type: 'text' }, { key: 'a', target: 'assessment', label: 'y', type: 'text' }]).ok);
-  const d = ok.value;
-  assert.equal(validateCustomValues(d, 'case', { court: 'Bern', hearing: '2026-05-01', n: 3 }), null);
-  assert.equal(validateCustomValues(d, 'case', { court: '', hearing: null }), null);
-  assert.equal(validateCustomValues(d, 'case', { unknown: 'x' }), 'invalid-custom');
-  assert.equal(validateCustomValues(d, 'case', { risk: 'low' }), 'invalid-custom'); // an assessment field, not a case one
-  assert.equal(validateCustomValues(d, 'assessment', { risk: 'medium' }), 'invalid-custom');
-  assert.equal(validateCustomValues(d, 'case', { n: '3' }), 'invalid-custom');
-  assert.equal(validateCustomValues(d, 'case', { hearing: '1.5.2026' }), 'invalid-custom');
+test('custom fields are templates of the cases.case / cases.assessment forms, values checked against them', async () => {
+  const { mergeForm, formDefinitionProblems } = await import('@worktime3/shared/fields');
+  const { ASSESSMENT_FORM, CASE_FORM, customValuesErrors, customValuesToSave } = await import('../shared/forms');
+  const { namespaceViolations } = await import('@worktime3/shared/pluginApi');
+  assert.deepEqual(formDefinitionProblems(CASE_FORM), []);
+  assert.deepEqual(formDefinitionProblems(ASSESSMENT_FORM), []);
+  assert.deepEqual(namespaceViolations('cases', [{ kind: 'form', name: CASE_FORM.id }, { kind: 'form', name: ASSESSMENT_FORM.id }]), []);
+  const form = mergeForm(CASE_FORM, undefined, {
+    fields: {},
+    custom: {
+      court: { type: 'text', group: 'custom', caption: { en: 'Court' } },
+      hearing: { type: 'date', group: 'custom', required: true },
+      n: { type: 'number', group: 'custom', min: 0 },
+      old: { type: 'text', group: 'custom', retired: true },
+    },
+  });
+  const errors = (v: unknown) => customValuesErrors(form, v).map((e) => `${e.field}:${e.rule}`);
+  assert.deepEqual(errors({ court: 'Bern', hearing: '2026-05-01', n: 3 }), []);
+  assert.deepEqual(errors({ hearing: '2026-05-01', old: 'kept as it was' }), [], 'a retired field keeps its stored value');
+  assert.deepEqual(errors({ court: 'Bern' }), ['hearing:required']);
+  assert.deepEqual(errors({ hearing: '2026-05-01', unknown: 'x' }), ['unknown:unknown']);
+  assert.deepEqual(errors({ hearing: '1.5.2026', n: '3' }), ['hearing:type', 'n:type']);
+  assert.deepEqual(errors({ hearing: '2026-05-01', n: -1 }), ['n:min']);
+  assert.deepEqual(errors({ hearing: '2026-05-01', court: 'x'.repeat(50_001) }), ['court:max']);
+  assert.deepEqual(errors([]), [':type']);
+  // What the form saves: its fields only, empty text as null.
+  assert.deepEqual(customValuesToSave(form, { court: '  ', hearing: '2026-05-01', stray: 1, old: 'o' }), { court: null, hearing: '2026-05-01', old: 'o' });
 });

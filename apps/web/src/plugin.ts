@@ -247,7 +247,7 @@ export {
   formatFileSize, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatMoney, parseLocaleNumber, swissLocale,
 } from './localeFormat';
 export { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField';
-export { FieldDesignScope, useFormTemplate } from './designMode';
+export { FieldDesignScope, useFormTemplate, type FormTemplate } from './designMode';
 export { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
 export { ConfirmDialog, EmptyState, PageHeader, PersonPicker, TableEmptyRow } from './components';
 export * from './icons';

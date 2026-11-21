@@ -26,10 +26,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useI18n } from '@worktime3/web/plugin';
+import { useI18n, useFormTemplate } from '@worktime3/web/plugin';
 import { CaseKeyControl } from './CaseKeyControl';
 import { CaseMembersDialog } from './CaseMembersDialog';
-import { CustomFieldsForm, useCustomFields } from './CustomFields';
+import { checkCustomValues, CustomFieldsSection } from './CustomFields';
+import { ASSESSMENT_FORM, CASE_FORM } from '../shared/forms';
 import { isUnlocked, useKeyringState } from './caseKeyring';
 import { caseMatches, compute, discardNewCaseKey, keyOf, newEncryptedCaseBody, openAssessments, openCaseList, openDocuments, openFile, openInterviews, saveBlob, sealFile } from './caseVaultClient';
 import { buildRuleDraft } from '../shared/caseDraft';
@@ -625,7 +626,7 @@ export function AssessmentTemplates({ orgId, authHeaders, canEdit }: {
   );
 }
 
-/** The organization's own fields on this case (none shown until Organization settings define some). */
+/** The organization's own fields on this case (none shown until a template defines some in design mode). */
 function CaseCustomCard({ orgId, caseItem, authHeaders, canEdit, onDone }: {
   orgId: string;
   caseItem: Case;
@@ -634,41 +635,48 @@ function CaseCustomCard({ orgId, caseItem, authHeaders, canEdit, onDone }: {
   onDone: () => Promise<void>;
 }) {
   const { t } = useI18n();
-  const fields = useCustomFields(orgId, authHeaders, 'case');
+  const template = useFormTemplate(orgId, CASE_FORM, authHeaders);
   const [values, setValues] = useState<Record<string, unknown>>(caseItem.custom ?? {});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { setValues(caseItem.custom ?? {}); }, [caseItem.id, caseItem.updated_at, caseItem.custom]);
-  if (!fields.length) return null;
+  useEffect(() => { setValues(caseItem.custom ?? {}); setErrors({}); }, [caseItem.id, caseItem.updated_at, caseItem.custom]);
 
   const save = async () => {
+    const checked = checkCustomValues(template, values);
+    if (!checked.ok) return setErrors(checked.errors);
+    setErrors({});
     setBusy(true);
     setError('');
     try {
       const key = caseItem.enc ? await keyOf(orgId, authHeaders, caseItem.id) : null;
       const body = key
-        ? await sealedBody(key, 'case', caseItem.id, { title: caseItem.title, subject_name: caseItem.subject_name, subject_dob: caseItem.subject_dob, metadata: caseItem.metadata ?? {}, custom: values })
-        : { custom: values };
+        ? await sealedBody(key, 'case', caseItem.id, { title: caseItem.title, subject_name: caseItem.subject_name, subject_dob: caseItem.subject_dob, metadata: caseItem.metadata ?? {}, custom: checked.value })
+        : { custom: checked.value };
       const res = await fetch(`${API}/organizations/${orgId}/cases/${caseItem.id}`, {
         method: 'PATCH', headers: { ...(await authHeaders()), 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || data?.ok === false) throw new Error(data?.message ?? data?.error);
       await onDone();
-    } catch {
-      setError(t('cases.keys.failed'));
+    } catch (e) {
+      setError(e instanceof Error && e.message === 'invalid-custom' ? t('cases.custom.invalid') : t('cases.keys.failed'));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Box sx={{ mt: 3 }}>
-      <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>{t('cases.custom.cardTitle')}</Typography>
-      {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
-      <CustomFieldsForm fields={fields} values={values} onChange={setValues} disabled={!canEdit || busy} />
-      {canEdit && <Button sx={{ mt: 1.5 }} variant="contained" size="small" disabled={busy} onClick={() => void save()}>{t('common.save')}</Button>}
-    </Box>
+    <CustomFieldsSection template={template} values={values} onChange={setValues} errors={errors} disabled={!canEdit || busy}>
+      {(fields, title) => (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1.5 }}>{title}</Typography>
+          {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+          {fields}
+          {canEdit && !template.designer && <Button sx={{ mt: 1.5 }} variant="contained" size="small" disabled={busy} onClick={() => void save()}>{t('common.save')}</Button>}
+        </Box>
+      )}
+    </CustomFieldsSection>
   );
 }
 
@@ -1525,7 +1533,8 @@ function CaseAssessmentsTab({
   const [showArchived, setShowArchived] = useState(false);
   const [assessmentStatus, setAssessmentStatus] = useState<string>('draft');
   const [assessmentCustom, setAssessmentCustom] = useState<Record<string, unknown>>({});
-  const assessmentFields = useCustomFields(orgId, authHeaders, 'assessment');
+  const [assessmentCustomErrors, setAssessmentCustomErrors] = useState<Record<string, string>>({});
+  const assessmentForm = useFormTemplate(orgId, ASSESSMENT_FORM, authHeaders);
 
   // Evidence panel in side-by-side view
   const [evidenceDocs, setEvidenceDocs] = useState<CaseDocument[]>([]);
@@ -1595,6 +1604,7 @@ function CaseAssessmentsTab({
     setAssessmentStatus(ass.status);
     setSectionsContent(ass.sections_content ?? {});
     setAssessmentCustom(ass.custom ?? {});
+    setAssessmentCustomErrors({});
     const tpl = templates.find((t) => t.id === ass.template_id);
     if (tpl) {
       setActiveTemplate(tpl);
@@ -1743,6 +1753,13 @@ function CaseAssessmentsTab({
 
   const handleSaveAssessment = async () => {
     if (!activeAssessment) return;
+    const custom = checkCustomValues(assessmentForm, assessmentCustom);
+    if (!custom.ok) {
+      setAssessmentCustomErrors(custom.errors);
+      setError(t('cases.custom.invalid'));
+      return;
+    }
+    setAssessmentCustomErrors({});
     try {
       setSavingAssessment(true);
       const key = caseItem.enc ? await keyOf(orgId, authHeaders, caseItem.id) : null;
@@ -1752,14 +1769,16 @@ function CaseAssessmentsTab({
           method: 'PATCH',
           headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
           body: JSON.stringify(key
-            ? { status: assessmentStatus, ...(await sealedBody(key, 'assessment', activeAssessment.id, { title: activeAssessment.title, sections_content: sectionsContent, custom: assessmentCustom })) }
-            : { status: assessmentStatus, sections_content: sectionsContent, custom: assessmentCustom }),
+            ? { status: assessmentStatus, ...(await sealedBody(key, 'assessment', activeAssessment.id, { title: activeAssessment.title, sections_content: sectionsContent, custom: custom.value })) }
+            : { status: assessmentStatus, sections_content: sectionsContent, custom: custom.value }),
         },
       );
       const data = await res.json();
       if (data?.ok && data.assessment) {
         setActiveAssessment((await openAssessments(key, [data.assessment]))[0]);
         await loadData();
+      } else if (data?.ok === false || !res.ok) {
+        setError(data?.message === 'invalid-custom' || data?.error === 'invalid-custom' ? t('cases.custom.invalid') : t('cases.interviews.operationFailed'));
       }
     } catch {
       setError(t('common.cannotReachApi'));
@@ -2091,14 +2110,16 @@ function CaseAssessmentsTab({
             {/* Left: Template Section Editors */}
             <Grid item xs={12} md={showEvidenceSidebar ? 7 : 12}>
               <Stack spacing={2.5}>
-                {assessmentFields.length > 0 && (
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>{t('cases.custom.cardTitle')}</Typography>
-                      <CustomFieldsForm fields={assessmentFields} values={assessmentCustom} onChange={setAssessmentCustom} disabled={!canEdit} />
-                    </CardContent>
-                  </Card>
-                )}
+                <CustomFieldsSection template={assessmentForm} values={assessmentCustom} onChange={setAssessmentCustom} errors={assessmentCustomErrors} disabled={!canEdit}>
+                  {(fields, title) => (
+                    <Card variant="outlined">
+                      <CardContent>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1.5 }}>{title}</Typography>
+                        {fields}
+                      </CardContent>
+                    </Card>
+                  )}
+                </CustomFieldsSection>
                 {((activeTemplate?.sections as AssessmentTemplateSection[]) ?? []).map((sec, idx) => (
                   <Card key={sec.key} variant="outlined">
                     <CardContent>

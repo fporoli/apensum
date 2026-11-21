@@ -67,10 +67,12 @@ Every new case is encrypted: the create dialog has no opt-out and the API refuse
 
 ## Custom fields
 
-An organization defines extra fields for cases and assessments (Organization settings -> Cases fields,
-`organizations.settings.cases.customFields`). Values live in the `custom` column, or inside `enc` for an encrypted
-case. Definitions and value checks are `shared/cases.ts` (`validateCustomFieldDefs`, `validateCustomValues`): the API
-checks plain rows, the browser checks encrypted ones. They are not in the PDF/Word export yet.
+An organization defines extra fields for cases and assessments in design mode on the Cases page, like any
+configurable form (docs/FIELD_CONFIG.md): templates of the forms `cases.case` and `cases.assessment`
+(`shared/forms.ts`, `field_config`; the old `settings.cases.customFields` were moved there by the plugin's
+changeset 006). Only the definitions are plain; values live in the `custom` column, or inside `enc` for an
+encrypted case. `customValuesErrors` checks them against the template: the API for plain rows, the browser
+for encrypted ones. They are not in the PDF/Word export yet.
 
 ## Database
 
