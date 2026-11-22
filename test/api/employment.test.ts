@@ -75,7 +75,7 @@ test('HR records a dated manager change; requests then follow the manager', asyn
   const s = setup();
   const result = await s.controller.addAssignment('org', 'emp', { validFrom: '2026-12-01', jobFunction: ' Developer ', managerUserId: 'lead' }, as('hr'));
   assert.deepEqual(result, { ok: true, id: 'new' });
-  assert.deepEqual(s.inserts[0], { organization_id: 'org', user_id: 'emp', valid_from: '2026-12-01', department_id: null, job_function: 'Developer', manager_user_id: 'lead', location_id: null });
+  assert.deepEqual(s.inserts[0], { organization_id: 'org', user_id: 'emp', valid_from: '2026-12-01', department_id: null, job_function: 'Developer', manager_user_id: 'lead', location_id: null, is_management: false });
   assert.equal(s.rerouted(), 1);
 });
 

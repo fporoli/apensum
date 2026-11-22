@@ -74,13 +74,15 @@ export class WorkSchedulesController {
       valid_from: schedule.validFrom,
       workload_percent: String(schedule.workloadPercent),
       day_minutes: schedule.dayMinutes,
+      time_recording: schedule.timeRecording ?? 'full',
+      exemption_reason: schedule.exemptionReason ?? null,
     };
     const [row] = await db
       .insert(work_schedules)
       .values(values)
       .onConflictDoUpdate({
         target: [work_schedules.organization_id, work_schedules.user_id, work_schedules.valid_from],
-        set: { workload_percent: values.workload_percent, day_minutes: values.day_minutes },
+        set: { workload_percent: values.workload_percent, day_minutes: values.day_minutes, time_recording: values.time_recording, exemption_reason: values.exemption_reason },
       })
       .returning({ id: work_schedules.id });
     void this.versions.record('work_schedules', row.id, 'update', callerId, { id: row.id, ...values }).catch(() => {});
@@ -136,7 +138,7 @@ export class WorkSchedulesController {
     return {
       ok: true,
       today: localDate(new Date(), timeZone),
-      days: targets.map((d) => ({ ...d, holidayInfo: holidays.get(d.date) ?? null, attended: attendance.get(d.date) ?? 0 })),
+      days: targets.map((d) => ({ ...d, holidayInfo: holidays.get(d.date) ?? null, attended: d.notRecorded ? 0 : attendance.get(d.date) ?? 0 })),
     };
   }
 
@@ -183,7 +185,6 @@ export class WorkSchedulesController {
       fullTimeWeeklyMinutes?: number;
       holidayRegion?: string | null;
       projectTimeToleranceMinutes?: number;
-      vacationDaysPerYear?: number;
       overtimeAlertMinutes?: number;
       undertimeAlertMinutes?: number;
       balancesStartDate?: string | null;
@@ -209,11 +210,6 @@ export class WorkSchedulesController {
       const t = body.projectTimeToleranceMinutes;
       if (!Number.isInteger(t) || t < 0 || t > 24 * 60) return { ok: false, error: 'invalid-tolerance' };
       patch.projectTimeToleranceMinutes = t;
-    }
-    if (body.vacationDaysPerYear !== undefined) {
-      const d = body.vacationDaysPerYear;
-      if (typeof d !== 'number' || !Number.isFinite(d) || d < 0 || d > 366) return { ok: false, error: 'invalid-vacation-days' };
-      patch.vacationDaysPerYear = Math.round(d * 100) / 100;
     }
     for (const key of ['overtimeAlertMinutes', 'undertimeAlertMinutes'] as const) {
       const v = body[key];

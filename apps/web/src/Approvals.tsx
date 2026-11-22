@@ -74,6 +74,8 @@ interface AbsenceRow {
   absence_type: string;
   half_day: boolean;
   document_id: string | null;
+  /** Set when the vacation starts in the person's probation. */
+  probation_until?: string | null;
 }
 
 interface AbsenceDocumentRow {
@@ -467,6 +469,9 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                         <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5 }}>
                           <Chip label={formatAbsenceType(item.absence.absence_type, t)} size="small" variant="outlined" />
                           {item.absence.half_day && <Chip label={t('approvals.halfDay')} size="small" />}
+                          {item.absence.probation_until && (
+                            <Chip color="warning" label={t('approvals.probation', { date: item.absence.probation_until.split('-').reverse().join('.') })} size="small" />
+                          )}
                         </Box>
                       )}
                     </TableCell>

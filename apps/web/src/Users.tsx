@@ -29,6 +29,7 @@ import EmploymentPanel from './EmploymentPanel';
 import PersonnelDocumentsPanel from './PersonnelDocumentsPanel';
 import { BalancesPanel } from './BalancesPanel';
 import DepartmentSettings from './DepartmentSettings';
+import VacationSettings from './VacationSettings';
 import { SettingsSection } from './SettingsSection';
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
@@ -242,6 +243,11 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
       {canEditDepartments && (
         <SettingsSection id="users.departments" title={t('departments.title')} subtitle={t('departments.subtitle')}>
           <DepartmentSettings orgId={orgId} authHeaders={authHeaders} />
+        </SettingsSection>
+      )}
+      {canEditDepartments && (
+        <SettingsSection id="users.vacation" title={t('vacation.title')} subtitle={t('vacation.subtitle')}>
+          <VacationSettings orgId={orgId} authHeaders={authHeaders} />
         </SettingsSection>
       )}
 

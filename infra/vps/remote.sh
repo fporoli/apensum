@@ -326,16 +326,30 @@ destroy() {
     echo "Legacy dump saved to $HOME/$PREFIX-legacy-final-$ts.dump"
   fi
 
-  [ -f "$ROOT/compose/docker-compose.vps.yml" ] && "${COMPOSE[@]}" down -v --remove-orphans || true
+  # The site goes first, so whatever fails below leaves no route to a removed instance.
+  rm -f "$EDGE/sites/$PREFIX.caddy"
+  if docker inspect edge-caddy >/dev/null 2>&1; then caddy_reload; fi
+
+  # By the Compose project's label (an exact match), not `compose down`: that needs the compose file and
+  # every variable in it (API_IMAGE, ...), which destroy has no use for and a half-removed instance lacks.
+  local project="label=com.docker.compose.project=$PREFIX"
+  docker ps -aq --filter "$project" | xargs -r docker rm -f -v >/dev/null
   for n in web api keycloak mailpit pg; do docker rm -f "$PREFIX-$n" >/dev/null 2>&1 || true; done
+  docker volume ls -q --filter "$project" | xargs -r docker volume rm >/dev/null
   docker volume rm "${PREFIX}_pg_data" "${PREFIX}_mailpit_data" "${PREFIX}_documents_data" >/dev/null 2>&1 || true
+  docker network ls -q --filter "$project" | xargs -r docker network rm >/dev/null
   if [ "$legacy" = 1 ]; then
     docker exec edge-pg psql -U postgres -v ON_ERROR_STOP=1 \
       -c "DROP DATABASE IF EXISTS \"$LEGACY_DB\" WITH (FORCE)" -c "DROP ROLE IF EXISTS \"$LEGACY_DB\""
   fi
-  rm -f "$EDGE/sites/$PREFIX.caddy"
-  rm -rf "$ROOT"
-  if docker inspect edge-caddy >/dev/null 2>&1; then caddy_reload; fi
+  # /opt is root's: the deploy user can empty its directory there, removing it takes sudo (as own_dir).
+  if ! rm -rf "$ROOT" 2>/dev/null; then
+    if [ -n "$(ls -A "$ROOT")" ]; then
+      echo "Cannot empty $ROOT: run on the server: sudo rm -rf $ROOT" >&2
+      exit 1
+    fi
+    sudo -n rmdir "$ROOT" 2>/dev/null || echo "Left the empty $ROOT (no sudo); a deploy reuses it."
+  fi
   echo "Instance $PREFIX removed."
 }
 

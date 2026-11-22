@@ -127,6 +127,7 @@ export default function Home({
   const [approvalsCount, setApprovalsCount] = useState<number>(0);
   const [now, setNow] = useState(() => Date.now());
   const [clockBusy, setClockBusy] = useState(false);
+  const [timeRecorded, setTimeRecorded] = useState(true);
 
   const today = todayDate();
   const currentMonthStart = `${today.slice(0, 7)}-01`;
@@ -152,6 +153,7 @@ export default function Home({
         responses.map((r) => r.json().catch(() => null)),
       );
       setStatus(statusData && statusData.check_in ? statusData : null);
+      setTimeRecorded(balanceData?.timeRecorded !== false);
       setBalance(
         balanceData && typeof balanceData.overtimeMinutes === 'number'
           ? { overtimeMinutes: balanceData.overtimeMinutes, pendingOvertimeMinutes: balanceData.pendingOvertimeMinutes ?? 0, vacationDays: balanceData.vacationDays ?? 0 }
@@ -239,7 +241,7 @@ export default function Home({
       <PageHeader
         title={t('dashboard.title')}
         subtitle={t('dashboard.subtitle', { name: displayName })}
-        end={
+        end={(timeRecorded || checkedIn) &&
           <Button
             variant="contained"
             color={checkedIn ? 'warning' : 'success'}
@@ -350,12 +352,12 @@ export default function Home({
                 />
               )}
               <Typography variant="h5" sx={{ fontWeight: 700, color: checkedIn ? 'success.main' : 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
-                {checkedIn ? formatDurationMinutes(elapsedMinutes) : t('dashboard.checkedOut')}
+                {checkedIn ? formatDurationMinutes(elapsedMinutes) : timeRecorded ? t('dashboard.checkedOut') : '—'}
               </Typography>
             </Box>
           </Box>
           <Typography variant="caption" color="text.secondary">
-            {checkedIn ? t('dashboard.checkedIn') : t('workTime.checkIn')}
+            {checkedIn ? t('dashboard.checkedIn') : timeRecorded ? t('workTime.checkIn') : t('timesheet.status.not_recorded')}
           </Typography>
         </Paper>
 
@@ -576,7 +578,7 @@ export default function Home({
               <Box>
                 <Typography variant="body2" color="text.secondary">{currentMonthStart.slice(0, 7)}</Typography>
                 <Chip
-                  label={t(`timesheet.status.${timesheetStatus}`)}
+                  label={t(!timeRecorded && timesheetStatus === 'open' ? 'timesheet.status.not_recorded' : `timesheet.status.${timesheetStatus}`)}
                   color={TIMESHEET_COLOR[timesheetStatus]}
                   size="small"
                   sx={{ mt: 0.75 }}

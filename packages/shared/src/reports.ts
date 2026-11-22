@@ -97,8 +97,9 @@ export const REPORTS: ReportDefinition[] = [
   {
     id: 'people',
     object: 'section.people.employment',
-    dimensions: ['department', 'function', 'manager', 'person'],
+    dimensions: ['department', 'function', 'manager', 'person', 'timeRecording'],
     defaultGroupBy: ['department', 'person'],
+    labels: { timeRecording: { textPrefix: 'reports.recording.' } },
     details: ['startDate'],
     snapshot: true,
     measures: [

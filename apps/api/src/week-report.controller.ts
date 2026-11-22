@@ -64,10 +64,11 @@ export class WeekReportController {
       return {
         date,
         target: target?.target ?? 0,
-        attended: attendance.get(date) ?? 0,
+        attended: target?.notRecorded ? 0 : attendance.get(date) ?? 0,
         project: project[i],
         holiday: holiday ? holidayName(holiday, lang ?? 'de') : null,
         absenceType: target?.absenceType ?? null,
+        ...(target?.notRecorded ? { notRecorded: true as const } : {}),
       };
     });
     return { ok: true, weekStart: start, week: isoWeek(start), today: localDate(new Date(), timeZone), days, grid };

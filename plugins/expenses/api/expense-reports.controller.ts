@@ -207,7 +207,7 @@ export class ExpenseReportsController {
     await db.update(expense_reports).set(patch).where(eq(expense_reports.id, id));
     void this.versions.record('expense_reports', id, 'update_delta', callerId, patch).catch(() => {});
     void this.audit
-      .record(report.organization_id, callerId, autoApproved ? 'expense.submit-auto-approved' : 'expense.submit', 'expense_report', id, { note: note || undefined })
+      .record(report.organization_id, callerId, autoApproved ? 'expense.submit-auto-approved' : 'expense.submit', 'expense_report', id)
       .catch(() => {});
 
     // Route to the owner's manager as an "approve expense report" workflow — the manager acts on it via /workflows.

@@ -3,6 +3,8 @@ import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { callerUserId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { probationUntilOf } from './vacation';
+import { VACATION_ABSENCE_TYPE } from '@worktime3/shared/worktime';
 import { workflows, workflow_definitions, timesheet_periods, absences, users } from './db/schema';
 import { WorkflowsService } from './workflows.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
@@ -86,6 +88,7 @@ export class WorkflowsController {
       ? await db
           .select({
             id: absences.id,
+            organization_id: absences.organization_id,
             date_start: absences.date_start,
             date_end: absences.date_end,
             absence_type: absences.absence_type,
@@ -131,7 +134,13 @@ export class WorkflowsController {
       const records = ids.length ? await load(db, ids).catch(() => []) : [];
       pluginRecords.push({ sourceTable, field, byId: new Map(records.map((x) => [x.id, x])) });
     }
-    const absenceById = new Map(absenceRows.map((a) => [a.id, a]));
+    const absenceItems = await Promise.all(
+      absenceRows.map(async ({ organization_id, ...a }) => {
+        const until = a.absence_type === VACATION_ABSENCE_TYPE && organization_id ? await probationUntilOf(db, organization_id, a.user_id) : null;
+        return { ...a, probation_until: until && a.date_start <= until ? until : null };
+      }),
+    );
+    const absenceById = new Map(absenceItems.map((a) => [a.id, a]));
     return rows.map((r) => ({
       ...r,
       timesheet_period: r.source_table === 'timesheet_periods' ? (periodById.get(r.source_table_uuid) ?? null) : null,

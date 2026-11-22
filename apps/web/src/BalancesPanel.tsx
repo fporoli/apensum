@@ -29,7 +29,7 @@ import { AccountBalanceWalletIcon, AddIcon, ChevronLeftIcon, ChevronRightIcon, D
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start';
+export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start' | 'not-recorded';
 
 export interface MonthBalance {
   month: string;
@@ -67,6 +67,18 @@ interface Adjustment {
   note: string | null;
 }
 
+/** How the entitlement comes about (only for the person and HR). */
+interface Basis {
+  date: string;
+  days: number;
+  baseDays: number;
+  managementDays: number | null;
+  ageStep: { age: number; days: number } | null;
+  legalMinimum: boolean;
+  workloadPercent: number;
+  birthDateMissing: boolean;
+}
+
 interface YearBalances {
   ok: boolean;
   error?: string;
@@ -74,7 +86,8 @@ interface YearBalances {
   start: string;
   months: MonthBalance[];
   overtime: { opening: number; closing: number; bookedMinutes: number; pendingMinutes: number };
-  vacation: { carryOver: number; entitlement: number; entitlementOverridden: boolean; adjustments: number; taken: number; planned: number; remaining: number };
+  vacation: {
+    carryOver: number; entitlement: number; entitlementOverridden: boolean; entitlementCalculated?: number; unpaidLeaveDays?: number; unpaidLeaveCut?: number; basis?: Basis | null; adjustments: number; taken: number; planned: number; remaining: number };
   legalOvertime: { opening: number; closing: number; accrued: number; adjustments: number; yearLimitMinutes: number; maxWeeklyMinutes: number };
   adjustments: Adjustment[];
   canEdit: boolean;
@@ -90,6 +103,7 @@ const STATUS_COLOR: Record<MonthStatus, 'success' | 'info' | 'error' | 'warning'
   current: 'default',
   future: 'default',
   'before-start': 'default',
+  'not-recorded': 'default',
 };
 
 export function formatDays(days: number, locale: string): string {
@@ -115,7 +129,7 @@ export function parseSignedHours(text: string): number | null {
 export function MonthStatusChip({ status }: { status: MonthStatus }) {
   const { t } = useI18n();
   if (status === 'before-start') return <Typography variant="body2" color="text.disabled">—</Typography>;
-  return <Chip size="small" label={t(`balances.status.${status}`)} color={STATUS_COLOR[status]} variant={status === 'future' || status === 'current' ? 'outlined' : 'filled'} />;
+  return <Chip size="small" label={t(`balances.status.${status}`)} color={STATUS_COLOR[status]} variant={status === 'future' || status === 'current' || status === 'not-recorded' ? 'outlined' : 'filled'} />;
 }
 
 /**
@@ -273,6 +287,20 @@ export function BalancesPanel({
                 })}
                 {data.vacation.entitlementOverridden && ` ${t('balances.entitlementOverridden')}`}
               </Typography>
+              {data.vacation.entitlementOverridden && data.vacation.entitlementCalculated !== undefined && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {t('balances.entitlementCalculated', { days: formatDays(data.vacation.entitlementCalculated, locale) })}
+                </Typography>
+              )}
+              {!!data.vacation.unpaidLeaveDays && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {t(data.vacation.unpaidLeaveCut ? 'balances.unpaidCut' : 'balances.unpaidNoCut', {
+                    days: formatDays(data.vacation.unpaidLeaveDays, locale),
+                    cut: formatDays(data.vacation.unpaidLeaveCut ?? 0, locale),
+                  })}
+                </Typography>
+              )}
+              {data.vacation.basis && <EntitlementBasis basis={data.vacation.basis} />}
             </Paper>
           </Box>
 
@@ -542,6 +570,30 @@ function AdjustmentDialog({
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+/** The rule as of the date shown: base or management, the age step, the workload. */
+function EntitlementBasis({ basis }: { basis: Basis }) {
+  const { t, locale } = useI18n();
+  const days = (n: number) => formatDays(n, locale);
+  const parts = [
+    basis.managementDays !== null ? t('balances.basis.management', { days: days(basis.managementDays) }) : t('balances.basis.base', { days: days(basis.baseDays) }),
+    ...(basis.ageStep ? [t('balances.basis.age', { age: String(basis.ageStep.age), days: days(basis.ageStep.days) })] : []),
+  ];
+  return (
+    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+      {t('balances.basis.line', {
+        date: formatLocaleDate(basis.date, locale),
+        parts: parts.join(' + '),
+        days: days(basis.days),
+        percent: days(basis.workloadPercent),
+      })}
+      {basis.legalMinimum && ` ${t('balances.basis.minimum')}`}
+      {basis.birthDateMissing && (
+        <Box component="span" sx={{ display: 'block', color: 'warning.main' }}>{t('balances.basis.birthDateMissing')}</Box>
+      )}
+    </Typography>
   );
 }
 

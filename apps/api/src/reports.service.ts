@@ -265,7 +265,8 @@ export class ReportsService {
       SELECT m.user_id, m.start_date::text AS start_date, coalesce(d.name, '') AS department,
              coalesce(a.job_function, '') AS job_function,
              coalesce(nullif(mu.display_name, ''), mu.email::text, '') AS manager,
-             coalesce(ws.workload_percent, 100)::float8 AS workload
+             coalesce(ws.workload_percent, 100)::float8 AS workload,
+             coalesce(ws.exemption_reason, 'full') AS recording
       FROM organization_memberships m
       LEFT JOIN LATERAL (
         SELECT ea.department_id, ea.job_function, ea.manager_user_id FROM employee_assignments ea
@@ -274,20 +275,21 @@ export class ReportsService {
       LEFT JOIN departments d ON d.id = a.department_id
       LEFT JOIN users mu ON mu.id = a.manager_user_id
       LEFT JOIN LATERAL (
-        SELECT w.workload_percent FROM work_schedules w
+        SELECT w.workload_percent, w.exemption_reason FROM work_schedules w
         WHERE w.organization_id = m.organization_id AND w.user_id = m.user_id AND w.valid_from <= ${at}::date
         ORDER BY w.valid_from DESC LIMIT 1) ws ON true
       WHERE m.organization_id = ${orgId} AND m.user_id IN (${ids})
         AND (m.start_date IS NULL OR m.start_date <= ${at}::date)
         AND (m.status = 'active' OR m.exit_at::date > ${at}::date)
         AND (m.exit_at IS NULL OR m.exit_at::date > ${at}::date)`);
-    return (result.rows as Array<{ user_id: string; start_date: string | null; department: string; job_function: string; manager: string; workload: number }>).map((r) => ({
+    return (result.rows as Array<{ user_id: string; start_date: string | null; department: string; job_function: string; manager: string; workload: number; recording: string }>).map((r) => ({
       person: r.user_id,
       personName: names.get(r.user_id) ?? '',
       department: r.department,
       function: r.job_function,
       manager: r.manager,
       startDate: r.start_date ?? '',
+      timeRecording: r.recording,
       headcount: 1,
       fte: Math.round(Number(r.workload) * 10) / 1000,
     }));

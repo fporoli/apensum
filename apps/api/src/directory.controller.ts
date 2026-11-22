@@ -23,7 +23,7 @@ export interface DirectoryEntry {
   /** The open check-in, if the person is checked in right now. */
   checkedInSince: string | null;
   /** Presence like a chat app: checked in, absent today (an approved absence, never its type), or neither. */
-  status: 'checkedIn' | 'absent' | 'notCheckedIn';
+  status: 'checkedIn' | 'absent' | 'notCheckedIn' | 'notRecorded';
   /** Last day of today's approved absence (status absent). */
   absentUntil: string | null;
   /** Whom the person reports to: the manager of their assignment in force. */
@@ -56,7 +56,8 @@ export class DirectoryController {
              a.job_function, d.id AS department_id, d.name AS department, loc.name AS location,
              a.manager_user_id, coalesce(nullif(mu.display_name, ''), mu.email) AS manager_name,
              to_char(w.check_in AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS checked_in_since,
-             ab.date_end::text AS absent_until
+             ab.date_end::text AS absent_until,
+             rec.time_recording
       FROM organization_memberships m
       JOIN users u ON u.id = m.user_id
       LEFT JOIN (
@@ -77,6 +78,11 @@ export class DirectoryController {
         WHERE organization_id = ${orgId} AND user_id = m.user_id AND status = 'approved'
           AND date_start <= (now() AT TIME ZONE 'Europe/Zurich')::date AND date_end >= (now() AT TIME ZONE 'Europe/Zurich')::date
       ) ab ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT time_recording FROM work_schedules
+        WHERE organization_id = ${orgId} AND user_id = m.user_id AND valid_from <= (now() AT TIME ZONE 'Europe/Zurich')::date
+        ORDER BY valid_from DESC LIMIT 1
+      ) rec ON TRUE
       WHERE m.organization_id = ${orgId} AND m.status = 'active' AND u.is_active
         AND (m.exit_at IS NULL OR m.exit_at > now())
       ORDER BY lower(coalesce(u.last_name, u.display_name, u.email)), lower(coalesce(u.first_name, ''))`);
@@ -94,7 +100,7 @@ export class DirectoryController {
       departmentId: (r.department_id as string | null) ?? null,
       location: (r.location as string | null) ?? null,
       checkedInSince: (r.checked_in_since as string | null) ?? null,
-      status: r.checked_in_since ? 'checkedIn' : r.absent_until ? 'absent' : 'notCheckedIn',
+      status: r.checked_in_since ? 'checkedIn' : r.absent_until ? 'absent' : r.time_recording === 'none' ? 'notRecorded' : 'notCheckedIn',
       absentUntil: (r.absent_until as string | null) ?? null,
       managerId: (r.manager_user_id as string | null) ?? null,
       managerName: (r.manager_name as string | null) ?? null,

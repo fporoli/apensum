@@ -5,39 +5,21 @@ import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isPeriodLocked, listableUserIds, membershipManagerId } from './access';
-import { monthStart, nextMonth } from '@worktime3/shared/worktime';
+import { VACATION_ABSENCE_TYPE, monthStart, nextMonth } from '@worktime3/shared/worktime';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { probationUntilOf } from './vacation';
 import { absences, static_data, users, workflows } from './db/schema';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService, APPROVE_ABSENCE_WORKFLOW_NAME } from './workflows.service';
-import { absenceNeedsApproval } from './absence-types';
+import { absenceNeedsApproval, resolveAbsenceTypes } from './absence-types';
 import { NotificationsService } from './notifications.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 
 const STATUSES = ['pending', 'approved', 'rejected'] as const;
 type Status = (typeof STATUSES)[number];
 
-/**
- * The org's absence types as the static_data `values` object (type key -> attributes such as
- * `{approval: false}`): its own override if set, else the global row (`organization_id IS NULL`).
- * No row means no types.
- */
-export async function resolveAbsenceTypes(db: Db, orgId: string): Promise<Record<string, unknown>> {
-  const rows = await db
-    .select({ organization_id: static_data.organization_id, values: static_data.values })
-    .from(static_data)
-    .where(
-      and(
-        or(eq(static_data.organization_id, orgId), isNull(static_data.organization_id)),
-        eq(static_data.entity, 'absences'),
-        eq(static_data.enum_name, 'absence_type'),
-      ),
-    );
-  const picked = rows.find((r) => r.organization_id === orgId) ?? rows.find((r) => r.organization_id === null);
-  if (picked?.values && typeof picked.values === 'object' && !Array.isArray(picked.values)) return picked.values as Record<string, unknown>;
-  return {};
-}
+export { resolveAbsenceTypes };
 
 /** Whether any day of `[dateStart, dateEnd]` lies in a submitted or approved timesheet month. */
 export async function touchesLockedPeriod(db: Db, orgId: string, userId: string, dateStart: string, dateEnd: string): Promise<boolean> {
@@ -125,6 +107,10 @@ export class AbsencesController implements OnModuleInit {
     // Without a manager, or for a type flagged {approval: false} in static data, there's nobody to ask.
     const needsApproval = absenceNeedsApproval(types, absenceType);
     const autoApproved = !managerUserId || !needsApproval;
+    // Vacation in probation is a warning to the person and the manager, never a refusal.
+    const probationUntil = absenceType === VACATION_ABSENCE_TYPE ? await probationUntilOf(db, orgId, callerId) : null;
+    const inProbation = !!probationUntil && dateStart <= probationUntil;
+    const probationWarning = inProbation ? `Vacation during probation (until ${probationUntil})` : '';
     const reviewFields = autoApproved
       ? { status: 'approved' as const, reviewed_by_user_id: callerId, reviewed_at: now }
       : { status: 'pending' as const, reviewed_by_user_id: null, reviewed_at: null };
@@ -132,9 +118,8 @@ export class AbsencesController implements OnModuleInit {
     const values = { organization_id: orgId, user_id: callerId, date_start: dateStart, date_end: dateEnd, absence_type: absenceType, half_day: halfDay, note: note || null, ...reviewFields };
     const [created] = await db.insert(absences).values(values).returning({ id: absences.id });
     void this.versions.record('absences', created.id, 'insert', callerId, { id: created.id, ...values }).catch(() => {});
-    void this.audit
-      .record(orgId, callerId, autoApproved ? 'absence.submit-auto-approved' : 'absence.submit', 'absence', created.id, { dateStart, dateEnd, absenceType, halfDay, note: note || undefined })
-      .catch(() => {});
+    // One action for every type: "recorded without approval" alone would tell that it is sickness.
+    void this.audit.record(orgId, callerId, 'absence.submit', 'absence', created.id).catch(() => {});
 
     if (!autoApproved && managerUserId) {
       const definition = await this.workflowsSvc.ensureDefinition(db, orgId, APPROVE_ABSENCE_WORKFLOW_NAME, "A vacation request awaiting the employee's manager to approve or reject it.", [
@@ -156,7 +141,7 @@ export class AbsencesController implements OnModuleInit {
         assignedToUserId: [managerUserId],
         workflowData: { note: note || null },
         actorUserId: callerId,
-        notification: { title: 'New absence request to review', body: note || undefined },
+        notification: { title: 'New absence request to review', body: [probationWarning, note].filter(Boolean).join('\n') || undefined },
       });
     }
 
@@ -171,7 +156,7 @@ export class AbsencesController implements OnModuleInit {
           recipientUserIds: [managerUserId],
           type: 'absence.recorded',
           title: `${who} reported an absence: ${absenceType}`,
-          body: [range + (halfDay ? ' (half day)' : ''), note].filter(Boolean).join('\n'),
+          body: [range + (halfDay ? ' (half day)' : ''), probationWarning, note].filter(Boolean).join('\n'),
           sourceTable: 'absences',
           sourceTableUuid: created.id,
           data: { absenceId: created.id, userId: callerId, absenceType, dateStart, dateEnd, halfDay },
@@ -179,7 +164,7 @@ export class AbsencesController implements OnModuleInit {
         .catch((err) => console.error('notify-absence-recorded-failed', err));
     }
 
-    return { ok: true, id: created.id, autoApproved, managerNotified: autoApproved && !!managerUserId };
+    return { ok: true, id: created.id, autoApproved, managerNotified: autoApproved && !!managerUserId, ...(inProbation ? { inProbation } : {}) };
   }
 
   @Get('organizations/:orgId/absences')
@@ -237,7 +222,7 @@ export class AbsencesController implements OnModuleInit {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
 
-    const [row] = await db.select({ user_id: absences.user_id, status: absences.status }).from(absences).where(eq(absences.id, id));
+    const [row] = await db.select({ organization_id: absences.organization_id, user_id: absences.user_id, status: absences.status }).from(absences).where(eq(absences.id, id));
     if (!row) return { ok: false, error: 'not-found' };
     if (row.user_id !== callerId) return { ok: false, error: 'forbidden' };
     if (row.status !== 'pending') return { ok: false, error: 'not-pending' };
@@ -250,7 +235,7 @@ export class AbsencesController implements OnModuleInit {
     }
 
     await db.delete(absences).where(eq(absences.id, id));
-    void this.audit.record(row.user_id, callerId, 'absence.cancel', 'absence', id).catch(() => {});
+    void this.audit.record(row.organization_id, callerId, 'absence.cancel', 'absence', id).catch(() => {});
     return { ok: true };
   }
 

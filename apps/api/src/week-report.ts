@@ -27,6 +27,8 @@ export interface WeekDay {
   project: number;
   holiday: string | null;
   absenceType: string | null;
+  /** No working time is recorded that day: nothing to compare project time with. */
+  notRecorded?: true;
 }
 
 export interface WeekLine {

@@ -194,6 +194,17 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     );
   }
 
+  /** Absence types: `unpaid: true` is stored only when the type is unpaid leave. */
+  function updateUnpaid(rowId: number, unpaid: boolean) {
+    setEnumKvList((prev) =>
+      prev.map((kv) => {
+        if (kv.rowId !== rowId) return kv;
+        const { unpaid: _unpaid, ...rest } = kv.attrs ?? {};
+        return { ...kv, attrs: unpaid ? { ...rest, unpaid: true } : rest };
+      }),
+    );
+  }
+
   /** Request types: `confidential: true` is stored only when the type is confidential. */
   function updateConfidential(rowId: number, confidential: boolean) {
     setEnumKvList((prev) =>
@@ -298,7 +309,9 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   /** A table chip: `key: label`, or for attribute values the key plus what is set. */
   function valuePreview(row: StaticDataRow, key: string, value: unknown): string {
     if (!isAttributes(value)) return `${key}: ${value}`;
-    if (isAbsenceTypes(row.entity, row.enum_name)) return value.approval === false ? `${key} · ${t('staticdata.noApproval')}` : key;
+    if (isAbsenceTypes(row.entity, row.enum_name)) {
+      return [key, ...(value.approval === false ? [t('staticdata.noApproval')] : []), ...(value.unpaid === true ? [t('staticdata.unpaid')] : [])].join(' · ');
+    }
     if (isRequestTypes(row.entity, row.enum_name)) return value.confidential === true ? `${key} · ${t('requests.confidential')}` : key;
     return Object.keys(value).length > 0 ? `${key}: ${JSON.stringify(value)}` : key;
   }
@@ -520,11 +533,18 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
               <Box key={kv.rowId} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <TextField label={t('staticdata.key')} value={kv.key} onChange={(e) => updateKv(kv.rowId, 'key', e.target.value)} size="small" sx={{ flex: 1 }} />
                 {absenceTypesRow ? (
-                  <FormControlLabel
-                    sx={{ flex: 1, m: 0 }}
-                    control={<Checkbox size="small" checked={kv.attrs?.approval !== false} onChange={(e) => updateApproval(kv.rowId, e.target.checked)} />}
-                    label={t('staticdata.needsApproval')}
-                  />
+                  <Box sx={{ flex: 1, display: 'flex', flexWrap: 'wrap' }}>
+                    <FormControlLabel
+                      sx={{ m: 0, mr: 1 }}
+                      control={<Checkbox size="small" checked={kv.attrs?.approval !== false} onChange={(e) => updateApproval(kv.rowId, e.target.checked)} />}
+                      label={t('staticdata.needsApproval')}
+                    />
+                    <FormControlLabel
+                      sx={{ m: 0 }}
+                      control={<Checkbox size="small" checked={kv.attrs?.unpaid === true} onChange={(e) => updateUnpaid(kv.rowId, e.target.checked)} />}
+                      label={t('staticdata.unpaid')}
+                    />
+                  </Box>
                 ) : requestTypesRow ? (
                   <FormControlLabel
                     sx={{ flex: 1, m: 0 }}

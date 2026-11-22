@@ -132,6 +132,9 @@ export { NotificationsService } from './notifications.service';
 export { sendMail, type MailOptions } from './mailer';
 export { appBaseUrl } from './app-url';
 
+// Who records no working time in a period (no working-time timesheet to wait for).
+export { notRecordingUserIds } from './time-recording';
+
 // Requests as tasks: a plugin opens a task for a department (`openTask`, one per key; e.g. a deadline)
 // and resolves the ones that no longer apply (`closeTasks`); past its due date an open task alerts its
 // handlers by e-mail. `requests-off` when the organization has the Requests module off.

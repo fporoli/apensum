@@ -54,7 +54,17 @@ export interface WorkSchedule {
   workloadPercent: number;
   /** Target minutes per weekday, Monday … Sunday. */
   dayMinutes: number[];
+  /** Unset = `full`. With `none` the days still count for vacation and absences, but have no target. */
+  timeRecording?: TimeRecording;
+  /** Why no working time is recorded (`none` only). */
+  exemptionReason?: ExemptionReason;
 }
+
+/** `daily` (hours per day, ArGV 1 art. 73b) is reserved: the app does not offer it yet. */
+export type TimeRecording = 'full' | 'daily' | 'none';
+/** Outside the Act's working-time rules (ArG art. 3 d), or a written waiver (ArGV 1 art. 73a). */
+export const EXEMPTION_REASONS = ['senior_executive', 'waiver'] as const;
+export type ExemptionReason = (typeof EXEMPTION_REASONS)[number];
 
 /** Monday–Friday at an equal share of `weeklyMinutes`: the schedule of someone without one. */
 export function defaultSchedule(fullTimeWeeklyMinutes: number = DEFAULT_FULL_TIME_WEEKLY_MINUTES): WorkSchedule {
@@ -88,7 +98,7 @@ export function scheduleOn(date: string, schedules: readonly WorkSchedule[], fal
   return best ?? fallback;
 }
 
-export type ScheduleResult = { ok: true; schedule: WorkSchedule } | { ok: false; error: 'invalid-date' | 'invalid-workload' | 'invalid-day-minutes' };
+export type ScheduleResult = { ok: true; schedule: WorkSchedule } | { ok: false; error: 'invalid-date' | 'invalid-workload' | 'invalid-day-minutes' | 'invalid-time-recording' };
 
 export function validateSchedule(input: unknown): ScheduleResult {
   const r = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
@@ -99,7 +109,15 @@ export function validateSchedule(input: unknown): ScheduleResult {
   if (!Array.isArray(days) || days.length !== 7 || !days.every((m) => Number.isInteger(m) && m >= 0 && m <= MAX_DAY_MINUTES)) {
     return { ok: false, error: 'invalid-day-minutes' };
   }
-  return { ok: true, schedule: { validFrom: r.validFrom, workloadPercent: Math.round(percent * 100) / 100, dayMinutes: days as number[] } };
+  const schedule: WorkSchedule = { validFrom: r.validFrom, workloadPercent: Math.round(percent * 100) / 100, dayMinutes: days as number[] };
+  const recording = r.timeRecording ?? 'full';
+  if (recording === 'none') {
+    const reason = EXEMPTION_REASONS.find((x) => x === r.exemptionReason);
+    if (!reason) return { ok: false, error: 'invalid-time-recording' };
+    return { ok: true, schedule: { ...schedule, timeRecording: 'none', exemptionReason: reason } };
+  }
+  if (recording !== 'full' || r.exemptionReason) return { ok: false, error: 'invalid-time-recording' };
+  return { ok: true, schedule };
 }
 
 export function weeklyMinutes(schedule: WorkSchedule): number {
@@ -314,8 +332,16 @@ export interface DayTarget {
   absence: number;
   /** Type of the absence behind `absence`, when there is one. */
   absenceType?: string;
-  /** Minutes the person is expected to work: scheduled − holiday − absence. */
+  /** Minutes the person is expected to work: scheduled − holiday − absence (0 when not recorded). */
   target: number;
+  /** The person records no working time that day. */
+  notRecorded?: true;
+}
+
+/** The attendance of the days on which the person records working time. */
+export function recordedAttendance(attendance: ReadonlyMap<string, number>, schedules: readonly WorkSchedule[], fallback: WorkSchedule): ReadonlyMap<string, number> {
+  if (!schedules.some((s) => s.timeRecording === 'none')) return attendance;
+  return new Map([...attendance].filter(([date]) => scheduleOn(date, schedules, fallback).timeRecording !== 'none'));
 }
 
 /**
@@ -339,6 +365,10 @@ export function dayTarget(date: string, schedule: WorkSchedule, holiday: Pick<Ho
   }
   const day: DayTarget = { date, scheduled, holiday: holidayMinutes, absence, target: remaining - absence };
   if (absenceType !== undefined && absence > 0) day.absenceType = absenceType;
+  if (schedule.timeRecording === 'none') {
+    day.target = 0;
+    day.notRecorded = true;
+  }
   return day;
 }
 
@@ -437,7 +467,7 @@ export function summarizeDays(days: readonly DayTarget[], attendance: ReadonlyMa
     summary.scheduled += d.scheduled;
     summary.holiday += d.holiday;
     summary.target += d.target;
-    summary.actual += attendance.get(d.date) ?? 0;
+    if (!d.notRecorded) summary.actual += attendance.get(d.date) ?? 0;
     if (d.absence > 0) {
       const type = d.absenceType ?? 'other';
       summary.absenceByType[type] = (summary.absenceByType[type] ?? 0) + d.absence;
@@ -450,13 +480,14 @@ export function summarizeDays(days: readonly DayTarget[], attendance: ReadonlyMa
 }
 
 /**
- * Vacation entitlement for a year in full-time days: `daysPerYear` for each day of the year the
+ * Vacation entitlement for a year in full-time days: `daysPerYear` (a number, or what applies on each
+ * day: vacation.ts) for each day of the year the
  * person counts (from `countFrom`, before `countUntil`), weighted by the workload of the schedule
  * in force that day. A full year at 100% gives `daysPerYear`; joining on 1 July at 50% gives a quarter.
  */
 export function vacationEntitlement(
   year: number,
-  daysPerYear: number,
+  daysPerYear: number | ((date: string) => number),
   schedules: readonly WorkSchedule[],
   fallback: WorkSchedule,
   countFrom?: string | null,
@@ -468,9 +499,10 @@ export function vacationEntitlement(
   const until = countUntil && countUntil < end ? countUntil : end;
   if (from >= until) return 0;
   const daysInYear = datesBetween(first, end).length;
+  const daysOn = typeof daysPerYear === 'number' ? () => daysPerYear : daysPerYear;
   let weighted = 0;
-  for (const d of datesBetween(from, until)) weighted += scheduleOn(d, schedules, fallback).workloadPercent / 100;
-  return roundDays((daysPerYear * weighted) / daysInYear);
+  for (const d of datesBetween(from, until)) weighted += (daysOn(d) * scheduleOn(d, schedules, fallback).workloadPercent) / 100;
+  return roundDays(weighted / daysInYear);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { sendMail } from './mailer';
 import { buildInviteEmail } from './orgs.controller';
 import type { Db } from './db.service';
 import { BalancesService, type MonthBalance } from './balances.service';
+import { resolveAbsenceTypes, unpaidAbsenceTypes } from './absence-types';
 import {
   departments,
   employee_assignments,
@@ -19,6 +20,16 @@ import {
 import { buildCsv, buildXlsx, type Cell, type SheetColumn } from '@worktime3/shared/xlsx';
 import { AuditService } from './audit.service';
 import { randomUUID } from 'node:crypto';
+
+/** Absence types the payroll export counts as sick leave (the global types' keys). */
+export const SICK_LEAVE_TYPES: ReadonlySet<string> = new Set(['sickness', 'accident']);
+
+/** A month's absence minutes of the given types. */
+export function payrollMinutes(absenceByType: Record<string, number>, types: ReadonlySet<string>): number {
+  let minutes = 0;
+  for (const [type, m] of Object.entries(absenceByType)) if (types.has(type)) minutes += Number(m) || 0;
+  return minutes;
+}
 
 export interface PayrollRow {
   userId: string;
@@ -247,6 +258,8 @@ export class ImportExportService {
     const itemAmounts = await Promise.all(PAYROLL_ITEMS.map(async (item) => [item.key, await item.amounts(db, { orgId, from: periodStart, to: periodEnd })] as const));
 
     const rows: PayrollRow[] = [];
+    // Unpaid: the types marked so (Admin settings -> static data); sick leave: sickness and accident.
+    const unpaidTypes = unpaidAbsenceTypes(await resolveAbsenceTypes(db, orgId));
 
     for (const member of members) {
       const personalien = payrollPersonalien(member.basicdata, orgId);
@@ -274,8 +287,8 @@ export class ImportExportService {
           vacationDaysTaken = Number.isFinite(mb.vacationDays) ? Math.round(mb.vacationDays * 100) / 100 : 0;
 
           if (mb.absenceByType) {
-            const unpaidMin = Number(mb.absenceByType.unpaid) || 0;
-            const sickMin = (Number(mb.absenceByType.sick) || 0) + (Number(mb.absenceByType.accident) || 0);
+            const unpaidMin = payrollMinutes(mb.absenceByType, unpaidTypes);
+            const sickMin = payrollMinutes(mb.absenceByType, SICK_LEAVE_TYPES);
             unpaidLeaveHours = Math.round((unpaidMin / 60) * 100) / 100;
             sickLeaveHours = Math.round((sickMin / 60) * 100) / 100;
           }

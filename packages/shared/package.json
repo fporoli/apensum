@@ -47,6 +47,11 @@
       "types": "./dist/modules.d.ts",
       "default": "./dist/modules.js"
     },
+    "./vacation": {
+      "source": "./src/vacation.ts",
+      "types": "./dist/vacation.d.ts",
+      "default": "./dist/vacation.js"
+    },
     "./worktime": {
       "source": "./src/worktime.ts",
       "types": "./dist/worktime.d.ts",

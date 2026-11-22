@@ -3,6 +3,7 @@ import { and, desc, eq, getTableColumns, inArray, type SQL } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { callerUserId, canEditBeyondOwn, canEditUserData, canSeeUserData, isManagerOf, isOrgMember, isYearClosed, listableUserIds, membershipManagerId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { notRecordingUserIds } from './time-recording';
 import { timesheet_periods, users, workflows } from './db/schema';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
@@ -135,6 +136,9 @@ export class TimesheetsController implements OnModuleInit {
     if (existing && (existing.status === 'submitted' || existing.status === 'approved')) {
       return { ok: false, error: 'already-submitted' };
     }
+    if ((await notRecordingUserIds(db, orgId, [callerId], periodStart, nextMonthStart(periodStart))).has(callerId)) {
+      return { ok: false, error: 'time-not-recorded' };
+    }
 
     const now = new Date().toISOString();
     // No manager on record ("top of the chain") — nobody to route the request to, so it's approved on submit.
@@ -164,7 +168,7 @@ export class TimesheetsController implements OnModuleInit {
       periodId = created.id;
     }
     void this.audit
-      .record(orgId, callerId, autoApproved ? 'timesheet.submit-auto-approved' : 'timesheet.submit', 'timesheet_period', periodId, { periodStart, note: note || undefined })
+      .record(orgId, callerId, autoApproved ? 'timesheet.submit-auto-approved' : 'timesheet.submit', 'timesheet_period', periodId, { periodStart })
       .catch(() => {});
 
     // Approved on submit (no manager): the month closes right away.
@@ -256,7 +260,7 @@ export class TimesheetsController implements OnModuleInit {
     };
     await db.update(timesheet_periods).set(patch).where(eq(timesheet_periods.id, id));
     void this.audit
-      .record(period.organization_id, callerId, `timesheet.${newStatus === 'approved' ? 'approve' : 'reject'}`, 'timesheet_period', id, note ? { note } : undefined)
+      .record(period.organization_id, callerId, `timesheet.${newStatus === 'approved' ? 'approve' : 'reject'}`, 'timesheet_period', id)
       .catch(() => {});
     void this.versions.record('timesheet_periods', id, 'update_delta', callerId, patch).catch(() => {});
     if (newStatus === 'approved') {

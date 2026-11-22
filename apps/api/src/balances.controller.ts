@@ -5,6 +5,7 @@ import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isYearClos
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { organization_memberships, users } from './db/schema';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { isTimeNotRecorded } from './time-recording';
 import { isIsoDate } from '@worktime3/shared/worktime';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
@@ -37,6 +38,7 @@ export class BalancesController {
       pendingSince: year.overtime.pendingSince,
       vacationDays: year.vacation.remaining,
       vacationPlannedDays: year.vacation.planned,
+      timeRecorded: !(await isTimeNotRecorded(db, orgId, target, new Date())),
     };
   }
 
@@ -49,7 +51,10 @@ export class BalancesController {
     const target = await this.target(db, orgId, req, userId);
     if (!callerId || !target) return { ok: false, error: 'forbidden' };
     const balances = await this.balances.year(db, orgId, target, parseYear(yearParam));
-    return { ok: true, ...balances, canEdit: await canEditBeyondOwn(db, orgId, callerId, OBJECT, target) };
+    const canEdit = await canEditBeyondOwn(db, orgId, callerId, OBJECT, target);
+    // How the entitlement comes about tells the age: for the person and HR, not for the reporting line.
+    const seesBasis = canEdit || target === callerId;
+    return { ok: true, ...balances, vacation: seesBasis ? balances.vacation : { ...balances.vacation, basis: null }, canEdit };
   }
 
   /** Everyone the caller may see for a month (`YYYY-MM`), with over/under-budget and timesheet alerts. */

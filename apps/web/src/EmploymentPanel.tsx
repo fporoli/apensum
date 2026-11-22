@@ -3,11 +3,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Paper,
@@ -38,6 +40,7 @@ interface Assignment {
   manager_name: string | null;
   location_id?: string | null;
   location_name?: string | null;
+  is_management?: boolean;
 }
 
 /** A work place (Organization settings): its canton's holidays apply to the people there. */
@@ -50,6 +53,9 @@ interface Location {
 interface Employment {
   startDate: string | null;
   exitDate: string | null;
+  /** The last day of probation; `probationSet`: HR set it instead of the organization's months. */
+  probationUntil: string | null;
+  probationSet: boolean;
   currentId: string | null;
   assignments: Assignment[];
   canEdit: boolean;
@@ -74,6 +80,7 @@ interface Draft {
   jobFunction: string;
   managerUserId: string;
   locationId: string;
+  isManagement: boolean;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -105,6 +112,7 @@ export default function EmploymentPanel({
   // The last day of employment being edited ('' = none yet).
   const [exitDraft, setExitDraft] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Assignment | null>(null);
+  const [probationDraft, setProbationDraft] = useState<string | null>(null);
 
   async function reload() {
     try {
@@ -115,7 +123,7 @@ export default function EmploymentPanel({
         return;
       }
       setForbidden(false);
-      setData({ startDate: body.startDate ?? null, exitDate: body.exitDate ?? null, currentId: body.currentId ?? null, assignments: body.assignments ?? [], canEdit: !!body.canEdit });
+      setData({ startDate: body.startDate ?? null, exitDate: body.exitDate ?? null, probationUntil: body.probationUntil ?? null, probationSet: !!body.probationSet, currentId: body.currentId ?? null, assignments: body.assignments ?? [], canEdit: !!body.canEdit });
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -193,6 +201,7 @@ export default function EmploymentPanel({
       jobFunction: current?.job_function ?? '',
       managerUserId: current?.manager_user_id ?? '',
       locationId: current?.location_id ?? '',
+      isManagement: !!current?.is_management,
     });
   }
 
@@ -213,6 +222,7 @@ export default function EmploymentPanel({
       jobFunction: draft.jobFunction,
       managerUserId: draft.managerUserId || null,
       locationId: draft.locationId || null,
+      isManagement: draft.isManagement,
     };
     const ok = draft.id
       ? await send(`/organizations/${orgId}/assignments/${draft.id}`, 'PATCH', body)
@@ -277,6 +287,21 @@ export default function EmploymentPanel({
             </Box>
           </Box>
         )}
+        {((data.probationUntil && data.probationUntil >= today()) || data.canEdit) && (
+          <Box>
+            <Typography variant="caption" color="text.secondary">{t('employment.probation')}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{data.probationUntil ? date(data.probationUntil) : t('employment.noProbation')}</Typography>
+              {data.canEdit && (
+                <Tooltip title={t('employment.editProbation')}>
+                  <IconButton size="small" aria-label={t('employment.editProbation')} onClick={() => setProbationDraft(data.probationUntil ?? '')}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          </Box>
+        )}
       </Box>
 
       <TableContainer>
@@ -309,7 +334,10 @@ export default function EmploymentPanel({
                     {future && <Chip size="small" variant="outlined" label={t('employment.planned')} sx={{ ml: 1 }} />}
                   </TableCell>
                   <TableCell>{a.department_name ?? '—'}</TableCell>
-                  <TableCell>{a.job_function ?? '—'}</TableCell>
+                  <TableCell>
+                    {a.job_function ?? '—'}
+                    {a.is_management && <Chip size="small" variant="outlined" label={t('employment.management')} sx={{ ml: 1 }} />}
+                  </TableCell>
                   <TableCell>{a.manager_name ?? t('employment.noManager')}</TableCell>
                   {hasLocations && <TableCell>{a.location_name ?? t('locations.none')}</TableCell>}
                   {data.canEdit && (
@@ -327,6 +355,7 @@ export default function EmploymentPanel({
                               jobFunction: a.job_function ?? '',
                               managerUserId: a.manager_user_id ?? '',
                               locationId: a.location_id ?? '',
+                              isManagement: !!a.is_management,
                             })
                           }
                         >
@@ -389,6 +418,13 @@ export default function EmploymentPanel({
                 onChange={(e) => setDraft({ ...draft, jobFunction: e.target.value })}
                 slotProps={{ htmlInput: { maxLength: 120 } }}
               />
+              <Box>
+                <FormControlLabel
+                  control={<Checkbox size="small" checked={draft.isManagement} onChange={(e) => setDraft({ ...draft, isManagement: e.target.checked })} />}
+                  label={t('employment.management')}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t('employment.managementHint')}</Typography>
+              </Box>
               <TextField
                 select
                 size="small"
@@ -472,6 +508,45 @@ export default function EmploymentPanel({
             disabled={busy || !exitDraft}
             onClick={async () => {
               if (await send(`/organizations/${orgId}/users/${userId}/exit-date`, 'PUT', { lastDay: exitDraft })) setExitDraft(null);
+            }}
+          >
+            {t('common.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={probationDraft !== null} onClose={() => setProbationDraft(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('employment.probation')}</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important', display: 'grid', gap: 1 }}>
+          <TextField
+            type="date"
+            size="small"
+            fullWidth
+            label={t('employment.probationLastDay')}
+            value={probationDraft ?? ''}
+            onChange={(e) => setProbationDraft(e.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <Typography variant="caption" color="text.secondary">{t('employment.probationHint')}</Typography>
+        </DialogContent>
+        <DialogActions>
+          {data.probationSet && (
+            <Button
+              disabled={busy}
+              sx={{ mr: 'auto' }}
+              onClick={async () => {
+                if (await send(`/organizations/${orgId}/users/${userId}/probation`, 'PUT', { until: null })) setProbationDraft(null);
+              }}
+            >
+              {t('employment.probationDefault')}
+            </Button>
+          )}
+          <Button onClick={() => setProbationDraft(null)}>{t('common.cancel')}</Button>
+          <Button
+            variant="contained"
+            disabled={busy || !probationDraft}
+            onClick={async () => {
+              if (await send(`/organizations/${orgId}/users/${userId}/probation`, 'PUT', { until: probationDraft })) setProbationDraft(null);
             }}
           >
             {t('common.save')}

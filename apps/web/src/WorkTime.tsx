@@ -192,6 +192,8 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
   const [dayContext, setDayContext] = useState<DayContext | null>(null);
   const [absenceLabels, setAbsenceLabels] = useState<Record<string, Record<string, string>>>({});
   const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
+  // False: the schedule says the person records no working time; only a running session can still end.
+  const [timeRecorded, setTimeRecorded] = useState(true);
   // Whose sessions are shown: one's own, or (manager/HR) someone whose work time one may correct.
   const [personId, setPersonId] = useState(initialPersonId ?? userId);
   const isSelf = personId === userId;
@@ -207,6 +209,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
     if (code === 'invalid-range') return t('workTime.invalidRange');
     if (code === 'overlap') return t('workTime.overlapRefused');
     if (code === 'crosses-month') return t('workTime.crossesMonth');
+    if (code === 'time-not-recorded') return t('workTime.notRecorded');
     return t(key, { error: code ?? 'unknown error' });
   }
 
@@ -225,6 +228,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
     try {
       const res = await fetch(`${API}/organizations/${orgId}/balances`, { headers: await authHeaders() });
       const data = await res.json();
+      setTimeRecorded(data?.timeRecorded !== false);
       setBalance(data ? { overtimeMinutes: data.overtimeMinutes, pendingOvertimeMinutes: data.pendingOvertimeMinutes ?? 0, vacationDays: data.vacationDays ?? 0 } : null);
     } catch { /* offline fallback */ }
   }
@@ -472,8 +476,9 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {!canEdit && pickedEditable === false && <Alert severity="info">{t('people.readOnly')}</Alert>}
       {loading && <LinearProgress />}
+      {isSelf && !timeRecorded && <Alert severity="info">{t('workTime.notRecorded')}</Alert>}
 
-      {isSelf && (
+      {isSelf && (timeRecorded || checkedIn) && (
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
@@ -517,7 +522,7 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('workTime.recentSessions')}</Typography>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-              {canEdit && (
+              {canEdit && (!isSelf || timeRecorded) && (
               <Button
                 size="small"
                 startIcon={<AddIcon fontSize="small" />}

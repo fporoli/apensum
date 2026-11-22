@@ -111,6 +111,23 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
   const [noApprovalTypes, setNoApprovalTypes] = useState<string[]>([]);
   const [typeLabels, setTypeLabels] = useState<Record<string, Record<string, string>>>({});
   const [file, setFile] = useState<File | null>(null);
+  // Vacation in probation: a warning, the request goes on.
+  const [probationUntil, setProbationUntil] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setProbationUntil(null);
+    (async () => {
+      try {
+        const res = await fetch(`${API}/organizations/${orgId}/vacation-settings`, { headers: await authHeaders() });
+        const data = await res.json();
+        if (!cancelled && data?.ok) setProbationUntil(data.probationUntil ?? null);
+      } catch { /* only a hint: the manager is warned by the server anyway */ }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgId]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [viewingRow, setViewingRow] = useState<AbsenceRow | null>(null);
@@ -487,6 +504,9 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
           </Button>
           <Button type="submit" variant="contained" sx={{ height: 40 }}>{noApprovalTypes.includes(absenceType) ? t('absences.record') : t('absences.request')}</Button>
         </Box>
+        {absenceType === 'vacation' && dateStart && probationUntil && dateStart <= probationUntil && (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>{t('absences.probationWarning', { date: toDisplayDate(probationUntil) })}</Alert>
+        )}
       </Paper>
 
       <Paper sx={{ p: 2 }}>

@@ -6,6 +6,7 @@ import { VersionsService } from './versions.service';
 import { addDays, isLongSession } from '@worktime3/shared/worktime';
 import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, listableUserIds, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { isTimeNotRecorded } from './time-recording';
 import { absences, organization_memberships, users, work_times } from './db/schema';
 import { clientIp } from './client-ip';
 import { crossesMonthEnd, dayContextFrom, dayContextTo, dayFindings, overlappingSessions, splitAtMonthEnds } from './work-time-day';
@@ -54,6 +55,7 @@ export class WorkTimeController {
 
     const now = new Date().toISOString();
     if (await isPeriodLocked(db, orgId, userId, now)) return { ok: false, error: 'period-locked' };
+    if (await isTimeNotRecorded(db, orgId, userId, now)) return { ok: false, error: 'time-not-recorded' };
 
     const open = await this.findOpenSession(db, userId);
     if (open) return { ok: false, error: 'already-checked-in' };
@@ -140,6 +142,7 @@ export class WorkTimeController {
     }
     // Every month the session touches must be open (a night shift on the 31st reaches the 1st).
     if (await isPeriodLocked(db, orgId, targetUserId, checkIn, checkOut)) return { ok: false, error: 'period-locked' };
+    if (await isTimeNotRecorded(db, orgId, targetUserId, checkIn)) return { ok: false, error: 'time-not-recorded' };
     if (crossesMonthEnd(checkIn, checkOut, await this.model.timeZone(db, targetUserId))) return { ok: false, error: 'crosses-month' };
     const clash = await this.overlapping(db, orgId, targetUserId, checkIn, checkOut);
     if (clash) return overlapError(clash);
@@ -263,6 +266,9 @@ export class WorkTimeController {
       patch.home_office = body.homeOffice;
     }
     if (Object.keys(patch).length === 0) return { ok: true };
+    if (patch.check_in && owned.entry.organization_id && (await isTimeNotRecorded(db, owned.entry.organization_id, owned.userId, patch.check_in))) {
+      return { ok: false, error: 'time-not-recorded' };
+    }
     await db.update(work_times).set({ ...patch, client_ip: clientIp(req) }).where(eq(work_times.id, id));
     void this.versions.record('work_times', id, 'update_delta', owned.userId, patch).catch(() => {});
     return { ok: true };

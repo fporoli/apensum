@@ -20,7 +20,7 @@ interface Person {
   departmentId: string | null;
   location?: string | null;
   checkedInSince: string | null;
-  status: 'checkedIn' | 'absent' | 'notCheckedIn';
+  status: 'checkedIn' | 'absent' | 'notCheckedIn' | 'notRecorded';
   absentUntil: string | null;
   managerId: string | null;
   managerName: string | null;
@@ -28,6 +28,8 @@ interface Person {
 
 /** Presence as a small mark on the picture, like a chat app: green check, purple away arrow, grey ring. */
 function StatusMark({ status }: { status: Person['status'] }) {
+  // Who records no working time has no presence to show.
+  if (status === 'notRecorded') return null;
   const ring = { width: 18, height: 18, borderRadius: '50%', border: 2, borderColor: 'background.paper', display: 'grid', placeItems: 'center' } as const;
   if (status === 'checkedIn') {
     return (
@@ -96,10 +98,11 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
 
   const byId = useMemo(() => new Map((people ?? []).map((p) => [p.userId, p])), [people]);
   /** The presence line: only checked in or absent; "not checked in" is just the grey ring (its tooltip). */
-  const presenceLine = (p: Person) => (p.status === 'notCheckedIn' ? null : statusText(p));
+  const presenceLine = (p: Person) => (p.status === 'notCheckedIn' || p.status === 'notRecorded' ? null : statusText(p));
   const statusText = (p: Person) =>
     p.status === 'checkedIn' && p.checkedInSince ? t('directory.checkedInSince', { time: time(p.checkedInSince) })
       : p.status === 'absent' ? (p.absentUntil ? t('directory.absentUntil', { date: formatLocaleDate(p.absentUntil, locale) }) : t('directory.absent'))
+        : p.status === 'notRecorded' ? ''
         : t('directory.notCheckedIn');
   const statusColor = (p: Person) => (p.status === 'checkedIn' ? 'success.main' : p.status === 'absent' ? '#a855f7' : 'text.secondary');
 

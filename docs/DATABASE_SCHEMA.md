@@ -317,6 +317,10 @@ than recording whether someone was at work at all. A person's daily target
 comes from `work_schedules` (minutes per weekday, with history), public
 holidays (the canton in `organizations.settings.holidayRegion` plus
 `org_holidays`) and approved `absences` (see `packages/shared/src/worktime.ts`).
+A schedule with `time_recording = 'none'` (095, with `exemption_reason`
+`senior_executive` or `waiver`) has no target, timesheet or overtime; `daily`
+is reserved. `organization_memberships.probation_until` is a person's end of
+probation where it differs from `settings.vacation.probationMonths`.
 
 Balances are derived (`apps/api/src/balances.service.ts`). Approving a
 working-time timesheet closes its month: `work_time_months` freezes target,
@@ -330,7 +334,10 @@ the share of attendance beyond `settings.legalMaxWeeklyMinutes` (45 h default)
 per calendar week; it is part of the overtime balance, tracked as its own
 account against `settings.legalOvertimeYearLimitMinutes` (170 h / 140 h), and
 `legal_overtime` adjustments (e.g. a payout) move both. Vacation is counted in full-time days:
-the yearly entitlement is `settings.vacationDaysPerYear` (default 25) prorated
+the yearly entitlement follows the rules in `settings.vacation` (095: dated
+base days, management days for `employee_assignments.is_management`, age steps;
+without rules `settings.vacationDaysPerYear`, default 25, less a twelfth per
+full 30 days of absence types marked `unpaid`, 096) prorated
 by the schedule's workload and the counting start, unless `vacation_entitlements`
 sets that year's days for the person; days taken come from approved
 `vacation` absences; the rest carries over to the next year. Balances count

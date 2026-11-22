@@ -144,8 +144,9 @@ export class TeamOverviewController {
         let attended = 0;
         let difference = 0;
         let absence = 0;
+        const notRecorded = targets.length > 0 && targets.every((d) => d.notRecorded);
         for (const d of targets) {
-          const minutes = attendance.get(d.date) ?? 0;
+          const minutes = d.notRecorded ? 0 : attendance.get(d.date) ?? 0;
           target += d.target;
           attended += minutes;
           absence += d.absence;
@@ -162,7 +163,7 @@ export class TeamOverviewController {
           workDays: [...attendance.values()].filter((m) => m > 0).length,
           checkedIn: checkedIn.has(userId),
           periodId: period?.id ?? null,
-          status: period?.status ?? 'open',
+          status: period?.status === 'submitted' || period?.status === 'approved' || !notRecorded ? period?.status ?? 'open' : 'not_recorded',
           submittedAt: period?.submitted_at ?? null,
         };
       }),

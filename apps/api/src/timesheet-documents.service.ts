@@ -601,7 +601,7 @@ export class TimesheetDocumentsService {
       FROM work_time_months WHERE timesheet_period_id = ${periodId}`);
     const m = closed.rows[0] as Record<string, unknown> | undefined;
     const sum = (f: (d: (typeof targets)[number]) => number) => targets.reduce((s, d) => s + f(d), 0);
-    const actual = targets.reduce((s, d) => s + (attended.get(d.date) ?? 0), 0);
+    const actual = targets.reduce((s, d) => s + (d.notRecorded ? 0 : attended.get(d.date) ?? 0), 0);
     const absenceByType: Record<string, number> = {};
     for (const d of targets) if (d.absence && d.absenceType) absenceByType[d.absenceType] = (absenceByType[d.absenceType] ?? 0) + d.absence;
     const totals = m
@@ -630,7 +630,7 @@ export class TimesheetDocumentsService {
           return {
             date: d.date,
             target: d.target,
-            actual: Math.round(attended.get(d.date) ?? 0),
+            actual: d.notRecorded ? 0 : Math.round(attended.get(d.date) ?? 0),
             holiday: h && d.holiday ? holidayName(h, lang) : undefined,
             absence: d.absence && d.absenceType ? humanize(d.absenceType) : undefined,
           };

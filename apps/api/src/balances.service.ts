@@ -4,13 +4,20 @@ import type { Db } from './db.service';
 import { balance_adjustments, balance_years, organization_memberships, timesheet_periods, users, vacation_entitlements, work_time_months } from './db/schema';
 import { WorkTimeModelService, localDate, type WorkTimeSettings } from './work-time-model.service';
 import { VersionsService } from './versions.service';
+import { vacationProfile, type VacationProfile } from './vacation';
+import { unpaidLeaveCut, unpaidLeaveDays, vacationDaysOn, type VacationDays } from '@worktime3/shared/vacation';
+import { resolveAbsenceTypes, unpaidAbsenceTypes } from './absence-types';
 import {
+  addDays,
   dayTargets,
+  defaultSchedule,
   legalOvertimeBetween,
   monthStart,
   monthsBetween,
   nextMonth,
+  recordedAttendance,
   roundDays,
+  scheduleOn,
   summarizeDays,
   vacationEntitlement,
   weekStart,
@@ -45,9 +52,10 @@ export interface Adjustment {
 /**
  * How a month stands: `closed` once its timesheet is approved (numbers frozen); otherwise the
  * timesheet's status (`submitted`, `rejected`) or, without one, `open` (past), `current` or
- * `future`. Months before the person's balances start are `before-start`.
+ * `future`. Months before the person's balances start are `before-start`, those in which they record
+ * no working time `not-recorded`: nothing to submit, nothing that keeps a year open.
  */
-export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start';
+export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start' | 'not-recorded';
 
 export interface MonthBalance extends MonthSummary {
   month: string;
@@ -97,6 +105,13 @@ export interface YearBalances {
     carryOver: number;
     entitlement: number;
     entitlementOverridden: boolean;
+    /** What the rules give, also where HR set the entitlement. */
+    entitlementCalculated: number;
+    /** Calendar days of approved unpaid leave in the year, and the days they cut from the entitlement. */
+    unpaidLeaveDays: number;
+    unpaidLeaveCut: number;
+    /** Null for who may see the balance but not the age behind it, or without rules. */
+    basis: VacationBasis | null;
     adjustments: number;
     taken: number;
     planned: number;
@@ -132,6 +147,10 @@ export interface BalanceInputs {
   periodStatus: ReadonlyMap<string, string>;
   adjustments: readonly Adjustment[];
   entitlementOverrides: ReadonlyMap<number, number>;
+  /** Absence types marked unpaid: a full month of them in a year cuts a twelfth of its entitlement. */
+  unpaidTypes?: ReadonlySet<string>;
+  /** The vacation rules and what they depend on; without it `settings.vacationDaysPerYear` applies. */
+  vacation?: VacationProfile;
   /**
    * The newest year-end closing before `year` (`balance_years`): its balances open the next year and
    * nothing before it is computed again (adjustments effective before then are in it). Null = from `start`.
@@ -197,7 +216,10 @@ function mergeAbsences(a: Record<string, number>, b: Record<string, number>): Re
 const NO_RUNNING = { overtimeOpening: 0, overtimeBalance: 0, vacationOpening: 0, vacationCredited: 0, vacationAdjustmentDays: 0, vacationBalance: 0, legalOvertimeMinutes: 0, legalOvertimeAdjustments: 0, legalOvertimeBalance: 0 };
 
 export function computeYearBalances(input: BalanceInputs): YearBalances {
-  const { year, today, start, model, attendance, settings } = input;
+  const { year, today, start, model, settings } = input;
+  const attendance = recordedAttendance(input.attendance, model.schedules, model.fallback);
+  const recordsNone = model.schedules.some((s) => s.timeRecording === 'none');
+  const daysOn = input.vacation ? perDay(input.vacation) : settings.vacationDaysPerYear;
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year + 1}-01-01`;
   // After a year-end closing, months are computed from the next 1 January on, from its balances.
@@ -255,7 +277,10 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
       const future = summarizeDays(futureFrom < futureEnd ? dayTargets(futureFrom, futureEnd, model) : [], new Map(), fullTime);
       const timesheet = input.periodStatus.get(m);
       const status: MonthStatus =
-        timesheet === 'submitted' || timesheet === 'rejected' ? timesheet : next <= today ? 'open' : m <= today ? 'current' : 'future';
+        timesheet === 'submitted' ? timesheet
+        : recordsNone && recordsNoTime(from, stop(next), model) ? 'not-recorded'
+        : timesheet === 'rejected' ? timesheet
+        : next <= today ? 'open' : m <= today ? 'current' : 'future';
       row = {
         ...past,
         scheduled: past.scheduled + future.scheduled,
@@ -301,12 +326,19 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
   const startYear = Number(start.slice(0, 4));
   const firstYear = opening ? opening.year + 1 : Math.min(startYear, year);
   let carryOver = opening?.vacation ?? 0;
-  let current = { entitlement: 0, overridden: false, adjustments: 0, taken: 0, planned: 0 };
+  let current = { entitlement: 0, calculated: 0, overridden: false, adjustments: 0, taken: 0, planned: 0, unpaidDays: 0, unpaidCut: 0 };
+  const unpaidSpans = input.unpaidTypes?.size ? model.absences.filter((a) => a.type !== undefined && input.unpaidTypes!.has(a.type)) : [];
   for (let y = firstYear; y <= year; y++) {
     const ys = `${y}-01-01`;
     const ye = `${y + 1}-01-01`;
     const override = input.entitlementOverrides.get(y);
-    const entitlement = y < startYear ? 0 : override ?? vacationEntitlement(y, settings.vacationDaysPerYear, model.schedules, model.fallback, start, input.until);
+    // An override replaces the calculated days; the year asked for still says what they would be.
+    const prorated =
+      y < startYear || (override !== undefined && y < year) ? 0 : vacationEntitlement(y, daysOn, model.schedules, model.fallback, start, input.until);
+    const unpaidDays = unpaidSpans.length ? unpaidLeaveDays(y, unpaidSpans) : 0;
+    const unpaidCut = unpaidLeaveCut(prorated, unpaidDays);
+    const calculated = roundDays(prorated - unpaidCut);
+    const entitlement = y < startYear ? 0 : override ?? calculated;
     const adjustments = vacationAdjustments
       .filter((a) => (y === firstYear ? a.effectiveDate < ye : a.effectiveDate >= ys && a.effectiveDate < ye))
       .reduce((s, a) => s + a.amount, 0);
@@ -330,7 +362,7 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
       r.vacationBalance = roundDays(left);
     }
     if (y < year) carryOver += entitlement + adjustments - taken - planned;
-    else current = { entitlement, overridden: override !== undefined, adjustments, taken, planned };
+    else current = { entitlement, calculated, overridden: override !== undefined, adjustments, taken, planned, unpaidDays, unpaidCut };
   }
   carryOver = roundDays(carryOver);
 
@@ -343,12 +375,54 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
       carryOver,
       entitlement: roundDays(current.entitlement),
       entitlementOverridden: current.overridden,
+      entitlementCalculated: roundDays(current.calculated),
+      unpaidLeaveDays: current.unpaidDays,
+      unpaidLeaveCut: current.unpaidCut,
+      basis: input.vacation ? vacationBasis(input.vacation, input) : null,
       adjustments: roundDays(current.adjustments),
       taken: roundDays(current.taken),
       planned: roundDays(current.planned),
       remaining: roundDays(carryOver + current.entitlement + current.adjustments - current.taken - current.planned),
     },
     legalOvertime,
+  };
+}
+
+/** Days per date of a profile, each date worked out once. */
+function perDay(profile: VacationProfile): (date: string) => number {
+  const known = new Map<string, number>();
+  return (date) => {
+    let days = known.get(date);
+    if (days === undefined) known.set(date, (days = vacationDaysOn(date, profile.rules, profile).days));
+    return days;
+  };
+}
+
+/** Whether no day of [from, toExclusive) records working time; after the employment, as on its last day. */
+function recordsNoTime(from: string, toExclusive: string, model: WorkTimeModel): boolean {
+  const none = (date: string) => scheduleOn(date, model.schedules, model.fallback).timeRecording === 'none';
+  if (from >= toExclusive) return none(addDays(toExclusive, -1));
+  return none(from) && model.schedules.every((s) => s.validFrom <= from || s.validFrom >= toExclusive || s.timeRecording === 'none');
+}
+
+/** How a year's entitlement comes about, as of today within the year and the employment. */
+export interface VacationBasis extends VacationDays {
+  date: string;
+  workloadPercent: number;
+  /** Age rules exist and the birth date is missing: they can't be applied. */
+  birthDateMissing: boolean;
+}
+
+function vacationBasis(profile: VacationProfile, input: Pick<BalanceInputs, 'year' | 'today' | 'start' | 'until' | 'model'>): VacationBasis {
+  const { year, today, start, until, model } = input;
+  let date = today < `${year}-01-01` ? `${year}-01-01` : today > `${year}-12-31` ? `${year}-12-31` : today;
+  if (date < start) date = start;
+  if (until && date >= until) date = addDays(until, -1);
+  return {
+    ...vacationDaysOn(date, profile.rules, profile),
+    date,
+    workloadPercent: scheduleOn(date, model.schedules, model.fallback).workloadPercent,
+    birthDateMissing: !profile.birthDate && profile.rules.some((r) => r.ageSteps.length > 0),
   };
 }
 
@@ -427,11 +501,13 @@ export class BalancesService {
     if (!period) return;
     const { organization_id: orgId, user_id: userId, period_start: from, period_end: to } = period;
     const [settings, timeZone] = await Promise.all([this.workTime.settings(db, orgId), this.workTime.timeZone(db, userId)]);
-    const [targets, attended] = await Promise.all([
+    const [targets, allAttended, schedules] = await Promise.all([
       this.workTime.targets(db, orgId, userId, from, to),
       // From the week's Monday: Überzeit counts the whole calendar week.
       this.workTime.attendanceByDay(db, orgId, userId, weekStart(from), to, timeZone, false),
+      this.workTime.schedules(db, orgId, userId),
     ]);
+    const attended = recordedAttendance(allAttended, schedules, defaultSchedule(settings.fullTimeWeeklyMinutes));
     const s = summarizeDays(targets, attended, settings.fullTimeWeeklyMinutes);
     const legal = legalOvertimeBetween(attended, from, to, settings.legalMaxWeeklyMinutes);
     const values = {
@@ -550,7 +626,7 @@ export class BalancesService {
     const from = countedFrom && countedFrom > start ? countedFrom : start;
     const yearStart = `${year}-01-01`;
     const modelFrom = from < yearStart ? from : yearStart;
-    const [model, attendance, closedRows, periods, adjustments, overrides] = await Promise.all([
+    const [model, attendance, closedRows, periods, adjustments, overrides, vacation, absenceTypes] = await Promise.all([
       this.workTime.model(db, orgId, userId, modelFrom, balanceRangeEnd(year, today)),
       from < today ? this.workTime.attendanceByDay(db, orgId, userId, weekStart(from), today, timeZone, false) : Promise.resolve(new Map<string, number>()),
       db.select().from(work_time_months).where(and(eq(work_time_months.organization_id, orgId), eq(work_time_months.user_id, userId))),
@@ -560,6 +636,8 @@ export class BalancesService {
         .where(and(eq(timesheet_periods.organization_id, orgId), eq(timesheet_periods.user_id, userId))),
       this.adjustments(db, orgId, userId),
       this.entitlementOverrides(db, orgId, userId),
+      vacationProfile(db, orgId, userId),
+      resolveAbsenceTypes(db, orgId),
     ]);
     const balances = computeYearBalances({
       year,
@@ -573,6 +651,8 @@ export class BalancesService {
       periodStatus: new Map(periods.map((p) => [monthStart(p.period_start), p.status])),
       adjustments,
       entitlementOverrides: overrides,
+      unpaidTypes: unpaidAbsenceTypes(absenceTypes),
+      vacation,
       opening,
     });
     const own = closings.find((c) => c.year === year);
@@ -594,7 +674,7 @@ export class BalancesService {
     const today = await this.workTime.timeZone(db, userId).then((tz) => localDate(now, tz));
     const startYear = Number(b.start.slice(0, 4));
     const values = { overtime: b.overtime.closing, legalOvertime: b.legalOvertime.closing, vacation: b.vacation.remaining };
-    const openMonths = b.months.filter((m) => m.month >= yearStart && m.status !== 'closed' && m.status !== 'before-start').map((m) => m.month);
+    const openMonths = b.months.filter((m) => m.month >= yearStart && m.status !== 'closed' && m.status !== 'before-start' && m.status !== 'not-recorded').map((m) => m.month);
     let previousOpen = false;
     if (year - 1 >= startYear) {
       const closings = await this.closings(db, orgId, userId);

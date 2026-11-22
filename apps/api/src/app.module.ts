@@ -24,6 +24,7 @@ import { DocumentsService } from './documents.service';
 import { AbsencesController } from './absences.controller';
 import { BalancesController } from './balances.controller';
 import { WorkSchedulesController } from './work-schedules.controller';
+import { VacationController } from './vacation.controller';
 import { TeamOverviewController } from './team-overview.controller';
 import { EmploymentController } from './employment.controller';
 import { LocationsController } from './locations.controller';
@@ -93,7 +94,7 @@ const plugins = loadApiPlugins();
     WorkTimeController,
     AbsencesController,
     BalancesController,
-    WorkSchedulesController,
+    WorkSchedulesController, VacationController,
     TeamOverviewController,
     EmploymentController,
     LocationsController,

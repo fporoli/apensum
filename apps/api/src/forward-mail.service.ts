@@ -88,7 +88,7 @@ export class ForwardMailService {
     } finally {
       if (sent > 0) {
         void this.audit
-          .record(orgId, senderId, 'mail.forward', target.type, target.id, { recipients: recipients.slice(0, sent).map((r) => r.id), subject: input.subject })
+          .record(orgId, senderId, 'mail.forward', target.type, target.id, { recipients: recipients.slice(0, sent).map((r) => r.id) })
           .catch(() => {});
       }
     }

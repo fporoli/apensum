@@ -41,6 +41,7 @@ interface Day {
   project: number;
   holiday: string | null;
   absenceType: string | null;
+  notRecorded?: boolean;
 }
 
 interface Report {
@@ -333,14 +334,14 @@ export default function WeekReport({
                 {projectMinutes.map((m, i) => (<TableCell key={i} align="right" sx={{ ...dayCellSx(i), fontWeight: 600 }}>{cell(m)}</TableCell>))}
                 <TableCell align="right" sx={{ fontWeight: 600 }}>{cell(sum(projectMinutes))}</TableCell>
               </TableRow>
-              {([
+              {!report.days.every((d) => d.notRecorded) && ([
                 ['weekReport.diffAttendance', attended],
                 ['weekReport.diffTarget', targets],
               ] as const).map(([label, other]) => (
                 <TableRow key={label}>
                   <TableCell sx={{ color: 'text.secondary' }}>{t(label)}</TableCell>
                   {projectMinutes.map((m, i) => (
-                    <TableCell key={i} align="right" sx={{ ...dayCellSx(i), color: diffColor(m, other[i]) }}>{signed(m, other[i])}</TableCell>
+                    <TableCell key={i} align="right" sx={{ ...dayCellSx(i), color: diffColor(m, other[i]) }}>{report.days[i].notRecorded ? '' : signed(m, other[i])}</TableCell>
                   ))}
                   <TableCell align="right" sx={{ color: diffColor(sum(projectMinutes), sum(other)) }}>{signed(sum(projectMinutes), sum(other))}</TableCell>
                 </TableRow>

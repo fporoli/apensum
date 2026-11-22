@@ -32,6 +32,14 @@ export function allowedKeys(form: ResolvedForm, editor: 'hr' | 'self'): string[]
 }
 
 /**
+ * The keys stored in the organization's own section: its custom fields and the birth date, which its
+ * vacation rules count with, so that no other organization's edit changes an entitlement here.
+ */
+export function orgOwnedKeys(form: ResolvedForm): string[] {
+  return [...orgCustomKeys(form), 'birthDate'];
+}
+
+/**
  * Registry fields stored in real `users` columns rather than the basicdata jsonb: `update()` routes
  * them to a `users` update instead of merging them into users.basicdata.
  */
@@ -217,7 +225,7 @@ export class BasicDataController {
     if (!touched || [...touched].some((g) => !sections[g]?.direct)) return { ok: false, error: 'forbidden' };
     const checked = this.validate(form, sanitized);
     if (!checked.ok) return checked;
-    const patch = nestOrgKeys(checked.patch, orgCustomKeys(form), orgId);
+    const patch = nestOrgKeys(checked.patch, orgOwnedKeys(form), orgId);
 
     const userColumnPatch: Partial<typeof users.$inferInsert> = {};
     const basicdataPatch: Record<string, unknown> = {};
@@ -260,7 +268,7 @@ export class BasicDataController {
     if (!touched || [...touched].some((g) => !sections[g]?.request && !sections[g]?.direct)) return { ok: false, error: 'forbidden' };
     const checked = this.validate(form, sanitized);
     if (!checked.ok) return checked;
-    const patch = nestOrgKeys(checked.patch, orgCustomKeys(form), orgId);
+    const patch = nestOrgKeys(checked.patch, orgOwnedKeys(form), orgId);
 
     const result = await this.basicData.requestChange(userId, patch, callerId);
     if (result.ok) void this.audit.record(orgId, callerId, 'basicdata.request', 'user', userId, { fields: Object.keys(patch) }).catch(() => {});

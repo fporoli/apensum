@@ -264,6 +264,8 @@ export const work_schedules = pgTable("work_schedules", {
 	valid_from: date().notNull(),
 	workload_percent: numeric({ precision: 5, scale:  2 }).default('100').notNull(),
 	day_minutes: integer().array().notNull(),
+	time_recording: text().default('full').notNull(),
+	exemption_reason: text(),
 }, (table) => [
 	foreignKey({
 			columns: [table.organization_id],
@@ -278,6 +280,8 @@ export const work_schedules = pgTable("work_schedules", {
 	unique("uq_work_schedules").on(table.organization_id, table.user_id, table.valid_from),
 	check("chk_work_schedules_days", sql`array_length(day_minutes, 1) = 7`),
 	check("chk_work_schedules_workload", sql`(workload_percent >= (0)::numeric) AND (workload_percent <= (100)::numeric)`),
+	check("chk_work_schedules_recording", sql`time_recording = ANY (ARRAY['full'::text, 'daily'::text, 'none'::text])`),
+	check("chk_work_schedules_exemption", sql`((time_recording = 'none'::text) AND (exemption_reason IS NOT NULL) AND (exemption_reason = ANY (ARRAY['senior_executive'::text, 'waiver'::text]))) OR ((time_recording <> 'none'::text) AND (exemption_reason IS NULL))`),
 ]);
 
 export const balance_adjustments = pgTable("balance_adjustments", {
@@ -367,6 +371,7 @@ export const employee_assignments = pgTable("employee_assignments", {
 	job_function: text(),
 	manager_user_id: uuid(),
 	location_id: uuid(),
+	is_management: boolean().default(false).notNull(),
 }, (table) => [
 	index("idx_employee_assignments_manager").using("btree", table.organization_id.asc().nullsLast(), table.manager_user_id.asc().nullsLast()),
 	foreignKey({
@@ -643,6 +648,7 @@ export const organization_memberships = pgTable("organization_memberships", {
 	settings: jsonb().default({}).notNull(),
 	exit_at: timestamp({ withTimezone: true, mode: 'string' }),
 	start_date: date(),
+	probation_until: date(),
 }, (table) => [
 	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast()),
 	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast()),

@@ -5,6 +5,7 @@ import {
   Button,
   Chip,
   IconButton,
+  MenuItem,
   Paper,
   Table,
   TableBody,
@@ -18,7 +19,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { dayMinutesFor, weeklyMinutes, type WorkSchedule } from '@worktime3/shared/worktime';
+import { EXEMPTION_REASONS, dayMinutesFor, weeklyMinutes, type WorkSchedule } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
 import { formatLocaleDate, swissLocale } from './localeFormat';
 import { DeleteIcon } from './icons';
@@ -86,6 +87,8 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
   const [percent, setPercent] = useState('100');
   const [workingDays, setWorkingDays] = useState<number[]>([0, 1, 2, 3, 4]);
   const [dayText, setDayText] = useState<string[]>(Array(7).fill('0:00'));
+  // '' = working time is recorded; else why it is not.
+  const [exemption, setExemption] = useState('');
   const [busy, setBusy] = useState(false);
 
   const days = useMemo(() => weekdayNames(locale), [locale]);
@@ -104,6 +107,7 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
       const latest: ScheduleRow | undefined = (body.schedules ?? []).at(-1);
       if (latest) {
         setPercent(String(latest.workloadPercent));
+        setExemption(latest.exemptionReason ?? '');
         setWorkingDays(latest.dayMinutes.flatMap((m: number, i: number) => (m > 0 ? [i] : [])));
       }
       setData({
@@ -139,7 +143,7 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
   const formValid = !!validFrom && Number.isFinite(percentValue) && percentValue >= 0 && percentValue <= 100 && parsedDays.every((m) => m !== null);
 
   function errorMessage(code: string | undefined): string {
-    const known = ['forbidden', 'period-locked', 'invalid-date', 'invalid-workload', 'invalid-day-minutes', 'unknown-user'];
+    const known = ['forbidden', 'invalid-time-recording', 'period-locked', 'invalid-date', 'invalid-workload', 'invalid-day-minutes', 'unknown-user'];
     return code && known.includes(code) ? t(`workSchedule.error.${code}`) : t('workSchedule.saveFailed');
   }
 
@@ -174,6 +178,7 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
       validFrom,
       workloadPercent: percentValue,
       dayMinutes: parsedDays as number[],
+      ...(exemption ? { timeRecording: 'none', exemptionReason: exemption } : { timeRecording: 'full' }),
     });
     if (ok) setSuccess(t('workSchedule.saved'));
   }
@@ -193,6 +198,9 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
             ? t('workSchedule.current', { percent: String(current.workloadPercent), weekly: formatHm(weeklyMinutes(current)) })
             : t('workSchedule.noneDefault', { weekly: formatHm(fullTime) })}
         </Typography>
+        {current?.exemptionReason && (
+          <Chip size="small" variant="outlined" sx={{ mt: 0.5 }} label={t(`workSchedule.recording.${current.exemptionReason}`)} />
+        )}
       </Box>
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
@@ -213,7 +221,12 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
             <TableBody>
               {[...schedules].reverse().map((s) => (
                 <TableRow key={s.id} selected={s.id === current?.id}>
-                  <TableCell>{formatLocaleDate(s.validFrom, locale)}</TableCell>
+                  <TableCell>
+                    {formatLocaleDate(s.validFrom, locale)}
+                    {s.exemptionReason && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t(`workSchedule.recording.${s.exemptionReason}`)}</Typography>
+                    )}
+                  </TableCell>
                   <TableCell align="right">{s.workloadPercent}%</TableCell>
                   {s.dayMinutes.map((m, i) => (
                     <TableCell key={i} align="right" sx={{ color: m === 0 ? 'text.disabled' : undefined }}>{formatHm(m)}</TableCell>
@@ -295,6 +308,19 @@ export default function WorkSchedulePanel({ orgId, userId, authHeaders }: WorkSc
               />
             ))}
           </Box>
+          <TextField
+            select
+            size="small"
+            label={t('workSchedule.recording')}
+            value={exemption}
+            onChange={(e) => setExemption(e.target.value)}
+            helperText={exemption ? t(`workSchedule.recording.${exemption}.help`) : undefined}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+            sx={{ maxWidth: 520 }}
+          >
+            <MenuItem value="">{t('workSchedule.recording.full')}</MenuItem>
+            {EXEMPTION_REASONS.map((r) => <MenuItem key={r} value={r}>{t(`workSchedule.recording.${r}`)}</MenuItem>)}
+          </TextField>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
             <Chip
               size="small"

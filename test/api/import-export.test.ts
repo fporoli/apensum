@@ -146,3 +146,13 @@ test('payroll: the latest assignment per person wins, whatever order the rows co
   assert.equal(latest.get('u2')?.departmentId, 'only');
   assert.equal(latestAssignmentPerUser([...rows].reverse()).get('u1')?.departmentId, 'new');
 });
+
+test('payroll counts sickness and accident as sick leave and the types marked unpaid as unpaid', async () => {
+  const { payrollMinutes, SICK_LEAVE_TYPES } = await import('../../apps/api/src/import-export.service');
+  const { unpaidAbsenceTypes } = await import('../../apps/api/src/absence-types');
+  const month = { vacation: 480, sickness: 240, accident: 120, unpaid_leave: 960, own_unpaid: 60, school: 30 };
+  assert.equal(payrollMinutes(month, SICK_LEAVE_TYPES), 360);
+  const unpaid = unpaidAbsenceTypes({ vacation: {}, sickness: { approval: false }, unpaid_leave: { unpaid: true }, own_unpaid: { unpaid: true }, school: {} });
+  assert.deepEqual([...unpaid].sort(), ['own_unpaid', 'unpaid_leave']);
+  assert.equal(payrollMinutes(month, unpaid), 1020);
+});

@@ -8,7 +8,8 @@ import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService } from './workflows.service';
 import { departments, employee_assignments, locations, organization_memberships, users } from './db/schema';
-import { isIsoDate } from '@worktime3/shared/worktime';
+import { probationUntilOf } from './vacation';
+import { addDays, isIsoDate } from '@worktime3/shared/worktime';
 
 /** Permission object of a person's employment (start date, department, function, manager). */
 export const EMPLOYMENT_OBJECT = 'section.people.employment';
@@ -55,6 +56,8 @@ interface AssignmentBody {
   managerUserId?: string | null;
   /** The location (work place, 087): its canton's holidays apply from `validFrom` on. */
   locationId?: string | null;
+  /** Management from `validFrom` on (vacation rules; no right). */
+  isManagement?: boolean;
 }
 
 /**
@@ -199,7 +202,7 @@ export class EmploymentController {
     if (!(await canSeeUserData(db, orgId, callerId, EMPLOYMENT_OBJECT, userId))) return { ok: false, error: 'forbidden', assignments: [] };
 
     const [membership] = await db
-      .select({ start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at })
+      .select({ start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at, probation_until: organization_memberships.probation_until })
       .from(organization_memberships)
       .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId)));
     if (!membership) return { ok: false, error: 'unknown-user', assignments: [] };
@@ -217,6 +220,7 @@ export class EmploymentController {
         manager_name: manager.display_name,
         location_id: employee_assignments.location_id,
         location_name: locations.name,
+        is_management: employee_assignments.is_management,
       })
       .from(employee_assignments)
       .leftJoin(departments, eq(departments.id, employee_assignments.department_id))
@@ -229,6 +233,9 @@ export class EmploymentController {
       ok: true,
       startDate: membership.start_date ?? membership.joined_at?.slice(0, 10) ?? null,
       exitDate: lastDay,
+      probationUntil: await probationUntilOf(db, orgId, userId),
+      /** HR set the end, instead of the organization's months. */
+      probationSet: !!membership.probation_until,
       currentId: assignments.find((a) => a.valid_from <= today)?.id ?? null,
       assignments,
       canEdit: await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId),
@@ -255,7 +262,7 @@ export class EmploymentController {
     if (!membership) return { ok: false, error: 'unknown-user' };
     await db.update(organization_memberships).set({ start_date: startDate }).where(eq(organization_memberships.id, membership.id));
     void this.versions.record('organization_memberships', membership.id, 'update_delta', callerId, { start_date: startDate }).catch(() => {});
-    void this.audit.record(orgId, callerId, 'membership.start-date', 'membership', membership.id, { start_date: startDate }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'membership.start-date', 'membership', membership.id).catch(() => {});
     return { ok: true };
   }
 
@@ -298,7 +305,35 @@ export class EmploymentController {
       WHERE id = ${membership.id}
     `);
     void this.versions.record('organization_memberships', membership.id, 'update_delta', callerId, { exit_last_day: lastDay }).catch(() => {});
-    void this.audit.record(orgId, callerId, 'membership.exit-date', 'membership', membership.id, { last_day: lastDay }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'membership.exit-date', 'membership', membership.id).catch(() => {});
+    return { ok: true };
+  }
+
+  /** The last day of probation for this person (`until`; before the start = none, null = the organization's months). */
+  @Put('organizations/:orgId/users/:userId/probation')
+  async setProbation(
+    @Param('orgId') orgId: string,
+    @Param('userId') userId: string,
+    @Body() body: { until?: string | null },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.employmentEditor(db, orgId, userId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const until = body.until ?? null;
+    if (until !== null && !isIsoDate(until)) return { ok: false, error: 'invalid-date' };
+    const [membership] = await db
+      .select({ id: organization_memberships.id, start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at })
+      .from(organization_memberships)
+      .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId)));
+    if (!membership) return { ok: false, error: 'unknown-user' };
+    const start = membership.start_date ?? membership.joined_at?.slice(0, 10);
+    // Three months at most, longer only by the days of sickness, accident or service (CO 335b): a year is plenty.
+    if (until && start && (until < addDays(start, -1) || until > addDays(start, 366))) return { ok: false, error: 'invalid-probation' };
+    await db.update(organization_memberships).set({ probation_until: until }).where(eq(organization_memberships.id, membership.id));
+    void this.versions.record('organization_memberships', membership.id, 'update_delta', callerId, { probation_until: until }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'membership.probation', 'membership', membership.id).catch(() => {});
     return { ok: true };
   }
 
@@ -321,7 +356,7 @@ export class EmploymentController {
     const values = { organization_id: orgId, user_id: userId, ...checked };
     const [row] = await db.insert(employee_assignments).values(values).returning({ id: employee_assignments.id });
     void this.versions.record('employee_assignments', row.id, 'insert', callerId, { id: row.id, ...values }).catch(() => {});
-    void this.audit.record(orgId, callerId, 'employment.assign', 'user', userId, values).catch(() => {});
+    void this.audit.record(orgId, callerId, 'employment.assign', 'user', userId, { id: row.id }).catch(() => {});
     await this.workflows.rerouteToCurrentManagers(db).catch(() => 0);
     return { ok: true, id: row.id };
   }
@@ -340,6 +375,7 @@ export class EmploymentController {
       jobFunction: body.jobFunction !== undefined ? body.jobFunction : row.job_function,
       managerUserId: body.managerUserId !== undefined ? body.managerUserId : row.manager_user_id,
       locationId: body.locationId !== undefined ? body.locationId : row.location_id,
+      isManagement: body.isManagement !== undefined ? body.isManagement : row.is_management,
     };
     const checked = await this.checkAssignment(db, orgId, row.user_id, merged);
     if ('error' in checked) return { ok: false, error: checked.error };
@@ -347,7 +383,7 @@ export class EmploymentController {
 
     await db.update(employee_assignments).set(checked).where(eq(employee_assignments.id, id));
     void this.versions.record('employee_assignments', id, 'update_delta', callerId, checked).catch(() => {});
-    void this.audit.record(orgId, callerId, 'employment.update', 'user', row.user_id, { id, ...checked }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'employment.update', 'user', row.user_id, { id }).catch(() => {});
     await this.workflows.rerouteToCurrentManagers(db).catch(() => 0);
     return { ok: true };
   }
@@ -362,7 +398,7 @@ export class EmploymentController {
     if (!callerId) return { ok: false, error: 'forbidden' };
     await db.delete(employee_assignments).where(eq(employee_assignments.id, id));
     void this.versions.record('employee_assignments', id, 'delete', callerId, row).catch(() => {});
-    void this.audit.record(orgId, callerId, 'employment.delete', 'user', row.user_id, row).catch(() => {});
+    void this.audit.record(orgId, callerId, 'employment.delete', 'user', row.user_id, { id }).catch(() => {});
     await this.workflows.rerouteToCurrentManagers(db).catch(() => 0);
     return { ok: true };
   }
@@ -412,7 +448,7 @@ export class EmploymentController {
         department_id: employee_assignments.department_id,
         job_function: employee_assignments.job_function,
         manager_user_id: employee_assignments.manager_user_id,
-        location_id: employee_assignments.location_id,
+        location_id: employee_assignments.location_id, is_management: employee_assignments.is_management,
       })
       .from(employee_assignments)
       .where(and(eq(employee_assignments.id, id), eq(employee_assignments.organization_id, orgId)));
@@ -425,7 +461,7 @@ export class EmploymentController {
     orgId: string,
     userId: string,
     body: AssignmentBody,
-  ): Promise<{ valid_from: string; department_id: string | null; job_function: string | null; manager_user_id: string | null; location_id: string | null } | { error: string }> {
+  ): Promise<{ valid_from: string; department_id: string | null; job_function: string | null; manager_user_id: string | null; location_id: string | null; is_management: boolean } | { error: string }> {
     if (!isIsoDate(body.validFrom)) return { error: 'invalid-date' };
     const jobFunction = cleanText(body.jobFunction);
     if (jobFunction === undefined) return { error: 'invalid-function' };
@@ -450,6 +486,6 @@ export class EmploymentController {
         if (current === userId) return { error: 'manager-cycle' };
       }
     }
-    return { valid_from: body.validFrom, department_id: departmentId, job_function: jobFunction, manager_user_id: managerUserId, location_id: locationId };
+    return { valid_from: body.validFrom, department_id: departmentId, job_function: jobFunction, manager_user_id: managerUserId, location_id: locationId, is_management: body.isManagement === true };
   }
 }

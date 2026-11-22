@@ -3,6 +3,7 @@ import { and, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Db } from './db.service';
 import { zonedDate, zonedTime } from './report-schedule';
 import { zoneFormatter } from './zone-format';
+import { isTimeNotRecorded } from './time-recording';
 import { absences, employee_assignments, locations, org_holidays, organizations, users, work_schedules } from './db/schema';
 import {
   DEFAULT_FULL_TIME_WEEKLY_MINUTES,
@@ -22,6 +23,7 @@ import {
   type DayTarget,
   type Holiday,
   type OrgHolidayRow,
+  type ExemptionReason,
   type WorkSchedule,
   type WorkTimeModel,
 } from '@worktime3/shared/worktime';
@@ -33,7 +35,7 @@ export interface WorkTimeSettings {
   holidayRegion: Canton | null;
   /** How far project time on a day may exceed that day's attendance. */
   projectTimeToleranceMinutes: number;
-  /** Vacation days of a full-time year (prorated by workload and membership). */
+  /** The one number from before the vacation rules, still the base until HR saves rules (vacation.ts). */
   vacationDaysPerYear: number;
   /** The balance report flags overtime above this many minutes. */
   overtimeAlertMinutes: number;
@@ -47,6 +49,11 @@ export interface WorkTimeSettings {
   legalOvertimeYearLimitMinutes: number;
   /** Sessions can be marked as home office (check-in and entry form); off by default. */
   homeOffice: boolean;
+  /**
+   * Reserved for recording only the hours per day (ArGV 1 art. 73b; schedules' `daily`): read, but nothing
+   * offers or accepts it until that is built.
+   */
+  simplifiedRecording: boolean;
 }
 
 export const DEFAULT_OVERTIME_ALERT_MINUTES = 50 * 60;
@@ -70,6 +77,7 @@ export function parseWorkTimeSettings(settings: unknown): WorkTimeSettings {
     legalMaxWeeklyMinutes: legalMax,
     legalOvertimeYearLimitMinutes: nonNegative(s.legalOvertimeYearLimitMinutes, defaultLegalOvertimeYearLimit(legalMax)),
     homeOffice: s.homeOffice === true,
+    simplifiedRecording: s.simplifiedRecording === true,
   };
 }
 
@@ -166,11 +174,13 @@ export class WorkTimeModelService {
 
   async schedules(db: Db, orgId: string, userId: string): Promise<(WorkSchedule & { id: string })[]> {
     const rows = await db
-      .select({ id: work_schedules.id, valid_from: work_schedules.valid_from, workload_percent: work_schedules.workload_percent, day_minutes: work_schedules.day_minutes })
+      .select({ id: work_schedules.id, valid_from: work_schedules.valid_from, workload_percent: work_schedules.workload_percent, day_minutes: work_schedules.day_minutes, time_recording: work_schedules.time_recording, exemption_reason: work_schedules.exemption_reason })
       .from(work_schedules)
       .where(and(eq(work_schedules.organization_id, orgId), eq(work_schedules.user_id, userId)))
       .orderBy(work_schedules.valid_from);
-    return rows.map((r) => ({ id: r.id, validFrom: r.valid_from, workloadPercent: Number(r.workload_percent), dayMinutes: r.day_minutes }));
+    return rows.map((r) => ({ id: r.id, validFrom: r.valid_from, workloadPercent: Number(r.workload_percent), dayMinutes: r.day_minutes,
+      ...(r.time_recording === 'none' ? { timeRecording: 'none' as const, exemptionReason: r.exemption_reason as ExemptionReason } : {}),
+    }));
   }
 
   /** The organization's own holiday rows (every location's too; `location_id` null = for everyone). */
@@ -274,6 +284,8 @@ export class WorkTimeModelService {
       const projectMinutes = (booked.get(date) ?? 0) + (entry.get(date) ?? 0);
       const attendanceMinutes = attendance.get(date) ?? 0;
       if (!projectTimeWithinAttendance(projectMinutes, attendanceMinutes, projectTimeToleranceMinutes)) {
+        // Who records no working time has no attendance to keep within (noon: the zone's day is the same).
+        if (await isTimeNotRecorded(db, orgId, userId, zonedTime(date, 12, timeZone))) continue;
         return { ok: false, error: 'project-exceeds-attendance', date, projectMinutes, attendanceMinutes, toleranceMinutes: projectTimeToleranceMinutes };
       }
     }

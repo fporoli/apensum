@@ -344,7 +344,7 @@ export class OrgsController {
 
     await db.update(organization_memberships).set(patch).where(eq(organization_memberships.id, membershipId));
     const logged = { settings: withoutFeed(patch.settings) };
-    void this.audit.record(id, callerId, 'membership.update', 'membership', membershipId, logged).catch(() => {});
+    void this.audit.record(id, callerId, 'membership.update', 'membership', membershipId).catch(() => {});
     void this.versions.record('organization_memberships', membershipId, 'update_delta', callerId, logged).catch(() => {});
     return { ok: true };
   }

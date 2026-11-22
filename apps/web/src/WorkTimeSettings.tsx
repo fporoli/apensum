@@ -20,7 +20,7 @@ import {
 } from '@mui/material';
 import { CANTONS, holidayName, type Holiday, type OrgHolidayRow } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
-import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber, swissLocale } from './localeFormat';
+import { formatLocaleDate, swissLocale } from './localeFormat';
 import { formatHm } from './WorkSchedulePanel';
 import { AddIcon, ChevronLeftIcon, ChevronRightIcon, DeleteIcon, EditIcon } from './icons';
 import { TableEmptyRow } from './components';
@@ -32,7 +32,6 @@ interface Settings {
   fullTimeWeeklyMinutes: number;
   holidayRegion: string | null;
   projectTimeToleranceMinutes: number;
-  vacationDaysPerYear: number;
   overtimeAlertMinutes: number;
   undertimeAlertMinutes: number;
   balancesStartDate: string | null;
@@ -92,7 +91,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
   const [region, setRegion] = useState('');
   const [tolerance, setTolerance] = useState('15');
   const [homeOffice, setHomeOffice] = useState(false);
-  const [vacationDays, setVacationDays] = useState('25');
   const [overtimeAlert, setOvertimeAlert] = useState('50');
   const [undertimeAlert, setUndertimeAlert] = useState('20');
   const [balancesStart, setBalancesStart] = useState('');
@@ -117,7 +115,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
         setRegion(s.holidayRegion ?? '');
         setTolerance(String(s.projectTimeToleranceMinutes));
         setHomeOffice(!!s.homeOffice);
-        setVacationDays(formatLocaleNumber(s.vacationDaysPerYear, locale));
         setOvertimeAlert(String(Math.round(s.overtimeAlertMinutes / 60)));
         setUndertimeAlert(String(Math.round(s.undertimeAlertMinutes / 60)));
         setBalancesStart(s.balancesStartDate ?? '');
@@ -148,7 +145,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
       'invalid-date',
       'invalid-fraction',
       'not-found',
-      'invalid-vacation-days',
       'invalid-alert',
       'invalid-start-date',
       'invalid-legal-max',
@@ -185,8 +181,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
 
   const fullTimeMinutes = parseHmWeek(fullTime);
   const toleranceMinutes = /^\d{1,4}$/.test(tolerance.trim()) ? Number(tolerance) : null;
-  const vacationDaysValue = parseLocaleNumber(vacationDays, locale);
-  const vacationValid = typeof vacationDaysValue === 'number' && vacationDaysValue >= 0 && vacationDaysValue <= 366;
   const overtimeAlertMinutes = parseHours(overtimeAlert);
   const undertimeAlertMinutes = parseHours(undertimeAlert);
   const startValid = balancesStart === '' || /^\d{4}-\d{2}-\d{2}$/.test(balancesStart);
@@ -195,7 +189,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
     fullTimeMinutes !== null &&
     fullTimeMinutes > 0 &&
     toleranceMinutes !== null &&
-    vacationValid &&
     overtimeAlertMinutes !== null &&
     undertimeAlertMinutes !== null &&
     legalLimitMinutes !== null &&
@@ -223,7 +216,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
               fullTimeWeeklyMinutes: fullTimeMinutes,
               holidayRegion: region || null,
               projectTimeToleranceMinutes: toleranceMinutes,
-              vacationDaysPerYear: vacationDaysValue,
               overtimeAlertMinutes,
               undertimeAlertMinutes,
               balancesStartDate: balancesStart || null,
@@ -268,16 +260,6 @@ export default function WorkTimeSettings({ orgId, authHeaders }: WorkTimeSetting
           helperText={t('workTimeSettings.toleranceHelper')}
           disabled={!canEdit}
           sx={{ width: 260 }}
-        />
-        <TextField
-          size="small"
-          label={t('workTimeSettings.vacationDays')}
-          value={vacationDays}
-          onChange={(e) => setVacationDays(e.target.value)}
-          error={!vacationValid}
-          helperText={t('workTimeSettings.vacationDaysHelper')}
-          disabled={!canEdit}
-          sx={{ width: 220 }}
         />
         <TextField
           size="small"

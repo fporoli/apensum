@@ -61,7 +61,7 @@ test('saveSchedule validates and refuses settled months', async () => {
 test('saveSchedule stores the schedule for an editor', async () => {
   const { controller, req, inserted } = setup({ permissions: ['nav.users:edit:all', 'section.workTime.schedule:edit:all'] });
   assert.deepEqual(await controller.saveSchedule('org-1', 'user-2', schedule, req), { ok: true, id: 'ws-1' });
-  assert.deepEqual(inserted[0], { organization_id: 'org-1', user_id: 'user-2', valid_from: '2026-12-01', workload_percent: '80', day_minutes: [480, 480, 480, 480, 0, 0, 0] });
+  assert.deepEqual(inserted[0], { organization_id: 'org-1', user_id: 'user-2', valid_from: '2026-12-01', workload_percent: '80', day_minutes: [480, 480, 480, 480, 0, 0, 0], time_recording: 'full', exemption_reason: null });
 });
 
 test('organization settings and holidays need Organization settings edit', async () => {
@@ -70,7 +70,8 @@ test('organization settings and holidays need Organization settings edit', async
   assert.deepEqual(await controller.saveHoliday('org-1', { date: '2026-12-24' }, req), { ok: false, error: 'forbidden' });
   const admin = setup({ permissions: ['nav.orgSettings:edit:all'] });
   assert.deepEqual(await admin.controller.setOrgSettings('org-1', { holidayRegion: 'XX' }, admin.req), { ok: false, error: 'invalid-region' });
-  assert.deepEqual(await admin.controller.setOrgSettings('org-1', { vacationDaysPerYear: 400 }, admin.req), { ok: false, error: 'invalid-vacation-days' });
+  // Vacation days are HR's rules (vacation.controller.ts): nothing here takes them.
+  assert.deepEqual(await admin.controller.setOrgSettings('org-1', { vacationDaysPerYear: 400 } as any, admin.req), { ok: true });
   assert.deepEqual(await admin.controller.setOrgSettings('org-1', { overtimeAlertMinutes: 1.5 }, admin.req), { ok: false, error: 'invalid-alert' });
   assert.deepEqual(await admin.controller.setOrgSettings('org-1', { balancesStartDate: '2026-13-01' }, admin.req), { ok: false, error: 'invalid-start-date' });
   assert.deepEqual(await admin.controller.setOrgSettings('org-1', { legalMaxWeeklyMinutes: 1000 }, admin.req), { ok: false, error: 'invalid-legal-max' });
@@ -91,6 +92,7 @@ test('parseWorkTimeSettings applies defaults and ignores bad values', () => {
     legalMaxWeeklyMinutes: 2700,
     legalOvertimeYearLimitMinutes: 10200,
     homeOffice: false,
+    simplifiedRecording: false,
   });
   assert.deepEqual(
     parseWorkTimeSettings({
@@ -114,6 +116,7 @@ test('parseWorkTimeSettings applies defaults and ignores bad values', () => {
       legalMaxWeeklyMinutes: 3000,
       legalOvertimeYearLimitMinutes: 8400,
       homeOffice: false,
+      simplifiedRecording: false,
     },
   );
   assert.equal(parseWorkTimeSettings({ holidayRegion: 'XX' }).holidayRegion, null);
@@ -134,7 +137,7 @@ test('checkProjectTime compares the day\'s project time with its attendance', as
   stub.settings = async () => ({ fullTimeWeeklyMinutes: 2400, holidayRegion: null, projectTimeToleranceMinutes: 15 });
   stub.projectMinutesByDay = async () => new Map([['2026-11-10', 120]]); // already booked that day
   stub.attendanceByDay = async () => new Map([['2026-11-10', 240]]);
-  const db = {} as any;
+  const db = { execute: async () => ({ rows: [] }) } as any;
   // 120 booked + 2h new = 240 <= 240 + 15.
   assert.deepEqual(await service.checkProjectTime(db, 'org', 'u', '2026-11-10T08:00:00Z', '2026-11-10T10:00:00Z'), { ok: true });
   // 120 booked + 3h new = 300 > 255.
@@ -146,6 +149,9 @@ test('checkProjectTime compares the day\'s project time with its attendance', as
     attendanceMinutes: 240,
     toleranceMinutes: 15,
   });
+  // Who records no working time has nothing to keep within.
+  const exempt = { execute: async () => ({ rows: [{ time_recording: 'none' }] }) } as any;
+  assert.deepEqual(await service.checkProjectTime(exempt, 'org', 'u', '2026-11-10T08:00:00Z', '2026-11-10T11:00:00Z'), { ok: true });
 });
 
 test('checkProjectTime checks both days of an entry past midnight', async () => {
@@ -156,7 +162,7 @@ test('checkProjectTime checks both days of an entry past midnight', async () => 
   stub.projectMinutesByDay = async () => new Map();
   // A night shift: 2h attended on the 10th, 6h on the 11th.
   stub.attendanceByDay = async () => new Map([['2026-11-10', 120], ['2026-11-11', 360]]);
-  const db = {} as any;
+  const db = { execute: async () => ({ rows: [] }) } as any;
   assert.deepEqual(await service.checkProjectTime(db, 'org', 'u', '2026-11-10T22:00:00Z', '2026-11-11T06:00:00Z'), { ok: true });
   // 3h before midnight is more than the 2h attended that day.
   const late = await service.checkProjectTime(db, 'org', 'u', '2026-11-10T21:00:00Z', '2026-11-11T02:00:00Z');

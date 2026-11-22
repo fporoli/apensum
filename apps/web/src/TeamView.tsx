@@ -246,7 +246,7 @@ function TeamOverview({
 /** A status as a chip: `<prefix>.<status>` as its text, colored by how far it got. */
 export function StatusChip({ status, prefix }: { status: string; prefix: string }) {
   const { t } = useI18n();
-  const color = status === 'approved' || status === 'finished' ? 'success' : status === 'rejected' ? 'error' : status === 'open' || status === 'in_preparation' ? 'default' : 'warning';
+  const color = status === 'approved' || status === 'finished' ? 'success' : status === 'rejected' ? 'error' : status === 'open' || status === 'not_recorded' || status === 'in_preparation' ? 'default' : 'warning';
   return <Chip size="small" color={color} variant={color === 'default' ? 'outlined' : 'filled'} label={t(`${prefix}.${status}`)} />;
 }
 

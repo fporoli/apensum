@@ -300,7 +300,7 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
         end={
           <>
             <PersonPicker orgId={orgId} kind="timesheet" selfId={userId} value={personId} onChange={setPersonId} authHeaders={authHeaders} highlight={!!initialPersonId} onEditableChange={setPickedEditable} />
-            <Chip label={t(`timesheet.status.${status}`)} color={STATUS_COLOR[status]} size="small" />
+            <Chip label={t(`timesheet.status.${monthBalance?.status === 'not-recorded' ? 'not_recorded' : status}`)} color={STATUS_COLOR[status]} size="small" />
           </>
         }
       />
@@ -484,13 +484,14 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
           </Box>
         )}
 
-        {isSelf && (status === 'open' || status === 'rejected') && (
+        {monthBalance?.status === 'not-recorded' && <Alert severity="info" sx={{ mb: 1.5, maxWidth: 900 }}>{t('workTime.notRecorded')}</Alert>}
+        {isSelf && monthBalance?.status !== 'not-recorded' && (status === 'open' || status === 'rejected') && (
           <Alert severity={monthOver ? 'info' : 'warning'} sx={{ mb: 1.5, maxWidth: 900 }}>
             {monthOver ? t('timesheet.submitExplain') : t('timesheet.submitEarly')}
           </Alert>
         )}
 
-        {isSelf && (status === 'open' || status === 'rejected') && (
+        {isSelf && monthBalance?.status !== 'not-recorded' && (status === 'open' || status === 'rejected') && (
           <TextField
             size="small"
             label={t('timesheet.submitNote')}
@@ -508,7 +509,7 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
             }}
           />
         )}
-        {isSelf && (
+        {isSelf && monthBalance?.status !== 'not-recorded' && (
         <Button variant="contained" size="small" onClick={submit} disabled={status === 'submitted' || status === 'approved'}>
           {status === 'approved' ? t('timesheet.approved') : status === 'submitted' ? t('timesheet.pending') : status === 'rejected' ? t('timesheet.resubmit') : t('timesheet.submit')}
         </Button>

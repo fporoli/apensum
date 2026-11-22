@@ -135,6 +135,31 @@ ON CONFLICT (organization_id, user_id, valid_from) DO UPDATE
 SET department_id = COALESCE(employee_assignments.department_id, EXCLUDED.department_id),
     job_function = COALESCE(employee_assignments.job_function, EXCLUDED.job_function);
 
+-- Acme's vacation rules (095): 25 days, management 28, from 60 five more. Alice (born 1964) and Adam are
+-- management, so Alice shows both. Only while Acme has no rules, so re-seeding keeps what was changed
+-- (the flag is set with them; the UPDATE of the rules comes last).
+UPDATE employee_assignments a SET is_management = true
+FROM organizations o
+WHERE o.id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND NOT COALESCE(o.settings -> 'vacation', '{}'::jsonb) ? 'rules'
+  AND a.organization_id = o.id
+  AND a.user_id IN ('22222222-2222-2222-2222-222222222222', '22222222-2222-2222-2222-222222222223');
+
+UPDATE users u
+SET basicdata = jsonb_set(u.basicdata, '{orgs}', COALESCE(u.basicdata -> 'orgs', '{}'::jsonb) || jsonb_build_object(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      COALESCE(u.basicdata -> 'orgs' -> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '{}'::jsonb) || jsonb_build_object('birthDate', v.born)))
+FROM (VALUES
+  ('22222222-2222-2222-2222-222222222222', '1964-03-15'),
+  ('22222222-2222-2222-2222-222222222223', '1981-09-02')
+) AS v(id, born)
+WHERE u.id = v.id::uuid AND NOT u.basicdata ? 'birthDate'
+  AND NOT COALESCE(u.basicdata -> 'orgs' -> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '{}'::jsonb) ? 'birthDate';
+
+UPDATE organizations
+SET settings = settings || jsonb_build_object('vacation', '{"probationMonths": 1}'::jsonb || COALESCE(settings -> 'vacation', '{}'::jsonb)
+      || '{"rules": [{"validFrom": "2000-01-01", "baseDays": 25, "managementDays": 28, "ageSteps": [{"age": 60, "days": 5}]}]}'::jsonb)
+WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND NOT COALESCE(settings -> 'vacation', '{}'::jsonb) ? 'rules';
+
 -- Acme's locations (087): the Zurich office, where everyone works, with Zurich's own Knabenschiessen
 -- (Monday afternoon after the second weekend of September), and a Geneva office, nobody there yet, to show
 -- another canton's holidays. Assignments only get the location while they have none.

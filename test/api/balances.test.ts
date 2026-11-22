@@ -185,6 +185,32 @@ test('computeYearBalances: vacation entitlement prorated from the start, taken a
   assert.equal(b.months[10].absenceByType.sick, 480);
 });
 
+test('computeYearBalances: a full month of unpaid leave cuts a twelfth of the entitlement', () => {
+  const leave = (dateEnd: string) =>
+    computeYearBalances(
+      inputs({
+        start: '2026-01-01',
+        model: { schedules: [], fallback: FULL, holidays: new Map(), absences: [{ dateStart: '2026-03-01', dateEnd, halfDay: false, type: 'unpaid_leave' }] },
+        unpaidTypes: new Set(['unpaid_leave']),
+      }),
+    ).vacation;
+  const short = leave('2026-03-29');
+  assert.equal(short.unpaidLeaveDays, 29);
+  assert.equal(short.unpaidLeaveCut, 0);
+  assert.equal(short.entitlement, 25);
+  const month = leave('2026-03-30');
+  assert.equal(month.unpaidLeaveDays, 30);
+  assert.equal(month.unpaidLeaveCut, 2.08);
+  assert.equal(month.entitlement, 22.92);
+  assert.equal(month.entitlementCalculated, 22.92);
+  // An unmarked type cuts nothing.
+  const other = computeYearBalances(
+    inputs({ start: '2026-01-01', model: { schedules: [], fallback: FULL, holidays: new Map(), absences: [{ dateStart: '2026-03-01', dateEnd: '2026-04-30', halfDay: false, type: 'school' }] } }),
+  ).vacation;
+  assert.equal(other.entitlement, 25);
+  assert.equal(other.unpaidLeaveDays, 0);
+});
+
 test('computeYearBalances: carry-over, overrides and vacation adjustments', () => {
   const b = computeYearBalances(
     inputs({
