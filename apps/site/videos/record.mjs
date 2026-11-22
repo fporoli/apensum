@@ -10,7 +10,7 @@
 // website build shows them on the home page; `npm run site:videos:publish` uploads them to the
 // `site-media` GitHub release, from which the `site` workflow takes them when it deploys.
 // The scenes run in order: Ueli requests vacation, Marco approves it, Ulla files a review, the
-// admin shows roles, modules and branding; Uma (developer) customizes the basic-data form (her
+// admin shows modules and branding; Uma (developer) customizes the basic-data form (her
 // changes are undone before each take); Marta works a KESB case (cases). Run them all after a
 // reset, or single ones to retake.
 // The employee (receipt reading) and cases scenes call Azure (Switzerland): .env.dev needs the
@@ -390,13 +390,7 @@ const SCENES = {
     user: 'admin',
     async run(s) {
       const p = s.page;
-      await s.title('Administration', 'Rollen, Berechtigungen, Module und Erscheinungsbild');
-      await s.nav('Admin-Einstellungen');
-      await s.caption('Rollen und Berechtigungen – fein abgestuft nach Bereich und Umfang');
-      await s.click(p.getByRole('tab', { name: 'Rollen & Berechtigungen' }), 1800);
-      await p.mouse.wheel(0, 380);
-      await s.wait(2600);
-
+      await s.title('Administration', 'Module und Erscheinungsbild');
       await s.nav('Organisationseinstellungen');
       await s.caption('Module pro Organisation ein- und ausschalten – der Menüpunkt verschwindet sofort');
       const toggle = p.getByRole('checkbox', { name: /Anfragen/ }).first();
@@ -495,7 +489,7 @@ async function apiAs(user) {
 }
 
 /**
- * Off camera, as the admin (superdeveloper): Cases on for Acme, its transcription, summaries and
+ * Off camera, as the admin: Cases on for Acme, its transcription, summaries and
  * drafts on Azure (Switzerland), a KESB template that allows AI drafts, and no demo case left
  * from an earlier take.
  */

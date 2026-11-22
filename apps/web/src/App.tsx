@@ -28,6 +28,7 @@ import { useBranding } from './theme';
 import Login, { clearSession, loadSession, saveSession, type Session } from './Login';
 import { keycloak, refreshSsoToken, ssoLogout } from './auth';
 import UserMenu from './UserMenu';
+import { ScreenSharer, ScreenViewer, type ShareRequest } from './ScreenShare';
 import { DesignModeNotice, DesignModeProvider, useDesignAccess } from './designMode';
 import NotificationBell from './NotificationBell';
 import { useNotifications, type Notification } from './useNotifications';
@@ -104,12 +105,13 @@ export default function App() {
   }, [appBarNode]);
 
   const [session, setSession] = useState<Session | null>(() => loadSession());
-  const [adminSession, setAdminSession] = useState<Session | null>(null);
   const [currentOrgId, setCurrentOrgId] = useState<string | null>(
     () => session?.memberships[0]?.organizationId ?? null,
   );
   const [section, setSectionState] = useState<Section>(() => sectionFromHash());
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [shareRequest, setShareRequest] = useState<ShareRequest | null>(null);
+  const [watchedShare, setWatchedShare] = useState<{ orgId: string; id: string; title: string } | null>(null);
   const [assistantPinned, setAssistantPinned] = useState(false);
   const [assistantEverOpened, setAssistantEverOpened] = useState(false);
   useEffect(() => { if (assistantOpen) setAssistantEverOpened(true); }, [assistantOpen]);
@@ -320,6 +322,14 @@ export default function App() {
       navigate('documents');
       return;
     }
+    if (n.source_table === 'screen_shares') {
+      setWatchedShare({ orgId: n.organization_id, id: n.source_table_uuid, title: n.title });
+      return;
+    }
+    if (n.source_table === 'screen_share_asks') {
+      setShareRequest({ orgId: n.organization_id, viewerId: n.source_table_uuid });
+      return;
+    }
     if (n.source_table === 'news_posts') {
       window.location.hash = `#/news?id=${n.source_table_uuid}`;
       return;
@@ -344,23 +354,6 @@ export default function App() {
     if (isMobile) setMobileNavOpen(false);
   }
 
-  function switchUserSession(nextSession: Session, organizationId: string) {
-    if (session && !adminSession) setAdminSession(session);
-    setSession(nextSession);
-    saveSession(nextSession);
-    setCurrentOrgId(organizationId);
-    navigate('home');
-  }
-
-  function returnToAdmin() {
-    if (!adminSession) return;
-    setSession(adminSession);
-    saveSession(adminSession);
-    setCurrentOrgId(adminSession.memberships[0]?.organizationId ?? null);
-    setAdminSession(null);
-    navigate('home');
-  }
-
   function closeAssistant() {
     setAssistantOpen(false);
     setAssistantPinned(false);
@@ -383,7 +376,6 @@ export default function App() {
       <Login
         onLoggedIn={(s) => {
           setSession(s);
-          setAdminSession(null);
           saveSession(s);
           const firstOrg = s.memberships[0]?.organizationId ?? null;
           setCurrentOrgId(firstOrg);
@@ -735,13 +727,10 @@ export default function App() {
               session={session}
               authHeaders={authHeaders}
               currentOrgId={currentOrgId}
-              canSwitchUser={flags.isAdmin && !adminSession}
               canDesign={designAccess.canDesign}
               designMode={designAccess.enabled}
               onDesignModeChange={designAccess.setEnabled}
-              adminSession={adminSession}
-              onSwitchSession={switchUserSession}
-              onReturnToAdmin={returnToAdmin}
+              onShareScreen={currentOrgId ? () => setShareRequest({ orgId: currentOrgId }) : undefined}
               onLogout={logout}
               onLocaleChange={(newLocale) => {
                 const updated = { ...session, locale: newLocale };
@@ -756,6 +745,8 @@ export default function App() {
             />
           </Toolbar>
         </AppBar>
+        <ScreenSharer request={shareRequest} userId={session.userId} authHeaders={authHeaders} onClose={() => setShareRequest(null)} />
+        <ScreenViewer share={watchedShare} authHeaders={authHeaders} onClose={() => setWatchedShare(null)} />
 
         <Drawer
           variant={isMobile ? 'temporary' : 'permanent'}

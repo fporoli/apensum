@@ -243,7 +243,7 @@ export class CasesService {
         d.size_bytes AS file_size,
         d.mime_type
       FROM cases.case_documents cd
-      LEFT JOIN public.documents d ON d.id = cd.document_id
+      LEFT JOIN public.documents d ON d.id = cd.document_id AND d.source_table = 'cases.case_documents' AND d.source_table_id = cd.case_id
       WHERE cd.case_id = ${caseId}::uuid
       ORDER BY cd.created_at DESC
     `);
@@ -280,6 +280,7 @@ export class CasesService {
       SELECT d.file_name, d.mime_type, d.storage_path, d.encrypted_key, d.key_id
       FROM cases.case_documents cd JOIN cases.cases c ON c.id = cd.case_id
       JOIN public.documents d ON d.id = cd.document_id AND d.organization_id = c.organization_id
+        AND d.source_table = 'cases.case_documents' AND d.source_table_id = cd.case_id
       WHERE c.organization_id = ${orgId}::uuid AND c.id = ${caseId}::uuid AND cd.id = ${docId}::uuid`);
     if (!rows[0]) throw new NotFoundException('case-doc-not-found');
     return rows[0];

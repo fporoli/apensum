@@ -1,9 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req } from '@nestjs/common';
+import { keepingFeed, withoutFeed } from './membership-settings';
+import { validLicenses } from './licenses';
 import { randomUUID } from 'node:crypto';
 import { alias } from 'drizzle-orm/pg-core';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
-import { callerUserId, can, canManageRole, isOrgMember, isSuperDeveloper, reachesAll } from './access';
+import { callerUserId, can, canManageRole, isOrgMember, reachesAll, roleNeedsOwner } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { sendMail } from './mailer';
 import { isValidEmail } from './auth.controller';
@@ -68,6 +70,12 @@ export class OrgsController {
     private readonly audit: AuditService,
     private readonly versions: VersionsService,
   ) {}
+
+  /** Why the caller may not give or take the role (grant, revoke, invite), or null. */
+  private async refusal(db: Db, orgId: string, callerId: string, roleId: string): Promise<'forbidden' | 'owner-required' | null> {
+    if (await canManageRole(db, orgId, callerId, roleId)) return null;
+    return (await roleNeedsOwner(db, roleId)) ? 'owner-required' : 'forbidden';
+  }
 
   /** The role exists and may be granted in this organization (see `isRoleAssignableInOrg`). */
   private async roleAssignable(db: Db, orgId: string, roleId: string): Promise<boolean> {
@@ -142,23 +150,25 @@ export class OrgsController {
   /**
    * Which optional modules (packages/shared/src/modules.ts) the organization uses, for every member
    * (the web app hides switched-off ones); `catalogue` lists every module with its default and
-   * whether it is licensed; `superDeveloper` = the caller may switch the licensed ones.
+   * whether it is licensed; `licenses` = the organization's valid licenses (module id -> last day, null = open).
    */
   @Get(':id/modules')
   async getModules(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const catalogue = MODULES.map((m) => ({ id: m.id, caption: m.caption, defaultEnabled: m.defaultEnabled, licensed: m.licensed === true }));
     const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, modules: resolveModules(undefined), catalogue, superDeveloper: false };
+    if (!db) return { ok: true, offline: true, modules: resolveModules(undefined), catalogue, licenses: {} };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await isOrgMember(db, id, callerId))) return { ok: true, modules: resolveModules(undefined), catalogue, superDeveloper: false };
+    if (!callerId || !(await isOrgMember(db, id, callerId))) return { ok: true, modules: resolveModules(undefined), catalogue, licenses: {} };
     const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, id));
     const settings = (org?.settings ?? {}) as Record<string, unknown>;
-    return { ok: true, modules: resolveModules(settings.modules), catalogue, superDeveloper: await isSuperDeveloper(db, callerId) };
+    const licenses = await validLicenses(db, id);
+    return { ok: true, modules: resolveModules(settings.modules, Object.keys(licenses)), catalogue, licenses };
   }
 
   /**
    * Switches modules on or off: `{ "<module id>": true|false, ... }`, merged into the stored choice.
-   * A licensed module (`licensed` in its definition) is switched by a superdeveloper only.
+   * A licensed module (`licensed` in its definition) goes on only with a license, which only the
+   * operator's CLI gives (cli/operator.ts); it can always go off.
    */
   @Put(':id/modules')
   async setModules(@Param('id') id: string, @Body() body: unknown, @Req() req: AuthenticatedRequest) {
@@ -166,11 +176,11 @@ export class OrgsController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    const superDeveloper = await isSuperDeveloper(db, callerId);
-    if (!superDeveloper && !(await can(db, id, callerId, 'nav.orgSettings', 'edit'))) return { ok: false, error: 'forbidden' };
+    if (!(await can(db, id, callerId, 'nav.orgSettings', 'edit'))) return { ok: false, error: 'forbidden' };
     const result = validateModules(body);
     if (!result.ok) return result;
-    if (licensedIn(result.modules).length > 0 && !superDeveloper) return { ok: false, error: 'module-licensed' };
+    const licenses = Object.keys(await validLicenses(db, id));
+    if (licensedIn(result.modules).some((m) => result.modules[m] && !licenses.includes(m))) return { ok: false, error: 'module-licensed' };
     const [org] = await db.select({ settings: organizations.settings }).from(organizations).where(eq(organizations.id, id));
     if (!org) return { ok: false, error: 'not-found' };
     const stored = ((org.settings ?? {}) as Record<string, unknown>).modules;
@@ -182,7 +192,7 @@ export class OrgsController {
     const logged = { settings: { modules } };
     void this.audit.record(id, callerId, 'organization.modules', 'organization', id, logged).catch(() => {});
     void this.versions.record('organizations', id, 'update_delta', callerId, logged).catch(() => {});
-    return { ok: true, modules: resolveModules(modules) };
+    return { ok: true, modules: resolveModules(modules, licenses) };
   }
 
   @Patch(':id')
@@ -291,7 +301,7 @@ export class OrgsController {
           department_name: current.get(row.user_id)?.department_name ?? null,
           job_function: current.get(row.user_id)?.job_function ?? null,
           start_date: row.start_date ?? row.joined_at?.slice(0, 10) ?? null,
-          settings: row.settings,
+          settings: withoutFeed(row.settings),
           role_ids: [],
           role_names: [],
         };
@@ -322,18 +332,20 @@ export class OrgsController {
     if (body.managerUserId !== undefined) return { ok: false, error: 'use-employment-assignments' };
 
     const [membership] = await db
-      .select({ user_id: organization_memberships.user_id })
+      .select({ user_id: organization_memberships.user_id, settings: organization_memberships.settings })
       .from(organization_memberships)
       .where(and(eq(organization_memberships.id, membershipId), eq(organization_memberships.organization_id, id)));
     if (!membership) return { ok: false, error: 'membership-not-found' };
 
     const patch: Partial<typeof organization_memberships.$inferInsert> = {};
-    if (body.settings !== undefined) patch.settings = body.settings;
+    // The person's calendar feed is theirs alone: never set from here, never in the history.
+    if (body.settings !== undefined) patch.settings = keepingFeed(body.settings, membership.settings);
     if (Object.keys(patch).length === 0) return { ok: true, noop: true };
 
     await db.update(organization_memberships).set(patch).where(eq(organization_memberships.id, membershipId));
-    void this.audit.record(id, callerId, 'membership.update', 'membership', membershipId, patch).catch(() => {});
-    void this.versions.record('organization_memberships', membershipId, 'update_delta', callerId, patch).catch(() => {});
+    const logged = { settings: withoutFeed(patch.settings) };
+    void this.audit.record(id, callerId, 'membership.update', 'membership', membershipId, logged).catch(() => {});
+    void this.versions.record('organization_memberships', membershipId, 'update_delta', callerId, logged).catch(() => {});
     return { ok: true };
   }
 
@@ -355,8 +367,9 @@ export class OrgsController {
       .where(and(eq(organization_memberships.id, membershipId), eq(organization_memberships.organization_id, id)));
     if (!membership) return { ok: false, error: 'membership-not-found' };
     if (!(await this.roleAssignable(db, id, body.roleId))) return { ok: false, error: 'invalid-role' };
-    // Only an org admin, or one of this specific role's designated admins, may hand this role out.
-    if (!(await canManageRole(db, id, callerId, body.roleId))) return { ok: false, error: 'forbidden' };
+    // Owner, admin and HR are the owners' to give; the other roles also an admin's.
+    const refused = await this.refusal(db, id, callerId, body.roleId);
+    if (refused) return { ok: false, error: refused };
     await db
       .insert(membership_roles)
       .values({ membership_id: membershipId, role_id: body.roleId, granted_by_user_id: callerId })
@@ -377,20 +390,38 @@ export class OrgsController {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
     const [membership] = await db
-      .select({ organization_id: organization_memberships.organization_id })
+      .select({ id: organization_memberships.id })
       .from(organization_memberships)
       .where(and(eq(organization_memberships.id, membershipId), eq(organization_memberships.organization_id, id)));
     if (!membership) return { ok: false, error: 'membership-not-found' };
-    if (!(await canManageRole(db, id, callerId, roleId))) return { ok: false, error: 'forbidden' };
+    const refused = await this.refusal(db, id, callerId, roleId);
+    if (refused) return { ok: false, error: refused };
     const existingRoles = await db
       .select({ role_id: membership_roles.role_id })
       .from(membership_roles)
       .where(eq(membership_roles.membership_id, membershipId));
     // A membership must always keep at least one role — revoke by removing the whole membership instead.
     if (existingRoles.length <= 1) return { ok: false, error: 'last-role' };
-    await db
-      .delete(membership_roles)
-      .where(and(eq(membership_roles.membership_id, membershipId), eq(membership_roles.role_id, roleId)));
+    const [role] = await db.select({ name: roles.name }).from(roles).where(eq(roles.id, roleId));
+    const revoked = await db.transaction(async (tx) => {
+      if (role?.name === 'owner') {
+        // Only owners make owners, so an organization never loses its last one. The lock makes two at once wait.
+        const owners = await tx.execute(
+          sql`SELECT mr.membership_id FROM membership_roles mr
+              JOIN roles r ON r.id = mr.role_id
+              JOIN organization_memberships m ON m.id = mr.membership_id
+              WHERE m.organization_id = ${id} AND m.status = 'active' AND r.name = 'owner'
+              FOR UPDATE OF mr`,
+        );
+        // Compared with the stored id: the one in the path may be written differently.
+        if (!owners.rows.some((o: Record<string, unknown>) => o.membership_id !== membership.id)) return false;
+      }
+      await tx
+        .delete(membership_roles)
+        .where(and(eq(membership_roles.membership_id, membership.id), eq(membership_roles.role_id, roleId)));
+      return true;
+    });
+    if (!revoked) return { ok: false, error: 'last-owner' };
     void this.audit.record(id, callerId, 'role.revoke', 'membership', membershipId, { roleId }).catch(() => {});
     return { ok: true };
   }
@@ -411,8 +442,9 @@ export class OrgsController {
     const email = (body.email ?? '').trim().toLowerCase();
     if (!isValidEmail(email)) return { ok: false, error: 'invalid-email' };
     if (!(await this.roleAssignable(db, id, body.roleId))) return { ok: false, error: 'invalid-role' };
-    // Only an org admin, or one of this specific role's designated admins, may onboard someone into it.
-    if (!(await canManageRole(db, id, callerId, body.roleId))) return { ok: false, error: 'forbidden' };
+    // The same rule as granting it.
+    const refused = await this.refusal(db, id, callerId, body.roleId);
+    if (refused) return { ok: false, error: refused };
     const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, id));
     if (!org) return { ok: false, error: 'unknown-organization' };
     const token = randomUUID();
@@ -429,13 +461,19 @@ export class OrgsController {
       })
       .returning({ id: organization_invitations.id });
     const mail = buildInviteEmail(org.name, token);
-    // Best-effort invite mail (local catcher); the token is returned so it can be shared manually.
-    void sendMail({ to: email, ...mail }).catch(() => {});
+    // The link only ever goes to the invited address: an inviter who knew it could become that person.
+    // So the mail is the action itself, and an invitation nobody received is taken back.
+    try {
+      await sendMail({ to: email, ...mail });
+    } catch {
+      await db.delete(organization_invitations).where(eq(organization_invitations.id, inserted.id));
+      return { ok: false, error: 'invitation-mail-failed' };
+    }
     void this.audit.record(id, callerId, 'invitation.send', 'organization_invitation', inserted.id, { email, roleId: body.roleId }).catch(() => {});
     void this.versions
-      .record('organization_invitations', inserted.id, 'insert', callerId, { id: inserted.id, organization_id: id, email, role_id: body.roleId, token, expires_at: expiresAt })
+      .record('organization_invitations', inserted.id, 'insert', callerId, { id: inserted.id, organization_id: id, email, role_id: body.roleId, expires_at: expiresAt })
       .catch(() => {});
-    return { ok: true, token, id: inserted.id };
+    return { ok: true, id: inserted.id };
   }
 
   @Get(':id/invitations')

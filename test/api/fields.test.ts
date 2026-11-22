@@ -205,7 +205,7 @@ function sqlText(query: any): string {
   return (query.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : '?')).join('');
 }
 
-function setup(opts: { roles?: string[]; superdeveloper?: boolean; rows?: any[]; orgCustomKeyTaken?: boolean }) {
+function setup(opts: { roles?: string[]; superdeveloper?: boolean; rows?: any[] }) {
   const writes: string[] = [];
   const stored: any[] = [];
   const db = {
@@ -215,7 +215,6 @@ function setup(opts: { roles?: string[]; superdeveloper?: boolean; rows?: any[];
       if (text.includes('JOIN membership_roles')) return { rows: (opts.roles ?? []).map((name) => ({ name })) };
       if (text.includes('is_superdeveloper')) return { rows: [{ is_superdeveloper: !!opts.superdeveloper }] };
       if (text.includes('SELECT organization_id, field_key, is_custom, config FROM field_config')) return { rows: opts.rows ?? [] };
-      if (text.includes('SELECT 1 FROM field_config')) return { rows: opts.orgCustomKeyTaken ? [{ '?column?': 1 }] : [] };
       if (text.includes('INSERT INTO field_config')) {
         writes.push('insert');
         stored.push((q as any).queryChunks.filter((c: any) => !(Array.isArray(c?.value))));
@@ -248,19 +247,19 @@ test('FieldsController.get: members get the merged template, others nothing', as
   assert.deepEqual(await outsider.controller.get('org-1', 'nope', outsider.req), { ok: false, error: 'unknown-form' });
 });
 
-test('FieldsController: only developers edit the org layer, only superdevelopers the global one', async () => {
+test('FieldsController: only developers edit the org layer, nobody the global one', async () => {
   const admin = setup({ roles: ['admin'] });
   assert.deepEqual(await admin.controller.putOrg('org-1', 'basicdata', 'middleName', { config: { hidden: true } }, admin.req), { ok: false, error: 'forbidden' });
   assert.deepEqual(admin.writes, []);
 
   const dev = setup({ roles: ['member', 'developer'] });
   assert.deepEqual(await dev.controller.putOrg('org-1', 'basicdata', 'middleName', { config: { hidden: true } }, dev.req), { ok: true, config: { hidden: true } });
-  assert.deepEqual(await dev.controller.putGlobal('basicdata', 'middleName', { config: { hidden: true } }, dev.req), { ok: false, error: 'forbidden' });
   assert.deepEqual(dev.writes, ['insert']);
 
   const superDev = setup({ roles: [], superdeveloper: true });
-  assert.equal(((await superDev.controller.putGlobal('basicdata', 'street', { config: { width: 'l' } }, superDev.req)) as any).ok, true);
-  assert.equal(((await superDev.controller.putOrg('org-9', 'basicdata', 'street', { config: { width: 'l' } }, superDev.req)) as any).ok, true, 'a superdeveloper may edit any org');
+  assert.deepEqual(await superDev.controller.putOrg('org-9', 'basicdata', 'street', { config: { width: 'l' } }, superDev.req), { ok: false, error: 'forbidden' });
+  assert.deepEqual(superDev.writes, []);
+  for (const name of ['putGlobal', 'deleteGlobal']) assert.equal(name in FieldsController.prototype, false, name);
 });
 
 test('FieldsController: invalid configs are refused, empty ones reset the field', async () => {
@@ -287,11 +286,11 @@ test('FieldsService caches per org and clears on writes', async () => {
 
 test('FieldsController.designAccess', async () => {
   const dev = setup({ roles: ['member', 'developer'] });
-  assert.deepEqual(await dev.controller.designAccess('org-1', dev.req), { ok: true, canDesign: true, canEditGlobal: false });
+  assert.deepEqual(await dev.controller.designAccess('org-1', dev.req), { ok: true, canDesign: true });
   const superDev = setup({ roles: [], superdeveloper: true });
-  assert.deepEqual(await superDev.controller.designAccess('org-1', superDev.req), { ok: true, canDesign: true, canEditGlobal: true });
+  assert.deepEqual(await superDev.controller.designAccess('org-1', superDev.req), { ok: true, canDesign: false });
   const member = setup({ roles: ['admin'] });
-  assert.deepEqual(await member.controller.designAccess('org-1', member.req), { ok: true, canDesign: false, canEditGlobal: false });
+  assert.deepEqual(await member.controller.designAccess('org-1', member.req), { ok: true, canDesign: false });
 });
 
 // ---------------------------------------------------------------------------
@@ -366,10 +365,6 @@ test('FieldsController: an org developer adds a custom field; its key must be fr
   const override: any = await globalTaken.controller.putOrg('org-1', 'basicdata', 'placeOfBirth', { config: { required: true } }, globalTaken.req);
   assert.equal(override.ok, true);
   assert.equal(lastInsert(globalTaken.stored).isCustom, false);
-
-  const superdev = setup({ superdeveloper: true, orgCustomKeyTaken: true });
-  const global: any = await superdev.controller.putGlobal('basicdata', 'placeOfBirth', { config: placeOfBirth, custom: true }, superdev.req);
-  assert.equal(global.reason, 'key-taken', 'a global key may not collide with any org custom field');
 });
 
 test('FieldsController: deleting a custom field retires it', async () => {

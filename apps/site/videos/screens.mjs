@@ -101,7 +101,7 @@ const SHOTS = {
     await p.getByText('Änderung Arbeitspensum ab Januar').first().click();
   } },
   'documents-1': { user: 'ueli', hash: '#/documents' },
-  'admin-1': { user: 'admin', hash: '#/admin/roles' },
+  'admin-1': { user: 'alice', hash: '#/admin/roles' }, // only the owner edits roles
   'admin-2': { user: 'admin', hash: '#/org-settings' },
   'tenants-1': { user: 'admin', hash: '#/home', full: true, async go(p) {
     await p.getByRole('combobox').first().click();

@@ -16,7 +16,6 @@ Schema is strictly versioned with **Liquibase** and typed against **Drizzle ORM*
 - **Integrated AI Pipeline**: Audio transcription and drafts with Azure OpenAI in Switzerland only (Whisper, GPT), and automated draft synthesis for case interviews and assessments with strict per-instance and per-org monthly budget caps.
 - **Multi-Currency Expense Management (`plugins/expenses`)**: Multi-currency receipts, OCR capture, approval chains, and payroll debiting.
 - **Absence Calendar Feeds**: RFC 5545 iCalendar / WebCal live feeds for Apple Calendar, Microsoft Outlook, and Google Calendar with scoped capability tokens (`personal`, `team`, `all`).
-- **Data Sovereignty & Portability**: Full organization backup into self-contained ZIP archives (relational data JSON + AES-256 encrypted documents) with transactional disaster-recovery restore.
 - **Bulk Employee Onboarding**: CSV employee onboarding with dry-run validation preview and automatic reporting line resolution.
 
 ## Live PWA Demo (Installable on Mobile)
@@ -78,7 +77,7 @@ host-run API and web app directly.
 | My work | `WorkTime` (check-in/out), `Absences` (requests, approvals, calendar, RFC 5545 iCal/WebCal subscriptions), `Timesheet` (monthly working-time timesheet for the line manager), `MyData` (`BasicDataPanel`), `BalancesPanel` (overtime/vacation by month) |
 | Projects | `ProjectTime` (hours per project), `ProjectTimesheet` (monthly submission to each project's owner) |
 | Expenses | `Expenses`, `ExpenseReports`, `ExpenseProcessing` |
-| Organization | `Approvals`, `BalanceReport` (Time balances with alerts), `Management` (teams/projects/subprojects), `Users` (`WorkSchedulePanel`, `Invitations` nested in submenu), `ImportExport` (Payroll exports, employee CSV onboarding, full org backup & restore), `OrganizationSettings` (`WorkTimeSettings`, `BrandingSettings`) |
+| Organization | `Approvals`, `BalanceReport` (Time balances with alerts), `Management` (teams/projects/subprojects), `Users` (`WorkSchedulePanel`, `Invitations` nested in submenu), `ImportExport` (Payroll exports, employee CSV onboarding), `OrganizationSettings` (`WorkTimeSettings`, `BrandingSettings`) |
 | Admin | `AdminSettings` (static-data enums), `RolesPermissions`, `FormDesigner`, `AuditLog` |
 | Form fields | `ConfigField`, `designMode.tsx` (configurable forms, see `docs/FIELD_CONFIG.md`) |
 | AI | `Assistant` (chat) |
@@ -130,7 +129,7 @@ host-run API and web app directly.
   | `reachesAll` / `canEditBeyondOwn` | Grants covering everyone / admin-only overrides |
   | `isManagerOf` | The specific manager of a member |
   | `canManageItem` / `canManageTeamMembers` | Team leads and project owners (scope `own`) |
-  | `isSuperDeveloper` / `isOrgDeveloper` | Global and per-org form designers |
+  | `isOrgDeveloper` | The organization's form designers |
 - "Manager of X" is the manager named by X's employee assignment in force (`employee_assignments`, dated, with department and function), so approvals route to the member's own manager, not to any manager in the org.\
   When the manager changes, pending requests move to the new one.
 - Time writes additionally check a period lock: work time and absences `isPeriodLocked` (the working-time timesheet month is submitted or approved), project time `isProjectPeriodLocked` (that project's month in the project timesheet).\
@@ -150,7 +149,7 @@ The API keeps these concerns separate; each has its own controller/service and t
 | Project time | Hours booked against projects and subprojects, independent of attendance | `project-time.*`, `projects.controller.ts` |
 | Project timesheet | Each person's monthly hours per project, approved by the project's owner (for billing) | `project-timesheets.controller.ts` |
 | Expenses | Expense items and expense reports (bundled plugin) | `plugins/expenses/api/*` |
-| Import & Export / Backups | Swiss payroll exports (Abacus AbaSalary Lohnarten CSV, Bexio, Generic XLSX), dry-run bulk employee CSV import, and full organization backup ZIP + disaster-recovery restore | `import-export.*` |
+| Import & Export | Swiss payroll exports (Abacus AbaSalary Lohnarten CSV, Bexio, Generic XLSX) and dry-run bulk employee CSV import | `import-export.*` |
 | Basic data | Personal data with an HR change-request/approval history | `basicdata.*` |
 | Static data | Admin-editable dropdown vocabularies | `static-data.controller.ts` |
 | Audit | Version history of changed rows | `versions.service.ts`, `audit.*` |
@@ -173,9 +172,8 @@ That service persists the row and pushes it to connected clients over the WebSoc
   - **Abacus (AbaSalary)**: Semicolon-delimited CSV mapped to Swiss standard wage types (Lohnarten: 1000 standard hours, 1010/1020 overtime & Überzeit, 1200 vacation days, 1210/1220 sick leave/unpaid leave, approved expenses).
   - **Bexio**: Compatible CSV export format for Swiss SME accounting.
   - **Generic Excel (XLSX) & CSV**: Full monthly payroll summaries with totals.
-- **Data Sovereignty & Backups**:
-  - Full organization export (`GET /api/v1/organizations/:id/export/backup`) packages all relational database tables into clean JSON snapshots and physical attachments into a standard uncompressed ZIP archive.
-  - Disaster recovery restore (`POST /api/v1/organizations/:id/import/backup/restore`) inspects and restores backups inside an atomic transaction.
+- **No organization ZIP**: there is no export or restore of a whole organization.\
+  Recovery, and a leaving customer's data, are the operator's: a database dump, the documents volume and `DOCUMENTS_KEY`.
 - **Bulk Employee Onboarding**:
   - CSV import with automatic column alias detection (English, German, French, Italian).
   - Interactive dry-run validation preview highlighting errors (malformed dates, unknown managers, invalid workloads) before database commit.
@@ -373,6 +371,22 @@ Mailpit has no auth and nothing real is sent.
 
 `.github/workflows/ci.yml` builds, tests, and — against a throwaway Postgres service container — runs `db:migrate` then `db:seed`, so a broken changelog fails the build before it reaches any real environment.
 
+## Operator
+
+An organization's owners decide who is owner, admin and HR; an organization without an owner gets one from the instance's operator, who also gives the licenses of paid modules, on the server (no GitHub workflow: this repository's run logs are public).
+
+```sh
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js owner list <slug or id>
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js owner set <slug or id> <e-mail>
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license list <slug or id>
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license grant <slug or id> <module> [--until YYYY-MM-DD]
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license revoke <slug or id> <module>
+```
+
+An owner has to be an active member.\
+A license runs through the day given; without one the module is off and its data stays, and the organization's admin switches a licensed module on.\
+Every change is in the organization's audit log.
+
 ## Deploy
 
 The `vps` and `azure` workflows are manual (`workflow_dispatch`) and take all their config from GitHub Environments (Settings > Environments), not from files on a server or laptop.\
@@ -552,7 +566,7 @@ A scanned PDF has no text layer and gives nothing (there is no OCR); the page th
 
 Transcription is Azure OpenAI Whisper (Switzerland North, `azure-transcribe.ts`) and **on by default** wherever the instance has Azure configured (`AZURE_OPENAI_*`, `AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT`, `AI_MONTHLY_BUDGET_CHF` and the prices; `infra/azure/ai-provision.sh local` fills `.env.dev`).\
 Every call goes through the AI budget: the instance's monthly cap and the organization's limit.\
-A superdeveloper can switch it off per organization (Organization settings -> AI and costs); without Azure on the instance the interview page says transcription is not set up.\
+Whoever edits Organization settings can switch it off (Organization settings -> AI and costs); without Azure on the instance the interview page says transcription is not set up.\
 There is no self-hosted transcription.
 
 Transcription runs only when an editor requests a draft.\

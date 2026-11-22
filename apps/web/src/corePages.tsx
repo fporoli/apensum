@@ -271,7 +271,9 @@ export const CORE_PAGES: AppPage[] = [
           canSeeWorkSchedules={p ? holdsBeyondOwn(p, 'section.workTime.schedule', 'see') : r.isAdmin || r.isHr || r.canManage}
           canSeeEmployment={p ? holdsBeyondOwn(p, 'section.people.employment', 'see') : r.isAdmin || r.isHr || r.canManage}
           canSeePersonnelDocs={p ? holdsBeyondOwn(p, 'section.people.documents', 'see') : r.isHr}
-          canManage={r.canManage}
+          canViewBalances={p ? holdsBeyondOwn(p, 'nav.balances', 'see') : r.isHr}
+          canInvite={p ? holdsBeyondOwn(p, 'nav.invitations', 'edit') : r.isAdmin}
+          canEditDepartments={p ? grantedScopes(p, 'section.people.employment', 'edit').has('all') : r.isHr}
           authHeaders={c.authHeaders}
         />
       );
@@ -319,7 +321,7 @@ export const CORE_PAGES: AppPage[] = [
     section: 'importExport',
     hash: '#/import-export',
     object: 'nav.importExport',
-    allowedByRole: (r) => r.isAdmin || r.isHr,
+    allowedByRole: (r) => r.isHr,
     nav: { group: 'administration', label: 'nav.importExport', icon: <ImportExportIcon fontSize="small" /> },
     render: (c) => <ImportExport orgId={c.orgId} isAdmin={c.roles.isAdmin} isHr={c.roles.isHr} authHeaders={c.authHeaders} />,
   },

@@ -224,10 +224,7 @@ export interface WebPlugin {
   teamViews?: PluginTeamView[];
   /** Document categories on the Documents page. */
   documentCategories?: PluginDocumentCategory[];
-  /**
-   * Counts in a backup's manifest the plugin adds (its ApiBackup `counts`), with the text key of each:
-   * shown in the restore preview and summary on Import/Export.
-   */
+  /** @deprecated Not shown since the ZIP export is gone; goes with the next PLUGIN_API_VERSION. */
   backupCounts?: Record<string, string>;
   /** Reports on the Reports page. */
   reports?: PluginReport[];

@@ -32,6 +32,10 @@ test('a licensed module is off by default and named by licensedIn', () => {
   registerModule({ id: 'paid', caption: 'modules.paid', defaultEnabled: false, objects: [], licensed: true });
   try {
     assert.equal(resolveModules(undefined).paid, false);
+    assert.equal(resolveModules({ paid: true }).paid, false, 'switched on without a license');
+    assert.equal(resolveModules({ paid: true }, ['paid']).paid, true);
+    assert.equal(resolveModules({ paid: false }, ['paid']).paid, false, 'licensed and switched off');
+    assert.equal(resolveModules(undefined, ['paid']).paid, false, 'a license alone switches nothing on');
     assert.deepEqual(licensedIn({ paid: true, requests: false }), ['paid']);
     assert.deepEqual(licensedIn({ requests: false }), []);
   } finally {

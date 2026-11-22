@@ -113,7 +113,7 @@ export class PersonnelDocumentsController {
       INSERT INTO personnel_documents (id, organization_id, user_id, document_id, title, category, document_date, visible_to_employee, uploaded_by_user_id)
       VALUES (${id}, ${orgId}, ${userId}, ${documentId}, ${v.title}, ${v.category}, ${v.document_date ?? null}, ${v.visible_to_employee ?? false}, ${access.callerId})`);
     void this.versions.record('personnel_documents', id, 'insert', access.callerId, { userId, documentId, ...v, fileName: file.originalname }).catch(() => {});
-    void this.audit.record(orgId, access.callerId, 'personnel-document.upload', 'personnel_document', id, { userId, category: v.category }).catch(() => {});
+    void this.audit.record(orgId, access.callerId, 'personnel-document.upload', 'personnel_document', id, { userId }).catch(() => {});
     if (v.visible_to_employee) await this.notifyShared(orgId, userId, id, v.title as string).catch(() => {});
     return { ok: true, id };
   }

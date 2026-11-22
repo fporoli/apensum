@@ -18,5 +18,6 @@
     <include file="004-encrypted-documents.sql" relativeToChangelogFile="true"/>
     <include file="005-assessment-archive.sql" relativeToChangelogFile="true"/>
     <include file="006-custom-fields-to-templates.sql" relativeToChangelogFile="true"/>
+    <include file="007-role-scopes.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

@@ -49,6 +49,7 @@ That looks like success but does nothing.
 
 Demo logins (from `seed.sql`): every `<name>@acme.com` user's password is `<name>` (`admin@acme.com` / `admin`, `marta@acme.com` / `marta`, ...).\
 Acme reporting line: Alice manages Admin and Adam; Adam manages Marta, Marco and Uma; Marta manages Ulla (also hr); Marco manages Ueli; Uma is also developer.\
+Alice owns Acme (so roles and who is admin or HR are Alice's), Admin owns Globex.\
 The Login screen's demo-account dropdown (Admin, Manager = Marta, HR User = Ulla, User = Ueli, Team Lead = Marco) come from the global `static_data` row `login`/`demo_accounts` via public `GET auth/demo-accounts`; each value is a JSON string `{name, user, password}`.\
 Teams: Platform (Alice), People & Culture (Ulla), Product Development (Marco).\
 Cases (`plugins/cases/seed.sql`, **generated** by `npx tsx plugins/cases/scripts/generate-demo-seed.mts`, never hand-edited: the rows are ciphertext) turns the module on for Acme and adds one encrypted KESB case led by Marta; Admin, Marta, Marco and Ulla hold its key, Cases passphrase `<name>-cases-demo` (a person who had set up their own keeps it and sees the case locked).\
@@ -97,12 +98,14 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Forgot password (`password-reset.ts`): `auth/reset` mails a signed link (30 min, bound to the current password hash, so one use; key from `purposeKey`), `#/reset/<token>` (`ResetPassword.tsx`, no login) sends it to `auth/reset/confirm`.\
   No public endpoint may set a password from an e-mail address alone.\
   Accounts span organizations, so no organization's rights change one or act as one.\
-  `PATCH users/:id` is one's own only; impersonation is superdevelopers' only and audited.\
+  `PATCH users/:id` is one's own only, and there is no impersonation: nobody gets a token of someone else's account.\
   An invitation's token is known to the inviter: accepting with an existing account takes that account's password and never sets one (only a new account, or one without any login that belongs to the inviting organization alone).\
-  Import and restore never attach an existing account, they invite it; backup restore is superdevelopers' only (it keeps the file's ids).\
+  The import never attaches an existing account, it invites it; there is no restore (recovery is from database dumps, the documents volume and `DOCUMENTS_KEY`).\
+  The employee import writes a person's details into the organization's section (`basicdata.orgs.<orgId>.personalien`, read by `payrollPersonalien`) and renames only someone who belongs to it alone.\
   SSO picks the account from the token's verified e-mail, never from the body.\
   Any id from a request (user, membership, team lead) is checked against the organization before it is stored or grants access.\
-  Registration is open: each registration gets its own workspace as owner; the instance's very first user is also admin and superdeveloper (`registrationRoleIds`), so a fresh prod needs no SQL.\
+  Membership settings hold the person's calendar-feed token: return, audit or take them only through `membership-settings.ts`.\
+  Registration is open: each registration gets its own workspace as owner, admin and HR (`registrationRoleIds`); the instance's very first user is also superdeveloper, so a fresh prod needs no SQL.\
   Handlers take `@Req() req: AuthenticatedRequest`.
 - **Every org-scoped handler authorizes itself**, using helpers from `access.ts`:
   1. `const db = this.db.getDb(); if (!db) return <offline/empty shape>;`
@@ -112,10 +115,21 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
      Don't add checks on role names; `isOrgDeveloper` (form design) is the one left.
   4. Work-time and absence writes check `isPeriodLocked` (working-time timesheet month submitted/approved); project-time writes check `isProjectPeriodLocked` (that project's month in the project timesheet).
 - Permissions: ids are `<object>:<action>:<scope>` (`nav.balances:see:reports`, `section.basicdata.personalien:edit:all`), catalogued in `packages/shared/src/permissions.ts` and in Liquibase (035-037), held via `membership_roles` -> `role_permissions`.\
-  Global roles (`organization_id` NULL) carry the defaults (superdevelopers edit them); an org customizes a role by getting its own copy (same name; memberships are moved onto it, "reset" moves them back), or creates its own roles.\
-  Admin settings -> Roles & permissions (`roles.controller.ts`) manages both.\
+  Global roles (`organization_id` NULL) carry the defaults, changed only by migrations; an org customizes a role by getting its own copy (same name; memberships are moved onto it, "reset" moves them back), or creates its own roles.\
+  Admin settings -> Roles & permissions (`roles.controller.ts`) manages the organization's.\
+  `owner` is granted, invited and revoked by owners only (`canManageRole`; on accept `invitationNeedsOwner`), and the last one stays (`last-owner`).\
+  `roles.admin_user_ids` is no longer read.\
+  `users.is_superdeveloper` is being retired: it gives AI limits and product news, and nothing else; never add a check on it.\
   `edit` implies `see`; a section also requires its parent navbar entry (My data for own data, Users for others').\
-  `owner` holds everything; `admin` always keeps role management.\
+  Four roles, three rules: owner decides who is who, admin runs the system, HR runs the people side, a manager sees the line HR gave them.\
+  1. Only an owner gives or takes owner, admin, hr, billing_admin and an organization's own roles (`ownerAppoints`, by name); manager, member, guest and developer also an admin (`canManageRole`, `owner-required`).\
+  2. Only an owner changes what a role may do (`OWNER_ONLY_OBJECTS`); that is why rule 1 can go by name.\
+  3. Only HR changes departments and reporting lines (`section.people.employment` edit on everyone).\
+  `owner` holds exactly `OWNER_PERMISSIONS`, never its rows; `admin` always keeps Admin settings.\
+  A new object about other people's data is granted to HR and, by reporting line, to managers, never to admin, developer or owner; nor may anything an admin edits route such data to them.\
+  The audit log says that something happened, never what it says (admins read it): no notes, reasons, file names or values of people's data in its metadata.\
+  An invitation's link goes only to the invited address by mail, never into a response, log or history (`invitation-mail-failed` when it can't be sent).\
+  An organization without an owner gets one from the operator's CLI only (`apps/api/src/cli/operator.ts`, `owner list|set`; `license list|grant|revoke`).\
   People's data: `canSeeUserData` = self, anyone above them in the reporting line (the manager, that manager's manager, ... `isAboveInReportingLine`, read-only), or a grant covering them; `listableUserIds` adds the whole line below (`reportingLineUserIds`).\
   Editing, approving and reopening stay with the direct manager (`isManagerOf`, `canEditUserData`); `time-record-people` flags each person `editable` and the time pages are read-only for the others; admin-only overrides use `canEditBeyondOwn` (ignores everyone's `:edit:own`).\
   New navbar entries/sections need a registry entry, catalogue rows and default grants (a new `NNN-permission-*.sql` changelog); the catalogue test checks those match the registry.
@@ -123,8 +137,8 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   A membership can hold several roles (`membership_roles`).\
   "Manager of X" is the manager of X's employee assignment in force (`employee_assignments`: dated department, function and manager per person, 050), read through `membershipManagerId` / `isManagerOf` / `directReportUserIds`, never stored elsewhere.\
   Approvals route to that specific manager, not to any org manager; pending manager requests move to the new manager when it changes (`WorkflowsService.rerouteToCurrentManagers`, run on writes, on the Approvals inbox and before a decision).\
-  Departments (Organization settings, `departments`) have a default leader, which is only offered as manager.\
-  Employment (start date `organization_memberships.start_date` plus assignments, `employment.controller.ts`, `EmploymentPanel`) is `section.people.employment`: HR and admin edit it (051).\
+  Departments (Users page, HR, `departments`) have a default leader, which is only offered as manager.\
+  Employment (start date `organization_memberships.start_date` plus assignments, `employment.controller.ts`, `EmploymentPanel`) is `section.people.employment`: HR edits it (051, 092), and with it the departments (Users page).\
   The last working day is set there too (`PUT organizations/:orgId/users/:userId/exit-date`, `{ lastDay }`): `organization_memberships.exit_at` holds the start of the next day in the person's zone (`lastWorkingDay` reads it back); balances stop counting from it, the vacation entitlement is prorated to it and the directory drops the person after it.
 - Errors are returned, not thrown: `{ ok: false, error: 'kebab-code' }` (e.g. `forbidden`, `period-locked`, `unknown-user`); success is `{ ok: true, ... }`.\
   Read endpoints return empty shapes on denial.
@@ -141,13 +155,14 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
 - Cases encryption (`docs/CASES_ENCRYPTION.md`, `plugins/cases/shared/caseCrypto.ts`, `caseVault.ts`): a case is end-to-end encrypted in the browser (passphrase -> RSA key pair -> a case key per case, wrapped per member in `cases.case_keys`; each file has its own key sealed in its row).\
   Rows carry an `enc` envelope and blanked plaintext columns; the API refuses plaintext writes to an encrypted case (`case-encrypted`) and its server-side AI/PDF/transcription paths.\
   Those jobs run as stateless `compute/*` calls with the decrypted content in the request and store nothing.\
+  Never store a document id from a request body: a row links only the file uploaded with it, and downloads check the file's `source_table` and id.\
   Never read, log or index an encrypted row's fields on the server, never add a server feature that needs them without a `compute` path, and never store a passphrase or key.\
   A lost passphrase is unrecoverable by design.
 - Cases (plugin `plugins/cases`, module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`; tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).\
   Assessments are archived (`archived_at`, its changeset 005, `POST .../assessments/:id/archive`), never deleted.\
   Its own fields on cases and assessments are templates of the forms `cases.case` / `cases.assessment` (`shared/forms.ts`, designed on the Cases page in design mode; values in `custom`, sealed in `enc` when encrypted, checked by `customValuesErrors`).\
   The AI draft asks Azure for a strict JSON schema of the template's section keys (`aiDraftSchema`) and can write one section again (`section_key`, plain and `compute/ai-draft`): an empty section is filled, otherwise the editor shows the text to replace, add or drop.\
-  Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set by a superdeveloper or whoever edits Organization settings, under Organization settings -> AI and costs, the plugin's `CaseAiSettingsPanel` shown there via `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`).\
+  Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set by whoever edits Organization settings, under Organization settings -> AI and costs, the plugin's `CaseAiSettingsPanel` shown there via `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`).\
   Cases data goes to Azure OpenAI in Switzerland only: transcription Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland; 25 MB per request = `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences (no model) or Azure, AI draft Azure or off.\
   Default: everything on Azure (capped by the budgets below).\
   A summary is made of the transcript as it stands in the editor, saved or not; a generated text fills an empty field directly, else it is shown as a draft to accept.\
@@ -191,7 +206,8 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   There is no Team hours page any more (091 removed `nav.teamHours`): project hours by team are Reports' project hours with the team filter (`teamId`, members and lead).\
   HR's read access to absences and expenses is 049.\
   Plugins add team tables (`ApiPlugin.teamViews` rows, web `teamViews` columns; the expenses plugin's two).\
-  Import/Export: plugins add payroll items (`ApiPlugin.payroll`, e.g. Abacus wage type 3000 for expenses) and their tables to the backup (`ApiPlugin.backup`, restored after the core's users, documents and projects).\
+  There is no ZIP export or restore of an organization: don't add one, whoever downloads it reads everything, whatever their role.\
+  Import/Export (`nav.importExport` alone, never `nav.users`; HR by default): payroll export and employee import; plugins add payroll items (`ApiPlugin.payroll`, e.g. Abacus wage type 3000 for expenses).\
   The work schedule is HR's alone (048); every basic-data section, Personalien included, is requested by the employee and approved by HR.
 
 ## Web conventions (`apps/web/src`)
@@ -207,7 +223,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
 - Configurable form fields (docs/FIELD_CONFIG.md): field definitions live in `packages/shared/src/fields.ts` (imported as `@worktime3/shared/fields`) and are rendered by `ConfigField` / `ConfigFieldGroup` (`ConfigField.tsx`).\
   Number entry and display go through `localeFormat.ts`; date pickers are MUI X with dayjs, set up once by `DatePickerLocalization` in `main.tsx`.\
   The basic-data and expense forms use them; other forms still have hand-written fields.
-- Global and per-org templates (`field_config`, edited by the `developer` role and `users.is_superdeveloper`) override the registry.\
+- Global (migrations only) and per-org templates (`field_config`, edited by the org's `developer` role) override the registry.\
   Merging, override checks (`checkFieldOverride`) and value validation (`validateFields`) live in `fields.ts` so the browser and the API apply the same rules.\
   A form page loads its merged template from `GET organizations/:orgId/forms/:formId`; a controller saving a configured form validates with `FieldsService.resolved()` + `validateFields`, as `basicdata.controller.ts` does.\
   In the web app, a page with a configured form uses `useFormTemplate` (`designMode.tsx`), wraps the form in `FieldDesignScope` and renders `FormDesignPanel` while designing, as `Home.tsx` does.
@@ -220,9 +236,11 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
 - Modules (`packages/shared/src/modules.ts`): optional feature areas an org switches on or off (Organization settings -> Modules, `GET/PUT organizations/:id/modules`, stored in `organizations.settings.modules`, unset = the module's default).\
   A module owns permission objects; `permissionIdsOf` drops them when it is off, so its navbar entries disappear and every `can()` on them fails, with no per-endpoint module check.\
   A new module: a registry entry, its permission objects (with a changelog as usual) and i18n `modules.<id>` / `modules.<id>.description`.\
-  A licensed module (`licensed: true`, e.g. the private `hr` plugin: salary continuation and protection periods) is off by default and only a superdeveloper switches it (`module-licensed` otherwise); the web shows it with a "License" chip.
+  A licensed module (`licensed: true`, e.g. the private `hr` plugin: salary continuation and protection periods) runs only with a valid license (`organization_licenses` 093, written by the operator CLI alone) and switched on by the admin (`module-licensed` without one); `resolveModules(stored, licenses)` decides, and SQL that reads the module switch of a licensed module also checks the license.\
+  Show my screen (`screen-share.*`, `ScreenShare.tsx`) replaces impersonation: a person shows one colleague pictures of their tab (in memory, 30 min, the latest only); admin and HR may ask.\
+  Never turn it into a token, a right or remote control.\
 - Requests (module `requests`, `requests.controller.ts`, `Requests.tsx`, tables 052): tickets to the line manager or a department, with a message thread (`request_messages`, kind `message` or `event`).\
-  Handlers are worked out per call, never stored: the requester's manager in force, or the department's members in force and its leader, plus `nav.requests:edit:all` (admin).\
+  Handlers are worked out per call, never stored: the requester's manager in force, or the department's members in force and its leader, plus `nav.requests:edit:all` (nobody by default since 092).\
   Any handler takes, answers, sets the status, archives; the requester answers and resolves/reopens.\
   Every change notifies the other side (`source_table = 'requests'`, the bell opens the thread).\
   Each request has a type (static_data `requests`/`request_type`, global row in 069: service, support, other; `{"sort": n}` orders them), an `urgent` flag and an optional http(s) `link_url`; validation is `packages/shared/src/requests.ts` plus `validateRequestDetails`, and requester or handler change them via `POST requests/:id/details`.\
@@ -267,7 +285,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Database: `plugins/<id>/changelog/db.changelog-master.xml` (same rules as the core's, author = plugin id) runs after the core's: the migrate image's entrypoint `infra/liquibase/apensum-migrate.sh` (APENSUM_CHANGELOG=core|<id> limits it), changesets recorded as `<id>/changelog/<file>`; compose and `migrate.mjs` mount `plugins/`, the Azure/VPS workflows stage them (`scripts/plugins.mjs stage-changelogs` -> `infra/liquibase/plugins`); `db:status` checks each changelog.\
   A plugin's permission rows and default grants live there; its tables may be in `public`.\
   Tables a plugin lists in `apensum.tables` are introspected into its own `api/db/schema.ts`, not the core's (expenses: expenses, expense_reports, expense_report_items, exchange_rates; their old changesets and the rows 035/037/049 made stay in the core's changelogs).
-- Expenses (plugin `plugins/expenses`, module `expenses`, default on; everything expense-specific is in the plugin: tables (`api/db/schema.ts`), changelog, form (`shared/form.ts`, registered via `ApiPlugin.forms`), booking (`shared/booking.ts`), report, team views, documents, payroll/backup, workflow, Home quick action (`homeAction`); the core only keeps the organization's currency list under static_data `expenses`/`currency` and the old changesets): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and shown there when editing; the list is newest first.\
+- Expenses (plugin `plugins/expenses`, module `expenses`, default on; everything expense-specific is in the plugin: tables (`api/db/schema.ts`), changelog, form (`shared/form.ts`, registered via `ApiPlugin.forms`), booking (`shared/booking.ts`), report, team views, documents, payroll, workflow, Home quick action (`homeAction`); the core only keeps the organization's currency list under static_data `expenses`/`currency` and the old changesets): the receipt (one file) is attached in the expense form itself (drop, paste, paperclip) and shown there when editing; the list is newest first.\
   `receiptCapture.tsx` adds a photo (phone camera via `capture`, webcam dialog on a computer), a screen area (`getDisplayMedia` + crop) and a QR code: the PC creates a hand-off (`receipt-handoffs`, in memory, 10 min, one file, `ReceiptHandoffService`), the phone opens `#/receipt/<token>` (`PhoneUpload.tsx`, rendered by `main.tsx` without login, token = credential) and sends the photo; the PC polls, takes the file into the form and uploads it as usual.
 - Expense booking (077, `plugins/expenses/shared/booking.ts` `bookExpense`, used by the form's preview and by `expense-booking.ts` on create/update): people enter the receipt's amount and currency; the API books `value` in the org's reporting currency (`settings.defaultCurrency`, else CHF) with the hand-kept exchange rate in force on the date (`exchange_rates`, Organization settings, `exchange-rates.controller.ts`) and stores it in `expenses.exchange_rate`; no rate = `exchange-rate-missing`.\
   Rows with `organization_id` NULL are the defaults for every organization (the plugin's changeset 002: EUR, USD, GBP to CHF from 2026-01-01; a new year's defaults = a new changeset), read-only and shown as "Standard"; an organization with its own rates for a currency uses only those for it (`effectiveRates` in `expense-booking.ts`).\

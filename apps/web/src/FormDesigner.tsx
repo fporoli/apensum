@@ -326,7 +326,7 @@ function AddField({ designer }: { designer: FormDesigner }) {
       <TextField select size="small" label={t('design.prop.group')} value={group} onChange={(e) => setGroup(e.target.value)}>
         {designer.preview.groups.map((g) => (<MenuItem key={g.key} value={g.key}>{resolveText(g.texts.caption, g.caption, locale, t)}</MenuItem>))}
       </TextField>
-      <Typography variant="caption" color="text.secondary">{t(`design.addFieldScope.${designer.scope}`)}</Typography>
+      <Typography variant="caption" color="text.secondary">{t('design.addFieldScope.org')}</Typography>
       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
         <Button size="small" onClick={() => setOpen(false)}>{t('design.cancel')}</Button>
         <Button size="small" variant="contained" disabled={!keyCheck.ok || caption.trim() === '' || !group} onClick={add}>{t('design.add')}</Button>
@@ -427,7 +427,7 @@ function StructureList({ designer }: { designer: FormDesigner }) {
 }
 
 /**
- * The design mode side panel (docs/FIELD_CONFIG.md, "Design mode"): scope, the form's sections
+ * The design mode side panel (docs/FIELD_CONFIG.md, "Design mode"): the form's sections
  * and fields, the selected field's properties and texts, Save and Discard. Edits preview live on
  * the form behind it.
  */
@@ -466,10 +466,7 @@ export function FormDesignPanel({ designer }: { designer: FormDesigner }) {
         </IconButton>
       </Box>
       <Box sx={{ px: 2, pb: 1 }}>
-        <ToggleButtonGroup size="small" exclusive fullWidth value={designer.scope} onChange={(_, v) => v && designer.setScope(v)}>
-          <ToggleButton value="org">{t('design.scope.org')}</ToggleButton>
-          <ToggleButton value="global" disabled={!designer.canEditGlobal}>{t('design.scope.global')}</ToggleButton>
-        </ToggleButtonGroup>
+        <Typography variant="subtitle2">{t('design.scope.org')}</Typography>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>{t('design.scopeHelp')}</Typography>
       </Box>
       <Divider />

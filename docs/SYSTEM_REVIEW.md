@@ -72,7 +72,7 @@ The code quality across all workspaces is notably high: typed throughout, modula
 1. **Robust Build & CI Pipeline:** Fast builds across workspaces using Vite, Rolldown, and TypeScript. All tests run in milliseconds without heavyweight container overhead.
 2. **High Database Discipline:** Liquibase enforces immutable, verifiable changelogs; Drizzle provides typed SQL queries without the performance overhead of full-featured ORMs.
 3. **PWA Mobile-First Experience:** The web app functions as a native-feeling Progressive Web App with dedicated offline login support and 1-click mobile home-screen installation.
-4. **Data Sovereignty:** Full organization backup into single ZIP archives containing relational JSON dumps and encrypted documents with one-click disaster recovery restore.
+4. **Data Sovereignty:** Payroll and report exports as CSV and Excel; a whole organization's data comes from the operator's database dump.
 
 ---
 

@@ -661,6 +661,19 @@ export const organization_memberships = pgTable("organization_memberships", {
 	check("chk_membership_exit_after_joined", sql`(exit_at IS NULL) OR (joined_at IS NULL) OR (exit_at > joined_at)`),
 ]);
 
+export const organization_licenses = pgTable("organization_licenses", {
+	organization_id: uuid().notNull(),
+	module_id: text().notNull(),
+	valid_until: date(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "organization_licenses_organization_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.organization_id, table.module_id], name: "organization_licenses_pkey"}),
+]);
+
 export const organization_invitations = pgTable("organization_invitations", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),

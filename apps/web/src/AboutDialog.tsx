@@ -52,11 +52,9 @@ interface AboutDialogProps {
   session: Session;
   authHeaders: () => Promise<Record<string, string>>;
   currentOrgId: string | null;
-  /** The admin's own session while they are impersonating `session`. */
-  adminSession: Session | null;
 }
 
-export default function AboutDialog({ open, onClose, session, authHeaders, currentOrgId, adminSession }: AboutDialogProps) {
+export default function AboutDialog({ open, onClose, session, authHeaders, currentOrgId }: AboutDialogProps) {
   const { t, locale } = useI18n();
   const [info, setInfo] = useState<AboutInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +108,6 @@ export default function AboutDialog({ open, onClose, session, authHeaders, curre
     [t('about.organization'), membership?.name ?? '—'],
     [t('about.roles'), membership?.roles?.join(', ') || '—'],
     [t('about.signIn'), t(session.sso ? 'about.signInSso' : 'about.signInPassword')],
-    ...(adminSession ? [[t('about.impersonatedBy'), `${adminSession.displayName} (${adminSession.email})`] as [string, string]] : []),
   ];
 
   return (

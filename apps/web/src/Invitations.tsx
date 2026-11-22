@@ -19,7 +19,7 @@ import {
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { ContentCopyIcon, MailIcon, PeopleIcon } from './icons';
+import { MailIcon, PeopleIcon } from './icons';
 import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -53,10 +53,9 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
   const [invitations, setInvitations] = useState<InvitationItem[]>([]);
   const [email, setEmail] = useState('');
   const [roleId, setRoleId] = useState('');
+  const [callerIsOwner, setCallerIsOwner] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [revokeTargetId, setRevokeTargetId] = useState<string | null>(null);
 
@@ -67,8 +66,10 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
       if (Array.isArray(data?.roles)) {
         const assignable = assignableRoles(data.roles as OrgRole[]);
         setRoles(assignable);
-        if (!roleId && assignable.length > 0) {
-          const defaultRole = assignable.find((r) => r.name === 'member') ?? assignable[0];
+        setCallerIsOwner(data.callerIsOwner === true);
+        const open = assignable.filter((r) => !r.ownerOnly || data.callerIsOwner === true);
+        if (!roleId && open.length > 0) {
+          const defaultRole = open.find((r) => r.name === 'member') ?? open[0];
           setRoleId(defaultRole.id);
         }
       }
@@ -97,8 +98,6 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
     if (!trimmed || !roleId) return;
     setError(null);
     setSuccess(null);
-    setLastInviteLink(null);
-    setCopied(false);
     try {
       const res = await fetch(`${API}/organizations/${orgId}/invite`, {
         method: 'POST',
@@ -110,15 +109,16 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
         setError(
           data.error === 'forbidden'
             ? t('invitations.forbidden')
-            : t('invitations.sendFailed', { error: data.error ?? t('common.unknownError') }),
+            : data.error === 'owner-required'
+              ? t('users.ownerRequired')
+              : data.error === 'invitation-mail-failed'
+                ? t('invitations.mailFailed')
+                : t('invitations.sendFailed', { error: data.error ?? t('common.unknownError') }),
         );
         return;
       }
       setEmail('');
       setSuccess(t('invitations.sent', { email: trimmed }));
-      if (data.token) {
-        setLastInviteLink(`${window.location.origin}${window.location.pathname}?invite=${data.token}`);
-      }
       await reloadInvitations();
     } catch {
       setError(t('invitations.unreachable'));
@@ -139,14 +139,6 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
     } catch {
       setError(t('invitations.revokeFailed'));
     }
-  }
-
-  async function copyLink() {
-    if (!lastInviteLink) return;
-    try {
-      await navigator.clipboard.writeText(lastInviteLink);
-      setCopied(true);
-    } catch { /* clipboard unavailable */ }
   }
 
   return (
@@ -170,19 +162,6 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
-      {lastInviteLink && (
-        <Alert
-          severity="info"
-          onClose={() => setLastInviteLink(null)}
-          action={
-            <Button size="small" color="inherit" startIcon={<ContentCopyIcon fontSize="small" />} onClick={() => void copyLink()}>
-              {copied ? t('invitations.copied') : t('invitations.copyLink')}
-            </Button>
-          }
-        >
-          {t('invitations.shareLink')} <code>{lastInviteLink}</code>
-        </Alert>
-      )}
 
       <Paper
         component="form"
@@ -210,7 +189,9 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
             sx={{ minWidth: 160 }}
           >
             {roles.map((r) => (
-              <MenuItem key={r.id} value={r.id}>{roleLabel(r, locale)}</MenuItem>
+              <MenuItem key={r.id} value={r.id} disabled={r.ownerOnly === true && !callerIsOwner}>
+                {r.ownerOnly && !callerIsOwner ? t('roles.byOwners', { role: roleLabel(r, locale) }) : roleLabel(r, locale)}
+              </MenuItem>
             ))}
           </TextField>
           <Button type="submit" variant="contained" disabled={!email.trim() || !roleId}>

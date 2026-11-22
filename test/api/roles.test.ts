@@ -34,9 +34,9 @@ test('checkPermissionIds accepts catalogue ids only', () => {
   assert.equal(checkPermissionIds('nav.time:edit:own'), 'invalid-permissions');
 });
 
-test('the admin role keeps role management', () => {
-  assert.equal(checkAdminLock('admin', ['nav.admin:edit:all', 'section.admin.roles:edit:all']), null);
-  assert.equal(checkAdminLock('admin', ['nav.admin:edit:all']), 'admin-role-locked');
+test('the admin role keeps Admin settings', () => {
+  assert.equal(checkAdminLock('admin', ['nav.admin:edit:all']), null);
+  assert.equal(checkAdminLock('admin', ['nav.admin:see:all']), 'admin-role-locked');
   assert.equal(checkAdminLock('manager', []), null);
 });
 

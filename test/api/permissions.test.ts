@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import {
+import { OWNER_PERMISSIONS, ownerAppoints,
   PERMISSION_OBJECTS,
   allPermissionIds,
   grantedScopes,
@@ -54,8 +54,13 @@ test('scopesCover matches each scope to its relation', () => {
   assert.equal(scopesCover(['all'], none), false);
 });
 
-test('owner holds the whole catalogue; other roles exactly their rows', () => {
-  assert.equal(mergePermissionRows([{ name: 'owner', permission_id: null }]).size, allPermissionIds().length);
+test('owner only governs, whatever its rows say; other roles exactly their rows', () => {
+  const owner = mergePermissionRows([{ name: 'owner', permission_id: 'section.people.documents:see:all' }]);
+  assert.deepEqual([...owner].sort(), [...OWNER_PERMISSIONS].sort());
+  for (const id of OWNER_PERMISSIONS) {
+    assert.ok(allPermissionIds().includes(id), id);
+  }
+  assert.ok(mergePermissionRows([{ name: 'owner', permission_id: null }, { name: 'hr', permission_id: 'section.people.documents:edit:all' }]).has('section.people.documents:edit:all'));
   // Grants on objects outside the catalogue (an uninstalled plugin's, legacy ids) grant nothing.
   assert.deepEqual(
     [...mergePermissionRows([{ name: 'hr', permission_id: 'nav.time:edit:own' }, { name: 'hr', permission_id: 'nav.gonePlugin:see:all' }, { name: 'hr', permission_id: 'data:read' }])],
@@ -132,4 +137,14 @@ test('the migration catalogue matches the shared registry, and default grants us
   const granted = [...sql.matchAll(/'((?:nav|section)\.[\w.]+:\w+:\w+)'/g)].map((m) => m[1]);
   assert.ok(granted.length > 0);
   for (const id of granted) assert.ok(catalogue.has(id) || pluginIds(id) || gone(id), `${id} is not in the catalogue`);
+});
+
+test('who appoints: admins the everyday roles, owners everything else', () => {
+  for (const role of ['manager', 'member', 'guest', 'developer']) assert.equal(ownerAppoints(role), false, role);
+  for (const role of ['owner', 'admin', 'hr', 'billing_admin', 'anything new', 'Manager']) assert.equal(ownerAppoints(role), true, role);
+});
+
+test('role editing is the owners\' alone, whatever a role row says', () => {
+  const held = mergePermissionRows([{ name: 'admin', permission_id: 'section.admin.roles:edit:all' }, { name: 'admin', permission_id: 'nav.admin:edit:all' }]);
+  assert.deepEqual([...held], ['nav.admin:edit:all']);
 });

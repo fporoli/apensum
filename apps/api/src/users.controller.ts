@@ -1,13 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { and, eq, ilike, or } from 'drizzle-orm';
+import { Body, Controller, Get, Param, Patch, Req } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { VersionsService } from './versions.service';
-import { callerUserId, isSuperDeveloper, reachesAll } from './access';
-import { AuditService } from './audit.service';
+import { callerUserId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { users, user_identities, organization_memberships } from './db/schema';
-import { membershipsOf } from './auth.controller';
-import { mintLocalToken } from './jwt';
+import { users, user_identities } from './db/schema';
 
 const USER_COLUMNS = { id: users.id, email: users.email, display_name: users.display_name, status: users.status, locale: users.locale, settings: users.settings };
 
@@ -16,7 +13,6 @@ export class UsersController {
   constructor(
     private readonly db: DbService,
     private readonly versions: VersionsService,
-    private readonly audit: AuditService,
   ) {}
 
   /** Resolve the caller from the validated JWT (local user id, or Keycloak sub -> user_identities). */
@@ -37,54 +33,6 @@ export class UsersController {
             .limit(1);
     if (rows.length === 0) return { ok: false, error: 'unknown-user' };
     return { ok: true, ...rows[0] };
-  }
-
-  /** Search members of an organization a superdeveloper administers, for temporary impersonation. */
-  @Get('search')
-  async search(@Query('orgId') orgId: string | undefined, @Query('q') query: string | undefined, @Req() req: AuthenticatedRequest) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, users: [] };
-    const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !orgId || !(await isSuperDeveloper(db, callerId)) || !(await reachesAll(db, orgId, callerId, 'nav.users', 'edit'))) return { ok: false, error: 'forbidden' };
-    const normalized = (query ?? '').trim();
-    if (normalized.length < 2) return { ok: true, users: [] };
-    const rows = await db
-      .select({ id: users.id, email: users.email, displayName: users.display_name, status: organization_memberships.status })
-      .from(organization_memberships)
-      .innerJoin(users, eq(users.id, organization_memberships.user_id))
-      .where(and(
-        eq(organization_memberships.organization_id, orgId),
-        or(ilike(users.email, `%${normalized}%`), ilike(users.display_name, `%${normalized}%`)),
-      ))
-      .limit(20);
-    return { ok: true, users: rows };
-  }
-
-  /**
-   * Mint a short-lived local token for a member of an organization the caller administers. Superdevelopers
-   * only: the token is the person's, valid in every organization they belong to. Audited.
-   */
-  @Post(':id/impersonate')
-  async impersonate(@Param('id') id: string, @Body() body: { orgId?: string }, @Req() req: AuthenticatedRequest) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true };
-    const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !body.orgId || !(await isSuperDeveloper(db, callerId)) || !(await reachesAll(db, body.orgId, callerId, 'nav.users', 'edit'))) return { ok: false, error: 'forbidden' };
-    const [member] = await db
-      .select({ id: users.id, email: users.email, displayName: users.display_name })
-      .from(organization_memberships)
-      .innerJoin(users, eq(users.id, organization_memberships.user_id))
-      .where(and(eq(organization_memberships.organization_id, body.orgId), eq(organization_memberships.user_id, id), eq(organization_memberships.status, 'active')));
-    if (!member) return { ok: false, error: 'user-not-member' };
-    await this.audit.record(body.orgId, callerId, 'user.impersonate', 'user', member.id, {});
-    return {
-      ok: true,
-      userId: member.id,
-      email: member.email,
-      displayName: member.displayName,
-      token: await mintLocalToken(member.id, member.email, 60 * 60),
-      memberships: await membershipsOf(db, member.id),
-    };
   }
 
   @Patch(':id')

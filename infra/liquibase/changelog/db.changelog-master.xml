@@ -107,6 +107,8 @@
     <include file="089-request-confidential-custom.sql" relativeToChangelogFile="true"/>
     <include file="090-parental-leave.sql" relativeToChangelogFile="true"/>
     <include file="091-permission-remove-team-hours.sql" relativeToChangelogFile="true"/>
+    <include file="092-owner-governance.sql" relativeToChangelogFile="true"/>
+    <include file="093-organization-licenses.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

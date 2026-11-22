@@ -11,7 +11,7 @@
 import type { Provider, Type } from '@nestjs/common';
 import type { ApiReport } from './report-sources';
 import type { ApiTeamView } from './team-overview.controller';
-import type { ApiBackup, ApiPayrollItem } from './import-export.service';
+import type { ApiPayrollItem } from './import-export.service';
 import type { FormDef } from '@worktime3/shared/fields';
 import type { Db } from './db.service';
 import type { AuditService } from './audit.service';
@@ -61,7 +61,7 @@ export interface ApiPlugin {
   teamViews?: ApiTeamView[];
   /** Amounts on the payroll export (Import/Export), per person and month: e.g. approved expenses. */
   payroll?: ApiPayrollItem[];
-  /** The plugin's tables in an organization's backup and restore (Import/Export). */
+  /** @deprecated Ignored: organizations have no ZIP export or restore any more. Goes with the next PLUGIN_API_VERSION. */
   backup?: ApiBackup;
   /** Approvals: workflow actions, source tables and manager routing. */
   workflows?: ApiPluginWorkflows;
@@ -90,7 +90,20 @@ export type { AssistantTool, AssistantToolContext, AssistantToolResult } from '.
 export type { ApiTeamView } from './team-overview.controller';
 
 // Import/Export
-export type { ApiBackup, ApiPayrollItem, BackupRestoreContext } from './import-export.service';
+export type { ApiPayrollItem } from './import-export.service';
+/** @deprecated Ignored (see ApiPlugin.backup). */
+export interface BackupRestoreContext {
+  targetOrgId: string;
+  read: (file: string) => any[];
+  userIds: ReadonlyMap<string, string>;
+  projectIds: ReadonlyMap<string, string>;
+  subprojectIds: ReadonlyMap<string, string>;
+}
+/** @deprecated Ignored (see ApiPlugin.backup). */
+export interface ApiBackup {
+  export: (db: Db, orgId: string) => Promise<{ files: Record<string, unknown[]>; counts: Record<string, number> }>;
+  restore?: (db: Db, ctx: BackupRestoreContext) => Promise<Record<string, number>>;
+}
 
 // Reports
 export type { ApiReport, ReportRowsContext } from './report-sources';

@@ -3,11 +3,7 @@ import {
   Alert,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
-  CircularProgress,
-  Divider,
   LinearProgress,
   Paper,
   Tab,
@@ -26,17 +22,14 @@ import {
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatMoney, formatSignedMinutes, swissLocale } from './localeFormat';
-import { ConfirmDialog, PageHeader } from './components';
+import { PageHeader } from './components';
 import {
   DownloadIcon,
   UploadIcon,
   PaymentsIcon,
   PeopleIcon,
-  FolderCopyIcon,
   CheckIcon,
 } from './icons';
-
-import { PLUGIN_BACKUP_COUNTS } from './plugins';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -408,7 +401,10 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
           created: data.created ?? 0,
           updated: data.updated ?? 0,
         });
-        setImportSuccess(data.invited ? `${done} ${t('importExport.invitedExisting', { count: data.invited })}` : done);
+        const notes = [done];
+        if (data.invited) notes.push(t('importExport.invitedExisting', { count: data.invited }));
+        if (data.namesKept) notes.push(t('importExport.namesKept', { count: data.namesKept }));
+        setImportSuccess(notes.join(' '));
         // Clear staged preview
         setUploadedRows([]);
         setPreviewSummary(null);
@@ -420,151 +416,6 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
       setImportError(e?.message ?? 'Network error committing import');
     } finally {
       setImportLoading(false);
-    }
-  };
-
-  // --- Tab 2: Organization Backup & Restore State & Handlers ---
-  const [backupExportLoading, setBackupExportLoading] = useState(false);
-  const [backupExportDownloaded, setBackupExportDownloaded] = useState<string | null>(null);
-  const [backupExportError, setBackupExportError] = useState<string | null>(null);
-
-  const backupInputRef = useRef<HTMLInputElement | null>(null);
-  const [backupDragOver, setBackupDragOver] = useState(false);
-  const [backupFile, setBackupFile] = useState<File | null>(null);
-  const [backupPreviewLoading, setBackupPreviewLoading] = useState(false);
-  const [backupPreviewData, setBackupPreviewData] = useState<any | null>(null);
-  const [backupPreviewError, setBackupPreviewError] = useState<string | null>(null);
-
-  const [confirmRestoreOpen, setConfirmRestoreOpen] = useState(false);
-  const [restoreLoading, setRestoreLoading] = useState(false);
-  const [restoreSuccessDetails, setRestoreSuccessDetails] = useState<string | null>(null);
-  const [restoreError, setRestoreError] = useState<string | null>(null);
-
-  const handleExportBackup = async () => {
-    setBackupExportLoading(true);
-    setBackupExportDownloaded(null);
-    setBackupExportError(null);
-    try {
-      const headers = await authHeaders();
-      const res = await fetch(`${API}/organizations/${orgId}/export/backup`, { headers });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      const disposition = res.headers.get('content-disposition');
-      let filename = `backup_organization_${new Date().toISOString().slice(0, 10)}.zip`;
-      if (disposition) {
-        const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
-        if (match && match[1]) filename = decodeURIComponent(match[1]);
-      }
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(blobUrl);
-      setBackupExportDownloaded(filename);
-    } catch {
-      setBackupExportError('Failed to generate organization backup archive');
-    } finally {
-      setBackupExportLoading(false);
-    }
-  };
-
-  const handleSelectBackupFile = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      setBackupPreviewError('Only .zip files are supported for organization restore');
-      return;
-    }
-    setBackupFile(file);
-    setBackupPreviewLoading(true);
-    setBackupPreviewData(null);
-    setBackupPreviewError(null);
-    setRestoreSuccessDetails(null);
-    setRestoreError(null);
-
-    try {
-      const headers = await authHeaders();
-      const formHeaders: Record<string, string> = {};
-      if (headers.authorization) formHeaders.authorization = headers.authorization;
-      if (headers.Authorization) formHeaders.Authorization = headers.Authorization;
-
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const res = await fetch(`${API}/organizations/${orgId}/import/backup/preview`, {
-        method: 'POST',
-        headers: formHeaders,
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setBackupPreviewData(data);
-      } else {
-        setBackupPreviewError(data.error || 'Failed to inspect backup archive');
-      }
-    } catch {
-      setBackupPreviewError('Network error while inspecting backup archive');
-    } finally {
-      setBackupPreviewLoading(false);
-    }
-  };
-
-  const handleCommitRestore = async () => {
-    if (!backupFile) return;
-    setConfirmRestoreOpen(false);
-    setRestoreLoading(true);
-    setRestoreSuccessDetails(null);
-    setRestoreError(null);
-
-    try {
-      const headers = await authHeaders();
-      const formHeaders: Record<string, string> = {};
-      if (headers.authorization) formHeaders.authorization = headers.authorization;
-      if (headers.Authorization) formHeaders.Authorization = headers.Authorization;
-
-      const formData = new FormData();
-      formData.append('file', backupFile);
-
-      const res = await fetch(`${API}/organizations/${orgId}/import/backup/commit`, {
-        method: 'POST',
-        headers: formHeaders,
-        body: formData,
-      });
-      const data = await res.json();
-      if (data.ok) {
-        const r = data.restored || {};
-        const summaryParts: string[] = [];
-        if (r.users) summaryParts.push(`${r.users} users`);
-        if (r.invited) summaryParts.push(t('importExport.invitedExisting', { count: r.invited }));
-        if (r.workTimes) summaryParts.push(`${r.workTimes} work times`);
-        if (r.absences) summaryParts.push(`${r.absences} absences`);
-        for (const [key, label] of Object.entries(PLUGIN_BACKUP_COUNTS)) if (r[key]) summaryParts.push(`${r[key]} ${t(label)}`);
-        if (r.projects) summaryParts.push(`${r.projects} projects`);
-        if (r.documents) summaryParts.push(`${r.documents} documents`);
-        const summaryText = summaryParts.length > 0 ? summaryParts.join(', ') : 'All collections merged';
-        setRestoreSuccessDetails(summaryText);
-        setBackupFile(null);
-        setBackupPreviewData(null);
-      } else {
-        setRestoreError(data.error === 'backup-restore-operator-only' ? t('importExport.restoreOperatorOnly') : data.error || 'Failed to restore organization backup');
-      }
-    } catch {
-      setRestoreError('Network error during backup restore');
-    } finally {
-      setRestoreLoading(false);
-    }
-  };
-
-  const handleCancelRestore = () => {
-    setBackupFile(null);
-    setBackupPreviewData(null);
-    setBackupPreviewError(null);
-    setRestoreError(null);
-    if (backupInputRef.current) {
-      backupInputRef.current.value = '';
     }
   };
 
@@ -612,11 +463,6 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
             icon={<PeopleIcon fontSize="small" />}
             iconPosition="start"
             label={t('importExport.tabEmployees')}
-          />
-          <Tab
-            icon={<FolderCopyIcon fontSize="small" />}
-            iconPosition="start"
-            label={t('importExport.tabBackup')}
           />
         </Tabs>
 
@@ -1048,331 +894,6 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
                 </Table>
               </TableContainer>
             )}
-          </Box>
-        )}
-
-        {/* ============================================================== */}
-        {/* TAB 2: ORGANIZATION BACKUP & RESTORE                           */}
-        {/* ============================================================== */}
-        {activeTab === 2 && (
-          <Box sx={{ p: { xs: 2, sm: 3 } }}>
-            {/* Header intro card */}
-            <Card variant="outlined" sx={{ borderRadius: 2, mb: 3 }}>
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
-                  {t('importExport.backup.title')}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-                  {t('importExport.backup.description')}
-                </Typography>
-
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: '1fr 1fr 1fr' },
-                    gap: 2,
-                    pt: 1,
-                  }}
-                >
-                  <Paper
-                    variant="outlined"
-                    sx={{ p: 2, borderRadius: 1.5, bgcolor: (th) => alpha(th.palette.background.default, 0.5) }}
-                  >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      {t('importExport.backup.featureDb')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" component="div">
-                      {t('importExport.backup.featureDbDesc')}
-                    </Typography>
-                  </Paper>
-
-                  <Paper
-                    variant="outlined"
-                    sx={{ p: 2, borderRadius: 1.5, bgcolor: (th) => alpha(th.palette.background.default, 0.5) }}
-                  >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      {t('importExport.backup.featureVault')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" component="div">
-                      {t('importExport.backup.featureVaultDesc')}
-                    </Typography>
-                  </Paper>
-
-                  <Paper
-                    variant="outlined"
-                    sx={{ p: 2, borderRadius: 1.5, bgcolor: (th) => alpha(th.palette.background.default, 0.5) }}
-                  >
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                      {t('importExport.backup.featureManifest')}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" component="div">
-                      {t('importExport.backup.featureManifestDesc')}
-                    </Typography>
-                  </Paper>
-                </Box>
-              </CardContent>
-            </Card>
-
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                gap: 3,
-                alignItems: 'start',
-              }}
-            >
-              {/* Left Column: Export Organization Backup */}
-              <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-                    {t('importExport.backup.exportTitle')}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-                    {t('importExport.backup.exportDesc')}
-                  </Typography>
-
-                  {backupExportError && (
-                    <Alert severity="error" sx={{ mb: 2, borderRadius: 1.5 }}>
-                      {backupExportError}
-                    </Alert>
-                  )}
-
-                  {backupExportDownloaded && (
-                    <Alert severity="success" sx={{ mb: 2, borderRadius: 1.5 }}>
-                      {t('importExport.backup.exportSuccess', { filename: backupExportDownloaded })}
-                    </Alert>
-                  )}
-
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    size="large"
-                    startIcon={backupExportLoading ? <CircularProgress size={18} color="inherit" /> : <DownloadIcon />}
-                    disabled={backupExportLoading}
-                    onClick={handleExportBackup}
-                    sx={{ fontWeight: 600, px: 3, py: 1.2 }}
-                  >
-                    {backupExportLoading ? t('importExport.backup.exportGenerating') : t('importExport.backup.exportBtn')}
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Right Column: Restore Organization Backup */}
-              <Card variant="outlined" sx={{ borderRadius: 2, height: '100%' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
-                    {t('importExport.backup.restoreTitle')}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5, lineHeight: 1.6 }}>
-                    {t('importExport.backup.restoreDesc')}
-                  </Typography>
-
-                  {restoreSuccessDetails && (
-                    <Alert severity="success" sx={{ mb: 2, borderRadius: 1.5 }}>
-                      {t('importExport.backup.restoreSuccess', { details: restoreSuccessDetails })}
-                    </Alert>
-                  )}
-
-                  {restoreError && (
-                    <Alert severity="error" sx={{ mb: 2, borderRadius: 1.5 }}>
-                      {t('importExport.backup.restoreError', { error: restoreError })}
-                    </Alert>
-                  )}
-
-                  {backupPreviewError && (
-                    <Alert severity="error" sx={{ mb: 2, borderRadius: 1.5 }}>
-                      {backupPreviewError}
-                    </Alert>
-                  )}
-
-                  {/* Hidden file input */}
-                  <input
-                    ref={backupInputRef}
-                    type="file"
-                    accept=".zip"
-                    style={{ display: 'none' }}
-                    onChange={(e) => {
-                      const files = e.target.files;
-                      if (files && files[0]) {
-                        void handleSelectBackupFile(files[0]);
-                      }
-                    }}
-                  />
-
-                  {/* Drag and Drop Zone (shown when no file staged) */}
-                  {!backupFile && !backupPreviewLoading && (
-                    <Box
-                      onClick={() => backupInputRef.current?.click()}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setBackupDragOver(true);
-                      }}
-                      onDragLeave={() => setBackupDragOver(false)}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        setBackupDragOver(false);
-                        const files = e.dataTransfer.files;
-                        if (files && files[0]) {
-                          void handleSelectBackupFile(files[0]);
-                        }
-                      }}
-                      sx={{
-                        border: '2px dashed',
-                        borderColor: backupDragOver ? 'primary.main' : 'divider',
-                        borderRadius: 2,
-                        p: 4,
-                        textAlign: 'center',
-                        cursor: 'pointer',
-                        bgcolor: backupDragOver ? alpha(theme.palette.primary.main, 0.05) : 'background.paper',
-                        transition: 'all 0.2s ease',
-                        '&:hover': {
-                          borderColor: 'primary.main',
-                          bgcolor: alpha(theme.palette.primary.main, 0.02),
-                        },
-                      }}
-                    >
-                      <UploadIcon sx={{ fontSize: 40, color: 'primary.main', mb: 1, opacity: 0.8 }} />
-                      <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                        {t('importExport.backup.dropZone')}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {t('importExport.backup.dropHint')}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {/* Loading progress */}
-                  {(backupPreviewLoading || restoreLoading) && (
-                    <Box sx={{ py: 3, textAlign: 'center' }}>
-                      <LinearProgress sx={{ borderRadius: 1, mb: 1.5 }} />
-                      <Typography variant="body2" color="text.secondary">
-                        {backupPreviewLoading ? t('importExport.backup.inspecting') : t('importExport.backup.restoring')}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {/* Staged Backup Inspection Preview Card */}
-                  {backupPreviewData && backupPreviewData.manifest && (
-                    <Paper
-                      variant="outlined"
-                      sx={{ p: 2.5, borderRadius: 2, bgcolor: (th) => alpha(th.palette.background.default, 0.6) }}
-                    >
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                          {t('importExport.backup.previewTitle')}
-                        </Typography>
-                        <Chip
-                          size="small"
-                          label={`${Math.round((backupPreviewData.manifest.totalBytes || backupFile?.size || 0) / 1024)} KB`}
-                          variant="outlined"
-                        />
-                      </Box>
-
-                      <Divider sx={{ mb: 1.5 }} />
-
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 2 }}>
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" component="div">
-                            {t('importExport.backup.sourceOrg')}
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {backupPreviewData.manifest.sourceOrganization?.name || '—'}
-                          </Typography>
-                        </Box>
-
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" component="div">
-                            {t('importExport.backup.createdDate')}
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {backupPreviewData.manifest.createdAt
-                              ? new Date(backupPreviewData.manifest.createdAt).toLocaleDateString(swissLocale(locale), {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                })
-                              : '—'}
-                          </Typography>
-                        </Box>
-                      </Box>
-
-                      {/* Entity counts badges */}
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
-                        {t('importExport.backup.recordsCount')}:
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8, mb: 2 }}>
-                        {backupPreviewData.manifest.counts && (
-                          <>
-                            <Chip size="small" label={`${t('importExport.backup.badgeUsers')}: ${backupPreviewData.manifest.counts.users ?? 0}`} />
-                            <Chip size="small" label={`${t('importExport.backup.badgeDepartments')}: ${backupPreviewData.manifest.counts.departments ?? 0}`} />
-                            <Chip size="small" label={`${t('importExport.backup.badgeWorkTimes')}: ${backupPreviewData.manifest.counts.workTimes ?? 0}`} />
-                            <Chip size="small" label={`${t('importExport.backup.badgeSchedules')}: ${backupPreviewData.manifest.counts.workSchedules ?? 0}`} />
-                            <Chip size="small" label={`${t('importExport.backup.badgeAbsences')}: ${backupPreviewData.manifest.counts.absences ?? 0}`} />
-                            {Object.entries(PLUGIN_BACKUP_COUNTS).map(([key, label]) => (
-                              <Chip key={key} size="small" label={`${t(label)}: ${backupPreviewData.manifest.counts[key] ?? 0}`} />
-                            ))}
-                            <Chip size="small" label={`${t('importExport.backup.badgeProjects')}: ${backupPreviewData.manifest.counts.projects ?? 0}`} />
-                          </>
-                        )}
-                        <Chip
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                          label={`${t('importExport.backup.badgeDocuments')}: ${backupPreviewData.manifest.documentCount ?? 0}`}
-                        />
-                      </Box>
-
-                      {/* Warnings if cross-org */}
-                      {backupPreviewData.compatibility?.warnings && backupPreviewData.compatibility.warnings.length > 0 && (
-                        <Alert severity="warning" sx={{ mb: 2, borderRadius: 1.5 }}>
-                          {backupPreviewData.compatibility.warnings.join(' ')}
-                        </Alert>
-                      )}
-
-                      {/* Action buttons */}
-                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, mt: 1 }}>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={handleCancelRestore}
-                          disabled={restoreLoading}
-                        >
-                          {t('importExport.backup.cancelBtn')}
-                        </Button>
-                        <Button
-                          variant="contained"
-                          color="warning"
-                          size="small"
-                          startIcon={<UploadIcon />}
-                          disabled={restoreLoading}
-                          onClick={() => setConfirmRestoreOpen(true)}
-                          sx={{ fontWeight: 600 }}
-                        >
-                          {t('importExport.backup.restoreBtn')}
-                        </Button>
-                      </Box>
-                    </Paper>
-                  )}
-                </CardContent>
-              </Card>
-            </Box>
-
-            {/* Confirmation Dialog */}
-            <ConfirmDialog
-              open={confirmRestoreOpen}
-              title={t('importExport.backup.confirmTitle')}
-              message={t('importExport.backup.confirmMessage', {
-                org: backupPreviewData?.compatibility?.targetOrg?.name || orgId,
-                source: backupPreviewData?.manifest?.sourceOrganization?.name || 'backup',
-              })}
-              confirmLabel={t('importExport.backup.confirmBtn')}
-              cancelLabel={t('common.cancel') || 'Cancel'}
-              confirmColor="warning"
-              onConfirm={handleCommitRestore}
-              onClose={() => setConfirmRestoreOpen(false)}
-            />
           </Box>
         )}
       </Paper>

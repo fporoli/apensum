@@ -2,8 +2,11 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
 import type { AuthenticatedPrincipal } from './jwt';
 import {
+  OWNER_ONLY_OBJECTS,
+  OWNER_PERMISSIONS,
   allPermissionIds,
   grantedScopes,
+  ownerAppoints,
   scopesCover,
   sectionParent,
   type Action,
@@ -59,17 +62,49 @@ export async function isOrgAdmin(db: Executor, organizationId: string, userId: s
   return names.includes('owner') || names.includes('admin');
 }
 
-/** True when the user is a superdeveloper: edits the global form template and any org's template. */
+/** True when the user is an active owner of the organization. */
+export async function isOrgOwner(db: Executor, organizationId: string, userId: string): Promise<boolean> {
+  return (await activeRoleNames(db, organizationId, userId)).includes('owner');
+}
+
+/** True when only an owner hands the role out or takes it away (`ownerAppoints`); an unknown role counts as one. */
+export async function roleNeedsOwner(db: Executor, roleId: string): Promise<boolean> {
+  const rows = await db.execute(sql`SELECT name FROM roles WHERE id = ${roleId}`);
+  const name = rows.rows[0]?.name;
+  return typeof name !== 'string' || ownerAppoints(name);
+}
+
+/**
+ * Whether only an owner's invitation counts: its role is one only owners appoint, or the invitee holds
+ * such a role here and accepting would reactivate it or set the password of their account without login.
+ */
+export async function invitationNeedsOwner(
+  db: Executor,
+  organizationId: string,
+  roleId: string,
+  invitee: { id: string; setsPassword: boolean } | null,
+): Promise<boolean> {
+  if (await roleNeedsOwner(db, roleId)) return true;
+  if (!invitee) return false;
+  const rows = await db.execute(
+    sql`SELECT m.status, r.name FROM organization_memberships m
+        JOIN membership_roles mr ON mr.membership_id = m.id
+        JOIN roles r ON r.id = mr.role_id
+        WHERE m.organization_id = ${organizationId} AND m.user_id = ${invitee.id}`,
+  );
+  return rows.rows.some((r: Record<string, unknown>) => (invitee.setsPassword || r.status !== 'active') && ownerAppoints(String(r.name)));
+}
+
+/** True when the user is a superdeveloper: AI limits and product news. Nothing inside an organization. */
 export async function isSuperDeveloper(db: Executor, userId: string): Promise<boolean> {
   const rows = await db.execute(sql`SELECT is_superdeveloper FROM users WHERE id = ${userId} LIMIT 1`);
   return rows.rows[0]?.is_superdeveloper === true;
 }
 
-/** True when the user may edit this organization's form template: its developer, or a superdeveloper. */
+/** True when the user may edit this organization's form template: its developer. */
 export async function isOrgDeveloper(db: Executor, organizationId: string, userId: string): Promise<boolean> {
   const names = await activeRoleNames(db, organizationId, userId);
-  if (names.includes('developer')) return true;
-  return isSuperDeveloper(db, userId);
+  return names.includes('developer');
 }
 
 /**
@@ -84,22 +119,14 @@ export async function userOrgRole(db: Executor, organizationId: string, userId: 
 }
 
 /**
- * True when the caller may grant or revoke `roleId` for other members: whoever
- * administers members (a Users edit grant reaching everyone; admin by default) can always manage any role, and a role can additionally
- * name its own admins via `roles.admin_user_ids` — e.g. so a "billing-admin"
- * role can be handed out without making someone a full org admin.
+ * True when the caller may give or take `roleId` (grant, invite, revoke): only an owner for the roles
+ * owners appoint (owner, admin, hr, ...); for the others an owner, or whoever administers members
+ * (Users edit on everyone, admin by default). `roles.admin_user_ids` is no longer read.
  */
-export async function canManageRole(
-  db: Executor,
-  organizationId: string,
-  callerId: string,
-  roleId: string,
-): Promise<boolean> {
+export async function canManageRole(db: Executor, organizationId: string, callerId: string, roleId: string): Promise<boolean> {
+  if (await roleNeedsOwner(db, roleId)) return isOrgOwner(db, organizationId, callerId);
   if (await reachesAll(db, organizationId, callerId, 'nav.users', 'edit')) return true;
-  const rows = await db.execute(
-    sql`SELECT 1 FROM roles WHERE id = ${roleId} AND ${callerId} = ANY(admin_user_ids) LIMIT 1`,
-  );
-  return rows.rows.length > 0;
+  return isOrgOwner(db, organizationId, callerId);
 }
 
 /**
@@ -317,33 +344,38 @@ export async function isProjectPeriodLocked(
 // ---------------------------------------------------------------------------------------------
 // Permissions (packages/shared/src/permissions.ts): `<object>:<action>:<scope>` ids held via
 // membership_roles -> role_permissions. An organization's own copy of a role carries its own
-// rows, so this is a plain join; `owner` holds everything without rows.
+// rows, so this is a plain join; `owner` holds OWNER_PERMISSIONS and nothing else, without rows.
 
 /** The caller's permission ids in this organization, merged across all their active roles. */
 export async function permissionIdsOf(db: Executor, organizationId: string, userId: string): Promise<Set<string>> {
   const rows = await db.execute(
-    sql`SELECT r.name, rp.permission_id, o.settings -> 'modules' AS modules FROM organization_memberships m
+    sql`SELECT r.name, rp.permission_id, o.settings -> 'modules' AS modules,
+          (SELECT jsonb_agg(l.module_id) FROM organization_licenses l
+            WHERE l.organization_id = o.id AND (l.valid_until IS NULL OR l.valid_until >= (now() AT TIME ZONE 'Europe/Zurich')::date)) AS licenses
+        FROM organization_memberships m
         JOIN organizations o ON o.id = m.organization_id
         JOIN membership_roles mr ON mr.membership_id = m.id
         JOIN roles r ON r.id = mr.role_id
         LEFT JOIN role_permissions rp ON rp.role_id = r.id
         WHERE m.organization_id = ${organizationId} AND m.user_id = ${userId} AND m.status = 'active'`,
   );
-  const list = rows.rows as { name: string; permission_id: string | null; modules?: unknown }[];
+  const list = rows.rows as { name: string; permission_id: string | null; modules?: unknown; licenses?: unknown }[];
   // A module the organization switched off takes its navbar entries' permissions with it (modules.ts).
-  return withoutDisabledModules(mergePermissionRows(list), resolveModules(list[0]?.modules));
+  return withoutDisabledModules(mergePermissionRows(list), resolveModules(list[0]?.modules, list[0]?.licenses));
 }
 
 /**
- * Folds `(role name, permission id)` rows into one set; an `owner` row means the whole catalogue.
+ * Folds `(role name, permission id)` rows into one set; an `owner` row means OWNER_PERMISSIONS only.
  * Only catalogue ids count: grants on objects nobody registered (a plugin that is not installed,
  * legacy ids like `data:read`) stay in the database but grant nothing.
  */
 export function mergePermissionRows(rows: { name: string; permission_id: string | null }[]): Set<string> {
   const catalogue = new Set(allPermissionIds());
-  if (rows.some((r) => r.name === 'owner')) return catalogue;
-  const ids = new Set<string>();
-  for (const r of rows) if (r.permission_id && catalogue.has(r.permission_id)) ids.add(r.permission_id);
+  const ids = new Set<string>(rows.some((r) => r.name === 'owner') ? OWNER_PERMISSIONS : []);
+  for (const r of rows) {
+    if (r.name === 'owner' || !r.permission_id || !catalogue.has(r.permission_id)) continue;
+    if (!OWNER_ONLY_OBJECTS.includes(r.permission_id.split(':')[0])) ids.add(r.permission_id);
+  }
   return ids;
 }
 

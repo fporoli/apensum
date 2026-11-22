@@ -59,7 +59,7 @@ export function setupSteps(f: SetupFacts): SetupStep[] {
       id: 'departments',
       done: f.departments > 0 && f.departmentsWithoutLeader === 0,
       optional: false,
-      section: 'orgSettings',
+      section: 'users',
       count: f.departmentsWithoutLeader,
     },
     { id: 'people', done: f.members.length > 1 || f.pendingInvitations > 0, optional: false, section: 'invitations', count: f.members.length },

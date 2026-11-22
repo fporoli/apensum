@@ -92,7 +92,6 @@ test('every text key the design panel builds exists in the dictionary', () => {
     ...WIDTHS.map((w) => `design.width.${w}`),
     ...['code', 'global', 'org'].map((s) => `design.source.${s}`),
     ...['global', 'org'].map((s) => `design.scope.${s}`),
-    ...['global', 'org'].map((s) => `design.addFieldScope.${s}`),
     ...['hr', 'self'].map((e) => `design.editableBy.${e}`),
     ...['group', 'newRow', 'width', 'height', 'type', 'required', 'hidden', 'validator', 'pattern', 'min', 'max', 'order', 'caption', 'tooltip', 'placeholder', 'patternMessage', 'editableBy', 'key'].map((p) => `design.prop.${p}`),
     ...[...reasons, 'forbidden', 'unknown-form', 'offline', 'unknown'].map((r) => `design.reason.${r}`),

@@ -409,8 +409,10 @@ export class CalendarFeedService {
     if (feed.scope === 'personal') {
       conditions.push(eq(absences.user_id, member.user_id));
     } else if (feed.scope === 'team') {
-      const teamIds = await this.resolveTeamUserIds(db, member.organization_id, member.user_id);
-      conditions.push(inArray(absences.user_id, teamIds));
+      // The team as far as the person may see it today: the feed outlives a lost right.
+      const allowed = await listableUserIds(db, member.organization_id, member.user_id, 'nav.absences');
+      const team = await this.resolveTeamUserIds(db, member.organization_id, member.user_id);
+      conditions.push(inArray(absences.user_id, allowed === 'all' ? team : team.filter((u) => u === member.user_id || allowed.includes(u))));
     } else if (feed.scope === 'all') {
       const allowed = await listableUserIds(db, member.organization_id, member.user_id, 'nav.absences');
       if (allowed !== 'all') {

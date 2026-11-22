@@ -267,7 +267,7 @@ export function isValidAssessmentStatus(s: string): s is AssessmentStatus {
   return (ASSESSMENT_STATUSES as readonly string[]).includes(s as AssessmentStatus);
 }
 
-// AI providers per organization (organizations.settings.cases.ai), set by a superdeveloper or whoever edits
+// AI providers per organization (organizations.settings.cases.ai), set by whoever edits
 // Organization settings; only Azure OpenAI (Switzerland) receives Cases data. The CHF limits stay the superdeveloper's.
 // Azure calls are paid and go through the API's budget (ai-budget.service.ts): the instance's
 // AI_MONTHLY_BUDGET_CHF and the organization's limit (settings.ai, packages/shared/src/ai.ts).

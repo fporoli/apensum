@@ -40,7 +40,7 @@ interface Member {
 }
 
 /**
- * Organization settings → Departments: the organization's own list (Administration, HR, Sales, …),
+ * Users → Departments (HR): the organization's own list (Administration, HR, Sales, …),
  * each with a default leader. The leader is offered as manager when someone is assigned to the
  * department; a person's manager is set on their employment, not here.
  */

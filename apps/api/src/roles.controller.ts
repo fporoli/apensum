@@ -1,14 +1,14 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { ADMIN_LOCKED_PERMISSIONS, allPermissionIds } from '@worktime3/shared/permissions';
+import { ADMIN_LOCKED_PERMISSIONS, OWNER_PERMISSIONS, allPermissionIds, ownerAppoints } from '@worktime3/shared/permissions';
 import { DbService, type Db } from './db.service';
-import { callerUserId, can, isOrgMember, isSuperDeveloper } from './access';
+import { callerUserId, isOrgMember, isOrgOwner } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { membership_roles, organization_memberships, role_permissions, roles } from './db/schema';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 
-/** System roles assignable when inviting someone; owner is reserved for the org creator. */
+/** System roles offered when inviting someone; owner is handed over on the Users page, by owners. */
 export function isAssignableInviteRole(name: string): boolean {
   return name !== 'owner';
 }
@@ -35,7 +35,7 @@ export class RolesController {
 // Roles & permissions administration.
 //
 // Global roles (`organization_id` NULL) are the system roles and carry the default permissions;
-// a superdeveloper edits them (`scope: 'global'`). An organization customizes a system role by
+// they change only by migration, never through the API. An organization customizes a system role by
 // getting its own copy (same name): the first org-level change creates the copy, copies the
 // defaults and moves the org's memberships, invitations and team-role references onto it;
 // "reset" moves them back and deletes the copy. Organizations can also create their own roles.
@@ -96,12 +96,11 @@ export function sanitizeTranslations(value: unknown): Record<string, string> {
 }
 
 interface RoleBody {
-  scope?: 'org' | 'global';
+  scope?: string;
   name?: string;
   description?: string | null;
   translations?: unknown;
   permissions?: unknown;
-  adminUserIds?: unknown;
 }
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -114,11 +113,12 @@ export class OrgRolesController {
     private readonly versions: VersionsService,
   ) {}
 
-  /** May the caller administer roles in this org? Superdevelopers may always (they also edit the defaults). */
-  private async canAdminister(db: Db, orgId: string, callerId: string) {
-    const superDev = await isSuperDeveloper(db, callerId);
-    const org = superDev || (await can(db, orgId, callerId, 'section.admin.roles', 'edit'));
-    return { org, global: superDev };
+  /**
+   * Only an owner changes what a role may do: whoever edits roles could give themselves any right.
+   * The defaults are nobody's: they come from migrations.
+   */
+  private canAdminister(db: Db, orgId: string, callerId: string) {
+    return isOrgOwner(db, orgId, callerId);
   }
 
   /**
@@ -126,32 +126,29 @@ export class OrgRolesController {
    * Permissions, role admins and member counts only for callers who administer roles.
    */
   @Get()
-  async list(@Param('orgId') orgId: string, @Query('scope') scope: string | undefined, @Req() req: AuthenticatedRequest) {
+  async list(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, roles: [] };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: true, roles: [] };
-    const access = await this.canAdminister(db, orgId, callerId);
-    if (!access.org && !(await isOrgMember(db, orgId, callerId))) return { ok: true, roles: [] };
-    // `scope=global`: the default roles themselves (superdevelopers edit these).
-    const globalOnly = scope === 'global';
-    if (globalOnly && !access.global) return { ok: false, error: 'forbidden' };
+    const administers = await this.canAdminister(db, orgId, callerId);
+    if (!administers && !(await isOrgMember(db, orgId, callerId))) return { ok: true, roles: [] };
 
     const rows = await db
       .select()
       .from(roles)
-      .where(globalOnly ? isNull(roles.organization_id) : or(isNull(roles.organization_id), eq(roles.organization_id, orgId)))
+      .where(or(isNull(roles.organization_id), eq(roles.organization_id, orgId)))
       .orderBy(asc(roles.name));
-    const effective = globalOnly ? rows.map((r) => ({ ...r, scope: 'global' as RoleScope })) : effectiveOrgRoles(rows, orgId);
-    if (!access.org) {
+    const effective = effectiveOrgRoles(rows, orgId);
+    // For the pickers: which roles only an owner hands out, and whether the caller is one.
+    if (!administers) {
       return {
         ok: true,
         canAdminister: false,
-        canEditGlobal: false,
-        roles: effective.map((r) => ({ id: r.id, name: r.name, description: r.description, translations: r.translations, scope: r.scope })),
+        callerIsOwner: false,
+        roles: effective.map((r) => ({ id: r.id, name: r.name, description: r.description, translations: r.translations, scope: r.scope, ownerOnly: ownerAppoints(r.name) })),
       };
     }
-
     const ids = effective.map((r) => r.id);
     const perms = ids.length
       ? await db.select().from(role_permissions).where(inArray(role_permissions.role_id, ids))
@@ -174,16 +171,16 @@ export class OrgRolesController {
     return {
       ok: true,
       canAdminister: true,
-      canEditGlobal: access.global,
+      callerIsOwner: true,
       roles: effective.map((r) => ({
         id: r.id,
         name: r.name,
         description: r.description,
         translations: r.translations,
         scope: r.scope,
-        permissions: byRole(perms, r.id),
+        ownerOnly: ownerAppoints(r.name),
+        permissions: r.name === 'owner' ? [...OWNER_PERMISSIONS].sort() : byRole(perms, r.id),
         defaultPermissions: globalByName.has(r.name) ? byRole(globalPerms, globalByName.get(r.name)!) : null,
-        adminUserIds: (r.admin_user_ids ?? []).filter(Boolean),
         // A default role is shared by every organization: count only this one's members.
         memberCount: counts.find((c) => c.role_id === r.id)?.n ?? 0,
       })),
@@ -197,7 +194,7 @@ export class OrgRolesController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    if (!(await this.canAdminister(db, orgId, callerId)).org) return { ok: false, error: 'forbidden' };
+    if (!(await this.canAdminister(db, orgId, callerId))) return { ok: false, error: 'forbidden' };
 
     const taken = await db
       .select({ name: roles.name })
@@ -228,8 +225,8 @@ export class OrgRolesController {
   }
 
   /**
-   * Change a role. A global role with `scope: 'global'` changes the default (superdeveloper);
-   * otherwise the org gets (or already has) its own copy and only that changes.
+   * Change a role of this org. A global role gets a copy for the org and only that changes; the default
+   * itself can't be changed (`scope: 'global'` is refused rather than taken for a change of the copy).
    */
   @Patch(':roleId')
   async update(
@@ -242,13 +239,11 @@ export class OrgRolesController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    const access = await this.canAdminister(db, orgId, callerId);
+    if (body.scope === 'global' || !(await this.canAdminister(db, orgId, callerId))) return { ok: false, error: 'forbidden' };
 
     const [role] = await db.select().from(roles).where(eq(roles.id, roleId));
     if (!role || (role.organization_id !== null && role.organization_id !== orgId)) return { ok: false, error: 'role-not-found' };
     if (role.name === 'owner') return { ok: false, error: 'owner-role-locked' };
-    const editGlobal = body.scope === 'global';
-    if (editGlobal ? !access.global || role.organization_id !== null : !access.org) return { ok: false, error: 'forbidden' };
 
     if (body.permissions !== undefined) {
       const permError = checkPermissionIds(body.permissions) ?? checkAdminLock(role.name, body.permissions as string[]);
@@ -265,19 +260,12 @@ export class OrgRolesController {
       const nameError = checkRoleName(body.name, taken.filter((r) => r.name !== role.name).map((r) => r.name));
       if (nameError) return { ok: false, error: nameError };
     }
-    let adminUserIds: string[] | undefined;
-    if (body.adminUserIds !== undefined) {
-      if (!Array.isArray(body.adminUserIds) || body.adminUserIds.some((id) => typeof id !== 'string')) return { ok: false, error: 'invalid-admin-users' };
-      adminUserIds = [...new Set(body.adminUserIds as string[])];
-    }
-
     const targetId = await db.transaction(async (tx) => {
-      const id = !editGlobal && role.organization_id === null ? await this.createOrgCopy(tx, orgId, role.id) : role.id;
+      const id = role.organization_id === null ? await this.createOrgCopy(tx, orgId, role.id) : role.id;
       const patch: Partial<typeof roles.$inferInsert> = {};
       if (body.name !== undefined && isCustom) patch.name = body.name.trim();
       if (body.description !== undefined) patch.description = typeof body.description === 'string' ? body.description.trim() || null : null;
       if (body.translations !== undefined) patch.translations = sanitizeTranslations(body.translations);
-      if (adminUserIds !== undefined) patch.admin_user_ids = adminUserIds;
       if (Object.keys(patch).length) await tx.update(roles).set(patch).where(eq(roles.id, id));
       if (body.permissions !== undefined) {
         const ids = [...new Set(body.permissions as string[])];
@@ -287,7 +275,7 @@ export class OrgRolesController {
       return id;
     });
 
-    const change = { scope: editGlobal ? 'global' : 'org', name: body.name, description: body.description, translations: body.translations, permissions: body.permissions, adminUserIds };
+    const change = { scope: 'org', name: body.name, description: body.description, translations: body.translations, permissions: body.permissions };
     void this.audit.record(orgId, callerId, 'role.update', 'role', targetId, change).catch(() => {});
     void this.versions.record('roles', targetId, 'update_delta', callerId, change).catch(() => {});
     return { ok: true, id: targetId };
@@ -300,7 +288,7 @@ export class OrgRolesController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    if (!(await this.canAdminister(db, orgId, callerId)).org) return { ok: false, error: 'forbidden' };
+    if (!(await this.canAdminister(db, orgId, callerId))) return { ok: false, error: 'forbidden' };
 
     const [role] = await db.select().from(roles).where(and(eq(roles.id, roleId), eq(roles.organization_id, orgId)));
     if (!role) return { ok: false, error: 'role-not-found' };
@@ -323,7 +311,7 @@ export class OrgRolesController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    if (!(await this.canAdminister(db, orgId, callerId)).org) return { ok: false, error: 'forbidden' };
+    if (!(await this.canAdminister(db, orgId, callerId))) return { ok: false, error: 'forbidden' };
 
     const [role] = await db.select().from(roles).where(and(eq(roles.id, roleId), eq(roles.organization_id, orgId)));
     if (!role) return { ok: false, error: 'role-not-found' };
@@ -357,7 +345,7 @@ export class OrgRolesController {
         is_system_role: g.is_system_role,
         settings: g.settings,
         translations: g.translations,
-        admin_user_ids: (g.admin_user_ids ?? []).filter(Boolean),
+        admin_user_ids: [],
       })
       .returning({ id: roles.id });
     await tx.execute(

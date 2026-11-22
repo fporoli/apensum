@@ -14,7 +14,7 @@ const OTHER = '00000000-0000-4000-8000-00000000000b';
 const ORG = '00000000-0000-4000-8000-00000000000c';
 const as = (sub: string) => ({ user: { kind: 'local' as const, sub } });
 
-/** An owner of ORG (holds every permission) who is no superdeveloper; writes are counted. */
+/** An owner of ORG who is no superdeveloper; writes are counted. */
 function ownerDb(tables: Record<string, unknown[]> = {}) {
   const writes: string[] = [];
   const db: any = {
@@ -44,17 +44,14 @@ function ownerDb(tables: Record<string, unknown[]> = {}) {
 
 test("users: an owner changes nobody else's account", async () => {
   const { service, writes } = ownerDb();
-  const users = new UsersController(service, quiet as any, quiet as any);
+  const users = new UsersController(service, quiet as any);
   assert.deepEqual(await users.update(OTHER, { is_active: false, display_name: 'x' }, as(ME)), { ok: false, error: 'forbidden' });
   assert.deepEqual(await users.update(ME, { is_active: false }, as(ME)), { ok: true, noop: true });
   assert.deepEqual(writes, []);
 });
 
-test('users: impersonation and its search are for superdevelopers only', async () => {
-  const { service } = ownerDb();
-  const users = new UsersController(service, quiet as any, quiet as any);
-  assert.deepEqual(await users.impersonate(OTHER, { orgId: ORG }, as(ME)), { ok: false, error: 'forbidden' });
-  assert.deepEqual(await users.search(ORG, 'someone', as(ME)), { ok: false, error: 'forbidden' });
+test('users: nobody can act as someone else', () => {
+  for (const name of ['impersonate', 'search']) assert.equal(name in UsersController.prototype, false, name);
 });
 
 test('auth: there is no endpoint that links or unlinks an identity of a given user', () => {
@@ -96,9 +93,6 @@ test('auth: an invitation sets no password on an SSO account, nor on one of anot
   }
 });
 
-test('import: backup restore is for superdevelopers only', async () => {
-  const { service } = ownerDb();
-  const restore = async () => assert.fail('must not restore');
-  const controller = new (ImportExportController as any)(service, { restoreOrganizationBackup: restore });
-  assert.deepEqual(await controller.commitBackup(ORG, { buffer: Buffer.from('zip') }, as(ME)), { ok: false, error: 'backup-restore-operator-only' });
+test('import: there is no restore', () => {
+  for (const name of ['commitBackup', 'previewBackup']) assert.equal(name in ImportExportController.prototype, false, name);
 });

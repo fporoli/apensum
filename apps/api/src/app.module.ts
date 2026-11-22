@@ -5,6 +5,8 @@ import { HealthController } from './health.controller';
 import { AboutController } from './about.controller';
 import { ProjectTimeService } from './project-time.service';
 import { RbacService } from './rbac.service';
+import { ScreenShareController } from './screen-share.controller';
+import { ScreenShareService } from './screen-share.service';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService } from './workflows.service';
@@ -74,6 +76,7 @@ const plugins = loadApiPlugins();
 
 @Module({
   controllers: [
+    ScreenShareController,
     HealthController,
     AboutController,
     AuthController,
@@ -135,6 +138,7 @@ const plugins = loadApiPlugins();
     TimesheetDocumentsService,
     ForwardMailService,
     RbacService,
+    ScreenShareService,
     AuditService,
     VersionsService,
     WorkflowsService,

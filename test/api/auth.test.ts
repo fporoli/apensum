@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { ADMIN_ROLE_ID, isValidEmail, isValidPassword, OWNER_ROLE_ID, parseDemoAccounts, registrationRoleIds, slugBase } from '../../apps/api/src/auth.controller';
+import { ADMIN_ROLE_ID, HR_ROLE_ID, isValidEmail, isValidPassword, OWNER_ROLE_ID, parseDemoAccounts, registrationRoleIds, slugBase } from '../../apps/api/src/auth.controller';
 
 test('rejects malformed emails', () => {
   assert.equal(isValidEmail('admin@acme.example'), true);
@@ -41,6 +41,5 @@ test('parseDemoAccounts reads JSON-string entries in key order and skips malform
 });
 
 test('the first user of an instance is owner and admin of their workspace, later ones owner only', () => {
-  assert.deepEqual(registrationRoleIds(true), [OWNER_ROLE_ID, ADMIN_ROLE_ID]);
-  assert.deepEqual(registrationRoleIds(false), [OWNER_ROLE_ID]);
+  assert.deepEqual(registrationRoleIds(), [OWNER_ROLE_ID, ADMIN_ROLE_ID, HR_ROLE_ID]);
 });

@@ -301,7 +301,7 @@ export class BasicDataController {
 
     const note = (body.note ?? '').trim() || null;
     const result = await this.basicData.resolveRequest(userId, Number(versionNr), 'rejected', callerId, note, orgId);
-    if (result.ok) void this.audit.record(orgId, callerId, 'basicdata.reject', 'user', userId, { version: Number(versionNr), note: note ?? undefined }).catch(() => {});
+    if (result.ok) void this.audit.record(orgId, callerId, 'basicdata.reject', 'user', userId, { version: Number(versionNr) }).catch(() => {});
     return result;
   }
 

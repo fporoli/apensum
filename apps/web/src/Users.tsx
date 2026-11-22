@@ -28,10 +28,12 @@ import WorkSchedulePanel from './WorkSchedulePanel';
 import EmploymentPanel from './EmploymentPanel';
 import PersonnelDocumentsPanel from './PersonnelDocumentsPanel';
 import { BalancesPanel } from './BalancesPanel';
+import DepartmentSettings from './DepartmentSettings';
+import { SettingsSection } from './SettingsSection';
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
-import { PageHeader, TableEmptyRow } from './components';
-import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, MailIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon } from './icons';
+import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
+import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, MailIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon, VisibilityIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -63,7 +65,11 @@ interface UsersProps {
   canSeeEmployment?: boolean;
   /** May open other members' personnel file (section.people.documents, HR by default). */
   canSeePersonnelDocs?: boolean;
-  canManage: boolean;
+  /** Others' balances (nav.balances beyond own). */
+  canViewBalances: boolean;
+  canInvite: boolean;
+  /** Departments and reporting lines are HR's (section.people.employment edit on everyone). */
+  canEditDepartments: boolean;
   authHeaders: () => Promise<Record<string, string>>;
 }
 
@@ -73,11 +79,14 @@ const STATUS_COLOR: Record<string, 'default' | 'success' | 'warning' | 'error'> 
   suspended: 'error',
 };
 
-export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSchedules = false, canSeeEmployment = false, canSeePersonnelDocs = false, canManage, authHeaders }: UsersProps) {
+export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSchedules = false, canSeeEmployment = false, canSeePersonnelDocs = false, canViewBalances, canInvite, canEditDepartments, authHeaders }: UsersProps) {
   const { t, locale } = useI18n();
   const [members, setMembers] = useState<Member[]>([]);
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [addRoleFor, setAddRoleFor] = useState<Record<string, string>>({});
+  const [ownerRoleId, setOwnerRoleId] = useState<string | null>(null);
+  const [callerIsOwner, setCallerIsOwner] = useState(false);
+  const [makeOwnerFor, setMakeOwnerFor] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -87,7 +96,8 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
   const [employmentFor, setEmploymentFor] = useState<Member | null>(null);
   const [personnelFor, setPersonnelFor] = useState<Member | null>(null);
 
-  const canViewBalances = isAdmin || canManage;
+  const canAskScreen = canInvite || canEditDepartments;
+  const [notice, setNotice] = useState<string | null>(null);
 
   async function reloadMembers() {
     setLoading(true);
@@ -103,12 +113,17 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
   async function reloadRoles() {
     if (!isAdmin) {
       setRoles([]);
+      setCallerIsOwner(false);
       return;
     }
     try {
       const res = await fetch(`${API}/organizations/${orgId}/roles`, { headers: await authHeaders() });
       const data = await res.json();
-      if (Array.isArray(data?.roles)) setRoles(assignableRoles(data.roles as OrgRole[]));
+      if (Array.isArray(data?.roles)) {
+        setRoles(assignableRoles(data.roles as OrgRole[]));
+        setOwnerRoleId((data.roles as OrgRole[]).find((r) => r.name === 'owner')?.id ?? null);
+        setCallerIsOwner(data.callerIsOwner === true);
+      }
     } catch { /* offline demo */ }
   }
 
@@ -118,8 +133,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
 
-  async function grantRole(membershipId: string) {
-    const roleId = addRoleFor[membershipId];
+  async function grantRole(membershipId: string, roleId = addRoleFor[membershipId]) {
     if (!roleId) return;
     setError(null);
     try {
@@ -130,11 +144,28 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
       });
       const data = await res.json();
       if (!data.ok) {
-        setError(t('users.addRoleFailed', { error: data.error ?? t('common.unknownError') }));
+        setError(data.error === 'owner-required' ? t('users.ownerRequired') : t('users.addRoleFailed', { error: data.error ?? t('common.unknownError') }));
         return;
       }
       setAddRoleFor((p) => ({ ...p, [membershipId]: '' }));
       await reloadMembers();
+    } catch {
+      setError(t('common.cannotReachApi'));
+    }
+  }
+
+  async function askScreen(m: Member) {
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/screen-share-asks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ userId: m.user_id }),
+      });
+      const data = await res.json();
+      if (data.ok) setNotice(t('screenShare.asked', { name: m.display_name }));
+      else setError(data.error === 'asked-already' ? t('screenShare.askedAlready') : t('screenShare.failed', { error: data.error ?? t('common.unknownError') }));
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -155,10 +186,13 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
       });
       const data = await res.json();
       if (!data.ok) {
-        setError(data.error === 'last-role' ? t('users.lastRole') : t('users.removeRoleFailed', { error: data.error ?? t('common.unknownError') }));
+        const known: Record<string, string> = { 'last-role': 'users.lastRole', 'last-owner': 'users.lastOwner', 'owner-required': 'users.ownerRequired' };
+        setError(known[data.error] ? t(known[data.error]) : t('users.removeRoleFailed', { error: data.error ?? t('common.unknownError') }));
         return;
       }
       await reloadMembers();
+      // Someone may have handed ownership over and left it.
+      if (roleId === ownerRoleId) await reloadRoles();
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -187,7 +221,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
         title={t('users.title')}
         subtitle={t('users.subtitle')}
         end={
-          canManage ? (
+          canInvite ? (
             <Button
               variant="outlined"
               size="small"
@@ -203,6 +237,13 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
       />
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
+
+      {canEditDepartments && (
+        <SettingsSection id="users.departments" title={t('departments.title')} subtitle={t('departments.subtitle')}>
+          <DepartmentSettings orgId={orgId} authHeaders={authHeaders} />
+        </SettingsSection>
+      )}
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
@@ -237,7 +278,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
                 <TableCell>{t('users.col.manager')}</TableCell>
                 <TableCell>{t('users.col.roles')}</TableCell>
                 {isAdmin && <TableCell>{t('users.col.addRole')}</TableCell>}
-                {(canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && <TableCell align="right">{t('common.actions')}</TableCell>}
+                {(canAskScreen || canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && <TableCell align="right">{t('common.actions')}</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -262,7 +303,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
                             key={rid}
                             label={m.role_names[i] ?? rid}
                             size="small"
-                            onDelete={isAdmin && m.role_ids.length > 1 ? () => void revokeRole(m.id, rid) : undefined}
+                            onDelete={isAdmin && m.role_ids.length > 1 && (callerIsOwner || roles.some((r) => r.id === rid && !r.ownerOnly)) ? () => void revokeRole(m.id, rid) : undefined}
                           />
                         ))}
                       </Box>
@@ -279,14 +320,31 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
                             disabled={availableRoles.length === 0}
                           >
                             <MenuItem value=""><em>{t('common.select')}</em></MenuItem>
-                            {availableRoles.map((r) => (<MenuItem key={r.id} value={r.id}>{roleLabel(r, locale)}</MenuItem>))}
+                            {availableRoles.map((r) => {
+                              const blocked = r.ownerOnly === true && !callerIsOwner;
+                              return (
+                                <MenuItem key={r.id} value={r.id} disabled={blocked}>
+                                  {blocked ? t('roles.byOwners', { role: roleLabel(r, locale) }) : roleLabel(r, locale)}
+                                </MenuItem>
+                              );
+                            })}
                           </TextField>
                           <Button size="small" onClick={() => void grantRole(m.id)} disabled={!addRoleFor[m.id]}>{t('common.add')}</Button>
+                          {callerIsOwner && ownerRoleId && m.status === 'active' && !m.role_ids.includes(ownerRoleId) && (
+                            <Button size="small" sx={{ whiteSpace: 'nowrap' }} onClick={() => setMakeOwnerFor(m)}>{t('users.makeOwner')}</Button>
+                          )}
                         </Box>
                       </TableCell>
                     )}
-                    {(canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && (
+                    {(canAskScreen || canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        {canAskScreen && m.status === 'active' && (
+                          <Tooltip title={t('screenShare.ask')}>
+                            <IconButton size="small" aria-label={t('screenShare.ask')} onClick={() => void askScreen(m)}>
+                              <VisibilityIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         {canSeeEmployment && (
                           <Tooltip title={t('employment.title')}>
                             <IconButton size="small" aria-label={t('employment.title')} onClick={() => setEmploymentFor(m)}>
@@ -403,6 +461,21 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
           <Button onClick={() => setBalancesFor(null)}>{t('common.close')}</Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!makeOwnerFor}
+        title={t('users.makeOwner')}
+        message={t('users.makeOwnerConfirm', { name: makeOwnerFor?.display_name ?? '' })}
+        confirmLabel={t('users.makeOwner')}
+        cancelLabel={t('common.cancel')}
+        confirmColor="primary"
+        onClose={() => setMakeOwnerFor(null)}
+        onConfirm={async () => {
+          const member = makeOwnerFor;
+          setMakeOwnerFor(null);
+          if (member && ownerRoleId) await grantRole(member.id, ownerRoleId);
+        }}
+      />
     </Box>
   );
 }

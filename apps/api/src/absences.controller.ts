@@ -276,7 +276,7 @@ export class AbsencesController implements OnModuleInit {
     const newDocId = await this.documents.upload(db, orgId, callerId, file, { table: 'absences', id });
     await db.update(absences).set({ document_id: newDocId }).where(eq(absences.id, id));
     if (absence.document_id) await this.documents.remove(db, absence.document_id);
-    void this.audit.record(orgId, callerId, 'absence.document.upload', 'absence', id, { fileName: file.originalname }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'absence.document.upload', 'absence', id, {}).catch(() => {});
     return { ok: true, id: newDocId };
   }
 

@@ -43,7 +43,7 @@ export function mergePluginTexts(plugins: readonly WebPlugin[], dictionaries: Re
 }
 
 mergePluginTexts(WEB_PLUGINS, DICTIONARIES);
-// The plugins' permission objects join the catalogue (roles editor, owner's ids) as the API's do.
+// The plugins' permission objects join the catalogue (roles editor, what owners hand out) as the API's do.
 registerPermissionObjects(PLUGIN_PERMISSIONS);
 // Their reports join the Reports page's tabs (the API registers the same definitions with their rows).
 for (const report of WEB_PLUGINS.flatMap((p) => p.reports ?? [])) registerReport(report.definition);
@@ -53,7 +53,6 @@ export const PLUGIN_NAV_GROUPS: readonly PluginNavGroup[] = WEB_PLUGINS.flatMap(
 export const PLUGIN_ORG_SETTINGS: readonly PluginSettingsSection[] = WEB_PLUGINS.flatMap((p) => p.orgSettings ?? []);
 export const PLUGIN_PUBLIC_ROUTES: readonly PluginPublicRoute[] = WEB_PLUGINS.flatMap((p) => p.publicRoutes ?? []);
 export const PLUGIN_WORKFLOW_KINDS: readonly PluginWorkflowKind[] = WEB_PLUGINS.flatMap((p) => p.workflowKinds ?? []);
-export const PLUGIN_BACKUP_COUNTS: Readonly<Record<string, string>> = Object.assign({}, ...WEB_PLUGINS.map((p) => p.backupCounts ?? {}));
 export const PLUGIN_TEAM_VIEWS: readonly PluginTeamView[] = WEB_PLUGINS.flatMap((p) => p.teamViews ?? []);
 export const PLUGIN_DOCUMENT_CATEGORIES: readonly PluginDocumentCategory[] = WEB_PLUGINS.flatMap((p) => p.documentCategories ?? []);
 export const PLUGIN_NOTIFICATION_SECTIONS: Readonly<Record<string, string>> = Object.assign({}, ...WEB_PLUGINS.map((p) => p.notificationSections ?? {}));

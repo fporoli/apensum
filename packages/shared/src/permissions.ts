@@ -107,10 +107,33 @@ export const PLUGIN_SECTION_OBJECTS: PermissionObject[] = [];
 export const PERMISSION_OBJECTS: PermissionObject[] = [...NAV_OBJECTS, ...SECTION_OBJECTS, ...WORK_SECTION_OBJECTS, ...ADMIN_SECTION_OBJECTS];
 
 /**
- * Grants the `admin` role always keeps, so an organization cannot lock itself out of
- * role management (`owner` holds everything anyway).
+ * All the `owner` role holds, whatever its rows say: it decides who is owner, admin or HR and what
+ * each role may do, and sees no one's data by itself. A registration adds admin and HR as roles of their own.
  */
-export const ADMIN_LOCKED_PERMISSIONS: readonly string[] = ['nav.admin:edit:all', 'section.admin.roles:edit:all'];
+export const OWNER_PERMISSIONS: readonly string[] = [
+  'nav.users:see:all',
+  'nav.invitations:edit:all',
+  'nav.admin:see:all',
+  'section.admin.roles:edit:all',
+  'nav.audit:see:all',
+];
+
+/** Objects no role but `owner` holds, whatever its rows say: whoever edits the roles gets any right. */
+export const OWNER_ONLY_OBJECTS: readonly string[] = ['section.admin.roles'];
+
+/** The standard roles an admin hands out and takes away. */
+export const ADMIN_APPOINTS: readonly string[] = ['manager', 'member', 'guest', 'developer'];
+
+/**
+ * True for a role only an owner hands out or takes away: owner, admin, hr, billing_admin and every role
+ * an organization made itself. By name is enough: only owners change what a role may do.
+ */
+export function ownerAppoints(roleName: string): boolean {
+  return !ADMIN_APPOINTS.includes(roleName);
+}
+
+/** Grants the `admin` role always keeps, so it stays the one that runs the system. */
+export const ADMIN_LOCKED_PERMISSIONS: readonly string[] = ['nav.admin:edit:all'];
 
 const OBJECTS_BY_ID = new Map(PERMISSION_OBJECTS.map((o) => [o.id, o]));
 
@@ -166,7 +189,7 @@ export function parsePermissionId(id: string): ParsedPermission | null {
   return { object, action: action as Action, scope: scope as Scope };
 }
 
-/** Every permission id in the catalogue (what `owner` implicitly holds). */
+/** Every permission id in the catalogue. */
 export function allPermissionIds(): string[] {
   const ids: string[] = [];
   for (const o of PERMISSION_OBJECTS) {

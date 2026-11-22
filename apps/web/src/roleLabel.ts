@@ -7,6 +7,8 @@ export interface OrgRole {
   description: string | null;
   translations: Record<string, string> | null;
   scope: 'global' | 'override' | 'custom';
+  /** Only an owner hands it out (`owner`, or a role with an HR-only right). */
+  ownerOnly?: boolean;
 }
 
 function builtin(kind: 'builtin' | 'builtinDescription', name: string, locale: string): string | undefined {
@@ -30,7 +32,7 @@ export function roleDescription(role: Pick<OrgRole, 'name' | 'description'>, loc
   return description;
 }
 
-/** Roles that can be handed out: everything except owner (reserved for the org creator). */
+/** Roles the pickers offer: everything except owner, which owners hand over with "Make owner". */
 export function assignableRoles<T extends Pick<OrgRole, 'name'>>(roles: T[]): T[] {
   return roles.filter((r) => r.name !== 'owner');
 }

@@ -1,14 +1,14 @@
 import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { clientIp } from './client-ip';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { Public, type AuthenticatedRequest } from './jwt.guard';
 import { mintLocalToken, purposeKey } from './jwt';
 import { sendMail } from './mailer';
 import * as bcrypt from 'bcryptjs';
 import { users, user_identities, organizations, organization_memberships, organization_invitations, roles, membership_roles, static_data } from './db/schema';
-import { pickPrimaryRole } from './access';
+import { invitationNeedsOwner, isOrgOwner, pickPrimaryRole } from './access';
 import { VersionsService } from './versions.service';
 import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
 
@@ -23,10 +23,14 @@ import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIM
 
 export const OWNER_ROLE_ID = '00000000-0000-0000-0000-000000000001';
 export const ADMIN_ROLE_ID = '00000000-0000-0000-0000-000000000002';
+export const HR_ROLE_ID = '00000000-0000-0000-0000-000000000007';
 
-/** Roles of a new registration in its own workspace: owner; the instance's very first user also admin. */
-export function registrationRoleIds(firstUserOfInstance: boolean): string[] {
-  return firstUserOfInstance ? [OWNER_ROLE_ID, ADMIN_ROLE_ID] : [OWNER_ROLE_ID];
+/**
+ * Roles of a new registration in its own workspace: owner only governs, so admin and HR come as roles
+ * of their own, which a larger company moves to other people.
+ */
+export function registrationRoleIds(): string[] {
+  return [OWNER_ROLE_ID, ADMIN_ROLE_ID, HR_ROLE_ID];
 }
 
 export function isValidEmail(email: unknown): boolean {
@@ -142,8 +146,8 @@ export class AuthController {
   ) {}
 
   /**
-   * Register a new admin user: creates the user, a personal workspace org, and an owner membership.
-   * The very first user of an instance (an empty production database) also becomes admin and
+   * Register: creates the user and a personal workspace org they are owner, admin and HR of.
+   * The very first user of an instance (an empty production database) also becomes
    * superdeveloper, so a fresh instance needs no SQL to be run.
    */
   @Public()
@@ -184,7 +188,7 @@ export class AuthController {
         .insert(organization_memberships)
         .values({ organization_id: org.id, user_id: uid, status: 'active' })
         .returning({ id: organization_memberships.id });
-      await tx.insert(membership_roles).values(registrationRoleIds(first).map((role_id) => ({ membership_id: membership.id, role_id })));
+      await tx.insert(membership_roles).values(registrationRoleIds().map((role_id) => ({ membership_id: membership.id, role_id })));
       // Static data (absence types, `locales`, `countries`) is inherited from the global rows
       // (`organization_id = null`); an org gets its own copy only when it customizes one.
       return { u, orgId: org.id, membershipId: membership.id, slug: workspaceSlug, first };
@@ -337,6 +341,7 @@ export class AuthController {
         organization_id: organization_invitations.organization_id,
         email: organization_invitations.email,
         role_id: organization_invitations.role_id,
+        invited_by_user_id: organization_invitations.invited_by_user_id,
         status: organization_invitations.status,
         expires_at: organization_invitations.expires_at,
       })
@@ -377,6 +382,13 @@ export class AuthController {
       return { ok: false, error: 'display-name-required' };
     }
     if (setsPassword && !isValidPassword(body.password)) return { ok: false, error: 'password-too-short' };
+    // The inviter knows the token. Checked now, not when it was sent: they may be no owner any more.
+    if (
+      (await invitationNeedsOwner(db, invitation.organization_id, invitation.role_id, existingUser ? { id: existingUser.id, setsPassword } : null)) &&
+      !(await isOrgOwner(db, invitation.organization_id, invitation.invited_by_user_id))
+    ) {
+      return { ok: false, error: 'invitation-needs-owner' };
+    }
     const passwordHash = setsPassword ? await bcrypt.hash(body.password, 10) : null;
     const displayName = existingUser?.display_name ?? body.displayName.trim();
 
@@ -407,6 +419,16 @@ export class AuthController {
         .insert(membership_roles)
         .values({ membership_id: membership.id, role_id: invitation.role_id })
         .onConflictDoNothing();
+      // Owner only governs: invited as one and nothing else, they are an ordinary member as well.
+      await tx.execute(sql`
+        INSERT INTO membership_roles (membership_id, role_id)
+        SELECT ${membership.id}::uuid, member.id
+        FROM (SELECT id FROM roles
+              WHERE name = 'member' AND (organization_id = ${invitation.organization_id} OR organization_id IS NULL)
+              ORDER BY organization_id NULLS LAST LIMIT 1) member
+        WHERE EXISTS (SELECT 1 FROM roles WHERE id = ${invitation.role_id} AND name = 'owner')
+          AND NOT EXISTS (SELECT 1 FROM membership_roles WHERE membership_id = ${membership.id} AND role_id <> ${invitation.role_id})
+        ON CONFLICT DO NOTHING`);
       await tx.update(organization_invitations).set({ status: 'accepted' }).where(eq(organization_invitations.token, token));
       return { userId: uid, membershipId: membership.id, wasNewUser: !existingUser };
     });

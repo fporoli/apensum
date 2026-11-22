@@ -359,7 +359,7 @@ export class TimesheetsController implements OnModuleInit {
       actorUserId: callerId,
       notification: { title: 'Reopen request for an approved timesheet', body: reason },
     });
-    void this.audit.record(period.organization_id, callerId, 'timesheet.request-reopen', 'timesheet_period', id, { reason }).catch(() => {});
+    void this.audit.record(period.organization_id, callerId, 'timesheet.request-reopen', 'timesheet_period', id, {}).catch(() => {});
     return { ok: true, workflowId: workflow.id };
   }
 

@@ -20,7 +20,7 @@ interface AiSettingsResponse {
 /**
  * Organization settings -> AI and costs, the Cases part: which providers transcribe, summarize and
  * draft for this organization (only Azure in Switzerland receives Cases data). Everyone with Cases or
- * Organization settings sees it; a superdeveloper or whoever edits Organization settings changes it.
+ * Organization settings sees it; whoever edits Organization settings changes it.
  * The monthly limit that caps Azure, and the spend, are the core's (AiSettingsPanel, superdeveloper).
  */
 export function CaseAiSettingsPanel({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {

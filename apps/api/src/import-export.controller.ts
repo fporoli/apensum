@@ -1,8 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Body, Controller, Get, Param, Post, Query, Req, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { DbService } from './db.service';
-import { callerUserId, can, isOrgMember, isSuperDeveloper, reachesAll } from './access';
+import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { ImportExportService, payrollItems, type RawEmployeeImportRow } from './import-export.service';
 
@@ -20,9 +19,8 @@ export class ImportExportController {
     if (!callerId) return { ok: false, error: 'unauthenticated' };
     if (!(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden' };
 
-    const allowed =
-      (await can(db, orgId, callerId, 'nav.importExport', action)) ||
-      (await reachesAll(db, orgId, callerId, 'nav.users', action));
+    // Its own permission alone: seeing everyone (nav.users) is not exporting everyone.
+    const allowed = await can(db, orgId, callerId, 'nav.importExport', action);
 
     if (!allowed) return { ok: false, error: 'forbidden' };
     return { ok: true, callerId };
@@ -184,68 +182,5 @@ export class ImportExportController {
 
     const rawRows = Array.isArray(body?.rows) ? body.rows : [];
     return this.importExport.commitEmployeeImport(db, orgId, auth.callerId, rawRows);
-  }
-
-  /**
-   * Generates and downloads a complete organization backup (.zip) containing database records and decrypted documents.
-   */
-  @Get('export/backup')
-  async downloadBackup(
-    @Param('orgId') orgId: string,
-    @Req() req: AuthenticatedRequest,
-    @Res() res: Response,
-  ) {
-    const db = this.db.getDb();
-    if (!db) return res.status(503).json({ ok: false, error: 'offline' });
-    const auth = await this.canAccess(db, orgId, req, 'see');
-    if (!auth.ok || !auth.callerId) return res.status(403).json({ ok: false, error: auth.error });
-
-    const result = await this.importExport.exportOrganizationBackup(db, orgId, auth.callerId);
-
-    res.set({
-      'Content-Type': 'application/zip',
-      'Content-Disposition': `attachment; filename="${result.filename}"`,
-    });
-    return res.send(result.buffer);
-  }
-
-  /**
-   * Dry-run inspects an uploaded backup ZIP archive, verifying manifest and returning content summaries.
-   */
-  @Post('import/backup/preview')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024, files: 1 } }))
-  async previewBackup(
-    @Param('orgId') orgId: string,
-    @UploadedFile() file: Express.Multer.File | undefined,
-    @Req() req: AuthenticatedRequest,
-  ) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true };
-    const auth = await this.canAccess(db, orgId, req, 'see');
-    if (!auth.ok) return { ok: false, error: auth.error };
-    if (!file || !file.buffer) return { ok: false, error: 'file-required' };
-
-    return this.importExport.previewOrganizationBackup(db, orgId, file.buffer);
-  }
-
-  /**
-   * Executes a restore of an organization backup ZIP file into this organization. Superdevelopers only:
-   * the rows keep the file's ids, so the file has to come from someone trusted with the whole instance.
-   */
-  @Post('import/backup/commit')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024, files: 1 } }))
-  async commitBackup(
-    @Param('orgId') orgId: string,
-    @UploadedFile() file: Express.Multer.File | undefined,
-    @Req() req: AuthenticatedRequest,
-  ) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true };
-    const auth = await this.canAccess(db, orgId, req, 'edit');
-    if (!auth.ok || !auth.callerId) return { ok: false, error: auth.error };
-    if (!(await isSuperDeveloper(db, auth.callerId))) return { ok: false, error: 'backup-restore-operator-only' };
-    if (!file || !file.buffer) return { ok: false, error: 'file-required' };
-
-    return this.importExport.restoreOrganizationBackup(db, orgId, auth.callerId, file.buffer);
   }
 }

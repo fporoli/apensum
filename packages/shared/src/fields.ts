@@ -152,7 +152,8 @@ export const BASICDATA_FORM: FormDef = {
   id: 'basicdata',
   // Org-defined custom fields go into the org's own section, `basicdata.orgs.<orgId>`.
   customStorage: { table: 'users', column: 'basicdata' },
-  reservedKeys: ['orgs', 'bankAccounts', 'emergencyContacts', 'partner', 'children'],
+  // `personalien`: what the employee import keeps in an org's section, next to its custom fields.
+  reservedKeys: ['orgs', 'personalien', 'bankAccounts', 'emergencyContacts', 'partner', 'children'],
   selfService: true,
   groups: [
     { key: 'personalien', caption: 'home.section.personalien', order: 10 },

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/
 import { and, asc, eq, isNull, or } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { VersionsService } from './versions.service';
-import { callerUserId, can, isOrgMember, isSuperDeveloper } from './access';
+import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { static_data } from './db/schema';
 
@@ -47,7 +47,7 @@ export class StaticDataController {
     const db = this.db.getDb();
     if (!db) return [];
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || (!(await isOrgMember(db, orgId, callerId)) && !(await isSuperDeveloper(db, callerId)))) return [];
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return [];
     return db
       .select()
       .from(static_data)
@@ -61,7 +61,7 @@ export class StaticDataController {
     const db = this.db.getDb();
     if (!db) return [];
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || (!(await isOrgMember(db, orgId, callerId)) && !(await isSuperDeveloper(db, callerId)))) return [];
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return [];
     const rows = await db
       .select()
       .from(static_data)

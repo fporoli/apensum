@@ -17,8 +17,8 @@ export interface ModuleDefinition {
   /** Permission objects (packages/shared/src/permissions.ts) that belong to the module. */
   objects: readonly string[];
   /**
-   * A licensed (paid) module: only a superdeveloper (the instance's operator) switches it on or
-   * off for an organization; everyone else sees its state. It is off until switched on.
+   * A licensed (paid) module: it runs only while the organization has a valid license (given by the
+   * instance's operator on the server) and has switched it on.
    */
   licensed?: boolean;
 }
@@ -54,11 +54,18 @@ export function registerModule(def: ModuleDefinition): void {
 
 export type ModuleSettings = Record<string, boolean>;
 
-/** Every module's state for an organization's `settings.modules` value (anything else = defaults). */
-export function resolveModules(stored: unknown): ModuleSettings {
+/**
+ * Every module's state for an organization's `settings.modules` value (anything else = defaults).
+ * `licenses`: the ids of its valid licenses; a licensed module without one is off, whatever is stored.
+ */
+export function resolveModules(stored: unknown, licenses?: unknown): ModuleSettings {
   const chosen = stored && typeof stored === 'object' && !Array.isArray(stored) ? (stored as Record<string, unknown>) : {};
   const out: ModuleSettings = {};
-  for (const m of MODULES) out[m.id] = typeof chosen[m.id] === 'boolean' ? (chosen[m.id] as boolean) : m.defaultEnabled;
+  const held = Array.isArray(licenses) ? licenses : [];
+  for (const m of MODULES) {
+    const on = typeof chosen[m.id] === 'boolean' ? (chosen[m.id] as boolean) : m.defaultEnabled;
+    out[m.id] = on && (!m.licensed || held.includes(m.id));
+  }
   return out;
 }
 
@@ -74,7 +81,7 @@ export function validateModules(body: unknown): { ok: true; modules: ModuleSetti
   return { ok: true, modules: out };
 }
 
-/** The licensed modules a patch switches (only a superdeveloper may). */
+/** The licensed modules a patch switches (on only with a license). */
 export function licensedIn(patch: ModuleSettings): string[] {
   return Object.keys(patch).filter((id) => MODULES.some((m) => m.id === id && m.licensed));
 }

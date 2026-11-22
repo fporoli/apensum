@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req } from '@ne
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DbService, type Db } from './db.service';
-import { callerUserId, can, canSeeUserData, isOrgMember, membershipManagerId } from './access';
+import { callerUserId, can, canSeeUserData, isOrgMember, membershipManagerId, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
@@ -105,7 +105,7 @@ export class EmploymentController {
     return {
       ok: true,
       departments: rows.map((r) => ({ ...r, members: membersOf.get(r.id) ?? 0 })),
-      canEdit: await can(db, orgId, callerId, 'nav.orgSettings', 'edit'),
+      canEdit: await reachesAll(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit'),
     };
   }
 
@@ -371,7 +371,8 @@ export class EmploymentController {
 
   private async departmentEditor(db: Db, orgId: string, req: AuthenticatedRequest): Promise<string | null> {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await can(db, orgId, callerId, 'nav.orgSettings', 'edit'))) return null;
+    // HR's: a department's leader and members handle its requests, the confidential ones included.
+    if (!callerId || !(await reachesAll(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit'))) return null;
     return callerId;
   }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Box, Chip, FormControlLabel, Switch, Tooltip, Typography } from '@mui/material';
-import { useT } from './i18n';
+import { useI18n } from './i18n';
+import { swissLocale } from './localeFormat';
 import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -9,7 +10,7 @@ interface ModuleEntry {
   id: string;
   caption: string;
   defaultEnabled: boolean;
-  /** Switched by a superdeveloper only (a paid module). */
+  /** A paid module: it needs the operator's license. */
   licensed?: boolean;
 }
 
@@ -26,10 +27,11 @@ export default function ModuleSettings({
   authHeaders: () => Promise<Record<string, string>>;
   onChanged?: () => void;
 }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [catalogue, setCatalogue] = useState<ModuleEntry[]>([]);
   const [modules, setModules] = useState<Record<string, boolean>>({});
-  const [superDeveloper, setSuperDeveloper] = useState(false);
+  /** Valid licenses: module id -> last day, null = open-ended. */
+  const [licenses, setLicenses] = useState<Record<string, string | null>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +42,7 @@ export default function ModuleSettings({
         const data = await res.json();
         setCatalogue(Array.isArray(data?.catalogue) ? data.catalogue : []);
         setModules(data?.modules ?? {});
-        setSuperDeveloper(data?.superDeveloper === true);
+        setLicenses(data?.licenses ?? {});
       } catch {
         setError(t('common.cannotReachApi'));
       }
@@ -80,7 +82,7 @@ export default function ModuleSettings({
           control={
             <Switch
               checked={modules[m.id] ?? m.defaultEnabled}
-              disabled={busy || (m.licensed === true && !superDeveloper)}
+              disabled={busy || (m.licensed === true && !(m.id in licenses))}
               onChange={(e) => void toggle(m.id, e.target.checked)}
             />
           }
@@ -90,7 +92,19 @@ export default function ModuleSettings({
                 {t(m.caption)}
                 {m.licensed && (
                   <Tooltip title={t('modules.licensedHint')}>
-                    <Chip size="small" variant="outlined" label={t('modules.licensed')} sx={{ ml: 1, height: 20 }} />
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color={m.id in licenses ? 'success' : 'default'}
+                      label={
+                        !(m.id in licenses)
+                          ? t('modules.licenseNone')
+                          : licenses[m.id]
+                            ? t('modules.licenseUntil', { date: new Date(`${licenses[m.id]}T12:00:00`).toLocaleDateString(swissLocale(locale)) })
+                            : t('modules.licensed')
+                      }
+                      sx={{ ml: 1, height: 20 }}
+                    />
                   </Tooltip>
                 )}
               </Typography>

@@ -51,7 +51,14 @@ check((await get(`/organizations/${ORG}/reports/projectHours?from=2026-01&to=202
 check((await get(`/organizations/${ORG}/team-overview?kind=expenses&month=2026-01`)).body?.error === 'invalid-kind', 'no expenses team view');
 check((await get(`/organizations/${ORG}/documents`)).body?.ok === true, 'documents list');
 check(Array.isArray((await get('/workflows/assigned-to-me')).body), 'workflow inbox');
-const payroll = await get(`/organizations/${ORG}/export/payroll?month=2026-01`);
+// Payroll is HR's, not the admin's.
+const hr = await (await fetch(`${API}/auth/login`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'ulla@acme.com', password: 'ulla' }),
+})).json();
+const payrollRes = await fetch(`${API}/organizations/${ORG}/export/payroll?month=2026-01`, { headers: { Authorization: `Bearer ${hr.token}` } });
+const payroll = { body: await payrollRes.json() };
 check(payroll.body?.ok && Array.isArray(payroll.body.items) && payroll.body.items.length === 0, 'payroll without plugin columns');
 
 if (failures.length) {

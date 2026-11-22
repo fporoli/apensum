@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ImportExportService, registerPayrollItem, type PayrollRow, type RawEmployeeImportRow } from '../../apps/api/src/import-export.service';
+import { ImportExportService, payrollPersonalien, registerPayrollItem, type PayrollRow, type RawEmployeeImportRow } from '../../apps/api/src/import-export.service';
 
 // A plugin's payroll item, as the expenses plugin registers it (plugins/expenses/api/import-export.ts).
 registerPayrollItem({
@@ -95,178 +95,42 @@ test('previewEmployeeImport identifies invalid emails and dates', async () => {
   assert.ok(preview.results[1].errors.includes('invalid-start-date'));
 });
 
-test('readZipArchive and zipStored roundtrip preserves files', () => {
-  const { zipStored } = require('../../packages/shared/dist/xlsx.js');
-  const filesIn = [
-    { name: 'manifest.json', data: Buffer.from(JSON.stringify({ version: 1, name: 'test' })) },
-    { name: 'documents/doc1_sample.pdf', data: Buffer.from('%PDF-1.4 test document content') },
-  ];
-  const zipBytes = zipStored(filesIn);
-  const extracted = svc.readZipArchive(Buffer.from(zipBytes));
-
-  assert.equal(extracted.length, 2);
-  assert.equal(extracted[0].name, 'manifest.json');
-  assert.ok(extracted[0].data.toString('utf8').includes('"version":1'));
-  assert.equal(extracted[1].name, 'documents/doc1_sample.pdf');
-  assert.ok(extracted[1].data.toString('utf8').includes('%PDF-1.4'));
+test("payroll details: this organization's import over the account's older one, never another organization's", () => {
+  const data = { personalien: { personnelNumber: 'OLD', socialSecurityNumber: 'AHV' }, orgs: { a: { personalien: { personnelNumber: 'A' } }, b: { personalien: { personnelNumber: 'B', firstName: 'Bea' } } } };
+  assert.deepEqual(payrollPersonalien(data, 'a'), { personnelNumber: 'A', socialSecurityNumber: 'AHV' });
+  assert.deepEqual(payrollPersonalien(data, 'c'), { personnelNumber: 'OLD', socialSecurityNumber: 'AHV' });
+  assert.deepEqual(payrollPersonalien(null, 'a'), {});
 });
 
-test('previewOrganizationBackup validates archive and manifest', async () => {
-  const { zipStored } = require('../../packages/shared/dist/xlsx.js');
-
-  const fakeDb: any = {
-    select: () => ({
-      from: () => ({
-        where: () => Promise.resolve([{ id: 'org-1', name: 'Acme Corp', slug: 'acme' }]),
-      }),
-    }),
-  };
-
-  // 1. Invalid buffer
-  const invalidRes = await svc.previewOrganizationBackup(fakeDb, 'org-1', Buffer.from('not a zip'));
-  assert.equal(invalidRes.ok, false);
-  assert.equal(invalidRes.error, 'invalid-zip-archive');
-
-  // 2. Missing manifest
-  const emptyZip = zipStored([{ name: 'empty.txt', data: Buffer.from('hello') }]);
-  const noManifestRes = await svc.previewOrganizationBackup(fakeDb, 'org-1', Buffer.from(emptyZip));
-  assert.equal(noManifestRes.ok, false);
-  assert.equal(noManifestRes.error, 'manifest-not-found');
-
-  // 3. Valid archive
-  const validZip = zipStored([
-    {
-      name: 'manifest.json',
-      data: Buffer.from(
-        JSON.stringify({
-          version: 1,
-          createdAt: '2026-11-18T00:00:00Z',
-          organization: { id: 'org-1', name: 'Acme Corp', slug: 'acme' },
-          counts: { users: 3, workTimes: 120, absences: 4 },
-        }),
-      ),
-    },
-    { name: 'documents/doc1_contract.pdf', data: Buffer.from('contract bytes') },
-  ]);
-
-  const validRes = await svc.previewOrganizationBackup(fakeDb, 'org-1', Buffer.from(validZip));
-  assert.equal(validRes.ok, true);
-  assert.equal(validRes.manifest?.counts?.users, 3);
-  assert.equal(validRes.manifest?.documentCount, 1);
-  assert.equal(validRes.compatibility?.isSameOrg, true);
-});
-
-test('exportOrganizationBackup packages tables, documents and manifest', async () => {
-  const dummyDocService: any = {
-    read: async () => Buffer.from('decrypted file content'),
-  };
-  const auditRecorded: any[] = [];
-  const mockAudit: any = {
-    record: async (...args: any[]) => {
-      auditRecorded.push(args);
-    },
-  };
-
-  const svcWithDocs = new ImportExportService(dummyBalances, mockAudit, dummyDocService);
-
+/** Imports one row for a member `u1` who belongs to `otherOrgs` too; returns the result and what was written. */
+async function importMember(otherOrgs: string[]) {
   const { getTableName } = require('drizzle-orm');
-  const mockDb: any = {
-    select: () => ({
-      from: (tbl: any) => ({
-        where: () => {
-          const tName = getTableName(tbl);
-          if (tName === 'organizations') {
-            return Promise.resolve([{ id: 'org-1', name: 'Acme Corp', slug: 'acme' }]);
-          }
-          if (tName === 'documents') {
-            return Promise.resolve([
-              { id: 'doc-1', file_name: 'receipt.pdf', mime_type: 'application/pdf', size_bytes: 22 },
-            ]);
-          }
-          return Promise.resolve([]);
-        },
-      }),
-    }),
-  };
-
-  const result = await svcWithDocs.exportOrganizationBackup(mockDb, 'org-1', 'caller-1');
-  assert.ok(result.filename.startsWith('backup_acme_'));
-  assert.ok(result.filename.endsWith('.zip'));
-  assert.ok(result.buffer.length > 0);
-
-  const entries = svcWithDocs.readZipArchive(result.buffer);
-  assert.ok(entries.some((e) => e.name === 'manifest.json'));
-  assert.ok(entries.some((e) => e.name === 'database/organization.json'));
-  assert.ok(entries.some((e) => e.name.startsWith('documents/doc-1_receipt.pdf')));
-  assert.equal(auditRecorded.length, 1);
-});
-
-test('restoreOrganizationBackup processes zip entries and restores database records', async () => {
-  const { zipStored } = require('../../packages/shared/dist/xlsx.js');
-  const { getTableName } = require('drizzle-orm');
-
-  const zipBuffer = Buffer.from(
-    zipStored([
-      {
-        name: 'manifest.json',
-        data: Buffer.from(
-          JSON.stringify({
-            version: 1,
-            organization: { id: 'org-source', name: 'Source Org' },
-            counts: { users: 1, departments: 1 },
-          }),
-        ),
+  const writes: Record<string, any>[] = [];
+  const tx: any = {
+    select: (columns: Record<string, unknown>) => ({
+      from: (table: any) => {
+        const name = getTableName(table);
+        let rows: unknown[] = [];
+        if (name === 'users') rows = [{ id: 'u1', display_name: 'Own Name', basicdata: {} }];
+        else if (name === 'organization_memberships') rows = 'organization_id' in columns ? otherOrgs.map((organization_id) => ({ organization_id })) : [{ id: 'm1' }];
+        else if (name === 'work_schedules') rows = [{ id: 's1' }];
+        return { where: async () => rows };
       },
-      {
-        name: 'database/users.json',
-        data: Buffer.from(JSON.stringify([{ id: 'u-1', email: 'restored@example.ch', display_name: 'Restored User' }])),
-      },
-      {
-        name: 'database/departments.json',
-        data: Buffer.from(JSON.stringify([{ id: 'd-1', name: 'Product Management' }])),
-      },
-    ]),
-  );
-
-  const mockDb: any = {
-    select: () => ({
-      from: (tbl: any) => ({
-        where: () => {
-          const tName = getTableName(tbl);
-          if (tName === 'organizations') {
-            return Promise.resolve([{ id: 'org-target', name: 'Target Org', slug: 'target' }]);
-          }
-          return Promise.resolve([]);
-        },
-      }),
     }),
-    insert: (tbl: any) => ({
-      values: (val: any) => ({
-        returning: () => {
-          const id = val.id || 'gen-id-1';
-          return Promise.resolve([{ id, ...val }]);
-        },
-        onConflictDoUpdate: () => ({
-          returning: () => Promise.resolve([{ id: val.id || 'gen-id-1', ...val }]),
-        }),
-        onConflictDoNothing: () => Promise.resolve([]),
-      }),
-    }),
+    update: () => ({ set: (patch: Record<string, any>) => (writes.push(patch), { where: async () => [] }) }),
   };
+  const service = new ImportExportService(dummyBalances, { record: async () => {} } as any);
+  (service as any).previewEmployeeImport = async () => ({ results: [{ status: 'update', row: { email: 'u1@example.ch', displayName: 'New Name' } }] });
+  return { result: await service.commitEmployeeImport({ transaction: (run: any) => run(tx) } as any, 'org', 'hr', [] as any), writes };
+}
 
-  const auditLogs: any[] = [];
-  const mockAudit: any = {
-    record: async (...args: any[]) => auditLogs.push(args),
-  };
-
-  const restoreSvc = new ImportExportService(dummyBalances, mockAudit);
-  const result = await restoreSvc.restoreOrganizationBackup(mockDb, 'org-target', 'caller-1', zipBuffer);
-
-  assert.equal(result.ok, true);
-  assert.equal(result.restored?.users, 1);
-  assert.equal(result.restored?.departments, 1);
-  assert.equal(auditLogs.length, 1);
-  assert.equal(auditLogs[0][2], 'organization.backup_restored');
+test('employee import: renames only who belongs to this organization alone', async () => {
+  const alone = await importMember([]);
+  assert.deepEqual(alone.writes, [{ display_name: 'New Name' }]);
+  assert.equal(alone.result.namesKept, 0);
+  const shared = await importMember(['other']);
+  assert.deepEqual(shared.writes, [], 'and without columns nothing else is written either');
+  assert.equal(shared.result.namesKept, 1);
 });
 
 test('payroll: the latest assignment per person wins, whatever order the rows come in', async () => {

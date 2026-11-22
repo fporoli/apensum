@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -20,15 +19,12 @@ import {
   TableHead,
   TableRow,
   TextField,
-  ToggleButton,
-  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
 import {
   ACTIONS,
   ADMIN_LOCKED_PERMISSIONS,
-  ADMIN_SECTION_OBJECTS,
   NAV_OBJECTS,
   PLUGIN_SECTION_OBJECTS,
   SCOPES,
@@ -40,7 +36,7 @@ import {
 } from '@worktime3/shared/permissions';
 import { LOCALES, useI18n } from './i18n';
 import { ConfirmDialog, TableEmptyRow } from './components';
-import { AddIcon, BusinessIcon, DeleteIcon, EditIcon, PublicIcon, RestartAltIcon } from './icons';
+import { AddIcon, DeleteIcon, EditIcon, RestartAltIcon } from './icons';
 import { roleDescription, roleLabel, type OrgRole } from './roleLabel';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -48,17 +44,8 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 interface AdminRole extends OrgRole {
   permissions: string[];
   defaultPermissions: string[] | null;
-  adminUserIds: string[];
   memberCount: number;
 }
-
-interface MemberOption {
-  user_id: string;
-  display_name: string;
-  email: string;
-}
-
-type ViewScope = 'org' | 'global';
 
 /** API error codes with their own message (`roles.error.<code>`). */
 const KNOWN_ERRORS = new Set([
@@ -80,7 +67,6 @@ const OBJECT_GROUPS: { key: string; objects: readonly PermissionObject[] }[] = [
   { key: 'roles.group.nav', objects: NAV_OBJECTS },
   { key: 'roles.group.basicdata', objects: SECTION_OBJECTS },
   { key: 'roles.group.work', objects: WORK_SECTION_OBJECTS },
-  { key: 'roles.group.admin', objects: ADMIN_SECTION_OBJECTS },
   // Sections of plugins (their navbar entries are in NAV_OBJECTS).
   { key: 'roles.group.plugins', objects: PLUGIN_SECTION_OBJECTS },
 ].filter((g) => g.objects.length > 0);
@@ -91,7 +77,6 @@ interface Draft {
   description: string;
   translations: Record<string, string>;
   permissions: Set<string>;
-  adminUserIds: string[];
   /** System role: name fixed, cannot be deleted. */
   isSystem: boolean;
 }
@@ -104,11 +89,8 @@ export default function RolesPermissions({
   authHeaders: () => Promise<Record<string, string>>;
 }) {
   const { t, locale } = useI18n();
-  const [view, setView] = useState<ViewScope>('org');
   const [roles, setRoles] = useState<AdminRole[]>([]);
-  const [canEditGlobal, setCanEditGlobal] = useState(false);
   const [canAdminister, setCanAdminister] = useState(true);
-  const [members, setMembers] = useState<MemberOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -122,18 +104,17 @@ export default function RolesPermissions({
     return t(fallbackKey, { error: code ?? t('common.unknownError') });
   }
 
-  async function reload(scope: ViewScope = view) {
+  async function reload() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/organizations/${orgId}/roles${scope === 'global' ? '?scope=global' : ''}`, { headers: await authHeaders() });
+      const res = await fetch(`${API}/organizations/${orgId}/roles`, { headers: await authHeaders() });
       const data = await res.json();
       if (data?.ok === false) {
         setError(errorText(data.error, 'roles.loadFailed'));
         return;
       }
       setCanAdminister(data?.canAdminister !== false);
-      setCanEditGlobal(data?.canEditGlobal === true);
       setRoles(Array.isArray(data?.roles) ? data.roles : []);
     } catch {
       setError(t('common.cannotReachApi'));
@@ -143,23 +124,9 @@ export default function RolesPermissions({
   }
 
   useEffect(() => {
-    setView('org');
-    void reload('org');
-    (async () => {
-      try {
-        const res = await fetch(`${API}/organizations/${orgId}/members`, { headers: await authHeaders() });
-        const data = await res.json();
-        if (Array.isArray(data)) setMembers(data);
-      } catch { /* the role-admin picker stays empty */ }
-    })();
+    void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
-
-  function switchView(next: ViewScope | null) {
-    if (!next || next === view) return;
-    setView(next);
-    void reload(next);
-  }
 
   function openEdit(role: AdminRole) {
     setDialogError(null);
@@ -169,14 +136,13 @@ export default function RolesPermissions({
       description: role.description ?? '',
       translations: { ...(role.translations ?? {}) },
       permissions: new Set(role.permissions.filter((id) => CATALOGUE.has(id))),
-      adminUserIds: role.adminUserIds,
       isSystem: role.scope !== 'custom',
     });
   }
 
   function openCreate() {
     setDialogError(null);
-    setDraft({ id: null, name: '', description: '', translations: {}, permissions: new Set(), adminUserIds: [], isSystem: false });
+    setDraft({ id: null, name: '', description: '', translations: {}, permissions: new Set(), isSystem: false });
   }
 
   function togglePermission(id: string) {
@@ -195,12 +161,10 @@ export default function RolesPermissions({
     setDialogError(null);
     try {
       const body = {
-        scope: view,
         name: draft.name,
         description: draft.description,
         translations: draft.translations,
         permissions: [...draft.permissions],
-        ...(view === 'org' ? { adminUserIds: draft.adminUserIds } : {}),
       };
       const res = await fetch(`${API}/organizations/${orgId}/roles${draft.id ? `/${draft.id}` : ''}`, {
         method: draft.id ? 'PATCH' : 'POST',
@@ -253,21 +217,11 @@ export default function RolesPermissions({
     <Box sx={{ display: 'grid', gap: 2 }}>
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography variant="body2" color="text.secondary" sx={{ flex: '1 1 260px' }}>
-          {t(view === 'global' ? 'roles.globalHint' : 'roles.subtitle')}
+          {t('roles.subtitle')}
         </Typography>
-        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          {canEditGlobal && (
-            <ToggleButtonGroup size="small" exclusive value={view} onChange={(_, v) => switchView(v)}>
-              <ToggleButton value="org"><BusinessIcon fontSize="small" sx={{ mr: 0.5 }} />{t('roles.scope.org')}</ToggleButton>
-              <ToggleButton value="global"><PublicIcon fontSize="small" sx={{ mr: 0.5 }} />{t('roles.scope.global')}</ToggleButton>
-            </ToggleButtonGroup>
-          )}
-          {view === 'org' && (
-            <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={openCreate}>
-              {t('roles.newRole')}
-            </Button>
-          )}
-        </Box>
+        <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={openCreate}>
+          {t('roles.newRole')}
+        </Button>
       </Box>
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
@@ -281,7 +235,7 @@ export default function RolesPermissions({
               <TableRow>
                 <TableCell>{t('common.role')}</TableCell>
                 <TableCell>{t('roles.col.type')}</TableCell>
-                {view === 'org' && <TableCell align="right">{t('roles.col.members')}</TableCell>}
+                <TableCell align="right">{t('roles.col.members')}</TableCell>
                 <TableCell align="right">{t('roles.col.permissions')}</TableCell>
                 <TableCell align="right">{t('common.actions')}</TableCell>
               </TableRow>
@@ -305,20 +259,20 @@ export default function RolesPermissions({
                       variant="outlined"
                     />
                   </TableCell>
-                  {view === 'org' && <TableCell align="right">{role.memberCount}</TableCell>}
-                  <TableCell align="right">{isOwner(role) ? t('roles.allPermissions') : role.permissions.filter((id) => CATALOGUE.has(id)).length}</TableCell>
+                  <TableCell align="right">{role.memberCount}</TableCell>
+                  <TableCell align="right">{role.permissions.filter((id) => CATALOGUE.has(id)).length}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {!isOwner(role) && (
                       <Tooltip title={t('common.edit')}>
                         <IconButton size="small" onClick={() => openEdit(role)}><EditIcon fontSize="small" /></IconButton>
                       </Tooltip>
                     )}
-                    {view === 'org' && role.scope === 'override' && (
+                    {role.scope === 'override' && (
                       <Tooltip title={t('roles.reset')}>
                         <IconButton size="small" onClick={() => setConfirm({ kind: 'reset', role })}><RestartAltIcon fontSize="small" /></IconButton>
                       </Tooltip>
                     )}
-                    {view === 'org' && role.scope === 'custom' && (
+                    {role.scope === 'custom' && (
                       <Tooltip title={role.memberCount > 0 ? t('roles.error.role-in-use') : t('common.delete')}>
                         <span>
                           <IconButton size="small" disabled={role.memberCount > 0} onClick={() => setConfirm({ kind: 'delete', role })}>
@@ -341,7 +295,7 @@ export default function RolesPermissions({
         {draft && (
           <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
             {dialogError && <Alert severity="error">{dialogError}</Alert>}
-            {view === 'org' && draft.isSystem && roles.find((r) => r.id === draft.id)?.scope === 'global' && (
+            {draft.isSystem && roles.find((r) => r.id === draft.id)?.scope === 'global' && (
               <Alert severity="info">{t('roles.overrideHint')}</Alert>
             )}
             <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 2fr' } }}>
@@ -374,18 +328,6 @@ export default function RolesPermissions({
                 ))}
               </Box>
             </Box>
-            {view === 'org' && (
-              <Autocomplete
-                multiple
-                size="small"
-                options={members}
-                getOptionLabel={(m) => `${m.display_name} (${m.email})`}
-                isOptionEqualToValue={(a, b) => a.user_id === b.user_id}
-                value={members.filter((m) => draft.adminUserIds.includes(m.user_id))}
-                onChange={(_, value) => setDraft({ ...draft, adminUserIds: value.map((m) => m.user_id) })}
-                renderInput={(params) => <TextField {...params} label={t('roles.field.admins')} helperText={t('roles.field.adminsHint')} />}
-              />
-            )}
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('roles.col.permissions')}</Typography>
               <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>

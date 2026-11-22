@@ -23,7 +23,6 @@ import { setSetupDismissed, useSetupStatus } from './SetupChecklist';
 import { SettingsIcon } from './icons';
 import BrandingSettings from './BrandingSettings';
 import WorkTimeSettings from './WorkTimeSettings';
-import DepartmentSettings from './DepartmentSettings';
 import ModuleSettings from './ModuleSettings';
 import { PLUGIN_ORG_SETTINGS } from './plugins';
 import { AiSettingsPanel } from './AiSettingsPanel';
@@ -267,10 +266,6 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
 
       <SettingsSection id="org.branding" title={t('branding.title')} subtitle={t('branding.subtitle')}>
         <BrandingSettings orgId={orgId} authHeaders={authHeaders} />
-      </SettingsSection>
-
-      <SettingsSection id="org.departments" title={t('departments.title')} subtitle={t('departments.subtitle')}>
-        <DepartmentSettings orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
       <SettingsSection id="org.workTime" title={t('workTimeSettings.title')} subtitle={t('workTimeSettings.subtitle')}>

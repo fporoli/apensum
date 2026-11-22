@@ -56,7 +56,7 @@ export function keepOrgSection(data: Record<string, unknown>, orgId: string): Re
  * SQL that merges a patch into users.basicdata. Top-level keys replace, as before; each org's
  * section under `orgs` is merged key by key, so saving one org's fields keeps the others.
  */
-function mergedBasicdata(patch: Record<string, unknown>) {
+export function mergedBasicdata(patch: Record<string, unknown>) {
   const { orgs, ...flat } = patch;
   let expr = sql`COALESCE(${users.basicdata}, '{}'::jsonb) || ${JSON.stringify(flat)}::jsonb`;
   for (const [orgId, section] of Object.entries(isPlainObject(orgs) ? orgs : {})) {

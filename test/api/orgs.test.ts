@@ -5,6 +5,7 @@ import {
   callerUserId,
   canManageRole,
   directReportUserIds,
+  invitationNeedsOwner,
   isManagerOf,
   isOrgAdmin,
   isOrgMember,
@@ -66,16 +67,30 @@ test('pickPrimaryRole collapses a multi-role set to the highest privilege one', 
   assert.equal(pickPrimaryRole([]), null);
 });
 
-test('canManageRole: an org admin may manage any role, regardless of admin_user_ids', async () => {
-  assert.equal(await canManageRole(fakeDb([{ name: 'admin' }]), 'org', 'u1', 'role-1'), true);
+test('canManageRole: owner, admin and HR, and every role of one\'s own, are the owners\' to give and take', async () => {
+  for (const role of ['owner', 'admin', 'hr', 'billing_admin', 'project-office']) {
+    assert.equal(await canManageRole(sequencedDb([[{ name: role }], [{ name: 'admin' }]]), 'org', 'u1', 'r'), false, role);
+    assert.equal(await canManageRole(sequencedDb([[{ name: role }], [{ name: 'owner' }]]), 'org', 'u1', 'r'), true, role);
+  }
 });
 
-test('canManageRole: a non-admin is allowed only when listed in that role\'s admin_user_ids', async () => {
-  const isRoleAdmin = sequencedDb([[{ name: 'member' }], [{ '?column?': 1 }]]);
-  assert.equal(await canManageRole(isRoleAdmin, 'org', 'u1', 'role-1'), true);
+test('canManageRole: the other roles are also an admin\'s', async () => {
+  for (const role of ['manager', 'member', 'guest', 'developer']) {
+    assert.equal(await canManageRole(sequencedDb([[{ name: role }], [{ name: 'admin', permission_id: 'nav.users:edit:all' }]]), 'org', 'u1', 'r'), true, role);
+    assert.equal(await canManageRole(sequencedDb([[{ name: role }], [{ name: 'hr', permission_id: 'nav.users:see:all' }], [{ name: 'hr' }]]), 'org', 'u1', 'r'), false, role);
+    assert.equal(await canManageRole(sequencedDb([[{ name: role }], [{ name: 'owner' }], [{ name: 'owner' }]]), 'org', 'u1', 'r'), true, role);
+  }
+});
 
-  const isNotRoleAdmin = sequencedDb([[{ name: 'member' }], []]);
-  assert.equal(await canManageRole(isNotRoleAdmin, 'org', 'u1', 'role-1'), false);
+test('invitationNeedsOwner: for a role owners appoint, and where accepting would take such an account over', async () => {
+  const needs = (held: Record<string, unknown>, setsPassword: boolean) =>
+    invitationNeedsOwner(sequencedDb([[{ name: 'member' }], [held]]), 'org', 'member-role', { id: 'u2', setsPassword });
+  assert.equal(await invitationNeedsOwner(fakeDb([{ name: 'admin' }]), 'org', 'admin-role', null), true);
+  assert.equal(await needs({ status: 'active', name: 'owner' }, true), true, 'no login yet');
+  assert.equal(await needs({ status: 'active', name: 'hr' }, true), true, 'HR without login');
+  assert.equal(await needs({ status: 'suspended', name: 'hr' }, false), true, 'would come back with it');
+  assert.equal(await needs({ status: 'active', name: 'hr' }, false), false, 'their own password, nothing new');
+  assert.equal(await needs({ status: 'active', name: 'member' }, true), false);
 });
 
 test('isPeriodLocked reflects whether a matching submitted/approved period row was found', async () => {

@@ -86,16 +86,6 @@ export class FieldsService {
     return (rows.rows[0]?.id as string) ?? null;
   }
 
-  /** True if any organization's template defines a custom field with this key (global keys must not collide). */
-  async orgCustomKeyExists(db: Executor, formId: string, fieldKey: string): Promise<boolean> {
-    const rows = await db.execute(
-      sql`SELECT 1 FROM field_config
-          WHERE organization_id IS NOT NULL AND form_id = ${formId} AND field_key = ${fieldKey} AND is_custom
-          LIMIT 1`,
-    );
-    return rows.rows.length > 0;
-  }
-
   /** Drops cached merges: one org's for an org write, every org's for a global write. */
   invalidate(organizationId: string | null, formId: string) {
     if (organizationId) {

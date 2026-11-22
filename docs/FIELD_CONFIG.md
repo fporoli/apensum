@@ -36,7 +36,7 @@ layers, from least to most specific:
 | Layer | Stored in | Edited by | Applies to |
 | --- | --- | --- | --- |
 | Code defaults | `apps/web/src/fields.ts` and the API mirror | developers of this repo | everyone, always present |
-| Global template | `field_config` rows with `organization_id IS NULL` | superdeveloper | every organization |
+| Global template | `field_config` rows with `organization_id IS NULL` | migrations only | every organization |
 | Org template | `field_config` rows with an `organization_id` | that org's developer | that organization only |
 
 Each property is taken from the most specific layer that sets it. A layer stores
@@ -67,13 +67,10 @@ column-bound field, but stored in JSON. Only fields added through a template are
 `membership_roles`). An org admin grants it. It allows editing that org's
 template only. New helper: `isOrgDeveloper(db, orgId, userId)` in `access.ts`.
 
-**Superdeveloper**: acts across every organization, so it cannot be an org
-role. New column `users.is_superdeveloper BOOLEAN NOT NULL DEFAULT FALSE`. It is
-set only by another superdeveloper or directly in the database; no org admin
-can grant it. A superdeveloper may also edit any org's template. New helper:
-`isSuperDeveloper(db, userId)`.
+**The global template** is nobody's to edit in the app: a change is a migration, like the global roles.\
+Before adding a global custom field, check that no organization's template uses its key.
 
-Neither role grants access to data. Seeing a form in design mode still requires
+The role does not grant access to data. Seeing a form in design mode still requires
 the normal read access to the record behind it.
 
 ## Field properties
@@ -269,11 +266,9 @@ New `fields.controller.ts`, registered in `app.module.ts`:
 | Endpoint | Who | Returns / does |
 | --- | --- | --- |
 | `GET /organizations/:orgId/forms/:formId` | any org member | the merged template for that org, ready to render |
-| `GET /organizations/:orgId/forms/:formId/layers` | developer of the org, superdeveloper | code, global and org layers separately, so the panel can show where each value comes from |
-| `PUT /organizations/:orgId/forms/:formId/fields/:fieldKey` | developer of the org, superdeveloper | sets the org layer for one field |
-| `DELETE /organizations/:orgId/forms/:formId/fields/:fieldKey` | developer of the org, superdeveloper | resets the field to inherited (built-in) or retires it (custom) |
-| `PUT /forms/:formId/fields/:fieldKey` | superdeveloper | sets the global layer |
-| `DELETE /forms/:formId/fields/:fieldKey` | superdeveloper | resets or retires in the global layer |
+| `GET /organizations/:orgId/forms/:formId/layers` | developer of the org | code, global and org layers separately, so the panel can show where each value comes from |
+| `PUT /organizations/:orgId/forms/:formId/fields/:fieldKey` | developer of the org | sets the org layer for one field |
+| `DELETE /organizations/:orgId/forms/:formId/fields/:fieldKey` | developer of the org | resets the field to inherited (built-in) or retires it (custom) |
 
 Every write checks the result against the code registry before saving and
 returns `{ ok: false, error: 'field-config-invalid', reason }` when a rule is
@@ -302,13 +297,12 @@ captions and tooltips in the current language. Pages that need special layout
 use `<ConfigField field={...} .../>` one at a time. Inline validation messages
 come with step 3.
 
-**Design mode.** Users with either role get a *Design mode* switch in the user
+**Design mode.** The organization's developers get a *Design mode* switch in the user
 menu. When it is on:
 
 - every configured field gets a frame; clicking one selects it in the panel;
 - a panel opens on the right with:
-  - a **scope** selector: *This organization* (developer) or *Global template*
-    (superdeveloper only);
+  - what is edited: the organization's layer (the global one shows as the inherited value);
   - the **field list** for the current form, with drag and drop for order and
     groups, an *Add field* button (custom JSON fields), and hidden and retired
     fields shown greyed out;
@@ -363,12 +357,12 @@ menu. When it is on:
    shows validation errors under each field. The API now uses `module: node20`
    and imports the built shared package. A regex is stored as `pattern` plus
    `patternMessage` (texts), next to the named `validator`. Demo: admin@acme.com
-   is developer of Acme and superdeveloper. Tests: `test/api/fields.test.ts`.
-4. Done: *Design mode* in the user menu for developers and superdevelopers
+   is developer of Acme. Tests: `test/api/fields.test.ts`.
+4. Done: *Design mode* in the user menu for developers
    (`GET organizations/:orgId/form-design-access`, checked again on every org
    switch). `useFormTemplate` (`designMode.tsx`) loads a form's template and,
    in design mode, its layers and an editable draft that the form previews;
-   `FormDesignPanel` (`FormDesigner.tsx`) has the scope switch, sections and
+   `FormDesignPanel` (`FormDesigner.tsx`) has the sections and
    fields with drag and drop plus up/down buttons, the selected field's
    properties with their source and a reset button, the texts per language,
    and Save/Discard. Fields in the form get a frame and select on click;

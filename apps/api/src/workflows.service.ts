@@ -385,7 +385,7 @@ export class WorkflowsService {
     await this.runAction(db, workflow, outcome, callerId, decisionNote);
 
     if (organizationId) {
-      void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflowId, note ? { note } : undefined).catch(() => {});
+      void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflowId).catch(() => {});
 
       const submittedByUserId = (workflow.workflow_data as Record<string, unknown> | null)?.submittedByUserId as string | undefined;
       if (submittedByUserId && submittedByUserId !== callerId) {

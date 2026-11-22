@@ -11,10 +11,8 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 // ---------------------------------------------------------------------------
 
 export interface DesignModeState {
-  /** The caller may use design mode in the current org (developer, or superdeveloper). */
+  /** The caller may use design mode in the current org (its developer). */
   canDesign: boolean;
-  /** The caller may edit the global template (superdeveloper). */
-  canEditGlobal: boolean;
   enabled: boolean;
   setEnabled: (on: boolean) => void;
   /** Where the side panel goes: below the app bar, left of anything pinned to the right edge. */
@@ -28,7 +26,6 @@ export interface DesignModeState {
 
 const DesignModeContext = createContext<DesignModeState>({
   canDesign: false,
-  canEditGlobal: false,
   enabled: false,
   setEnabled: () => {},
   panelTop: 64,
@@ -83,7 +80,7 @@ export function DesignModeNotice() {
  * since the developer role is per organization. Design mode turns off when access is lost.
  */
 export function useDesignAccess(orgId: string | null, authHeaders: () => Promise<Record<string, string>>): Omit<DesignModeState, 'panelTop' | 'panelRight'> {
-  const [access, setAccess] = useState({ canDesign: false, canEditGlobal: false });
+  const [access, setAccess] = useState({ canDesign: false });
   const [enabled, setEnabled] = useState(false);
   const [formCount, setFormCount] = useState(0);
   const registerForm = useCallback(() => {
@@ -93,14 +90,14 @@ export function useDesignAccess(orgId: string | null, authHeaders: () => Promise
 
   useEffect(() => {
     let cancelled = false;
-    setAccess({ canDesign: false, canEditGlobal: false });
+    setAccess({ canDesign: false });
     setEnabled(false);
     if (!orgId) return;
     (async () => {
       try {
         const res = await fetch(`${API}/organizations/${orgId}/form-design-access`, { headers: await authHeaders() });
         const body = await res.json();
-        if (!cancelled && body.ok) setAccess({ canDesign: !!body.canDesign, canEditGlobal: !!body.canEditGlobal });
+        if (!cancelled && body.ok) setAccess({ canDesign: !!body.canDesign });
       } catch { /* offline: no design mode */ }
     })();
     return () => {
@@ -122,12 +119,11 @@ export interface FormDesigner {
   formDef: FormDef;
   /** Code defaults + the draft layers: what the form shows while designing. */
   preview: ResolvedForm;
-  /** Draft layers being edited (both scopes; only `scope` is changed by the panel). */
+  /** Draft layers (both, to show inheritance; only the organization's is edited). */
   draft: Layers;
   /** The layers as saved, to tell new custom fields from saved ones. */
   saved: Layers;
   scope: Scope;
-  setScope: (s: Scope) => void;
   /** Selected field key, or `group:<key>` for a section. */
   selected: string | null;
   select: (key: string | null) => void;
@@ -144,7 +140,6 @@ export interface FormDesigner {
   /** Saves every changed row; resolves to what failed. */
   save: () => Promise<DesignError[]>;
   discard: () => void;
-  canEditGlobal: boolean;
   close: () => void;
 }
 
@@ -167,7 +162,8 @@ export function useFormTemplate(orgId: string, formDef: FormDef, authHeaders: ()
   const [savedForm, setSavedForm] = useState<ResolvedForm>(defaults);
   const [saved, setSaved] = useState<Layers | null>(null);
   const [draft, setDraft] = useState<Layers | null>(null);
-  const [scope, setScope] = useState<Scope>('org');
+  // The global template comes from migrations: only the organization's layer is edited here.
+  const scope: Scope = 'org';
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<DesignError[]>([]);
@@ -211,7 +207,6 @@ export function useFormTemplate(orgId: string, formDef: FormDef, authHeaders: ()
   useEffect(() => {
     setSaveErrors([]);
     setSelected(null);
-    setScope('org');
     if (!mode.enabled) {
       setSaved(null);
       setDraft(null);
@@ -231,7 +226,7 @@ export function useFormTemplate(orgId: string, formDef: FormDef, authHeaders: ()
 
   const preview = useMemo(() => (draft ? mergeForm(formDef, draft.global, draft.org) : savedForm), [draft, formDef, savedForm]);
   const problems = useMemo(() => (saved && draft ? checkLayers(formDef, saved, draft) : []), [formDef, saved, draft]);
-  const changes = saved && draft ? changedKeys(saved.global, draft.global).length + changedKeys(saved.org, draft.org).length : 0;
+  const changes = saved && draft ? changedKeys(saved.org, draft.org).length : 0;
 
   async function save(): Promise<DesignError[]> {
     if (!saved || !draft) return [];
@@ -239,18 +234,15 @@ export function useFormTemplate(orgId: string, formDef: FormDef, authHeaders: ()
     const errors: DesignError[] = [];
     try {
       const headers = { 'Content-Type': 'application/json', ...(await authHeaders()) };
-      for (const s of ['global', 'org'] as Scope[]) {
-        if (s === 'global' && !mode.canEditGlobal) continue;
-        const base = s === 'global' ? `${API}/forms/${formDef.id}` : `${API}/organizations/${orgId}/forms/${formDef.id}`;
-        for (const key of changedKeys(saved[s], draft[s])) {
-          try {
-            const custom = key !== GROUPS_KEY && isCustomIn(draft[s], key);
-            const res = await fetch(`${base}/fields/${encodeURIComponent(key)}`, { method: 'PUT', headers, body: JSON.stringify({ config: configFor(draft[s], key), custom }) });
-            const body = await res.json();
-            if (!body.ok) errors.push({ scope: s, key, reason: body.reason ?? body.error ?? 'unknown', property: body.property });
-          } catch {
-            errors.push({ scope: s, key, reason: 'offline' });
-          }
+      const base = `${API}/organizations/${orgId}/forms/${formDef.id}`;
+      for (const key of changedKeys(saved[scope], draft[scope])) {
+        try {
+          const custom = key !== GROUPS_KEY && isCustomIn(draft[scope], key);
+          const res = await fetch(`${base}/fields/${encodeURIComponent(key)}`, { method: 'PUT', headers, body: JSON.stringify({ config: configFor(draft[scope], key), custom }) });
+          const body = await res.json();
+          if (!body.ok) errors.push({ scope, key, reason: body.reason ?? body.error ?? 'unknown', property: body.property });
+        } catch {
+          errors.push({ scope, key, reason: 'offline' });
         }
       }
       const layers = await loadLayers();
@@ -285,7 +277,6 @@ export function useFormTemplate(orgId: string, formDef: FormDef, authHeaders: ()
           draft,
           saved,
           scope,
-          setScope,
           selected,
           select: setSelected,
           update: (fn) => setDraft((d) => (d ? { ...d, [scope]: fn(d[scope]) } : d)),
@@ -295,7 +286,6 @@ export function useFormTemplate(orgId: string, formDef: FormDef, authHeaders: ()
           saveErrors,
           save,
           discard,
-          canEditGlobal: mode.canEditGlobal,
           panelTop: mode.panelTop,
           panelRight: mode.panelRight,
           close: () => mode.setEnabled(false),

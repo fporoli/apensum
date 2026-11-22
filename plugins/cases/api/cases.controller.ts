@@ -23,7 +23,7 @@ import { FileInterceptor, NoFilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { DbService, type Db } from '@worktime3/api/plugin';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from '@worktime3/api/plugin';
-import { callerUserId, can, isSuperDeveloper, permissionIdsOf } from '@worktime3/api/plugin';
+import { callerUserId, can, permissionIdsOf } from '@worktime3/api/plugin';
 import { grantedScopes } from '@worktime3/shared/permissions';
 import type { AuthenticatedRequest } from '@worktime3/api/plugin';
 import { CasesService } from './cases.service';
@@ -255,7 +255,8 @@ export class CasesController {
       return { ok: true, document: sealed, extraction: null };
     }
 
-    let documentId = body.document_id ?? null;
+    // Only the file uploaded here: an id from the body could name any document of the organization.
+    let documentId: string | null = null;
     let extractedText = body.extracted_text ?? null;
     let extraction: 'pdf' | 'pdf-no-text' | null = null;
     const title = body.title || file?.originalname || 'Evidence Document';
@@ -734,17 +735,16 @@ export class CasesController {
   /**
    * Which providers transcribe, summarize and draft for Cases in this organization, and what this
    * instance offers (Organization settings -> AI and costs). Who sees Organization settings or Cases
-   * sees it; a superdeveloper or whoever edits Organization settings changes it (canConfigure). The CHF
+   * sees it; whoever edits Organization settings changes it (canConfigure). The CHF
    * limit that caps Azure stays the superdeveloper's (ai-settings.controller.ts).
    */
   @Get('case-ai-settings')
   @Header('Cache-Control', privateCache)
   async getAiSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const callerId = await this.requireCallerId(req);
-    // Shown in Organization settings (AI and costs): whoever sees those or Cases, and superdevelopers.
-    const superdeveloper = await isSuperDeveloper(this.db, callerId);
+    // Shown in Organization settings (AI and costs): whoever sees those or Cases.
     const canOrgSettings = await can(this.db, orgId, callerId, 'nav.orgSettings', 'edit');
-    if (!superdeveloper && !canOrgSettings && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see'))
+    if (!canOrgSettings && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see'))
       && !(await can(this.db, orgId, callerId, 'nav.cases', 'see'))) {
       throw new ForbiddenException('forbidden');
     }
@@ -754,16 +754,15 @@ export class CasesController {
       settings: providers.settings,
       providers: { transcription: providers.transcription, summary: providers.summary, draft: providers.draft },
       available: caseAiAvailability(),
-      canConfigure: superdeveloper || canOrgSettings,
+      canConfigure: canOrgSettings,
     };
   }
 
   @Put('case-ai-settings')
   async putAiSettings(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Body() body: unknown) {
     const callerId = await this.requireCallerId(req);
-    const superdeveloper = await isSuperDeveloper(this.db, callerId);
     const canOrgSettings = await can(this.db, orgId, callerId, 'nav.orgSettings', 'edit');
-    if (!superdeveloper && !canOrgSettings) throw new ForbiddenException('forbidden');
+    if (!canOrgSettings) throw new ForbiddenException('forbidden');
     const checked = validateCaseAiSettings(body);
     if (!checked.ok) throw new BadRequestException(checked.error);
     const available = caseAiAvailability();

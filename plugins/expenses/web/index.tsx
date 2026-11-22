@@ -98,7 +98,6 @@ export default defineWebPlugin({
     },
   ],
   teamViews: EXPENSE_TEAM_VIEWS,
-  backupCounts: { expenses: 'importExport.backup.badgeExpenses' },
   reports: [EXPENSES_REPORT],
   notificationSections: { expense_reports: 'expenseReports' },
 });

@@ -91,6 +91,7 @@ const KNOWN_ERRORS = new Set([
   'invitation-expired',
   'invitation-password-mismatch',
   'invitation-account-exists',
+  'invitation-needs-owner',
 ]);
 
 type Mode = 'login' | 'register' | 'reset' | 'invite';

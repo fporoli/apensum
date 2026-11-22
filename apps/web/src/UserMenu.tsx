@@ -21,6 +21,7 @@ import type { Session } from './Login';
 import { LOCALES, useT, type Locale } from './i18n';
 import AboutDialog from './AboutDialog';
 import AvatarEditor from './AvatarEditor';
+import { canShareScreen } from './ScreenShare';
 import {
   ArrowDropDownIcon,
   CheckIcon,
@@ -30,7 +31,7 @@ import {
   LightModeIcon,
   LogoutIcon,
   SettingsIcon,
-  SwapHorizIcon,
+  VisibilityIcon,
 } from './icons';
 import { useThemeMode } from './theme';
 
@@ -40,14 +41,12 @@ interface UserMenuProps {
   session: Session;
   authHeaders: () => Promise<Record<string, string>>;
   currentOrgId: string | null;
-  canSwitchUser: boolean;
   /** The user may switch on design mode for configurable forms in the current org. */
   canDesign: boolean;
   designMode: boolean;
   onDesignModeChange: (on: boolean) => void;
-  adminSession: Session | null;
-  onSwitchSession: (session: Session, organizationId: string) => void;
-  onReturnToAdmin: () => void;
+  /** Opens "Show my screen"; unset without an organization. */
+  onShareScreen?: () => void;
   onLogout: () => void;
   /** Called once the language change is saved, so the caller can update the session. */
   onLocaleChange: (locale: Locale) => void;
@@ -55,14 +54,7 @@ interface UserMenuProps {
   onSettingsChange: (settings: NonNullable<Session['settings']>) => void;
 }
 
-interface SearchUser {
-  id: string;
-  email: string;
-  displayName: string;
-  status: string;
-}
-
-export default function UserMenu({ session, authHeaders, currentOrgId, canSwitchUser, canDesign, designMode, onDesignModeChange, adminSession, onSwitchSession, onReturnToAdmin, onLogout, onLocaleChange, onSettingsChange }: UserMenuProps) {
+export default function UserMenu({ session, authHeaders, currentOrgId, canDesign, designMode, onDesignModeChange, onShareScreen, onLogout, onLocaleChange, onSettingsChange }: UserMenuProps) {
   const t = useT();
   const { mode, toggleMode } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -71,48 +63,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
   const [useProjectTimeRanges, setUseProjectTimeRanges] = useState(session.settings?.useProjectTimeMinutesRanges === true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [switchOpen, setSwitchOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const [searchUsers, setSearchUsers] = useState<SearchUser[]>([]);
-  const [switching, setSwitching] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
-
-  // Switching user is for superdevelopers only (users.controller.ts).
-  const [superDeveloper, setSuperDeveloper] = useState(false);
-  useEffect(() => {
-    setSuperDeveloper(false);
-    if (!canSwitchUser || !currentOrgId) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(`${API}/organizations/${currentOrgId}/modules`, { headers: await authHeaders() });
-        const data = await res.json();
-        if (!cancelled) setSuperDeveloper(data?.superDeveloper === true);
-      } catch { /* the entry stays hidden */ }
-    })();
-    return () => { cancelled = true; };
-  }, [authHeaders, canSwitchUser, currentOrgId, session.userId]);
-
-  useEffect(() => {
-    if (!switchOpen || !currentOrgId || search.trim().length < 2) {
-      setSearchUsers([]);
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      try {
-        const res = await fetch(`${API}/users/search?orgId=${encodeURIComponent(currentOrgId)}&q=${encodeURIComponent(search.trim())}`, { headers: await authHeaders() });
-        const data = await res.json();
-        if (!cancelled) setSearchUsers(data.ok && Array.isArray(data.users) ? data.users : []);
-      } catch {
-        if (!cancelled) setSearchUsers([]);
-      }
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [authHeaders, currentOrgId, search, switchOpen]);
 
   function openSettings() {
     setSelectedLocale((session.locale as Locale) ?? 'en');
@@ -120,38 +71,6 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
     setError(null);
     setSettingsOpen(true);
     setAnchorEl(null);
-  }
-
-  function openSwitchUser() {
-    setSearch('');
-    setSearchUsers([]);
-    setError(null);
-    setSwitchOpen(true);
-    setAnchorEl(null);
-  }
-
-  async function switchUser(user: SearchUser) {
-    if (!currentOrgId) return;
-    setSwitching(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API}/users/${user.id}/impersonate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify({ orgId: currentOrgId }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        setError(t('usermenu.switchFailed', { error: data.error ?? t('common.unknownError') }));
-        return;
-      }
-      onSwitchSession(data as Session, currentOrgId);
-      setSwitchOpen(false);
-    } catch {
-      setError(t('common.cannotReachApi'));
-    } finally {
-      setSwitching(false);
-    }
   }
 
   async function saveSettings() {
@@ -181,7 +100,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
 
   const initial = (session.displayName || session.email || '?').trim().charAt(0).toUpperCase();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  // The caller's profile picture (avatars.controller.ts), again for whoever this session is (switch user).
+  // The caller's profile picture (avatars.controller.ts), again for whoever this session is.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -239,16 +158,10 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
             {t('design.menu')}
           </MenuItem>
         )}
-        {canSwitchUser && superDeveloper && (
-          <MenuItem onClick={openSwitchUser}>
-            <ListItemIcon sx={{ minWidth: 32 }}><SwapHorizIcon fontSize="small" /></ListItemIcon>
-            {t('usermenu.switchUser')}…
-          </MenuItem>
-        )}
-        {adminSession && (
-          <MenuItem onClick={() => { setAnchorEl(null); onReturnToAdmin(); }}>
-            <ListItemIcon sx={{ minWidth: 32 }}><SwapHorizIcon fontSize="small" color="warning" /></ListItemIcon>
-            {t('usermenu.returnToAccount')}
+        {onShareScreen && canShareScreen() && (
+          <MenuItem onClick={() => { setAnchorEl(null); onShareScreen(); }}>
+            <ListItemIcon sx={{ minWidth: 32 }}><VisibilityIcon fontSize="small" /></ListItemIcon>
+            {t('screenShare.title')}
           </MenuItem>
         )}
         <MenuItem onClick={() => { setAnchorEl(null); onLogout(); }}>
@@ -263,7 +176,6 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
         session={session}
         authHeaders={authHeaders}
         currentOrgId={currentOrgId}
-        adminSession={adminSession}
       />
 
       <Dialog open={settingsOpen} onClose={() => setSettingsOpen(false)} fullWidth maxWidth="xs">
@@ -293,33 +205,6 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
           <Button onClick={() => setSettingsOpen(false)}>{t('usermenu.cancel')}</Button>
           <Button variant="contained" onClick={saveSettings} disabled={saving}>{t('usermenu.save')}</Button>
         </DialogActions>
-      </Dialog>
-
-      <Dialog open={switchOpen} onClose={() => !switching && setSwitchOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>{t('usermenu.switchUser')}</DialogTitle>
-        <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
-          {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-          <TextField
-            autoFocus
-            label={t('usermenu.searchLabel')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            size="small"
-            helperText={t('usermenu.searchHelper')}
-          />
-          <Box sx={{ display: 'grid', gap: 0.5 }}>
-            {searchUsers.map((user) => (
-              <Button key={user.id} onClick={() => switchUser(user)} disabled={switching} sx={{ justifyContent: 'flex-start', textTransform: 'none' }}>
-                <Box sx={{ textAlign: 'left' }}>
-                  <Typography variant="body2">{user.displayName}</Typography>
-                  <Typography variant="caption" color="text.secondary">{user.email}</Typography>
-                </Box>
-              </Button>
-            ))}
-            {search.trim().length >= 2 && searchUsers.length === 0 && <Typography variant="body2" color="text.secondary">{t('usermenu.noMembersFound')}</Typography>}
-          </Box>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setSwitchOpen(false)} disabled={switching}>{t('usermenu.cancel')}</Button></DialogActions>
       </Dialog>
     </>
   );

@@ -14,7 +14,7 @@ plugins/<id>/
   tsconfig.api.json   the build: api/ -> dist/api (against the core's built declarations)
   shared/             optional: code both parts import (e.g. a report's definition and texts)
   changelog/          Liquibase: db.changelog-master.xml + NNN-name.sql, run after the core's (below)
-  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, backup, workflows, documents, assistantTools })
+  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, workflows, documents, assistantTools })
   web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
   web/tsconfig.json   editor only: extends apps/web/tsconfig.json
   web/texts.ts        the plugin's UI texts, en/de/fr/it with the same keys
@@ -46,12 +46,14 @@ plugins/<id>/
 - `module` (optional) appears under Organization settings -> Modules. Switching it off removes the
   listed permission objects for everyone in the organization, so the plugin's pages disappear and its
   endpoints refuse (`can()` fails). Its texts are `modules.<id>` and `modules.<id>.description`.
-  `"licensed": true` makes it a paid module: off by default, switched only by a superdeveloper (the
-  instance's operator); admins see it marked "License" (`PUT organizations/:id/modules` returns
-  `module-licensed` to anyone else).
+  `"licensed": true` makes it a paid module: off by default, on only with a license from the
+  instance's operator (`organization_licenses`, the operator CLI) and switched on by the admin\
+  (`PUT organizations/:id/modules` returns `module-licensed` without a license; SQL of your own that\
+  looks at the module switch checks the license too).
 - `permissions` (optional) adds permission objects to the catalogue (`packages/shared/src/permissions.ts`,
   `registerPermissionObjects`): the API grants and checks them, the roles editor lists them (navbar
-  objects under Pages, sections under "Plugin sections"), `owner` holds them. An id the core or another
+  objects under Pages, sections under "Plugin sections"). Grant others' data to HR (and by reporting line to\
+  managers), never to admin or developer; `owner` holds none. An id the core or another
   plugin already uses is refused. Their rows and default grants come from the plugin's changelog.
 - `api` and `web` are both optional.
 
@@ -171,8 +173,6 @@ A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab f
   `shared/` (expenses: `shared/form.ts`).
 - **Home quick action:** `homeAction: { label, icon, after }` on a page adds a button to the Home page for
   whoever may open the page (`after`: `time`, `absences`, `timesheet` or another page's section).
-- **Backup counts:** `backupCounts: { expenses: 'importExport.backup.badgeExpenses' }` labels the counts the
-  API part's backup adds, in the restore preview and summary.
 
 ## Seed (demo data)
 
@@ -191,13 +191,8 @@ core's seed: fixed or md5-derived ids, `ON CONFLICT DO NOTHING`, re-runnable.
   `amounts(db, { orgId, from, to })` gives each person's amount for the month; the core rounds it and
   adds an Abacus line (`abacus.wageType`, when above zero), a column in the Bexio CSV (before
   `Abteilung`), the generic CSV and the Excel file (at the end), and a preview column (`caption`).
-- **Backup and restore:** `backup: { export, restore }`. `export(db, orgId)` returns the plugin's
-  tables as files under `database/` plus counts for the manifest; `restore(db, ctx)` writes them back
-  after the core's users, documents and projects, with `ctx.userIds` / `projectIds` / `subprojectIds`
-  mapping old ids to new ones, and returns what it restored.
 
-The expenses plugin's `api/import-export.ts` adds the expenses (wage type 3000) and backs up its
-tables, exchange rates included.
+The expenses plugin's `api/import-export.ts` adds the expenses (wage type 3000).
 
 ## Approvals (Workflow page)
 
@@ -332,7 +327,7 @@ are limited to the catalogue (`mergePermissionRows` in access.ts).
   Make the GHCR packages `api`, `web`, `migrate`, `seed` and `web-azure` private (package settings),
   then the VPS environments need `GHCR_USERNAME` (variable) and `GHCR_TOKEN` (secret, `read:packages`)
   to pull them; Azure has them already.
-- A plugin's module that is `licensed` stays off in every organization until a superdeveloper
+- A plugin's module that is `licensed` stays off in every organization until the operator licenses it and an admin
   switches it on there, so deploying it changes nothing for customers who have not bought it.
 
 ## Not yet supported
