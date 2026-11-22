@@ -53,11 +53,17 @@ export default function BalanceOverview({
   authHeaders,
   refreshKey,
   layout = 'row',
+  userId,
+  showToday = true,
 }: {
   orgId: string;
   authHeaders: () => Promise<Record<string, string>>;
   refreshKey?: unknown;
   layout?: 'row' | 'column';
+  /** Someone else's numbers (manager, HR); default the caller's. */
+  userId?: string;
+  /** The "today" card (work time against the target). */
+  showToday?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [data, setData] = useState<Overview | null>(null);
@@ -70,13 +76,19 @@ export default function BalanceOverview({
         // The organization's "today" may differ from the browser's by a day: ask around it.
         const local = new Date();
         const guess = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`;
-        const [dayRes, yearRes] = await Promise.all([
-          fetch(`${API}/organizations/${orgId}/day-targets?from=${addDays(guess, -1)}&to=${addDays(guess, 1)}`, { headers }),
-          fetch(`${API}/organizations/${orgId}/balances/year?year=${guess.slice(0, 4)}`, { headers }),
+        const who = userId ? `&userId=${userId}` : '';
+        const [days, yearRes] = await Promise.all([
+          showToday
+            ? fetch(`${API}/organizations/${orgId}/day-targets?from=${addDays(guess, -1)}&to=${addDays(guess, 1)}${who}`, { headers }).then((r) => r.json())
+            : Promise.resolve(null),
+          fetch(`${API}/organizations/${orgId}/balances/year?year=${guess.slice(0, 4)}${who}`, { headers }),
         ]);
-        const days = await dayRes.json();
         const year = await yearRes.json();
-        if (cancelled || !year?.overtime || !year?.vacation) return;
+        if (cancelled) return;
+        if (!year?.overtime || !year?.vacation) {
+          setData(null);
+          return;
+        }
         const today = Array.isArray(days?.days) ? days.days.find((d: { date: string }) => d.date === days.today) : null;
         setData({
           today: today ? { date: today.date, worked: today.attended, target: today.target } : null,
@@ -93,7 +105,7 @@ export default function BalanceOverview({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, refreshKey]);
+  }, [orgId, refreshKey, userId, showToday]);
 
   if (!data) return null;
   const { today, overtime, vacation, legal } = data;
@@ -106,7 +118,7 @@ export default function BalanceOverview({
 
   return (
     <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: layout === 'row' ? { xs: '1fr', md: 'repeat(3, 1fr)' } : '1fr', alignItems: 'start' }}>
-      <Card title={t('overview.today')}>
+      {showToday && <Card title={t('overview.today')}>
         <Line label={t('overview.worked')} value={formatDurationMinutes(today?.worked ?? 0)} />
         <Line label={t('overview.target')} value={formatDurationMinutes(today?.target ?? 0)} />
         <Line
@@ -115,7 +127,7 @@ export default function BalanceOverview({
           strong
           negative={(today?.worked ?? 0) < (today?.target ?? 0)}
         />
-      </Card>
+      </Card>}
 
       <Card title={t('overview.balance')}>
         <Line label={t('balances.type.overtime')} value={formatSignedMinutes(regular)} negative={regular < 0} />

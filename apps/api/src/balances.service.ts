@@ -246,10 +246,13 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
       row = { ...EMPTY_SUMMARY, absenceByType: {}, month: m, status: 'before-start', closedAt: null, monthTarget: 0, plannedVacationDays: 0, adjustmentMinutes, ...NO_RUNNING };
     } else {
       const from = m > start ? m : start;
-      const pastEnd = next < today ? next : today;
+      // Nothing is counted from the end of the employment on (`until`, exclusive).
+      const stop = (d: string) => (input.until && d > input.until ? input.until : d);
+      const pastEnd = stop(next < today ? next : today);
       const futureFrom = from > today ? from : today;
+      const futureEnd = stop(next);
       const past = summarizeDays(from < pastEnd ? dayTargets(from, pastEnd, model) : [], attendance, fullTime);
-      const future = summarizeDays(futureFrom < next ? dayTargets(futureFrom, next, model) : [], new Map(), fullTime);
+      const future = summarizeDays(futureFrom < futureEnd ? dayTargets(futureFrom, futureEnd, model) : [], new Map(), fullTime);
       const timesheet = input.periodStatus.get(m);
       const status: MonthStatus =
         timesheet === 'submitted' || timesheet === 'rejected' ? timesheet : next <= today ? 'open' : m <= today ? 'current' : 'future';

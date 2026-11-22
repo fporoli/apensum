@@ -244,7 +244,8 @@ export function defineWebPlugin(plugin: WebPlugin): WebPlugin {
 export const SHOW_DEMO_HINTS = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS !== 'false';
 export { useI18n, useT, LOCALES, type Locale, type TFunction } from './i18n';
 export {
-  formatFileSize, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatMoney, parseLocaleNumber, swissLocale,
+  formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatMoney, formatSignedMinutes, parseLocaleNumber,
+  swissLocale,
 } from './localeFormat';
 export { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField';
 export { FieldDesignScope, useFormTemplate, type FormTemplate } from './designMode';

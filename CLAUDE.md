@@ -54,7 +54,8 @@ Teams: Platform (Alice), People & Culture (Ulla), Product Development (Marco).\
 Cases (`plugins/cases/seed.sql`, **generated** by `npx tsx plugins/cases/scripts/generate-demo-seed.mts`, never hand-edited: the rows are ciphertext) turns the module on for Acme and adds one encrypted KESB case led by Marta; Admin, Marta, Marco and Ulla hold its key, Cases passphrase `<name>-cases-demo` (a person who had set up their own keeps it and sees the case locked).\
 The end of `seed.sql` generates each Acme member's history from their start date to yesterday (absences, attendance, project time, approved timesheets); a plugin's `seed.sql` (expenses: expenses and reports) runs after it in the same transaction and may use its `pg_temp.seed_*` helpers.\
 It is deterministic (`pg_temp.seed_rnd`/`seed_id` hash a key), so re-seeding adds only newly passed days.\
-Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in step with `worktime.ts` if Acme's region changes.
+Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in step with `worktime.ts` if Acme's region changes.\
+After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`, the balance logic, which SQL can't repeat) closes last year (Year-end closing) for every Acme member but Uma, whose year stays open to close in the demo; `dev:seed`, `dev:resetdb`, `local:seed` run it, and `infra/vps/remote.sh` runs the built one in the API container after `seed`/`reset-seed`.
 
 ## Tests
 
@@ -114,7 +115,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   "Manager of X" is the manager of X's employee assignment in force (`employee_assignments`: dated department, function and manager per person, 050), read through `membershipManagerId` / `isManagerOf` / `directReportUserIds`, never stored elsewhere.\
   Approvals route to that specific manager, not to any org manager; pending manager requests move to the new manager when it changes (`WorkflowsService.rerouteToCurrentManagers`, run on writes, on the Approvals inbox and before a decision).\
   Departments (Organization settings, `departments`) have a default leader, which is only offered as manager.\
-  Employment (start date `organization_memberships.start_date` plus assignments, `employment.controller.ts`, `EmploymentPanel`) is `section.people.employment`: HR and admin edit it (051).
+  Employment (start date `organization_memberships.start_date` plus assignments, `employment.controller.ts`, `EmploymentPanel`) is `section.people.employment`: HR and admin edit it (051).\
+  The last working day is set there too (`PUT organizations/:orgId/users/:userId/exit-date`, `{ lastDay }`): `organization_memberships.exit_at` holds the start of the next day in the person's zone (`lastWorkingDay` reads it back); balances stop counting from it, the vacation entitlement is prorated to it and the directory drops the person after it.
 - Errors are returned, not thrown: `{ ok: false, error: 'kebab-code' }` (e.g. `forbidden`, `period-locked`, `unknown-user`); success is `{ ok: true, ... }`.\
   Read endpoints return empty shapes on denial.
 - Degrade gracefully: no `DATABASE_URL` means offline/empty responses; mail (`mailer.ts`, nodemailer) is best-effort and never fails a request (failures are logged; the startup `verifySmtp` and each send set `smtp` in the public `GET health`); the assistant returns `{ ok: false, error: 'assistant-not-configured' }` without Azure OpenAI (key, budget and prices).
@@ -149,7 +151,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Admin-editable dropdown vocabularies live in `static_data`.\
   Rows for all organizations (`organization_id` NULL) are read-only for everyone, superdevelopers included, and come only from migrations: an org copies one (Admin settings, the copy icon) and edits its copy, which then replaces it for that org.\
   Absence types (`absences`/`absence_type`) map each key to attributes instead of a label (labels are in `translation`): `{"approval": false}` (set for sickness and accident in the global row, 047) records the absence as approved and notifies the manager instead of asking.\
-  The code keeps no list of types; new orgs inherit the global row.\
+  The code keeps no list of types; new orgs inherit the global row (since 090 with maternity and paternity leave).\
   "Basic data" (`basicdata.*`) is personal data with an HR change-request/approval history.
 - Work-time model (`packages/shared/src/worktime.ts`, DB side in `work-time-model.service.ts`): a person's target per day comes from their `work_schedules` row in force (minutes per weekday, with history; else the org's full-time week Mon-Fri), minus public holidays (computed per canton, plus `org_holidays` rows) and approved absences.\
   Holidays are per person (`WorkTimeModelService.holidays(..., { userId })`, `holidaysFor`): the canton of their location (`locations` 087, Organization settings → Working time and holidays) on each day, by the `location_id` of their dated assignment, else the organization's `settings.holidayRegion`.\
@@ -163,6 +165,7 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   `client_ip` (the address of the last write) is stored and never returned, versioned or exported.\
   Project time stays independent of attendance, but a day's project time above its attendance + `projectTimeToleranceMinutes` returns `project-exceeds-attendance-confirm` until the client resends with `acknowledgeAttendance`.
 - Balances (`balances.service.ts`, `computeYearBalances` is pure): approving a working-time timesheet closes the month into `work_time_months` (reopening deletes it); other months are computed live from the model.\
+  Nothing is counted after the employment ends (`until`, from `exit_at`).\
   Overtime = month differences + `balance_adjustments`; Überzeit (attendance beyond `legalMaxWeeklyMinutes` per calendar week) is a share of it, kept as its own account (`legal_overtime` adjustments move both); vacation is in full-time days (entitlement `vacationDaysPerYear` prorated by workload, or a `vacation_entitlements` row; carried over).\
   Others' balances and the monthly report with alerts are `nav.balances` (Time balances page); one's own are always visible.\
   Year-end closing (`balance_years` 086, Time balances → Year-end closing tab, `YearClosing.tsx`, `GET balance-years`, `POST balance-years/close|reopen`, edit beyond own on `nav.balances`): it freezes a person's overtime, Überzeit and vacation at the end of a year, and `computeYearBalances` opens later years from the newest closing (`opening`), ignoring everything before it (adjustments included).\
@@ -170,6 +173,8 @@ Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in st
   Years close in order (closing one closes the open years before it), without `force` only when every month is approved, and only the newest closed year reopens.
 - Two timesheets: the working-time timesheet (`timesheet_periods`, `timesheets.controller.ts`, Monthly timesheet page) goes to the line manager and closes the month's balance; the project timesheet (`project_time_periods`, one row per person, project and month, `project-timesheets.controller.ts`) goes to each project's owner (Approvals page), approved on submit when the person owns the project or it has none.\
   Hours without a project can't be submitted.\
+  The week view of the project time page is the weekly report (Wochenrapport, `WeekReport.tsx`, `GET organizations/:orgId/users/:userId/week-report?week=`, pure grid in `week-report.ts`, for whoever sees the person's project time): attendance (In & Out), target and project time per project and subproject each day, with the differences, beside the chosen day's sessions (adding one) and the balances; a cell hands its day and project to the entry form.\
+  It is a view only: time is submitted per month, by the two timesheets.\
   A project can be limited to teams (`project_teams`, 070, set under Teams & Projects → Projects): then only their members and leads and the project owner book on it (`projectBookingError` in `access.ts`, checked on create and when an entry moves to another project, for the person whose entry it is; existing entries stay); `GET projects?bookableFor=` flags each project `bookable`.\
   Work time and project time are changed by the person, their designated manager or HR (`canEditUserData`: `nav.workTime` / `nav.time` edit beyond own) and only while the month is open; the manager or HR reopens a submitted/approved month (`timesheet-periods/:id/reopen`, `project-timesheets/:id/reopen`).\
   The pages pick the person via `time-record-people` (`PersonPicker`).\

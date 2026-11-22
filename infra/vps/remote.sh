@@ -211,11 +211,19 @@ load_seed() {
   docker exec "$PG" rm -f "${copied[@]}"
 }
 
+# Closes last year for the demo people (Time balances -> Year-end closing), with the API's balance logic,
+# which SQL alone can't repeat (apps/api/src/cli/close-demo-years.ts). Needs the API container running.
+# Best effort: the demo works without it.
+close_demo_years() {
+  docker exec "$PREFIX-api" node apps/api/dist/cli/close-demo-years.js || echo "WARNING: closing the demo years failed" >&2
+}
+
 # Non-destructive: needs a deployed (migrated) instance; no backup, no restart.
 seed() {
   install_files
   docker inspect "$PG" >/dev/null
   load_seed
+  close_demo_years
   echo "Demo data present: $(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM public.users") users."
 }
 
@@ -283,6 +291,7 @@ reset_seed() {
 
   trap - EXIT
   docker start "$PREFIX-api"
+  close_demo_years
 }
 
 # Removes this instance: containers, its Postgres and volume, /opt/<prefix>, its Caddy site,

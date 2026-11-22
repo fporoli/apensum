@@ -64,6 +64,8 @@ try {
 
   console.log('\n== Seeding');
   run('npm', ['run', 'db:seed']);
+  // Closes last year for the demo people (balance logic, not SQL: apps/api/src/cli/close-demo-years.ts).
+  run('npm', ['run', 'db:close-years']);
   // Dev only: there the API's documents live on this machine (apps/api/data). The Docker stacks keep
   // them in the API container; their Documents page issues the PDFs when first opened.
   if (env === 'dev') {

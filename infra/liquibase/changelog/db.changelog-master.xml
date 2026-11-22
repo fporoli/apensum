@@ -105,6 +105,7 @@
     <include file="087-locations.sql" relativeToChangelogFile="true"/>
     <include file="088-request-tasks.sql" relativeToChangelogFile="true"/>
     <include file="089-request-confidential-custom.sql" relativeToChangelogFile="true"/>
+    <include file="090-parental-leave.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

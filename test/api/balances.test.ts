@@ -67,6 +67,18 @@ test('computeYearBalances: months before the start are empty, open months run li
   assert.equal(b.overtime.pendingSince, '2026-10-01');
 });
 
+test('computeYearBalances: nothing is counted after the employment ends', () => {
+  // Leaves on Friday 30 October (until = the next day): no target from 31 October on.
+  const b = computeYearBalances(inputs({ until: '2026-10-31', workedDays: weekdays('2026-10-01', '2026-10-31') }));
+  assert.equal(b.months[9].target, 22 * 480);
+  assert.equal(b.months[9].delta, 0);
+  assert.equal(b.months[10].target, 0);
+  assert.equal(b.months[10].monthTarget, 0);
+  assert.equal(b.overtime.pendingMinutes, 0);
+  // Vacation prorated to October, the only month employed: 25 * 30 / 365.
+  assert.equal(b.vacation.entitlement, 2.05);
+});
+
 test('computeYearBalances: closed months keep their numbers and count as booked', () => {
   const closed: ClosedMonth[] = [
     { month: '2026-10-01', closedAt: '2026-11-02T10:00:00Z', summary: { scheduled: 10560, holiday: 0, absenceByType: {}, target: 10560, actual: 10865, delta: 305, vacationDays: 0 } },

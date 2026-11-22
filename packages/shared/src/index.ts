@@ -181,11 +181,11 @@ export interface WorkTimeEntry {
 
 export type AbsenceStatus = 'pending' | 'approved' | 'rejected';
 
-export type AbsenceType = 'vacation' | 'military_service' | 'accident' | 'compensation' | 'school' | 'sickness' | 'other';
+export type AbsenceType = 'vacation' | 'military_service' | 'accident' | 'compensation' | 'school' | 'sickness' | 'maternity' | 'paternity' | 'other';
 
 /** Default absence_type options — used to seed each org's static_data (entity="absences",
  * enum_name="absence_type") and as the API's fallback if that row is ever missing. */
-export const DEFAULT_ABSENCE_TYPES: AbsenceType[] = ['vacation', 'military_service', 'accident', 'compensation', 'school', 'sickness', 'other'];
+export const DEFAULT_ABSENCE_TYPES: AbsenceType[] = ['vacation', 'military_service', 'accident', 'compensation', 'school', 'sickness', 'maternity', 'paternity', 'other'];
 
 export interface Absence {
   id: UUID;

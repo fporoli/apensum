@@ -36,6 +36,7 @@ import { SavedReportsController } from './saved-reports.controller';
 import { ReportsService } from './reports.service';
 import { ReportSchedulesService } from './report-schedules.service';
 import { PersonnelDocumentsController } from './personnel-documents.controller';
+import { WeekReportController } from './week-report.controller';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { ForwardMailService } from './forward-mail.service';
 import { WorkTimeModelService } from './work-time-model.service';
@@ -102,6 +103,7 @@ const plugins = loadApiPlugins();
     SetupController,
     SavedReportsController,
     PersonnelDocumentsController,
+    WeekReportController,
     TimesheetsController,
     ProjectTimesheetsController,
     SiteContactController,

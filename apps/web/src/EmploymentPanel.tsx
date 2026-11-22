@@ -102,6 +102,8 @@ export default function EmploymentPanel({
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [startDraft, setStartDraft] = useState<string | null>(null);
+  // The last day of employment being edited ('' = none yet).
+  const [exitDraft, setExitDraft] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Assignment | null>(null);
 
   async function reload() {
@@ -260,10 +262,19 @@ export default function EmploymentPanel({
             )}
           </Box>
         </Box>
-        {data.exitDate && (
+        {(data.exitDate || data.canEdit) && (
           <Box>
             <Typography variant="caption" color="text.secondary">{t('employment.exitDate')}</Typography>
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>{date(data.exitDate)}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{data.exitDate ? date(data.exitDate) : '—'}</Typography>
+              {data.canEdit && (
+                <Tooltip title={t('employment.editExitDate')}>
+                  <IconButton size="small" aria-label={t('employment.editExitDate')} onClick={() => setExitDraft(data.exitDate ?? '')}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
           </Box>
         )}
       </Box>
@@ -421,6 +432,46 @@ export default function EmploymentPanel({
             disabled={busy || !startDraft}
             onClick={async () => {
               if (await send(`/organizations/${orgId}/users/${userId}/start-date`, 'PUT', { startDate: startDraft })) setStartDraft(null);
+            }}
+          >
+            {t('common.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={exitDraft !== null} onClose={() => setExitDraft(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('employment.exitDate')}</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important', display: 'grid', gap: 1 }}>
+          <TextField
+            type="date"
+            size="small"
+            fullWidth
+            label={t('employment.lastDay')}
+            value={exitDraft ?? ''}
+            onChange={(e) => setExitDraft(e.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <Typography variant="caption" color="text.secondary">{t('employment.exitHint')}</Typography>
+        </DialogContent>
+        <DialogActions>
+          {data.exitDate && (
+            <Button
+              color="error"
+              disabled={busy}
+              sx={{ mr: 'auto' }}
+              onClick={async () => {
+                if (await send(`/organizations/${orgId}/users/${userId}/exit-date`, 'PUT', { lastDay: null })) setExitDraft(null);
+              }}
+            >
+              {t('employment.removeExitDate')}
+            </Button>
+          )}
+          <Button onClick={() => setExitDraft(null)}>{t('common.cancel')}</Button>
+          <Button
+            variant="contained"
+            disabled={busy || !exitDraft}
+            onClick={async () => {
+              if (await send(`/organizations/${orgId}/users/${userId}/exit-date`, 'PUT', { lastDay: exitDraft })) setExitDraft(null);
             }}
           >
             {t('common.save')}

@@ -14,6 +14,31 @@ import { isIsoDate } from '@worktime3/shared/worktime';
 export const EMPLOYMENT_OBJECT = 'section.people.employment';
 const MAX_NAME = 120;
 
+/** The person's time zone, as WorkTimeModelService.timeZone reads it (balances count days in it). */
+async function personTimeZone(db: Db, userId: string): Promise<string> {
+  const [row] = await db.select({ timezone: users.timezone }).from(users).where(eq(users.id, userId));
+  return row?.timezone || 'UTC';
+}
+
+function addDay(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * The last day of a person's employment, or null: `exit_at` is the moment it ends (the start of the
+ * next day in their time zone), so the last day is the local day before it.
+ */
+export async function lastWorkingDay(db: Db, orgId: string, userId: string): Promise<string | null> {
+  const rows = (await db.execute(sql`
+    SELECT to_char(((m.exit_at AT TIME ZONE COALESCE(NULLIF(u.timezone, ''), 'UTC')) - interval '1 microsecond')::date, 'YYYY-MM-DD') AS last_day
+    FROM organization_memberships m JOIN users u ON u.id = m.user_id
+    WHERE m.organization_id = ${orgId} AND m.user_id = ${userId} AND m.exit_at IS NOT NULL
+  `)).rows as { last_day: string }[];
+  return rows[0]?.last_day ?? null;
+}
+
 /** Trimmed text, null when empty; undefined when too long. */
 export function cleanText(value: unknown, max = MAX_NAME): string | null | undefined {
   if (value === null || value === undefined) return null;
@@ -174,10 +199,11 @@ export class EmploymentController {
     if (!(await canSeeUserData(db, orgId, callerId, EMPLOYMENT_OBJECT, userId))) return { ok: false, error: 'forbidden', assignments: [] };
 
     const [membership] = await db
-      .select({ start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at, exit_at: organization_memberships.exit_at })
+      .select({ start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at })
       .from(organization_memberships)
       .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId)));
     if (!membership) return { ok: false, error: 'unknown-user', assignments: [] };
+    const lastDay = await lastWorkingDay(db, orgId, userId);
 
     const manager = alias(users, 'manager');
     const assignments = await db
@@ -202,7 +228,7 @@ export class EmploymentController {
     return {
       ok: true,
       startDate: membership.start_date ?? membership.joined_at?.slice(0, 10) ?? null,
-      exitDate: membership.exit_at?.slice(0, 10) ?? null,
+      exitDate: lastDay,
       currentId: assignments.find((a) => a.valid_from <= today)?.id ?? null,
       assignments,
       canEdit: await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId),
@@ -230,6 +256,49 @@ export class EmploymentController {
     await db.update(organization_memberships).set({ start_date: startDate }).where(eq(organization_memberships.id, membership.id));
     void this.versions.record('organization_memberships', membership.id, 'update_delta', callerId, { start_date: startDate }).catch(() => {});
     void this.audit.record(orgId, callerId, 'membership.start-date', 'membership', membership.id, { start_date: startDate }).catch(() => {});
+    return { ok: true };
+  }
+
+  /**
+   * The last day of employment (`lastDay`, null = none): stored as `exit_at`, the start of the next day
+   * in the person's time zone, so balances (vacation prorated up to it), the directory and reports end
+   * there. Set by whoever edits employment (HR, admin; HR-Prozesse starts its exit process from it).
+   */
+  @Put('organizations/:orgId/users/:userId/exit-date')
+  async setExitDate(
+    @Param('orgId') orgId: string,
+    @Param('userId') userId: string,
+    @Body() body: { lastDay?: string | null },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.employmentEditor(db, orgId, userId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const lastDay = body.lastDay ?? null;
+    if (lastDay !== null && !isIsoDate(lastDay)) return { ok: false, error: 'invalid-date' };
+    const [membership] = await db
+      .select({ id: organization_memberships.id, start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at })
+      .from(organization_memberships)
+      .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId)));
+    if (!membership) return { ok: false, error: 'unknown-user' };
+    const timeZone = await personTimeZone(db, userId);
+    if (lastDay !== null) {
+      const start = membership.start_date ?? null;
+      if (start && lastDay < start) return { ok: false, error: 'exit-before-start' };
+      // exit_at must come after joined_at (the account's start, chk_membership_exit_after_joined).
+      const [check] = (await db.execute(sql`
+        SELECT (${addDay(lastDay)}::date::timestamp AT TIME ZONE ${timeZone}) > ${membership.joined_at}::timestamptz AS after
+      `)).rows as { after: boolean }[];
+      if (membership.joined_at && !check?.after) return { ok: false, error: 'exit-before-start' };
+    }
+    await db.execute(sql`
+      UPDATE organization_memberships
+      SET exit_at = ${lastDay === null ? null : sql`(${addDay(lastDay)}::date::timestamp AT TIME ZONE ${timeZone})`}
+      WHERE id = ${membership.id}
+    `);
+    void this.versions.record('organization_memberships', membership.id, 'update_delta', callerId, { exit_last_day: lastDay }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'membership.exit-date', 'membership', membership.id, { last_day: lastDay }).catch(() => {});
     return { ok: true };
   }
 

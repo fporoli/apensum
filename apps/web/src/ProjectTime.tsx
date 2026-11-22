@@ -34,6 +34,7 @@ import { ChevronLeftIcon, ChevronRightIcon, ContentCopyIcon, DeleteIcon, EditIco
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { ClockTimeField, DurationField } from './TimeFields';
+import WeekReport from './WeekReport';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DEFAULT_PROJECT_TIME_START = '08:00';
@@ -124,6 +125,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
   const [periodType, setPeriodType] = useState<PeriodType>('week');
   const [periodAnchor, setPeriodAnchor] = useState(() => todayDate());
   const [entries, setEntries] = useState<Entry[]>([]);
+  // Bumped on every reload, so the week report and balances follow changes.
+  const [entriesVersion, setEntriesVersion] = useState(0);
   const [loading, setLoading] = useState(true);
   const [entryDate, setEntryDate] = useState(() => todayDate());
   const [entryStartTime, setEntryStartTime] = useState<string | null>(DEFAULT_PROJECT_TIME_START);
@@ -180,6 +183,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
       );
       const data = await res.json();
       if (Array.isArray(data.entries)) setEntries(data.entries);
+      setEntriesVersion((v) => v + 1);
     } catch {
       /* offline fallback */
     } finally {
@@ -398,6 +402,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
 
       {canEdit && (
       <Paper
+        id="project-time-entry"
         component="form"
         onSubmit={(e) => {
           e.preventDefault();
@@ -521,9 +526,28 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           )}
         </Box>
 
-        {loading && <LinearProgress sx={{ mt: 1.5 }} />}
+        {loading && periodType !== 'week' && <LinearProgress sx={{ mt: 1.5 }} />}
 
-        {chartData.length > 0 && (
+        {periodType === 'week' && (
+          <WeekReport
+            orgId={orgId}
+            personId={personId}
+            isSelf={isSelf}
+            canEdit={canEdit}
+            anchor={periodAnchor}
+            refreshKey={entriesVersion}
+            authHeaders={authHeaders}
+            onPick={(date, pid, sid) => {
+              setEntryDate(date);
+              const bookable = !pid || bookableProjects.some((p) => p.id === pid);
+              setProjectId(bookable ? pid ?? '' : '');
+              setSubprojectId(bookable ? sid ?? '' : '');
+              document.getElementById('project-time-entry')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+          />
+        )}
+
+        {periodType !== 'week' && chartData.length > 0 && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" sx={{ mb: 0.5 }}>{t('time.chartTitle')}</Typography>
             <BarChart
@@ -537,6 +561,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           </Box>
         )}
 
+        {periodType !== 'week' && (
         <TableContainer sx={{ mt: 2 }}>
           <Table size="small">
             <TableHead>
@@ -560,6 +585,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
             </TableBody>
           </Table>
         </TableContainer>
+        )}
 
         <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>{t('time.entries')}</Typography>
         <TableContainer>
