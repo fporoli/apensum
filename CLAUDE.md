@@ -55,6 +55,7 @@ Cases (`plugins/cases/seed.sql`, **generated** by `npx tsx plugins/cases/scripts
 The end of `seed.sql` generates each Acme member's history from their start date to yesterday (absences, attendance, project time, approved timesheets); a plugin's `seed.sql` (expenses: expenses and reports) runs after it in the same transaction and may use its `pg_temp.seed_*` helpers.\
 It is deterministic (`pg_temp.seed_rnd`/`seed_id` hash a key), so re-seeding adds only newly passed days.\
 Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in step with `worktime.ts` if Acme's region changes.\
+Last month stays unsubmitted for Ueli and Uma (`pg_temp.seed_last_month_open`, not in January), so HR's month-end close has something open.\
 After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`, the balance logic, which SQL can't repeat) closes last year (Year-end closing) for every Acme member but Uma, whose year stays open to close in the demo; `dev:seed`, `dev:resetdb`, `local:seed` run it, and `infra/vps/remote.sh` runs the built one in the API container after `seed`/`reset-seed`.
 
 ## Tests
@@ -102,7 +103,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
      Teams & Projects uses `canManageItem` (scope `own` = teams you lead, projects you own).\
      Don't add checks on role names; `isOrgDeveloper` (form design) is the one left.
   4. Work-time and absence writes check `isPeriodLocked` (working-time timesheet month submitted/approved); project-time writes check `isProjectPeriodLocked` (that project's month in the project timesheet).
-- Permissions: ids are `<object>:<action>:<scope>` (`nav.teamHours:see:reports`, `section.basicdata.personalien:edit:all`), catalogued in `packages/shared/src/permissions.ts` and in Liquibase (035-037), held via `membership_roles` -> `role_permissions`.\
+- Permissions: ids are `<object>:<action>:<scope>` (`nav.balances:see:reports`, `section.basicdata.personalien:edit:all`), catalogued in `packages/shared/src/permissions.ts` and in Liquibase (035-037), held via `membership_roles` -> `role_permissions`.\
   Global roles (`organization_id` NULL) carry the defaults (superdevelopers edit them); an org customizes a role by getting its own copy (same name; memberships are moved onto it, "reset" moves them back), or creates its own roles.\
   Admin settings -> Roles & permissions (`roles.controller.ts`) manages both.\
   `edit` implies `see`; a section also requires its parent navbar entry (My data for own data, Users for others').\
@@ -179,6 +180,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Work time and project time are changed by the person, their designated manager or HR (`canEditUserData`: `nav.workTime` / `nav.time` edit beyond own) and only while the month is open; the manager or HR reopens a submitted/approved month (`timesheet-periods/:id/reopen`, `project-timesheets/:id/reopen`).\
   The pages pick the person via `time-record-people` (`PersonPicker`).\
   Managers and HR also get a Team tab on those pages and on Absences, Expenses and Expense reports (`TeamView.tsx`, `GET organizations/:orgId/team-overview?kind=&month=`): one row per person they may see (`listableUserIds`, caller excluded), opening that person's page or their entries; Absences adds a month calendar with the org's holidays.\
+  There is no Team hours page any more (091 removed `nav.teamHours`): project hours by team are Reports' project hours with the team filter (`teamId`, members and lead).\
   HR's read access to absences and expenses is 049.\
   Plugins add team tables (`ApiPlugin.teamViews` rows, web `teamViews` columns; the expenses plugin's two).\
   Import/Export: plugins add payroll items (`ApiPlugin.payroll`, e.g. Abacus wage type 3000 for expenses) and their tables to the backup (`ApiPlugin.backup`, restored after the core's users, documents and projects).\
@@ -243,7 +245,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   No key = stored plain with a startup WARNING.\
   `npm run db:encrypt-documents` encrypts plain files; rotation: new key in DOCUMENTS_KEY, old in DOCUMENTS_KEY_PREVIOUS, then `-- --rewrap`.\
   Losing the key loses the documents.
-- Personnel file (`personnel_documents` 061, `section.people.documents` 062, HR edit:all only, not admin; `personnel-documents.controller.ts`, `PersonnelDocumentsPanel.tsx` on the Users page): HR's documents per person, each shared with the person (listed on their Documents page, notified) or HR only.\
+- Personnel file (`personnel_documents` 061, `section.people.documents` 062, HR edit:all only, not admin; `personnel-documents.controller.ts`, `PersonnelDocumentsPanel.tsx` on the Users page, "Mitarbeitende" in the navbar): HR's documents per person, each shared with the person (listed on their Documents page, notified) or HR only.\
   Access is the grant alone, not the reporting line; a person never edits their own file.
 - Plugins (`plugins/<id>`, docs/PLUGINS.md): a folder with a package.json `apensum` manifest (`id` = folder name, `apensumApi` = `PLUGIN_API_VERSION` of `packages/shared/src/pluginApi.ts`, checked at API start and web build: bump it when a contract change can break existing plugins; every name a plugin adds (tables, permission objects, reports, pages, ...) starts with its id, checked by `namespaceMismatch`, `legacyNames: true` only for expenses, optional `module` registered via `registerModule`, optional `permissions` = its permission objects, registered via `registerPermissionObjects` by the API and the web app, `api` = built entry, `web` = TS entry).\
   Not npm workspaces and no dependencies of their own (everything resolves from the root `node_modules`), so a private plugin cloned into the folder (gitignored except the bundled `plugins/expenses`) changes neither the lockfile nor `npm ci`.\

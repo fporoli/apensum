@@ -575,8 +575,16 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Last month still open for Ueli and Uma (see the timesheets below).
+CREATE FUNCTION pg_temp.seed_last_month_open(person uuid, month date) RETURNS boolean LANGUAGE sql STABLE AS
+$$ SELECT person IN ('22222222-2222-2222-2222-222222222227', '22222222-2222-2222-2222-222222222228')
+          AND month = (date_trunc('month', (now() AT TIME ZONE 'Europe/Zurich')::date) - INTERVAL '1 month')::date
+          AND extract(month FROM (now() AT TIME ZONE 'Europe/Zurich')::date) <> 1 $$;
+
 -- Working-time timesheets: every month from the start month to last month, submitted on the
--- 1st-2nd of the next month and approved by the manager in force clock the month's end.
+-- 1st-2nd of the next month and approved by the manager in force clock the month's end. Except that
+-- Ueli and Uma have not submitted last month yet (so the month-end close has something open), as long
+-- as last month is in this year (last year must be complete to close it).
 INSERT INTO timesheet_periods (id, organization_id, user_id, period_start, period_end, status, submitted_at, reviewed_by_user_id, reviewed_at)
 SELECT pg_temp.seed_id(m.user_id || ':timesheet:' || mo::date), m.organization_id, m.user_id, mo::date, (mo + INTERVAL '1 month')::date, 'approved',
        least(now(), ((mo + INTERVAL '1 month')::timestamp + TIME '17:30') AT TIME ZONE 'Europe/Zurich'),
@@ -588,6 +596,7 @@ CROSS JOIN LATERAL generate_series(date_trunc('month', COALESCE(m.start_date, m.
                                    date_trunc('month', (now() AT TIME ZONE 'Europe/Zurich')::date) - INTERVAL '1 month',
                                    INTERVAL '1 month') AS mo
 WHERE m.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND m.status = 'active'
+  AND NOT pg_temp.seed_last_month_open(m.user_id, mo::date)
 ON CONFLICT (organization_id, user_id, period_start) DO NOTHING;
 
 -- Project timesheets: one per person, project and month with project time before this month,
@@ -605,6 +614,7 @@ FROM (
     AND pt.start_time < (date_trunc('month', now() AT TIME ZONE 'Europe/Zurich') AT TIME ZONE 'Europe/Zurich')
 ) t
 JOIN projects pr ON pr.id = t.project_id
+WHERE NOT pg_temp.seed_last_month_open(t.user_id, t.month)
 ON CONFLICT (organization_id, user_id, project_id, period_start) DO NOTHING;
 
 -- Requests (module "requests"): a few demo tickets to HR and to line managers, with their threads.

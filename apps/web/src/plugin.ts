@@ -257,3 +257,6 @@ export { currencyOptions, type CurrencyOption } from './currencyOptions';
 export { SectionPaper } from './SettingsSection';
 export { default as TeamView, DetailTable as TeamDetailTable, StatusChip } from './TeamView';
 export { totalsByCurrency } from './teamOverview';
+// A person's week (project time against attendance and target) and balances, as on the core's pages.
+export { default as WeekReport } from './WeekReport';
+export { default as BalanceOverview } from './BalanceOverview';

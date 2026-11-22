@@ -78,7 +78,7 @@ host-run API and web app directly.
 | My work | `WorkTime` (check-in/out), `Absences` (requests, approvals, calendar, RFC 5545 iCal/WebCal subscriptions), `Timesheet` (monthly working-time timesheet for the line manager), `MyData` (`BasicDataPanel`), `BalancesPanel` (overtime/vacation by month) |
 | Projects | `ProjectTime` (hours per project), `ProjectTimesheet` (monthly submission to each project's owner) |
 | Expenses | `Expenses`, `ExpenseReports`, `ExpenseProcessing` |
-| Organization | `Approvals`, `TeamHours`, `BalanceReport` (Time balances with alerts), `Management` (teams/projects/subprojects), `Users` (`WorkSchedulePanel`, `Invitations` nested in submenu), `ImportExport` (Payroll exports, employee CSV onboarding, full org backup & restore), `OrganizationSettings` (`WorkTimeSettings`, `BrandingSettings`) |
+| Organization | `Approvals`, `BalanceReport` (Time balances with alerts), `Management` (teams/projects/subprojects), `Users` (`WorkSchedulePanel`, `Invitations` nested in submenu), `ImportExport` (Payroll exports, employee CSV onboarding, full org backup & restore), `OrganizationSettings` (`WorkTimeSettings`, `BrandingSettings`) |
 | Admin | `AdminSettings` (static-data enums), `RolesPermissions`, `FormDesigner`, `AuditLog` |
 | Form fields | `ConfigField`, `designMode.tsx` (configurable forms, see `docs/FIELD_CONFIG.md`) |
 | AI | `Assistant` (chat) |
@@ -335,7 +335,7 @@ Invite token `dev-invite-0001` accepts an invitation as `invited@acme.com`.
 Default grants of the global roles (organizations can change them, see Multi-tenancy and authorization above):
 
 - `user`: own work time, absences, timesheets, project time and data.
-- `manager`: + their reports' data and approvals, team hours, balance report, invitations, teams, subprojects (only if project owner).
+- `manager`: + their reports' data and approvals, balance report, invitations, teams, subprojects (only if project owner).
 - `hr`: + everyone's personal data and balances, adjustments.
 - `admin`: + static data, organization settings (name/domains/SSO, work time, branding), roles & permissions, audit read.
 - `owner`: everything.

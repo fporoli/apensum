@@ -85,6 +85,7 @@ export default function WeekReport({
   refreshKey,
   authHeaders,
   onPick,
+  compact = false,
 }: {
   orgId: string;
   personId: string;
@@ -95,6 +96,8 @@ export default function WeekReport({
   refreshKey: unknown;
   authHeaders: () => Promise<Record<string, string>>;
   onPick?: (date: string, projectId: string | null, subprojectId: string | null) => void;
+  /** Without the side panel (the day's sessions and the balances), e.g. where the balances show anyway. */
+  compact?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [report, setReport] = useState<Report | null>(null);
@@ -247,7 +250,7 @@ export default function WeekReport({
   );
 
   return (
-    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 300px' }, alignItems: 'start', mt: 2 }}>
+    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: compact ? '1fr' : { xs: '1fr', lg: 'minmax(0, 1fr) 300px' }, alignItems: 'start', mt: compact ? 0 : 2 }}>
       <Box sx={{ minWidth: 0 }}>
         {loading && <LinearProgress />}
         {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
@@ -350,7 +353,7 @@ export default function WeekReport({
         )}
       </Box>
 
-      <Box sx={{ display: 'grid', gap: 2 }}>
+      {!compact && <Box sx={{ display: 'grid', gap: 2 }}>
         {selected && (
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
@@ -403,7 +406,7 @@ export default function WeekReport({
         {isSelf && (
           <Link href="#/absences" underline="hover" sx={{ textAlign: 'center' }}>{t('weekReport.addAbsence')}</Link>
         )}
-      </Box>
+      </Box>}
     </Box>
   );
 }

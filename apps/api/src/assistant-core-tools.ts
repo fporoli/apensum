@@ -266,12 +266,12 @@ const projectTimeDelete: AssistantTool = {
 
 const teamHours: AssistantTool = {
   name: 'team_hours',
-  object: 'nav.teamHours',
+  object: 'nav.time',
   description: "PROJECT TIME per member of a team, by the team's name, in a period. Only the members the user may see.",
   parameters: { type: 'object', properties: { teamName: { type: 'string' }, ...dateRange }, required: ['teamName'] },
   async run(args, ctx) {
     const { db } = ctx;
-    if (!(await can(db, ctx.orgId, ctx.callerId, 'nav.teamHours', 'see'))) return { data: { error: 'forbidden' } };
+    if (!(await can(db, ctx.orgId, ctx.callerId, 'nav.time', 'see'))) return { data: { error: 'forbidden' } };
     const teamName = str(args.teamName) ?? '';
     const [team] = await db.select({ id: teams.id, name: teams.name }).from(teams).where(and(eq(teams.organization_id, ctx.orgId), ilike(teams.name, teamName)));
     if (!team) return { data: { error: `unknown team "${teamName}"` } };
@@ -283,8 +283,8 @@ const teamHours: AssistantTool = {
       .innerJoin(organization_memberships, eq(organization_memberships.id, team_members.membership_id))
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(eq(team_members.team_id, team.id));
-    // Same filter as the Team hours page: only members the caller may see.
-    const visible = await listableUserIds(db, ctx.orgId, ctx.callerId, 'nav.teamHours');
+    // Only the members whose project time the caller may see (as the project time report).
+    const visible = await listableUserIds(db, ctx.orgId, ctx.callerId, 'nav.time');
     const members = visible === 'all' ? teamMembers : teamMembers.filter((m) => visible.includes(m.user_id));
     const rows = members.length
       ? await db.select({ user_id: project_times.user_id, start: project_times.start_time, end: project_times.end_time })

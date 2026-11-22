@@ -1,11 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
-import { and, asc, eq, getTableColumns, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DbService } from './db.service';
 import { VersionsService } from './versions.service';
-import { callerUserId, can, canManageItem, canManageTeamMembers, isOrgMember, listableUserIds, reachesAll } from './access';
+import { callerUserId, can, canManageItem, canManageTeamMembers, isOrgMember, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { teams, team_members, organization_memberships, users, roles, project_times, projects, subprojects } from './db/schema';
+import { teams, team_members, organization_memberships, users, roles, projects } from './db/schema';
 
 const leadUsers = alias(users, 'lead_users');
 
@@ -172,64 +172,6 @@ export class TeamsController {
       .leftJoin(roles, eq(roles.id, team_members.team_role_id))
       .where(eq(team_members.team_id, id))
       .orderBy(asc(users.display_name));
-  }
-
-  /**
-   * Booked project time for every member of a team, so a manager can see
-   * hours per person without opening each member's own log. Members with
-   * zero entries in range still appear (with an empty entries list) so
-   * nobody silently drops off the report.
-   */
-  @Get('teams/:id/project-time')
-  async projectTime(
-    @Param('id') id: string,
-    @Req() req: AuthenticatedRequest,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-  ) {
-    const db = this.db.getDb();
-    if (!db) return { members: [], entries: [] };
-    const [team] = await db.select({ organization_id: teams.organization_id }).from(teams).where(eq(teams.id, id));
-    if (!team) return { members: [], entries: [] };
-
-    const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await can(db, team.organization_id, callerId, 'nav.teamHours', 'see'))) {
-      return { members: [], entries: [] };
-    }
-
-    const allMembers = await db
-      .select({ user_id: organization_memberships.user_id, email: users.email, display_name: users.display_name })
-      .from(team_members)
-      .innerJoin(organization_memberships, eq(organization_memberships.id, team_members.membership_id))
-      .innerJoin(users, eq(users.id, organization_memberships.user_id))
-      .where(eq(team_members.team_id, id))
-      .orderBy(asc(users.display_name));
-    // Only the members the caller may see (`nav.teamHours` scope, plus self and their reports).
-    const visible = await listableUserIds(db, team.organization_id, callerId, 'nav.teamHours');
-    const members = visible === 'all' ? allMembers : allMembers.filter((m) => visible.includes(m.user_id));
-    if (members.length === 0) return { members: [], entries: [] };
-
-    const memberIds = members.map((m) => m.user_id);
-    const conditions: SQL[] = [
-      inArray(project_times.user_id, memberIds),
-      eq(project_times.organization_id, team.organization_id),
-    ];
-    if (from) conditions.push(gte(project_times.start_time, from));
-    if (to) conditions.push(lt(project_times.start_time, to));
-
-    const entries = await db
-      .select({
-        ...getTableColumns(project_times),
-        project_name: projects.name,
-        subproject_name: subprojects.name,
-      })
-      .from(project_times)
-      .leftJoin(projects, eq(projects.id, project_times.project_id))
-      .leftJoin(subprojects, eq(subprojects.id, project_times.subproject_id))
-      .where(and(...conditions))
-      .orderBy(asc(project_times.start_time));
-
-    return { members, entries };
   }
 
   @Post('teams/:id/members')

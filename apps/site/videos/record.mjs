@@ -355,7 +355,7 @@ const SCENES = {
     async run(s) {
       const p = s.page;
       await s.title('HR', 'Ulla führt Personaldaten und das Personaldossier');
-      await s.nav('Benutzer');
+      await s.nav('Mitarbeitende');
       await s.caption('HR sieht alle Mitarbeitenden mit Abteilung, Funktion und Vorgesetzten');
       await s.wait(2400);
       const ueli = p.locator('tr', { hasText: 'ueli@acme.com' });

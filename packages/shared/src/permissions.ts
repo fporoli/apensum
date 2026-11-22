@@ -1,6 +1,6 @@
 // Permission catalogue: which navbar entries and UI sections a role may see or edit, and for whom.
 //
-// A permission id is `<object>:<action>:<scope>`, e.g. `nav.teamHours:see:reports` or
+// A permission id is `<object>:<action>:<scope>`, e.g. `nav.balances:see:reports` or
 // `section.basicdata.personalien:edit:all`. Roles hold ids through `role_permissions`; a
 // role with `organization_id = NULL` is the default, an organization's own copy of a role
 // carries its own rows. The API checks them with `can()` / `visibleUserIds()` (access.ts),
@@ -53,7 +53,6 @@ export const NAV_OBJECTS: PermissionObject[] = [
   { id: 'nav.workTime', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.workTime' },
   { id: 'nav.absences', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.absences' },
   { id: 'nav.myData', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.myData' },
-  { id: 'nav.teamHours', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.teamHours' },
   { id: 'nav.balances', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.balances' },
   { id: 'nav.approvals', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.approvals' },
   // Requests module (modules.ts): `own` = send and follow one's own requests, `all` = handle every

@@ -40,7 +40,6 @@ const Timesheet = lazy(() => import('./Timesheet'));
 const WorkTime = lazy(() => import('./WorkTime'));
 const Absences = lazy(() => import('./Absences'));
 const Approvals = lazy(() => import('./Approvals'));
-const TeamHours = lazy(() => import('./TeamHours'));
 const Reports = lazy(() => import('./Reports'));
 const ProjectTimesheet = lazy(() => import('./ProjectTimesheet'));
 const TeamView = lazy(() => import('./TeamView'));
@@ -222,14 +221,6 @@ export const CORE_PAGES: AppPage[] = [
     object: 'nav.directory',
     nav: { group: 'organization', label: 'nav.directory', icon: <ContactsIcon fontSize="small" /> },
     render: (c) => <Directory orgId={c.orgId} authHeaders={c.authHeaders} />,
-  },
-  {
-    section: 'hours',
-    hash: '#/team-hours',
-    object: 'nav.teamHours',
-    allowedByRole: (r) => r.canManage,
-    nav: { group: 'organization', label: 'nav.teamHours', icon: <GroupIcon fontSize="small" /> },
-    render: (c) => <TeamHours orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {
     section: 'balances',

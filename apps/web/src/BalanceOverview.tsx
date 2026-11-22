@@ -117,7 +117,7 @@ export default function BalanceOverview({
   const yearEnd = formatLocaleDate(`${data.year}-12-31`, locale);
 
   return (
-    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: layout === 'row' ? { xs: '1fr', md: 'repeat(3, 1fr)' } : '1fr', alignItems: 'start' }}>
+    <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: layout === 'row' ? { xs: '1fr', md: `repeat(${showToday ? 3 : 2}, 1fr)` } : '1fr', alignItems: 'start' }}>
       {showToday && <Card title={t('overview.today')}>
         <Line label={t('overview.worked')} value={formatDurationMinutes(today?.worked ?? 0)} />
         <Line label={t('overview.target')} value={formatDurationMinutes(today?.target ?? 0)} />

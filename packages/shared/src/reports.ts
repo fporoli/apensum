@@ -255,6 +255,7 @@ export interface SavedReportSettings {
   groupBy: string[];
   userId?: string;
   departmentId?: string;
+  teamId?: string;
   projectId?: string;
 }
 
@@ -273,7 +274,7 @@ export function sanitizeSavedSettings(def: ReportDefinition, input: unknown): Sa
     out.from = i.from;
     out.to = i.to;
   }
-  for (const k of ['userId', 'departmentId', 'projectId'] as const) {
+  for (const k of ['userId', 'departmentId', 'teamId', 'projectId'] as const) {
     const v = i[k];
     if (v === undefined || v === null || v === '') continue;
     if (typeof v !== 'string' || !ID.test(v)) return null;

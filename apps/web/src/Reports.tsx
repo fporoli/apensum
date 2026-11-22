@@ -78,8 +78,9 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
   const [groupBy, setGroupBy] = useState<Record<string, string[]>>(() => Object.fromEntries(REPORTS.map((r) => [r.id, initialGroupBy(r)])));
   const [userId, setUserId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
+  const [teamId, setTeamId] = useState('');
   const [projectId, setProjectId] = useState('');
-  const [options, setOptions] = useState<{ people: Option[]; departments: Option[]; projects: Option[] }>({ people: [], departments: [], projects: [] });
+  const [options, setOptions] = useState<{ people: Option[]; departments: Option[]; teams: Option[]; projects: Option[] }>({ people: [], departments: [], teams: [], projects: [] });
   const [result, setResult] = useState<Result | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,7 +168,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
       try {
         const res = await fetch(`${API}/organizations/${orgId}/reports/${reportId}/options`, { headers: await authHeaders() });
         const data = await res.json();
-        if (data?.ok) setOptions({ people: data.people ?? [], departments: data.departments ?? [], projects: data.projects ?? [] });
+        if (data?.ok) setOptions({ people: data.people ?? [], departments: data.departments ?? [], teams: data.teams ?? [], projects: data.projects ?? [] });
       } catch { /* the run below shows the error */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -180,6 +181,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
       const q = new URLSearchParams({ from, to, groupBy: dims.join(',') });
       if (userId) q.set('userId', userId);
       if (departmentId) q.set('departmentId', departmentId);
+      if (teamId) q.set('teamId', teamId);
       if (projectId && def.projectFilter) q.set('projectId', projectId);
       const res = await fetch(`${API}/organizations/${orgId}/reports/${reportId}?${q}`, { headers: await authHeaders() });
       const data = (await res.json()) as Result;
@@ -194,7 +196,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, reportId, from, to, dims.join(','), userId, departmentId, projectId]);
+  }, [orgId, reportId, from, to, dims.join(','), userId, departmentId, teamId, projectId]);
 
   useEffect(() => {
     void run();
@@ -257,6 +259,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     }
     if (userId) s.userId = userId;
     if (departmentId) s.departmentId = departmentId;
+    if (teamId) s.teamId = teamId;
     if (projectId) s.projectId = projectId;
     return s;
   }
@@ -270,6 +273,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     if (s.preset === 'custom' && s.from && s.to) setCustom([s.from, s.to]);
     setGroupBy((g) => ({ ...g, [r.reportId]: s.groupBy?.length ? s.groupBy : initialGroupBy(reportById(r.reportId) as ReportDefinition) }));
     setDepartmentId(s.departmentId ?? '');
+    setTeamId(s.teamId ?? '');
     if (r.reportId !== reportId) {
       pendingFilters.current = { userId: s.userId, projectId: s.projectId };
       setReportId(r.reportId);
@@ -418,6 +422,8 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
     if (person) parts.push(person.name);
     const dept = options.departments.find((d) => d.id === departmentId);
     if (dept) parts.push(dept.name);
+    const team = options.teams.find((x) => x.id === teamId);
+    if (team) parts.push(team.name);
     const project = options.projects.find((p) => p.id === projectId);
     if (project && def.projectFilter) parts.push(project.name);
     return parts.join(' · ');
@@ -553,6 +559,12 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
             <TextField select size="small" label={t('reports.department')} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} sx={{ minWidth: 180 }}>
               <MenuItem value="">{t('reports.allDepartments')}</MenuItem>
               {options.departments.map((d) => <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>)}
+            </TextField>
+          )}
+          {options.people.length > 1 && options.teams.length > 0 && (
+            <TextField select size="small" label={t('reports.team')} value={teamId} onChange={(e) => setTeamId(e.target.value)} sx={{ minWidth: 180 }}>
+              <MenuItem value="">{t('reports.allTeams')}</MenuItem>
+              {options.teams.map((x) => <MenuItem key={x.id} value={x.id}>{x.name}</MenuItem>)}
             </TextField>
           )}
           {filterProjects && (

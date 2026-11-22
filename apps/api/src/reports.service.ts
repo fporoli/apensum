@@ -58,6 +58,8 @@ export interface RunQuery {
   groupBy?: string | string[];
   userId?: string;
   departmentId?: string;
+  /** Only the members of this team (Teams & Projects), and its lead. */
+  teamId?: string;
   projectId?: string;
 }
 
@@ -108,7 +110,7 @@ export class ReportsService {
 
   /** The report for whole months `from`..`to` (yyyy-mm), grouped as asked, as `callerId` may see it. */
   async run(db: Db, orgId: string, callerId: string | null, reportId: string, q: RunQuery): Promise<RunResult> {
-    const { from, to, groupBy: groupByParam, userId, departmentId, projectId } = q;
+    const { from, to, groupBy: groupByParam, userId, departmentId, teamId, projectId } = q;
     const scope = await this.scope(db, orgId, callerId, reportId);
     if ('error' in scope) return { ok: false, error: scope.error, groupBy: [], rows: [], totals: {} };
     const { def } = scope;
@@ -131,6 +133,15 @@ export class ReportsService {
         .where(and(eq(employee_assignments.organization_id, orgId), sql`${employee_assignments.valid_from} <= CURRENT_DATE`))
         .orderBy(employee_assignments.user_id, sql`${employee_assignments.valid_from} DESC`);
       const members = new Set(inDept.filter((a) => a.departmentId === departmentId).map((a) => a.userId));
+      people = people.filter((p) => members.has(p.id));
+    }
+    if (teamId) {
+      if (!UUID.test(teamId)) return { ok: false, error: 'unknown-team', groupBy, rows: [], totals: {} };
+      const inTeam = await db.execute(sql`
+        SELECT m.user_id FROM team_members tm JOIN organization_memberships m ON m.id = tm.membership_id
+        JOIN teams t ON t.id = tm.team_id WHERE tm.team_id = ${teamId} AND t.organization_id = ${orgId}
+        UNION SELECT lead_user_id FROM teams WHERE id = ${teamId} AND organization_id = ${orgId} AND lead_user_id IS NOT NULL`);
+      const members = new Set((inTeam.rows as { user_id: string }[]).map((r) => r.user_id));
       people = people.filter((p) => members.has(p.id));
     }
     if (!people.length) return { ok: true, groupBy, rows: [], totals: groupReport(def, [], groupBy).totals };

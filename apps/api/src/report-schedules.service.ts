@@ -10,7 +10,7 @@ import { nextRunAt, zonedDate, type ScheduleRule } from './report-schedule';
 import { pdfLang } from './timesheet-documents.service';
 import { appBaseUrl } from './orgs.controller';
 import { sendMail } from './mailer';
-import { departments, projects, report_runs, report_schedules, saved_reports, static_data, users } from './db/schema';
+import { departments, projects, report_runs, report_schedules, saved_reports, static_data, teams, users } from './db/schema';
 import { reportById, type ReportDefinition, type SavedReportSettings } from '@worktime3/shared/reports';
 import { REPORT_TEXTS } from '@worktime3/shared/reportTexts';
 import { buildReportTable, labelFor, periodText, presetRange, sortRows, staticDataLabelsOf, swissLocale, textsOf, type LabelSources, type Preset, type StaticLabels } from '@worktime3/shared/reportTable';
@@ -134,6 +134,7 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
         groupBy: settings.groupBy,
         userId: settings.userId,
         departmentId: settings.departmentId,
+        teamId: settings.teamId,
         projectId: settings.projectId,
       });
       if (!result.ok) {
@@ -203,6 +204,10 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
     if (s.departmentId) {
       const [d] = await db.select({ name: departments.name }).from(departments).where(eq(departments.id, s.departmentId));
       if (d) out.push(d.name);
+    }
+    if (s.teamId) {
+      const [tm] = await db.select({ name: teams.name }).from(teams).where(eq(teams.id, s.teamId));
+      if (tm) out.push(tm.name);
     }
     if (s.projectId) {
       const [p] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, s.projectId));

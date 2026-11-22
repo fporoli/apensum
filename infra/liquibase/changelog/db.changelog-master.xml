@@ -106,6 +106,7 @@
     <include file="088-request-tasks.sql" relativeToChangelogFile="true"/>
     <include file="089-request-confidential-custom.sql" relativeToChangelogFile="true"/>
     <include file="090-parental-leave.sql" relativeToChangelogFile="true"/>
+    <include file="091-permission-remove-team-hours.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

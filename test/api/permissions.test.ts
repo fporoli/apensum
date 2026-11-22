@@ -28,7 +28,7 @@ const noQueryDb: Executor = {
 } as unknown as Executor;
 
 test('parsePermissionId accepts <object>:<action>:<scope> only', () => {
-  assert.deepEqual(parsePermissionId('nav.teamHours:see:reports'), { object: 'nav.teamHours', action: 'see', scope: 'reports' });
+  assert.deepEqual(parsePermissionId('nav.balances:see:reports'), { object: 'nav.balances', action: 'see', scope: 'reports' });
   assert.equal(parsePermissionId('data:read'), null);
   assert.equal(parsePermissionId('nav.users:delete:all'), null);
   assert.equal(parsePermissionId('nav.users:see:world'), null);
@@ -96,7 +96,7 @@ test('can(): own scope needs no query, see does not imply edit', async () => {
 test('visibleUserIds(): own-only grant is just the caller; all is all', async () => {
   const own = await visibleUserIds(noQueryDb, ORG, ME, 'nav.time', 'see', new Set(['nav.time:edit:own']));
   assert.deepEqual(own instanceof Set ? [...own] : own, [ME]);
-  assert.equal(await visibleUserIds(noQueryDb, ORG, ME, 'nav.teamHours', 'see', new Set(['nav.teamHours:see:all'])), 'all');
+  assert.equal(await visibleUserIds(noQueryDb, ORG, ME, 'nav.balances', 'see', new Set(['nav.balances:see:all'])), 'all');
 });
 
 test('roles are assignable when global (without an org copy) or owned by the same org', () => {
@@ -122,10 +122,14 @@ test('the migration catalogue matches the shared registry, and default grants us
   // The core's changelogs created the expenses and cases objects before they became plugins; the
   // plugins now declare them (plugins/<id>: package.json permissions, changelog/).
   const pluginIds = (id: string) => /^nav\.(expense(s|Reports|Processing)|cases):/.test(id);
+  // Objects a later changelog removed again (`DELETE FROM permissions WHERE id LIKE '<object>:%'`, e.g. 091).
+  const removed = [...sql.matchAll(/DELETE FROM permissions WHERE id LIKE '((?:nav|section)\.[\w.]+):%'/g)].map((m) => `${m[1]}:`);
+  const gone = (id: string) => removed.some((prefix) => id.startsWith(prefix));
+  for (const id of [...ids]) if (gone(id)) ids.delete(id);
   assert.deepEqual([...ids].filter((id) => !pluginIds(id)).sort(), allPermissionIds().sort());
 
   const catalogue = new Set(allPermissionIds());
   const granted = [...sql.matchAll(/'((?:nav|section)\.[\w.]+:\w+:\w+)'/g)].map((m) => m[1]);
   assert.ok(granted.length > 0);
-  for (const id of granted) assert.ok(catalogue.has(id) || pluginIds(id), `${id} is not in the catalogue`);
+  for (const id of granted) assert.ok(catalogue.has(id) || pluginIds(id) || gone(id), `${id} is not in the catalogue`);
 });

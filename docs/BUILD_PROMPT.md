@@ -2,7 +2,7 @@
 
 ## Elevator pitch
 A multi-tenant time-tracking app. Individuals log hours against projects;
-managers see team hours and approve month-end timesheets; admins manage
+managers see their reports' hours and approve month-end timesheets; admins manage
 org settings, static-data enums, and pay rates. A chat assistant can
 batch-log hours and pull reports in natural language. Users can belong to
 several organizations and switch between them.
@@ -68,7 +68,7 @@ several organizations and switch between them.
 - **Everyone**: log/edit/delete own time entries (blocked once their month
   is locked); daily/weekly/monthly personal overview; submit their own
   month for approval; chat assistant for their own hours/reports.
-- **+ Manager**: teams and projects CRUD; per-team hours rollup by member
+- **+ Manager**: teams and projects CRUD; project hours by team in Reports
   with drill-down; send org invitations; approve/reject submitted
   timesheets; team-hours and project-cost report tools in the assistant.
 - **+ Admin**: static-data enum CRUD; organization profile/domains/SSO;
