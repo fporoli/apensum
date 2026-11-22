@@ -33,20 +33,17 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 const PIPELINE = ['approved', 'submitted_processing', 'processing_finished', 'request_payment', 'finished'] as const;
 type PipelineStatus = (typeof PIPELINE)[number];
-/** The status filter: `open` = not processed yet (the default), or one stage. */
-type Filter = 'open' | PipelineStatus;
-const FILTERS: Filter[] = ['open', ...PIPELINE];
+/** The status filter: `open` = not processed yet (the default), processed (payment open), paid. */
+type Filter = 'open' | 'processing_finished' | 'finished';
+const FILTERS: Filter[] = ['open', 'processing_finished', 'finished'];
 
 function stageLabel(status: string, t: TFunction): string {
   return (PIPELINE as readonly string[]).includes(status) ? t(`expenseProcessing.stage.${status}`) : status;
 }
 
-/** After processing, the later stages still move on one at a time. */
+/** After processing, the payment is confirmed per report (older in-between stages included). */
 function nextStage(status: string): PipelineStatus | null {
-  if ((PROCESSABLE_STATUSES as readonly string[]).includes(status)) return null;
-  const idx = PIPELINE.indexOf(status as PipelineStatus);
-  if (idx === -1 || idx === PIPELINE.length - 1) return null;
-  return PIPELINE[idx + 1];
+  return status === 'processing_finished' || status === 'request_payment' ? 'finished' : null;
 }
 
 const KNOWN_ERRORS = ['forbidden', 'not-processable', 'too-many-reports', 'invalid-reports'];
@@ -206,7 +203,7 @@ export default function ExpenseProcessing({ orgId, authHeaders }: ExpenseProcess
         <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
           <TextField select size="small" label={t('expenseProcessing.stage')} value={filter} onChange={(e) => setFilter(e.target.value as Filter)} sx={{ minWidth: 240 }}>
             {FILTERS.map((f) => (
-              <MenuItem key={f} value={f}>{f === 'open' ? t('expenseProcessing.filter.open') : stageLabel(f, t)}</MenuItem>
+              <MenuItem key={f} value={f}>{f === 'open' ? t('expenseProcessing.filter.open') : f === 'processing_finished' ? t('expenseProcessing.filter.processed') : stageLabel(f, t)}</MenuItem>
             ))}
           </TextField>
           <Box sx={{ flex: 1 }} />
@@ -266,7 +263,7 @@ export default function ExpenseProcessing({ orgId, authHeaders }: ExpenseProcess
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {next && (
                         <Button size="small" onClick={() => void advance(row.id)}>
-                          {t('expenseProcessing.advanceTo', { stage: stageLabel(next, t) })}
+                          {t('expenseProcessing.stepPaid')}
                         </Button>
                       )}
                     </TableCell>

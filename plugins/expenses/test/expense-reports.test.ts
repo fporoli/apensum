@@ -2,10 +2,10 @@ import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { nextPipelineStage } from '../api/expense-reports.controller';
 
-test('nextPipelineStage walks the finance pipeline forward one step at a time', () => {
-  assert.equal(nextPipelineStage('approved'), 'submitted_processing');
+test('nextPipelineStage: approved is processed, then paid; the older in-between stages move on', () => {
+  assert.equal(nextPipelineStage('approved'), 'processing_finished');
   assert.equal(nextPipelineStage('submitted_processing'), 'processing_finished');
-  assert.equal(nextPipelineStage('processing_finished'), 'request_payment');
+  assert.equal(nextPipelineStage('processing_finished'), 'finished');
   assert.equal(nextPipelineStage('request_payment'), 'finished');
 });
 

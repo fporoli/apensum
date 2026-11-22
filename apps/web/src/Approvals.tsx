@@ -25,7 +25,7 @@ import {
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
-import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatSignedMinutes, swissLocale } from './localeFormat';
+import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
 import { getSourceTitle } from './Timesheet';
 import { PLUGIN_WORKFLOW_KINDS } from './plugins';
 import type { PluginWorkflowKind, PluginWorkflowRecord } from './plugin';
@@ -109,6 +109,14 @@ interface ActionItem {
   finished?: string | null;
   /** Who decides (on one's own requests). */
   assignee_name?: string | null;
+  step?: string | null;
+  step_number?: number | null;
+  step_count?: number;
+  step_action_key?: string | null;
+  step_rejectable?: boolean;
+  step_in_dialog?: boolean;
+  /** What happened, oldest first (`key` is a text key: the core's or a plugin's). */
+  history?: { key: string; by_name: string | null; at: string; note?: string | null }[];
   definition_name: string;
   source: string | null;
   source_name: string | null;
@@ -199,7 +207,11 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
   /** `assigned` = to decide (the inbox), `mine` = what one submitted. */
   const [scope, setScope] = useState<Scope>(canDecide ? 'assigned' : 'mine');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
+  // The rights arrive after the first render: open on the inbox once they say the caller decides.
+  useEffect(() => setScope(canDecide ? 'assigned' : 'mine'), [canDecide]);
   const decides = scope === 'assigned' && statusFilter === 'pending';
+  /** The item's id when the caller decides it now (its dialogs then offer approve/reject), else null. */
+  const decidable = (item: ActionItem) => (decides && item.step_status === 'pending' ? item.id : null);
 
   const [inspectingPeriod, setInspectingPeriod] = useState<PeriodRow | null>(null);
   const [inspectingActionItemId, setInspectingActionItemId] = useState<string | null>(null);
@@ -216,7 +228,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
   const [monthError, setMonthError] = useState<string | null>(null);
 
   /** A plugin approval kind's Inspect dialog (PluginWorkflowKind.Inspect). */
-  const [inspectingPlugin, setInspectingPlugin] = useState<{ kind: PluginWorkflowKind; record: PluginWorkflowRecord; actionItemId: string | null } | null>(null);
+  const [inspectingPlugin, setInspectingPlugin] = useState<{ kind: PluginWorkflowKind; record: PluginWorkflowRecord; actionItemId: string | null; step: ActionItem | null } | null>(null);
 
   const [inspectingAbsence, setInspectingAbsence] = useState<AbsenceRow | null>(null);
   const [absenceDocument, setAbsenceDocument] = useState<AbsenceDocumentRow | null>(null);
@@ -293,7 +305,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
   }
 
   /** A project month: that project's entries of the person in that month. */
-  async function inspectProjectMonth(period: ProjectPeriodRow, actionItemId: string) {
+  async function inspectProjectMonth(period: ProjectPeriodRow, actionItemId: string | null) {
     setInspectingPeriod({ id: period.id, user_id: period.user_id, user_display_name: period.user_display_name, user_email: period.user_email, period_start: period.period_start });
     setInspectingProject(period.project_name);
     setInspectingActionItemId(actionItemId);
@@ -519,6 +531,9 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                         {statusFilter !== 'pending' && (
                           <Chip label={t(`approvals.status.${item.step_status}`)} size="small" color={STATUS_COLOR[item.step_status]} />
                         )}
+                        {item.step_status === 'pending' && (item.step_count ?? 0) > 1 && item.step_number && (
+                          <Chip label={t('approvals.stepOf', { n: String(item.step_number), count: String(item.step_count) })} size="small" />
+                        )}
                       </Box>
                     </TableCell>
                     <TableCell>
@@ -533,19 +548,31 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                         </Box>
                       )}
                     </TableCell>
-                    <TableCell>{actionItemDetail(item)}</TableCell>
+                    <TableCell>
+                      {(item.history ?? []).length > 0 && actionItemDetail(item) === '—' ? null : actionItemDetail(item)}
+                      {(item.history ?? []).length > 0 && (
+                        <Box component="ul" sx={{ m: 0, mt: 0.5, p: 0, listStyle: 'none' }}>
+                          {item.history!.map((e, i) => (
+                            <Typography key={i} component="li" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                              {[formatLocaleDateTime(e.at, locale), t(e.key), e.by_name].filter(Boolean).join(' · ')}
+                              {e.note ? ` – «${e.note}»` : ''}
+                            </Typography>
+                          ))}
+                        </Box>
+                      )}
+                    </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {item.timesheet_period && (
-                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(item.timesheet_period!, item.id)}>{t('approvals.inspect')}</Button>
+                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(item.timesheet_period!, decidable(item))}>{t('approvals.inspect')}</Button>
                       )}
                       {(() => {
                         const plugin = pluginRecord(item);
                         return plugin?.kind.Inspect ? (
-                          <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => setInspectingPlugin({ ...plugin, actionItemId: item.id })}>{t('approvals.inspect')}</Button>
+                          <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => setInspectingPlugin({ ...plugin, actionItemId: decidable(item), step: item })}>{t('approvals.inspect')}</Button>
                         ) : null;
                       })()}
                       {item.project_time_period && (
-                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspectProjectMonth(item.project_time_period!, item.id)}>{t('approvals.inspect')}</Button>
+                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspectProjectMonth(item.project_time_period!, decidable(item))}>{t('approvals.inspect')}</Button>
                       )}
                       {item.absence?.document_id && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void viewAbsenceDocument(item.absence!)}>{t('approvals.documents')}</Button>
@@ -557,12 +584,21 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           </IconButton>
                         </Tooltip>
                       )}
-                      {decides && item.step_status === 'pending' && (
-                        <>
-                          <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={() => void approveItem(item.id)}>{t('approvals.approve')}</Button>
-                          <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t('approvals.reject')}</Button>
-                        </>
-                      )}
+                      {decides && item.step_status === 'pending' && (() => {
+                        const plugin = pluginRecord(item);
+                        // A step done in the dialog (it shows what the step needs) opens it instead.
+                        const act = item.step_in_dialog && plugin?.kind.Inspect
+                          ? () => setInspectingPlugin({ ...plugin, actionItemId: item.id, step: item })
+                          : () => void approveItem(item.id);
+                        return (
+                          <>
+                            <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={act}>{t(item.step_action_key ?? 'approvals.approve')}</Button>
+                            {item.step_rejectable !== false && (
+                              <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t('approvals.reject')}</Button>
+                            )}
+                          </>
+                        );
+                      })()}
                     </TableCell>
                   </TableRow>
                   {rejectingId === item.id && (
@@ -794,6 +830,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
           authHeaders={authHeaders}
           record={inspectingPlugin.record}
           actionItemId={inspectingPlugin.actionItemId}
+          step={inspectingPlugin.step?.step ? { key: inspectingPlugin.step.step, actionKey: inspectingPlugin.step.step_action_key ?? null, rejectable: inspectingPlugin.step.step_rejectable !== false } : null}
           onClose={() => setInspectingPlugin(null)}
           onApprove={(id) => {
             setInspectingPlugin(null);

@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import { MILEAGE_CATEGORY } from '../shared/booking';
 import { formatLocaleDate, formatMoney, useI18n, type PluginWorkflowInspectProps } from '@worktime3/web/plugin';
+import { processingText, type ProcessingReport } from '../shared/processing';
 import type { ExpenseRow } from './expenseRows';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -16,8 +17,40 @@ interface StaticDataRow {
 }
 
 /** The Workflow page's "Inspect" dialog for an expense report: its expenses, total and receipts. */
-export default function ExpenseReportReview({ open, orgId, authHeaders, record, actionItemId, onClose, onApprove, onReject }: PluginWorkflowInspectProps & { open: boolean }) {
+export default function ExpenseReportReview({ open, orgId, authHeaders, record, actionItemId, step, onClose, onApprove, onReject }: PluginWorkflowInspectProps & { open: boolean }) {
   const { t, locale } = useI18n();
+  // The processing step: the same text for accounting as on the Expense processing page.
+  const processing = !!actionItemId && step?.key === 'processing';
+  const [accounting, setAccounting] = useState<ProcessingReport | null>(null);
+  useEffect(() => {
+    if (!open || !processing) return;
+    let cancelled = false;
+    setAccounting(null);
+    void (async () => {
+      try {
+        const rows = await (await fetch(`${API}/organizations/${orgId}/expense-processing`, { headers: await authHeaders() })).json();
+        if (!cancelled && Array.isArray(rows)) setAccounting((rows as ProcessingReport[]).find((r) => r.id === record.id) ?? null);
+      } catch { /* shown without it */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, processing, record.id]);
+  const accountingText = processing && accounting
+    ? processingText(
+        [accounting],
+        {
+          title: t('expenseProcessing.text.title', { date: formatLocaleDate(new Date().toLocaleDateString('sv'), locale), count: '1' }),
+          name: t('expenseProcessing.col.name'),
+          personnelNumber: t('expenseProcessing.col.personnelNumber'),
+          costCenter: t('expenseProcessing.col.costCenter'),
+          amount: t('expenseProcessing.col.amount'),
+          submitted: t('expenseProcessing.submitted'),
+          workflowId: t('expenseProcessing.col.workflowId'),
+          total: t('expenseProcessing.total'),
+        },
+        { money: (n) => formatMoney(n, locale), date: (d) => formatLocaleDate(d, locale) },
+      )
+    : '';
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,13 +167,24 @@ export default function ExpenseReportReview({ open, orgId, authHeaders, record, 
             </Table>
           </TableContainer>
         )}
+        {processing && accounting && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('expenseProcessing.dialog.title')}</Typography>
+            <Box component="pre" sx={{ m: 0, p: 1.5, borderRadius: 1, bgcolor: 'action.hover', fontSize: '0.8rem', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
+              {accountingText}
+            </Box>
+            <Button size="small" sx={{ mt: 1 }} onClick={() => void navigator.clipboard.writeText(accountingText).catch(() => {})}>
+              {t('expenseProcessing.copy')}
+            </Button>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.close')}</Button>
         {actionItemId && (
           <>
-            <Button color="error" onClick={() => onReject(actionItemId)}>{t('approvals.reject')}…</Button>
-            <Button variant="contained" onClick={() => onApprove(actionItemId)}>{t('approvals.approve')}</Button>
+            {step?.rejectable !== false && <Button color="error" onClick={() => onReject(actionItemId)}>{t('approvals.reject')}…</Button>}
+            <Button variant="contained" onClick={() => onApprove(actionItemId)}>{t(step?.actionKey ?? 'approvals.approve')}</Button>
           </>
         )}
       </DialogActions>

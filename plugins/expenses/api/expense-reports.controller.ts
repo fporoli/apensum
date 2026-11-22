@@ -3,7 +3,7 @@ import { and, asc, desc, eq, getTableColumns, inArray, sql, type SQL } from 'dri
 import { DbService, callerUserId, can, canSeeUserData, isOrgMember, listableUserIds, membershipManagerId, type AuthenticatedRequest, AuditService, VersionsService, WorkflowsService } from '@worktime3/api/plugin';
 import { projects, subprojects, users } from '@worktime3/api/schema';
 import { expense_report_items, expense_reports, expenses } from './db/schema';
-import { APPROVE_EXPENSE_REPORT_WORKFLOW_NAME } from './workflow';
+import { APPROVE_EXPENSE_REPORT_WORKFLOW_NAME, EXPENSE_REPORT_STEPS } from './workflow';
 
 const STATUSES = [
   'in_preparation', 'submitted', 'approved', 'rejected',
@@ -11,14 +11,23 @@ const STATUSES = [
 ] as const;
 type Status = (typeof STATUSES)[number];
 
-/** The forward-only finance pipeline once a report is approved — no per-stage decision, just progress. */
+/**
+ * The finance pipeline once a report is approved: processed (HR, the text for accounting), then paid.
+ * `submitted_processing` and `request_payment` are older in-between stages: they still move on.
+ */
 export const PIPELINE: readonly Status[] = ['approved', 'submitted_processing', 'processing_finished', 'request_payment', 'finished'];
+const NEXT_STAGE: Partial<Record<Status, Status>> = {
+  approved: 'processing_finished',
+  submitted_processing: 'processing_finished',
+  processing_finished: 'finished',
+  request_payment: 'finished',
+};
+/** The workflow step a stage completes (EXPENSE_REPORT_STEPS). */
+export const STEP_OF_STAGE: Partial<Record<Status, string>> = { processing_finished: 'processing', finished: 'payment' };
 
 /** The pipeline stage after `status`, or null if `status` isn't advanceable (not in the pipeline, or already the last stage). */
 export function nextPipelineStage(status: string): Status | null {
-  const idx = PIPELINE.indexOf(status as Status);
-  if (idx === -1 || idx === PIPELINE.length - 1) return null;
-  return PIPELINE[idx + 1];
+  return NEXT_STAGE[status as Status] ?? null;
 }
 
 
@@ -212,17 +221,7 @@ export class ExpenseReportsController {
 
     // Route to the owner's manager as an "approve expense report" workflow — the manager acts on it via /workflows.
     if (!autoApproved && managerUserId) {
-      const definition = await this.workflowsSvc.ensureDefinition(db, report.organization_id, APPROVE_EXPENSE_REPORT_WORKFLOW_NAME, "A submitted expense report awaiting the employee's manager to approve or reject it.", [
-        {
-          key: 'manager_review',
-          label: 'Manager review',
-          assignTo: 'manager',
-          onApprove: { action: 'expense.approve' },
-          onReject: { action: 'expense.reject' },
-          source: 'Expense Report',
-          source_name: 'getExpenseReportTitle',
-        },
-      ]);
+      const definition = await this.workflowsSvc.ensureDefinition(db, report.organization_id, APPROVE_EXPENSE_REPORT_WORKFLOW_NAME, "A submitted expense report: the manager approves it, then it is processed and paid.", EXPENSE_REPORT_STEPS);
       await this.workflowsSvc.createWorkflow(db, {
         workflowDefId: definition.workflow_def_id,
         sourceTable: 'expense_reports',
@@ -288,6 +287,7 @@ export class ExpenseReportsController {
     await db.update(expense_reports).set(patch).where(eq(expense_reports.id, id));
     void this.versions.record('expense_reports', id, 'update_delta', callerId, patch).catch(() => {});
     void this.audit.record(report.organization_id, callerId, 'expense.advance', 'expense_report', id, { toStatus: nextStatus }).catch(() => {});
+    await completeReportStep(this.workflowsSvc, db, id, nextStatus, callerId, body.note?.trim() || null);
     return { ok: true, status: nextStatus };
   }
 
@@ -295,4 +295,21 @@ export class ExpenseReportsController {
   private async mayView(db: NonNullable<ReturnType<DbService['getDb']>>, report: { organization_id: string; user_id: string }, callerId: string): Promise<boolean> {
     return canSeeUserData(db, report.organization_id, callerId, 'nav.expenseReports', report.user_id);
   }
+}
+
+/**
+ * The report reached `stage` on the processing page: its workflow's step for it is done (the workflow
+ * moves on); a report whose workflow has no such step (older ones) gets the stage in its history.
+ */
+export async function completeReportStep(
+  workflowsSvc: WorkflowsService,
+  db: NonNullable<ReturnType<DbService['getDb']>>,
+  reportId: string,
+  stage: Status,
+  callerId: string,
+  note: string | null = null,
+): Promise<void> {
+  const step = STEP_OF_STAGE[stage];
+  const done = step ? await workflowsSvc.completeStep(db, 'expense_reports', reportId, step, callerId, note).catch(() => false) : false;
+  if (!done) await workflowsSvc.recordEvent(db, 'expense_reports', reportId, { key: `expenseProcessing.stage.${stage}`, by: callerId, note }).catch(() => {});
 }

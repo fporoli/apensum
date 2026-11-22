@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { AuditService, DbService, VersionsService, callerUserId, can, payrollPersonalien, type AuthenticatedRequest } from '@worktime3/api/plugin';
+import { AuditService, DbService, VersionsService, WorkflowsService, callerUserId, can, payrollPersonalien, type AuthenticatedRequest } from '@worktime3/api/plugin';
 import {
   MAX_PROCESS_REPORTS,
   PROCESSABLE_STATUSES,
@@ -8,7 +8,7 @@ import {
   processingLines,
   type ProcessingReport,
 } from '../shared/processing';
-import { PIPELINE } from './expense-reports.controller';
+import { PIPELINE, completeReportStep } from './expense-reports.controller';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const uuidArray = (ids: readonly string[]) => `{${ids.join(',')}}`;
@@ -24,6 +24,7 @@ export class ExpenseProcessingController {
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly versions: VersionsService,
+    private readonly workflowsSvc: WorkflowsService,
   ) {}
 
   /** `status`: one pipeline status, or `open` (default: approved and not processed yet). */
@@ -33,7 +34,11 @@ export class ExpenseProcessingController {
     if (!db) return [];
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId || !(await can(db, orgId, callerId, 'nav.expenseProcessing', 'see'))) return [];
-    const statuses: readonly string[] = status && (PIPELINE as readonly string[]).includes(status) ? [status] : PROCESSABLE_STATUSES;
+    // The older in-between stages are listed with the stage they lead to.
+    const statuses: readonly string[] =
+      status === 'processing_finished' ? ['processing_finished', 'request_payment']
+      : status === 'finished' ? ['finished']
+      : status && (PIPELINE as readonly string[]).includes(status) ? [status] : PROCESSABLE_STATUSES;
     return this.reports(db, orgId, statuses);
   }
 
@@ -68,6 +73,7 @@ export class ExpenseProcessingController {
     for (const id of result) {
       void this.versions.record('expense_reports', id, 'update_delta', callerId, { status: PROCESSED_STATUS }).catch(() => {});
       void this.audit.record(orgId, callerId, 'expense.process', 'expense_report', id, { toStatus: PROCESSED_STATUS }).catch(() => {});
+      await completeReportStep(this.workflowsSvc, db, id, PROCESSED_STATUS, callerId);
     }
     return { ok: true, processed: result.length, status: PROCESSED_STATUS };
   }

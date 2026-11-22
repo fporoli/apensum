@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
 import { reachesAll } from './access';
 import { workflows, workflow_definitions, team_members, organization_memberships } from './db/schema';
@@ -26,10 +26,19 @@ export const MANAGER_ROUTED_WORKFLOW_NAMES: readonly string[] = [
   APPROVE_ABSENCE_WORKFLOW_NAME,
 ];
 
-interface WorkflowStepDefinition {
+export interface WorkflowStepDefinition {
   key: string;
   label: string;
+  /** `manager` (the submitter's manager) or `permission:<object>` (everyone holding it with edit on all). */
   assignTo: string;
+  /** Text key of the history entry when the step is done (default `approvals.event.approved`). */
+  doneKey?: string;
+  /** Text key of the step's button on the Workflow page (default `approvals.approve`). */
+  actionKey?: string;
+  /** false: the step cannot be rejected (it is work to do, not a decision). */
+  rejectable?: boolean;
+  /** true: the Workflow page does the step in the kind's Inspect dialog (it shows what the step needs). */
+  inDialog?: boolean;
   onApprove: { action: string };
   onReject: { action: string };
   /** Human label for the kind of record this step's workflow concerns, e.g. "Timesheet Period". */
@@ -46,6 +55,38 @@ export interface WorkflowActionContext {
   decisionNote: string | null;
 }
 export type WorkflowActionHandler = (db: Db, ctx: WorkflowActionContext) => Promise<void>;
+/**
+ * One step in a workflow's history (`workflow_data.history`): what happened (`key`, a text key of the
+ * web app's, e.g. `approvals.event.approved`, or a plugin's own), who did it and when. The core writes
+ * submitted and the decision; modules and plugins add what follows (`recordEvent`).
+ */
+export interface WorkflowEvent {
+  key: string;
+  by: string | null;
+  at: string;
+  note?: string | null;
+}
+
+/**
+ * A workflow's history: the stored one, else what its timestamps tell (rows from before the history
+ * was kept: who decided is not known then).
+ */
+export function workflowHistory(
+  data: unknown,
+  row: { started: string | null; finished: string | null; status: string | null },
+): WorkflowEvent[] {
+  const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  if (Array.isArray(d.history)) {
+    return (d.history as unknown[]).filter((e): e is WorkflowEvent => !!e && typeof e === 'object' && typeof (e as WorkflowEvent).key === 'string' && typeof (e as WorkflowEvent).at === 'string');
+  }
+  const out: WorkflowEvent[] = [];
+  if (row.started) out.push({ key: 'approvals.event.submitted', by: typeof d.submittedByUserId === 'string' ? d.submittedByUserId : null, at: row.started });
+  if (row.finished && (row.status === 'approved' || row.status === 'rejected')) {
+    out.push({ key: `approvals.event.${row.status}`, by: null, at: row.finished, note: typeof d.decisionNote === 'string' ? d.decisionNote : null });
+  }
+  return out;
+}
+
 export type SourceOrgResolver = (db: Db, sourceTableUuid: string) => Promise<string | null>;
 /**
  * Loads the records of one source table for the Workflow page (GET workflows/assigned-to-me): one
@@ -97,6 +138,22 @@ export class WorkflowsService {
   /** Register how the Workflow page gets a source table's records, and the item field it puts them in (e.g. `expense_report`). */
   registerSourceRecords(sourceTable: string, field: string, load: SourceRecordLoader): void {
     this.sourceRecordLoaders.set(sourceTable, { field, load });
+  }
+
+  /**
+   * Adds what happened to a record after its approval (e.g. an expense report's processing) to the
+   * history of its newest workflow; nothing when it has none. `key` is a text key of the web app's.
+   */
+  async recordEvent(db: Db, sourceTable: string, sourceTableUuid: string, event: { key: string; by: string; note?: string | null }): Promise<void> {
+    const [row] = await db
+      .select({ id: workflows.workflow_id, data: workflows.workflow_data, started: workflows.workflow_started, finished: workflows.workflow_finished, status: workflows.step_status })
+      .from(workflows)
+      .where(and(eq(workflows.source_table, sourceTable), eq(workflows.source_table_uuid, sourceTableUuid)))
+      .orderBy(sql`${workflows.workflow_started} DESC NULLS LAST`)
+      .limit(1);
+    if (!row) return;
+    const history = [...workflowHistory(row.data, row), { key: event.key, by: event.by, at: new Date().toISOString(), note: event.note ?? null }];
+    await db.update(workflows).set({ workflow_data: { ...(row.data as Record<string, unknown>), history } }).where(eq(workflows.workflow_id, row.id));
   }
 
   /** The registered record loaders (WorkflowsController adds their records to each item). */
@@ -163,7 +220,11 @@ export class WorkflowsService {
       source_table_uuid: params.sourceTableUuid,
       // Captures who to notify back on resolve() — generically, for every workflow type,
       // without a per-source-table lookup.
-      workflow_data: { ...params.workflowData, submittedByUserId: params.actorUserId },
+      workflow_data: {
+        ...params.workflowData,
+        submittedByUserId: params.actorUserId,
+        history: [{ key: 'approvals.event.submitted', by: params.actorUserId, at: now }] satisfies WorkflowEvent[],
+      },
       workflow_started: now,
       step: params.step,
       step_status: 'pending',
@@ -249,6 +310,9 @@ export class WorkflowsService {
       JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
       WHERE w.step_status = 'pending' AND d.name IN (${names})
         AND cardinality(w.assigned_to_user_id) = 1
+        -- Only steps that go to the manager (a later step, e.g. processing, has its own assignees).
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.steps) = 'array' THEN d.steps ELSE '[]'::jsonb END) st
+                        WHERE st->>'key' = w.step AND COALESCE(st->>'assignTo', 'manager') <> 'manager')
         AND jsonb_exists(w.workflow_data, 'submittedByUserId')`);
     // The organization of each request, from whoever owns its source table (registerSourceOrgResolver).
     const pending: { workflow_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string; organization_id: string }[] = [];
@@ -333,7 +397,10 @@ export class WorkflowsService {
     return (await reachesAll(db, organizationId, callerId, 'nav.approvals', 'edit')) ? organizationId : null;
   }
 
-  /** Approve or reject a workflow's one pending step: authorizes, records the decision, and runs the side effect. */
+  /**
+   * Approve or reject a workflow's pending step: authorizes, records it, runs the step's side effect,
+   * and moves on to the next step (new assignees, notified) or finishes the workflow after the last.
+   */
   async resolve(
     db: Db,
     workflowId: string,
@@ -343,21 +410,7 @@ export class WorkflowsService {
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     // A dated manager change may have come into force since the request was routed.
     await this.rerouteToCurrentManagers(db).catch(() => 0);
-    const [workflow] = await db
-      .select({
-        source_table: workflows.source_table,
-        source_table_uuid: workflows.source_table_uuid,
-        step: workflows.step,
-        step_status: workflows.step_status,
-        assigned_to_user_id: workflows.assigned_to_user_id,
-        assigned_to_team_id: workflows.assigned_to_team_id,
-        workflow_data: workflows.workflow_data,
-        definition_name: workflow_definitions.name,
-        steps: workflow_definitions.steps,
-      })
-      .from(workflows)
-      .innerJoin(workflow_definitions, eq(workflow_definitions.workflow_def_id, workflows.workflow_def_id))
-      .where(eq(workflows.workflow_id, workflowId));
+    const workflow = await this.loadWorkflow(db, eq(workflows.workflow_id, workflowId));
     if (!workflow) return { ok: false, error: 'workflow-not-found' };
 
     const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
@@ -370,25 +423,108 @@ export class WorkflowsService {
     const isOverride = organizationId ? await reachesAll(db, organizationId, callerId, 'nav.approvals', 'edit') : false;
     if (!isDirectAssignee && !isTeamAssignee && !isOverride) return { ok: false, error: 'forbidden' };
     if (workflow.step_status !== 'pending') return { ok: false, error: 'not-pending' };
+    return this.advance(db, workflow, organizationId, callerId, outcome, note?.trim() || null, true);
+  }
+
+  /**
+   * Marks a record's pending step `stepKey` done when the module did the work itself (e.g. expense
+   * processing on its own page): the workflow moves on as if the step was approved, without running
+   * the step's action again. The caller authorizes. Nothing when no workflow waits at that step.
+   */
+  async completeStep(db: Db, sourceTable: string, sourceTableUuid: string, stepKey: string, callerId: string, note: string | null = null): Promise<boolean> {
+    const workflow = await this.loadWorkflow(
+      db,
+      and(eq(workflows.source_table, sourceTable), eq(workflows.source_table_uuid, sourceTableUuid), eq(workflows.step, stepKey), eq(workflows.step_status, 'pending')),
+    );
+    if (!workflow) return false;
+    const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
+    const organizationId = resolveOrg ? await resolveOrg(db, workflow.source_table_uuid) : null;
+    return (await this.advance(db, workflow, organizationId, callerId, 'approved', note, false)).ok;
+  }
+
+  private async loadWorkflow(db: Db, where: SQL | undefined) {
+    const [workflow] = await db
+      .select({
+        id: workflows.workflow_id,
+        source_table: workflows.source_table,
+        source_table_uuid: workflows.source_table_uuid,
+        step: workflows.step,
+        step_status: workflows.step_status,
+        assigned_to_user_id: workflows.assigned_to_user_id,
+        assigned_to_team_id: workflows.assigned_to_team_id,
+        workflow_data: workflows.workflow_data,
+        started: workflows.workflow_started,
+        definition_name: workflow_definitions.name,
+        steps: workflow_definitions.steps,
+      })
+      .from(workflows)
+      .innerJoin(workflow_definitions, eq(workflow_definitions.workflow_def_id, workflows.workflow_def_id))
+      .where(where)
+      .orderBy(sql`${workflows.workflow_started} DESC NULLS LAST`)
+      .limit(1);
+    return workflow ?? null;
+  }
+
+  private async advance(
+    db: Db,
+    workflow: NonNullable<Awaited<ReturnType<WorkflowsService['loadWorkflow']>>>,
+    organizationId: string | null,
+    callerId: string,
+    outcome: 'approved' | 'rejected',
+    decisionNote: string | null,
+    runAction: boolean,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const stepDefs = Array.isArray(workflow.steps) ? (workflow.steps as WorkflowStepDefinition[]) : [];
+    const index = stepDefs.findIndex((s) => s.key === workflow.step);
+    const stepDef = index >= 0 ? stepDefs[index] : undefined;
+    if (outcome === 'rejected' && stepDef?.rejectable === false) return { ok: false, error: 'not-rejectable' };
+    const next = outcome === 'approved' && index >= 0 ? stepDefs[index + 1] : undefined;
+    const submittedByUserId = (workflow.workflow_data as Record<string, unknown> | null)?.submittedByUserId as string | undefined;
+    const nextAssignees = next ? await this.stepAssignees(db, organizationId, next, submittedByUserId, callerId) : [];
 
     const now = new Date().toISOString();
-    const decisionNote = note?.trim() || null;
-    const patch = {
-      step_status: outcome,
-      workflow_step_finished: now,
-      workflow_finished: now,
-      workflow_data: { ...(workflow.workflow_data as Record<string, unknown>), decisionNote },
+    const event: WorkflowEvent = {
+      key: outcome === 'rejected' ? 'approvals.event.rejected' : (stepDef?.doneKey ?? 'approvals.event.approved'),
+      by: callerId,
+      at: now,
+      note: decisionNote,
     };
-    await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflowId));
-    void this.versions.record('workflows', workflowId, 'update_delta', callerId, patch).catch(() => {});
+    const workflowData = {
+      ...(workflow.workflow_data as Record<string, unknown>),
+      ...(index <= 0 ? { decisionNote } : {}),
+      history: [...workflowHistory(workflow.workflow_data, { started: workflow.started, finished: null, status: 'pending' }), event] satisfies WorkflowEvent[],
+    };
+    const patch = next
+      ? {
+          step: next.key,
+          step_status: 'pending',
+          workflow_step_started: now,
+          workflow_step_finished: null,
+          assigned_to_user_id: nextAssignees,
+          assigned_to_team_id: null,
+          workflow_data: workflowData,
+        }
+      : { step_status: outcome, workflow_step_finished: now, workflow_finished: now, workflow_data: workflowData };
+    await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
+    void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
 
-    await this.runAction(db, workflow, outcome, callerId, decisionNote);
+    if (runAction) await this.runAction(db, workflow, outcome, callerId, decisionNote);
 
     if (organizationId) {
-      void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflowId).catch(() => {});
-
-      const submittedByUserId = (workflow.workflow_data as Record<string, unknown> | null)?.submittedByUserId as string | undefined;
-      if (submittedByUserId && submittedByUserId !== callerId) {
+      void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflow.id).catch(() => {});
+      if (next) {
+        void this.notifyAssignees(db, {
+          sourceTable: workflow.source_table,
+          assignedToUserId: nextAssignees,
+          excludeUserId: callerId,
+          type: 'workflow.assigned',
+          title: `A request needs your step: ${next.label}`,
+          sourceTableUuid: workflow.source_table_uuid,
+          workflowId: workflow.id,
+        }).catch((err) => console.error('notify-assignees-failed', err));
+      }
+      // The submitter hears of the decision on the first step and of the end, not of every step between.
+      if (submittedByUserId && submittedByUserId !== callerId && (outcome === 'rejected' || index <= 0 || !next)) {
         void this.notifications
           .notifyMany({
             organizationId,
@@ -398,13 +534,41 @@ export class WorkflowsService {
             body: decisionNote ?? undefined,
             sourceTable: workflow.source_table,
             sourceTableUuid: workflow.source_table_uuid,
-            workflowId,
-            data: { workflowId, sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid },
+            workflowId: workflow.id,
+            data: { workflowId: workflow.id, sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid },
           })
           .catch((err) => console.error('notify-submitter-failed', err));
       }
     }
     return { ok: true };
+  }
+
+  /**
+   * Who a step goes to: `manager` = the submitter's manager today; `permission:<object>` = every active
+   * member holding `<object>:edit:all`. Nobody found: the one who completed the step before, so the
+   * request is never lost.
+   */
+  private async stepAssignees(db: Db, organizationId: string | null, step: WorkflowStepDefinition, submittedByUserId: string | undefined, fallback: string): Promise<string[]> {
+    if (!organizationId) return [fallback];
+    let ids: string[] = [];
+    if (step.assignTo.startsWith('permission:')) {
+      const permissionId = `${step.assignTo.slice('permission:'.length)}:edit:all`;
+      const rows = await db.execute(sql`
+        SELECT DISTINCT m.user_id FROM organization_memberships m
+        JOIN membership_roles mr ON mr.membership_id = m.id
+        JOIN role_permissions rp ON rp.role_id = mr.role_id
+        WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active'
+          AND (m.exit_at IS NULL OR m.exit_at > now()) AND rp.permission_id = ${permissionId}`);
+      ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
+    } else if (step.assignTo === 'manager' && submittedByUserId) {
+      const rows = await db.execute(sql`
+        SELECT manager_user_id FROM employee_assignments
+        WHERE organization_id = ${organizationId}::uuid AND user_id = ${submittedByUserId}::uuid AND valid_from <= CURRENT_DATE
+        ORDER BY valid_from DESC LIMIT 1`);
+      const manager = (rows.rows as { manager_user_id: string | null }[])[0]?.manager_user_id;
+      if (manager) ids = [manager];
+    }
+    return ids.length ? ids : [fallback];
   }
 
   /**

@@ -124,7 +124,7 @@ export {
 // Documents, form templates, approval workflows
 export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type PersonalDocumentSource } from './documents.service';
 export { FieldsService } from './fields.service';
-export { WorkflowsService, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
+export { WorkflowsService, type WorkflowEvent, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver } from './workflows.service';
 
 // Notifications (the bell; a click opens the section the web part's `notificationSections` names
 // for the source table) and mail (best effort: catch and log, never fail a request on it).

@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { probationUntilOf } from './vacation';
 import { VACATION_ABSENCE_TYPE } from '@worktime3/shared/worktime';
 import { workflows, workflow_definitions, timesheet_periods, absences, users } from './db/schema';
-import { WorkflowsService } from './workflows.service';
+import { WorkflowsService, workflowHistory, type WorkflowStepDefinition } from './workflows.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 
 /**
@@ -58,6 +58,7 @@ export class WorkflowsController {
         step_status: workflows.step_status,
         workflow_data: workflows.workflow_data,
         started: workflows.workflow_step_started,
+        workflow_started: workflows.workflow_started,
         finished: workflows.workflow_finished,
         // Who decides (the first assignee): shown on one's own requests.
         assignee_name: sql<string | null>`(SELECT COALESCE(u.display_name, u.email) FROM users u WHERE u.id = (${workflows.assigned_to_user_id})[1])`,
@@ -72,9 +73,21 @@ export class WorkflowsController {
     // The "corresponding object" label/formatter for this row's step come from its workflow_definitions'
     // steps config (`source` / `source_name`) rather than being hardcoded per workflow type here.
     const rows = rawRows.map(({ steps, ...r }) => {
-      const stepDefs = Array.isArray(steps) ? (steps as Array<{ key?: string; source?: string; source_name?: string }>) : [];
-      const stepDef = stepDefs.find((s) => s.key === r.step);
-      return { ...r, source: stepDef?.source ?? null, source_name: stepDef?.source_name ?? null };
+      const stepDefs = Array.isArray(steps) ? (steps as Partial<WorkflowStepDefinition>[]) : [];
+      const index = stepDefs.findIndex((s) => s.key === r.step);
+      const stepDef = index >= 0 ? stepDefs[index] : undefined;
+      return {
+        ...r,
+        source: stepDef?.source ?? null,
+        source_name: stepDef?.source_name ?? null,
+        // The pending step, for its button: its text, whether it can be rejected, whether it is done in the dialog.
+        step_label: stepDef?.label ?? null,
+        step_number: index >= 0 ? index + 1 : null,
+        step_count: stepDefs.length,
+        step_action_key: stepDef?.actionKey ?? null,
+        step_rejectable: stepDef?.rejectable !== false,
+        step_in_dialog: !!stepDef?.inDialog,
+      };
     });
 
     // Enrich each row with its record: the owner's name and what the record is. The core's tables
@@ -153,8 +166,17 @@ export class WorkflowsController {
       }),
     );
     const absenceById = new Map(absenceItems.map((a) => [a.id, a]));
-    return rows.map((r) => ({
+    // Each item's history, with the names of who did what.
+    const histories = new Map(rows.map((r) => [r.id, workflowHistory(r.workflow_data, { started: r.workflow_started, finished: r.finished, status: r.step_status })]));
+    const actorIds = [...new Set([...histories.values()].flat().map((e) => e.by).filter((x): x is string => !!x))];
+    const actorNames = new Map(
+      actorIds.length
+        ? (await db.select({ id: users.id, name: users.display_name, email: users.email }).from(users).where(inArray(users.id, actorIds))).map((u) => [u.id, u.name || u.email])
+        : [],
+    );
+    return rows.map(({ workflow_started: _started, ...r }) => ({
       ...r,
+      history: (histories.get(r.id) ?? []).map((e) => ({ ...e, by_name: e.by ? (actorNames.get(e.by) ?? null) : null })),
       timesheet_period: r.source_table === 'timesheet_periods' ? (periodById.get(r.source_table_uuid) ?? null) : null,
       ...Object.fromEntries(pluginRecords.map((p) => [p.field, r.source_table === p.sourceTable ? (p.byId.get(r.source_table_uuid) ?? null) : null])),
       absence: r.source_table === 'absences' ? (absenceById.get(r.source_table_uuid) ?? null) : null,

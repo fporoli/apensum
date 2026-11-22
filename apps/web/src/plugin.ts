@@ -121,6 +121,8 @@ export interface PluginWorkflowInspectProps {
   record: PluginWorkflowRecord;
   /** The open action item (approve/reject offered), or null when only looking. */
   actionItemId: string | null;
+  /** The step the action item waits at: its button text (a text key), whether it can be rejected. */
+  step?: { key: string; actionKey: string | null; rejectable: boolean } | null;
   onClose: () => void;
   /** Closes the dialog and approves / asks for the rejection note, as the Workflow page does. */
   onApprove: (actionItemId: string) => void;
