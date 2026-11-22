@@ -60,7 +60,9 @@ test('local token rejects tampering, expiry and wrong secret', async () => {
 test('keycloak token verifies against JWKS', async () => {
   const token = signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload(), privateKey);
   const principal = await verifyKeycloakJwt(token, [publicJwk]);
-  assert.deepEqual(principal, { kind: 'keycloak', sub: 'kc-user-1', email: 'kc@example.com' });
+  assert.deepEqual(principal, { kind: 'keycloak', sub: 'kc-user-1', email: 'kc@example.com', emailVerified: false });
+  const verified = await verifyKeycloakJwt(signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload({ email_verified: true }), privateKey), [publicJwk]);
+  assert.equal(verified?.emailVerified, true);
 });
 
 test('keycloak token rejects wrong issuer, audience, expiry and signature', async () => {

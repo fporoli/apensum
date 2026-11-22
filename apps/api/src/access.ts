@@ -59,17 +59,6 @@ export async function isOrgAdmin(db: Executor, organizationId: string, userId: s
   return names.includes('owner') || names.includes('admin');
 }
 
-/** True when the user is an active owner/admin of any organization. */
-export async function isAnyOrgAdmin(db: Executor, userId: string): Promise<boolean> {
-  const rows = await db.execute(
-    sql`SELECT r.name FROM organization_memberships m
-        JOIN membership_roles mr ON mr.membership_id = m.id
-        JOIN roles r ON r.id = mr.role_id
-        WHERE m.user_id = ${userId} AND m.status = 'active'`,
-  );
-  return rows.rows.some((r: Record<string, unknown>) => r.name === 'owner' || r.name === 'admin');
-}
-
 /** True when the user is a superdeveloper: edits the global form template and any org's template. */
 export async function isSuperDeveloper(db: Executor, userId: string): Promise<boolean> {
   const rows = await db.execute(sql`SELECT is_superdeveloper FROM users WHERE id = ${userId} LIMIT 1`);
@@ -365,10 +354,11 @@ async function sharesTeam(db: Executor, organizationId: string, a: string, b: st
           SELECT t.id AS team_id, m.user_id FROM teams t
             JOIN team_members tm ON tm.team_id = t.id
             JOIN organization_memberships m ON m.id = tm.membership_id
-            WHERE t.organization_id = ${organizationId}
+            WHERE t.organization_id = ${organizationId} AND m.organization_id = t.organization_id AND m.status = 'active'
           UNION
           SELECT t.id, t.lead_user_id FROM teams t
-            WHERE t.organization_id = ${organizationId} AND t.lead_user_id IS NOT NULL
+            JOIN organization_memberships lm ON lm.organization_id = t.organization_id AND lm.user_id = t.lead_user_id AND lm.status = 'active'
+            WHERE t.organization_id = ${organizationId}
         )
         SELECT 1 FROM people x JOIN people y ON y.team_id = x.team_id
         WHERE x.user_id = ${a} AND y.user_id = ${b} LIMIT 1`,
@@ -383,10 +373,11 @@ async function teammateUserIds(db: Executor, organizationId: string, userId: str
           SELECT t.id AS team_id, m.user_id FROM teams t
             JOIN team_members tm ON tm.team_id = t.id
             JOIN organization_memberships m ON m.id = tm.membership_id
-            WHERE t.organization_id = ${organizationId}
+            WHERE t.organization_id = ${organizationId} AND m.organization_id = t.organization_id AND m.status = 'active'
           UNION
           SELECT t.id, t.lead_user_id FROM teams t
-            WHERE t.organization_id = ${organizationId} AND t.lead_user_id IS NOT NULL
+            JOIN organization_memberships lm ON lm.organization_id = t.organization_id AND lm.user_id = t.lead_user_id AND lm.status = 'active'
+            WHERE t.organization_id = ${organizationId}
         )
         SELECT DISTINCT y.user_id FROM people x JOIN people y ON y.team_id = x.team_id
         WHERE x.user_id = ${userId}`,

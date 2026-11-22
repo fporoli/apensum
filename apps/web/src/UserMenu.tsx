@@ -77,6 +77,22 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
   const [switching, setSwitching] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
 
+  // Switching user is for superdevelopers only (users.controller.ts).
+  const [superDeveloper, setSuperDeveloper] = useState(false);
+  useEffect(() => {
+    setSuperDeveloper(false);
+    if (!canSwitchUser || !currentOrgId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/organizations/${currentOrgId}/modules`, { headers: await authHeaders() });
+        const data = await res.json();
+        if (!cancelled) setSuperDeveloper(data?.superDeveloper === true);
+      } catch { /* the entry stays hidden */ }
+    })();
+    return () => { cancelled = true; };
+  }, [authHeaders, canSwitchUser, currentOrgId, session.userId]);
+
   useEffect(() => {
     if (!switchOpen || !currentOrgId || search.trim().length < 2) {
       setSearchUsers([]);
@@ -223,7 +239,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canSwitch
             {t('design.menu')}
           </MenuItem>
         )}
-        {canSwitchUser && (
+        {canSwitchUser && superDeveloper && (
           <MenuItem onClick={openSwitchUser}>
             <ListItemIcon sx={{ minWidth: 32 }}><SwapHorizIcon fontSize="small" /></ListItemIcon>
             {t('usermenu.switchUser')}…

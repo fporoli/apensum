@@ -1,5 +1,7 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { and, eq, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, sql, or } from 'drizzle-orm';
+import { sendMail } from './mailer';
+import { buildInviteEmail } from './orgs.controller';
 import { cleanRequestLink } from '@worktime3/shared/requests';
 import type { Db } from './db.service';
 import { BalancesService, type MonthBalance } from './balances.service';
@@ -587,17 +589,14 @@ export class ImportExportService {
     summary: { total: number; newCount: number; updateCount: number; errorCount: number };
     results: EmployeeImportValidationResult[];
   }> {
-    const existingUsers = await db
-      .select({ id: users.id, email: users.email })
-      .from(users);
-    const existingUserMap = new Map(existingUsers.map((u) => [u.email.toLowerCase(), u.id]));
-
+    // This organization's active members only: whether an address has an account elsewhere is none of its business.
     const existingMembers = await db
       .select({ userId: organization_memberships.user_id, email: users.email })
       .from(organization_memberships)
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
-      .where(eq(organization_memberships.organization_id, orgId));
-    const memberSet = new Set(existingMembers.map((m) => m.email.toLowerCase()));
+      .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.status, 'active')));
+    const existingUserMap = new Map(existingMembers.map((m) => [m.email.toLowerCase(), m.userId]));
+    const memberSet = new Set(existingUserMap.keys());
 
     const depts = await db.select({ id: departments.id, name: departments.name }).from(departments).where(eq(departments.organization_id, orgId));
     const deptMap = new Map(depts.map((d) => [d.name.toLowerCase().trim(), d.id]));
@@ -690,7 +689,7 @@ export class ImportExportService {
     orgId: string,
     callerId: string,
     rows: RawEmployeeImportRow[],
-  ): Promise<{ ok: boolean; created: number; updated: number; errors?: string[] }> {
+  ): Promise<{ ok: boolean; created: number; updated: number; invited?: number; errors?: string[] }> {
     const preview = await this.previewEmployeeImport(db, orgId, rows);
     const validRows = preview.results.filter((r) => r.status !== 'error');
     if (validRows.length === 0) {
@@ -700,6 +699,8 @@ export class ImportExportService {
     const todayStr = new Date().toISOString().slice(0, 10);
     let created = 0;
     let updated = 0;
+    let invited = 0;
+    const invitations: { email: string; token: string }[] = [];
 
     await db.transaction(async (tx) => {
       // Find default member role
@@ -742,6 +743,17 @@ export class ImportExportService {
           userId = newUser.id;
           created++;
         } else {
+          const [member] = await tx
+            .select({ id: organization_memberships.id })
+            .from(organization_memberships)
+            .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId), eq(organization_memberships.status, 'active')));
+          if (!member) {
+            // Someone's account: they join by accepting, and nothing of theirs changes until then.
+            const invitation = await inviteExistingAccount(tx, orgId, callerId, email);
+            if (invitation) invitations.push(invitation);
+            invited++;
+            continue;
+          }
           // Update existing user basicdata
           const existingUser = (await tx.select({ basicdata: users.basicdata, display_name: users.display_name }).from(users).where(eq(users.id, userId)))[0];
           const mergedBd = {
@@ -866,11 +878,13 @@ export class ImportExportService {
       .record(orgId, callerId, 'employees.bulk_import', 'organization', orgId, {
         created,
         updated,
+        invited,
         total: validRows.length,
       })
       .catch(() => {});
+    await mailInvitations(db, orgId, invitations);
 
-    return { ok: true, created, updated };
+    return { ok: true, created, updated, invited };
   }
 
   /**
@@ -1246,7 +1260,7 @@ export class ImportExportService {
   }
 
   /**
-   * Executes a transactional restore of an organization backup ZIP file into targetOrgId.
+   * Executes a restore of an organization backup ZIP file into targetOrgId (the controller lets superdevelopers only).
    */
   async restoreOrganizationBackup(
     db: Db,
@@ -1301,10 +1315,22 @@ export class ImportExportService {
 
     // 1. Users
     const usersList = readJson<any>('database/users.json');
+    const invitations: { email: string; token: string }[] = [];
     for (const u of usersList) {
       if (!u.email) continue;
       const [existing] = await db.select({ id: users.id, basicdata: users.basicdata, display_name: users.display_name }).from(users).where(eq(users.email, u.email));
       if (existing) {
+        const [member] = await db
+          .select({ id: organization_memberships.id })
+          .from(organization_memberships)
+          .where(and(eq(organization_memberships.organization_id, targetOrgId), eq(organization_memberships.user_id, existing.id), eq(organization_memberships.status, 'active')));
+        if (!member) {
+          // Not mapped, so their rows are skipped: they accept the invitation and the restore is run again.
+          const invitation = await inviteExistingAccount(db, targetOrgId, callerId, u.email);
+          if (invitation) invitations.push(invitation);
+          restored.invited = (restored.invited || 0) + 1;
+          continue;
+        }
         userIdMap.set(u.id, existing.id);
       } else {
         const [newUser] = await db
@@ -1993,7 +2019,44 @@ export class ImportExportService {
         sourceOrg: manifest.organization?.name,
       })
       .catch(() => {});
+    await mailInvitations(db, targetOrgId, invitations);
 
     return { ok: true, restored };
   }
+}
+
+/**
+ * Import and restore never attach an account that exists already: they invite it as a member (accepting
+ * takes the account's own password). Null when an invitation is still pending.
+ */
+async function inviteExistingAccount(db: Pick<Db, 'select' | 'insert'>, orgId: string, callerId: string, rawEmail: string): Promise<{ email: string; token: string } | null> {
+  const email = rawEmail.trim().toLowerCase();
+  const pending = await db
+    .select({ expires_at: organization_invitations.expires_at })
+    .from(organization_invitations)
+    .where(and(eq(organization_invitations.organization_id, orgId), eq(organization_invitations.email, email), eq(organization_invitations.status, 'pending')));
+  if (pending.some((i) => Date.parse(i.expires_at) > Date.now())) return null;
+  const candidates = await db
+    .select({ id: roles.id, organization_id: roles.organization_id })
+    .from(roles)
+    .where(and(eq(roles.name, 'member'), or(eq(roles.organization_id, orgId), isNull(roles.organization_id))));
+  // The organization's own copy of the role, when it has one.
+  const role = candidates.find((r) => r.organization_id === orgId) ?? candidates[0];
+  if (!role) return null;
+  const token = randomUUID();
+  await db.insert(organization_invitations).values({
+    organization_id: orgId,
+    email,
+    role_id: role.id,
+    token,
+    invited_by_user_id: callerId,
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+  });
+  return { email, token };
+}
+
+async function mailInvitations(db: Db, orgId: string, invitations: readonly { email: string; token: string }[]): Promise<void> {
+  if (invitations.length === 0) return;
+  const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, orgId));
+  for (const i of invitations) void sendMail({ to: i.email, ...buildInviteEmail(org?.name ?? '', i.token) }).catch(() => {});
 }

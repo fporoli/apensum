@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, Req, Res, UploadedFile, UseI
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { DbService } from './db.service';
-import { callerUserId, can, isOrgMember, reachesAll } from './access';
+import { callerUserId, can, isOrgMember, isSuperDeveloper, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { ImportExportService, payrollItems, type RawEmployeeImportRow } from './import-export.service';
 
@@ -229,7 +229,8 @@ export class ImportExportController {
   }
 
   /**
-   * Executes a transactional restore of an organization backup ZIP file into this organization.
+   * Executes a restore of an organization backup ZIP file into this organization. Superdevelopers only:
+   * the rows keep the file's ids, so the file has to come from someone trusted with the whole instance.
    */
   @Post('import/backup/commit')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024, files: 1 } }))
@@ -242,6 +243,7 @@ export class ImportExportController {
     if (!db) return { ok: true, offline: true };
     const auth = await this.canAccess(db, orgId, req, 'edit');
     if (!auth.ok || !auth.callerId) return { ok: false, error: auth.error };
+    if (!(await isSuperDeveloper(db, auth.callerId))) return { ok: false, error: 'backup-restore-operator-only' };
     if (!file || !file.buffer) return { ok: false, error: 'file-required' };
 
     return this.importExport.restoreOrganizationBackup(db, orgId, auth.callerId, file.buffer);

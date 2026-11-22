@@ -2,7 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/c
 import { and, eq, ilike, or } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { VersionsService } from './versions.service';
-import { callerUserId, isAnyOrgAdmin, reachesAll } from './access';
+import { callerUserId, isSuperDeveloper, reachesAll } from './access';
+import { AuditService } from './audit.service';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { users, user_identities, organization_memberships } from './db/schema';
 import { membershipsOf } from './auth.controller';
@@ -15,6 +16,7 @@ export class UsersController {
   constructor(
     private readonly db: DbService,
     private readonly versions: VersionsService,
+    private readonly audit: AuditService,
   ) {}
 
   /** Resolve the caller from the validated JWT (local user id, or Keycloak sub -> user_identities). */
@@ -37,13 +39,13 @@ export class UsersController {
     return { ok: true, ...rows[0] };
   }
 
-  /** Search members of an organization the caller administers for temporary impersonation. */
+  /** Search members of an organization a superdeveloper administers, for temporary impersonation. */
   @Get('search')
   async search(@Query('orgId') orgId: string | undefined, @Query('q') query: string | undefined, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, users: [] };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !orgId || !(await reachesAll(db, orgId, callerId, 'nav.users', 'edit'))) return { ok: false, error: 'forbidden' };
+    if (!callerId || !orgId || !(await isSuperDeveloper(db, callerId)) || !(await reachesAll(db, orgId, callerId, 'nav.users', 'edit'))) return { ok: false, error: 'forbidden' };
     const normalized = (query ?? '').trim();
     if (normalized.length < 2) return { ok: true, users: [] };
     const rows = await db
@@ -58,19 +60,23 @@ export class UsersController {
     return { ok: true, users: rows };
   }
 
-  /** Mint a short-lived local token for a member of an organization the caller administers. */
+  /**
+   * Mint a short-lived local token for a member of an organization the caller administers. Superdevelopers
+   * only: the token is the person's, valid in every organization they belong to. Audited.
+   */
   @Post(':id/impersonate')
   async impersonate(@Param('id') id: string, @Body() body: { orgId?: string }, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !body.orgId || !(await reachesAll(db, body.orgId, callerId, 'nav.users', 'edit'))) return { ok: false, error: 'forbidden' };
+    if (!callerId || !body.orgId || !(await isSuperDeveloper(db, callerId)) || !(await reachesAll(db, body.orgId, callerId, 'nav.users', 'edit'))) return { ok: false, error: 'forbidden' };
     const [member] = await db
       .select({ id: users.id, email: users.email, displayName: users.display_name })
       .from(organization_memberships)
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(and(eq(organization_memberships.organization_id, body.orgId), eq(organization_memberships.user_id, id), eq(organization_memberships.status, 'active')));
     if (!member) return { ok: false, error: 'user-not-member' };
+    await this.audit.record(body.orgId, callerId, 'user.impersonate', 'user', member.id, {});
     return {
       ok: true,
       userId: member.id,
@@ -85,13 +91,12 @@ export class UsersController {
   async update(@Param('id') id: string, @Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
-    // Self-service, or org admin. Only admins may toggle is_active.
+    // One's own account only: it spans organizations, so no organization's admin changes it.
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unknown-user' };
-    const admin = await isAnyOrgAdmin(db, callerId);
-    if (id !== callerId && !admin) return { ok: false, error: 'forbidden' };
-    const allowed = ['display_name', 'first_name', 'middle_name', 'last_name', 'locale', 'timezone', 'settings', 'is_active'];
-    const keys = Object.keys(body).filter((k) => allowed.includes(k) && (admin || k !== 'is_active'));
+    if (id !== callerId) return { ok: false, error: 'forbidden' };
+    const allowed = ['display_name', 'first_name', 'middle_name', 'last_name', 'locale', 'timezone', 'settings'];
+    const keys = Object.keys(body).filter((k) => allowed.includes(k));
     if (keys.length === 0) return { ok: true, noop: true };
     const patch: Partial<typeof users.$inferInsert> = {};
     for (const k of keys) (patch as Record<string, unknown>)[k] = body[k];

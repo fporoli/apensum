@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { clientIp } from './client-ip';
 import { and, asc, eq, isNull } from 'drizzle-orm';
@@ -15,7 +15,8 @@ import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIM
 /**
  * Auth: Keycloak is the IdP (same Postgres DB, `auth` schema).
  * - Password reset mails a signed one-time link (password-reset.ts); only the link sets the password.
- * - Azure link/unlink manages an `azure_oidc` user_identity row.
+ * - Identities are only ever created for the caller: SSO sync from the token's verified e-mail, a password
+ *   by registering or by accepting an invitation as a new account.
  * - Local login/register/invite-accept below power the web login screen (dev
  *   parity with Keycloak; production should validate Keycloak JWTs instead).
  */
@@ -317,8 +318,10 @@ export class AuthController {
   }
 
   /**
-   * Accept an organization invitation: attaches the invited email to the org
-   * with the invited role and sets the local password.
+   * Accept an organization invitation: attaches the invited email to the org with the invited role.
+   * The inviter knows the token, so it proves nothing about the address: an existing account confirms
+   * with its own password, which is never changed here. A password is set only for a new account, or for
+   * one that has no login at all and belongs to the inviting organization alone (created by its import).
    */
   @Public()
   @Post('invitations/accept')
@@ -327,8 +330,7 @@ export class AuthController {
     if (!db) return { ok: true, offline: true };
     const token = (body.token ?? '').trim();
     if (!token) return { ok: false, error: 'token-required' };
-    if (!body.displayName?.trim()) return { ok: false, error: 'display-name-required' };
-    if (!isValidPassword(body.password)) return { ok: false, error: 'password-too-short' };
+    if (typeof body.password !== 'string' || !body.password) return { ok: false, error: 'password-too-short' };
     const [invitation] = await db
       .select({
         id: organization_invitations.id,
@@ -348,27 +350,51 @@ export class AuthController {
       return { ok: false, error: 'invitation-expired' };
     }
     const email = invitation.email.toLowerCase();
-    const [existingUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
-    const passwordHash = await bcrypt.hash(body.password, 10);
+    const [existingUser] = await db
+      .select({ id: users.id, status: users.status, display_name: users.display_name, is_superdeveloper: users.is_superdeveloper })
+      .from(users)
+      .where(eq(users.email, email));
+    let setsPassword = true;
+    if (existingUser) {
+      if (existingUser.status !== 'active') return { ok: false, error: 'account-inactive' };
+      const identities = await db
+        .select({ provider: user_identities.provider, password_hash: user_identities.password_hash })
+        .from(user_identities)
+        .where(eq(user_identities.user_id, existingUser.id));
+      const own = identities.find((i) => i.provider === 'password');
+      if (own) {
+        if (!own.password_hash || !(await bcrypt.compare(body.password, own.password_hash))) return { ok: false, error: 'invitation-password-mismatch' };
+        setsPassword = false;
+      } else {
+        const orgs = await db
+          .select({ organization_id: organization_memberships.organization_id })
+          .from(organization_memberships)
+          .where(eq(organization_memberships.user_id, existingUser.id));
+        const onlyInvitingOrg = orgs.length > 0 && orgs.every((m) => m.organization_id === invitation.organization_id);
+        if (identities.length > 0 || existingUser.is_superdeveloper || !onlyInvitingOrg) return { ok: false, error: 'invitation-account-exists' };
+      }
+    } else if (!body.displayName?.trim()) {
+      return { ok: false, error: 'display-name-required' };
+    }
+    if (setsPassword && !isValidPassword(body.password)) return { ok: false, error: 'password-too-short' };
+    const passwordHash = setsPassword ? await bcrypt.hash(body.password, 10) : null;
+    const displayName = existingUser?.display_name ?? body.displayName.trim();
 
     const { userId, membershipId, wasNewUser } = await db.transaction(async (tx) => {
       let uid: string;
       if (!existingUser) {
         const [created] = await tx
           .insert(users)
-          .values({ email, display_name: body.displayName.trim() })
+          .values({ email, display_name: displayName })
           .returning({ id: users.id });
         uid = created.id;
       } else {
         uid = existingUser.id;
       }
-      await tx
-        .insert(user_identities)
-        .values({ user_id: uid, provider: 'password', provider_user_id: email, password_hash: passwordHash })
-        .onConflictDoUpdate({
-          target: [user_identities.provider, user_identities.provider_user_id],
-          set: { password_hash: passwordHash },
-        });
+      // A plain insert on purpose: an existing password is never overwritten, a conflict fails.
+      if (passwordHash) {
+        await tx.insert(user_identities).values({ user_id: uid, provider: 'password', provider_user_id: email, password_hash: passwordHash });
+      }
       const [membership] = await tx
         .insert(organization_memberships)
         .values({ organization_id: invitation.organization_id, user_id: uid, status: 'active' })
@@ -386,7 +412,7 @@ export class AuthController {
     });
 
     if (wasNewUser) {
-      void this.versions.record('users', userId, 'insert', userId, { id: userId, email, display_name: body.displayName.trim() }).catch(() => {});
+      void this.versions.record('users', userId, 'insert', userId, { id: userId, email, display_name: displayName }).catch(() => {});
     }
     void this.versions.record('organization_memberships', membershipId, 'update_delta', userId, { organization_id: invitation.organization_id, user_id: userId, status: 'active' }).catch(() => {});
     void this.versions.record('organization_invitations', invitation.id, 'update_delta', userId, { status: 'accepted' }).catch(() => {});
@@ -394,7 +420,7 @@ export class AuthController {
     const session: Session = {
       userId,
       email,
-      displayName: body.displayName.trim(),
+      displayName,
       token: await mintLocalToken(userId, email),
       memberships: await membershipsOf(db, userId),
     };
@@ -408,13 +434,13 @@ export class AuthController {
    * keeps the Keycloak access token for subsequent API calls.
    */
   @Post('sso/sync')
-  async ssoSync(@Req() req: AuthenticatedRequest, @Body() body: { email?: string; displayName?: string }) {
+  async ssoSync(@Req() req: AuthenticatedRequest, @Body() body: { displayName?: string }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const principal = req.user;
     if (!principal) return { ok: false, error: 'unauthenticated' };
-    const userId: string =
-      principal.kind === 'local' ? principal.sub : await this.resolveSsoUserId(db, principal, body);
+    const userId = principal.kind === 'local' ? principal.sub : await this.resolveSsoUserId(db, principal, body ?? {});
+    if (!userId) return { ok: false, error: 'email-not-verified' };
     const [user] = await db
       .select({ id: users.id, email: users.email, display_name: users.display_name })
       .from(users)
@@ -428,21 +454,26 @@ export class AuthController {
     return { ok: true, ...session };
   }
 
+  /**
+   * The account of a Keycloak login: the one it is linked to, else the one of the token's verified e-mail
+   * (created if there is none). Nothing in the request body picks the account. Null = no verified e-mail.
+   */
   private async resolveSsoUserId(
     db: Db,
-    principal: { sub: string; email?: string },
-    body: { email?: string; displayName?: string },
-  ): Promise<string> {
+    principal: { sub: string; email?: string; emailVerified?: boolean },
+    body: { displayName?: string },
+  ): Promise<string | null> {
     const [found] = await db
       .select({ user_id: user_identities.user_id })
       .from(user_identities)
       .where(eq(user_identities.provider_user_id, principal.sub))
       .limit(1);
     if (found) return found.user_id;
-    const email = (body.email ?? principal.email ?? `${principal.sub}@sso.local`).toLowerCase();
+    if (principal.emailVerified !== true || !isValidEmail(principal.email)) return null;
+    const email = (principal.email as string).toLowerCase();
     const [created] = await db
       .insert(users)
-      .values({ email, display_name: body.displayName ?? principal.email ?? 'SSO user' })
+      .values({ email, display_name: body.displayName ?? email })
       .onConflictDoUpdate({ target: users.email, set: { email } })
       .returning({ id: users.id });
     const userId = created.id;
@@ -452,32 +483,6 @@ export class AuthController {
       .onConflictDoNothing();
     void this.versions.record('users', userId, 'insert', userId, { id: userId, email }).catch(() => {});
     return userId;
-  }
-
-  @Post('azure/link')
-  linkAzure(@Body() body: { userId: string; azureId: string }) {
-    return this.setAzure(body.userId, body.azureId, true);
-  }
-
-  @Delete('azure/link/:userId')
-  unlinkAzure(@Param('userId') userId: string) {
-    return this.setAzure(userId, '', false);
-  }
-
-  private async setAzure(userId: string, azureId: string, link: boolean) {
-    const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true };
-    if (link) {
-      await db
-        .insert(user_identities)
-        .values({ user_id: userId, provider: 'oidc', provider_user_id: azureId })
-        .onConflictDoNothing();
-    } else {
-      await db
-        .delete(user_identities)
-        .where(and(eq(user_identities.user_id, userId), eq(user_identities.provider, 'oidc')));
-    }
-    return { ok: true };
   }
 
   @Public()

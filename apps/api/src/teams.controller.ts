@@ -66,6 +66,7 @@ export class TeamsController {
     } else {
       leadUserId = callerId;
     }
+    if (leadUserId && leadUserId !== callerId && !(await isOrgMember(db, orgId, leadUserId))) return { ok: false, error: 'leader-not-a-member' };
     const [team] = await db
       .insert(teams)
       .values({ organization_id: orgId, name, description: body.description ?? null, lead_user_id: leadUserId })
@@ -104,7 +105,12 @@ export class TeamsController {
     const patch: Partial<typeof teams.$inferInsert> = {};
     if (body.name !== undefined) patch.name = body.name.trim();
     if (body.description !== undefined) patch.description = body.description;
-    if (body.leadUserId !== undefined) patch.lead_user_id = body.leadUserId;
+    if (body.leadUserId !== undefined) {
+      if (body.leadUserId && body.leadUserId !== team.lead_user_id && !(await isOrgMember(db, team.organization_id, body.leadUserId))) {
+        return { ok: false, error: 'leader-not-a-member' };
+      }
+      patch.lead_user_id = body.leadUserId;
+    }
     if (Object.keys(patch).length === 0) return { ok: true, noop: true };
 
     const [updated] = await db
@@ -170,7 +176,7 @@ export class TeamsController {
       .innerJoin(organization_memberships, eq(organization_memberships.id, team_members.membership_id))
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .leftJoin(roles, eq(roles.id, team_members.team_role_id))
-      .where(eq(team_members.team_id, id))
+      .where(and(eq(team_members.team_id, id), eq(organization_memberships.organization_id, team.organization_id)))
       .orderBy(asc(users.display_name));
   }
 
@@ -207,6 +213,13 @@ export class TeamsController {
     }
 
     if (!membershipId) return { ok: false, error: 'membership-id-required' };
+    if (body.membershipId) {
+      const [own] = await db
+        .select({ id: organization_memberships.id })
+        .from(organization_memberships)
+        .where(and(eq(organization_memberships.id, membershipId), eq(organization_memberships.organization_id, team.organization_id)));
+      if (!own) return { ok: false, error: 'membership-not-found' };
+    }
 
     await db
       .insert(team_members)

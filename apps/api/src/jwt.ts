@@ -16,6 +16,8 @@ export interface AuthenticatedPrincipal {
   /** Keycloak `sub`, or the local user id. */
   sub: string;
   email?: string;
+  /** Keycloak vouches for `email` (claim `email_verified`); only such an address finds or creates an account. */
+  emailVerified?: boolean;
 }
 
 interface JwtHeader {
@@ -144,6 +146,7 @@ export async function verifyKeycloakJwt(
         kind: 'keycloak',
         sub: parsed.payload.sub,
         email: typeof parsed.payload.email === 'string' ? parsed.payload.email : undefined,
+        emailVerified: parsed.payload.email_verified === true,
       };
     } catch {
       continue;

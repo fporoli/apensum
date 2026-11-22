@@ -404,12 +404,11 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
       });
       const data = await res.json();
       if (data.ok) {
-        setImportSuccess(
-          t('importExport.employees.commitSuccess', {
-            created: data.created ?? 0,
-            updated: data.updated ?? 0,
-          }),
-        );
+        const done = t('importExport.employees.commitSuccess', {
+          created: data.created ?? 0,
+          updated: data.updated ?? 0,
+        });
+        setImportSuccess(data.invited ? `${done} ${t('importExport.invitedExisting', { count: data.invited })}` : done);
         // Clear staged preview
         setUploadedRows([]);
         setPreviewSummary(null);
@@ -539,6 +538,7 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
         const r = data.restored || {};
         const summaryParts: string[] = [];
         if (r.users) summaryParts.push(`${r.users} users`);
+        if (r.invited) summaryParts.push(t('importExport.invitedExisting', { count: r.invited }));
         if (r.workTimes) summaryParts.push(`${r.workTimes} work times`);
         if (r.absences) summaryParts.push(`${r.absences} absences`);
         for (const [key, label] of Object.entries(PLUGIN_BACKUP_COUNTS)) if (r[key]) summaryParts.push(`${r[key]} ${t(label)}`);
@@ -549,7 +549,7 @@ export default function ImportExport({ orgId, authHeaders }: ImportExportProps) 
         setBackupFile(null);
         setBackupPreviewData(null);
       } else {
-        setRestoreError(data.error || 'Failed to restore organization backup');
+        setRestoreError(data.error === 'backup-restore-operator-only' ? t('importExport.restoreOperatorOnly') : data.error || 'Failed to restore organization backup');
       }
     } catch {
       setRestoreError('Network error during backup restore');

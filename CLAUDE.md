@@ -96,6 +96,12 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Use `@Public()` to opt a route out.\
   Forgot password (`password-reset.ts`): `auth/reset` mails a signed link (30 min, bound to the current password hash, so one use; key from `purposeKey`), `#/reset/<token>` (`ResetPassword.tsx`, no login) sends it to `auth/reset/confirm`.\
   No public endpoint may set a password from an e-mail address alone.\
+  Accounts span organizations, so no organization's rights change one or act as one.\
+  `PATCH users/:id` is one's own only; impersonation is superdevelopers' only and audited.\
+  An invitation's token is known to the inviter: accepting with an existing account takes that account's password and never sets one (only a new account, or one without any login that belongs to the inviting organization alone).\
+  Import and restore never attach an existing account, they invite it; backup restore is superdevelopers' only (it keeps the file's ids).\
+  SSO picks the account from the token's verified e-mail, never from the body.\
+  Any id from a request (user, membership, team lead) is checked against the organization before it is stored or grants access.\
   Registration is open: each registration gets its own workspace as owner; the instance's very first user is also admin and superdeveloper (`registrationRoleIds`), so a fresh prod needs no SQL.\
   Handlers take `@Req() req: AuthenticatedRequest`.
 - **Every org-scoped handler authorizes itself**, using helpers from `access.ts`:

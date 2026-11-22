@@ -5,7 +5,6 @@ import {
   callerUserId,
   canManageRole,
   directReportUserIds,
-  isAnyOrgAdmin,
   isManagerOf,
   isOrgAdmin,
   isOrgMember,
@@ -50,12 +49,6 @@ test('isOrgAdmin only allows active owner/admin', async () => {
   assert.equal(await isOrgAdmin(fakeDb([{ name: 'admin' }]), 'org', 'u'), true);
   assert.equal(await isOrgAdmin(fakeDb([{ name: 'member' }]), 'org', 'u'), false);
   assert.equal(await isOrgAdmin(fakeDb([]), 'org', 'u'), false);
-});
-
-test('isAnyOrgAdmin spans organizations', async () => {
-  assert.equal(await isAnyOrgAdmin(fakeDb([{ name: 'admin' }]), 'u'), true);
-  assert.equal(await isAnyOrgAdmin(fakeDb([{ name: 'member' }]), 'u'), false);
-  assert.equal(await isAnyOrgAdmin(fakeDb([]), 'u'), false);
 });
 
 test('isOrgMember is true for any active role, false with no membership at all', async () => {

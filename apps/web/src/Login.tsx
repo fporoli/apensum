@@ -89,6 +89,8 @@ const KNOWN_ERRORS = new Set([
   'invalid-token',
   'invitation-not-pending',
   'invitation-expired',
+  'invitation-password-mismatch',
+  'invitation-account-exists',
 ]);
 
 type Mode = 'login' | 'register' | 'reset' | 'invite';
@@ -163,7 +165,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
             const res = await fetch(`${API}/auth/sso/sync`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${keycloak.token}` },
-              body: JSON.stringify({ email, displayName }),
+              body: JSON.stringify({ displayName }),
             });
             const data = await res.json();
             if (!cancelled && data.ok) {
@@ -172,6 +174,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
               onLoggedIn(session);
               return;
             }
+            if (!cancelled && data.error === 'email-not-verified') setError(t('login.error.email-not-verified'));
           }
         } catch {
           // SSO unavailable (Keycloak down?) — fall through to the local form.
