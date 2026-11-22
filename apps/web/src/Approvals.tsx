@@ -10,6 +10,7 @@ import {
   DialogTitle,
   InputAdornment,
   LinearProgress,
+  MenuItem,
   Paper,
   Table,
   TableBody,
@@ -94,12 +95,20 @@ function formatAbsenceType(type: string, t: TFunction): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+type Scope = 'assigned' | 'mine';
+const STATUS_FILTERS = ['pending', 'approved', 'rejected', 'all'] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+const STATUS_COLOR = { pending: 'warning', approved: 'success', rejected: 'error' } as const;
+
 interface ActionItem {
   id: string;
   source_table: string;
   step_status: 'pending' | 'approved' | 'rejected';
   workflow_data: { reason?: string; note?: string; decisionNote?: string | null };
   started: string | null;
+  finished?: string | null;
+  /** Who decides (on one's own requests). */
+  assignee_name?: string | null;
   definition_name: string;
   source: string | null;
   source_name: string | null;
@@ -168,11 +177,13 @@ function correspondingObject(item: ActionItem, t: TFunction): string {
 interface ApprovalsProps {
   orgId: string;
   role: 'admin' | 'manager' | 'user';
+  /** Decides on others' requests (managers, HR): opens on the inbox, else on one's own requests. */
+  canDecide: boolean;
   authHeaders: () => Promise<Record<string, string>>;
   onChanged?: () => void;
 }
 
-export default function Approvals({ orgId, role, authHeaders, onChanged }: ApprovalsProps) {
+export default function Approvals({ orgId, role, canDecide, authHeaders, onChanged }: ApprovalsProps) {
   const { t, locale } = useI18n();
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [approved, setApproved] = useState<PeriodRow[]>([]);
@@ -183,6 +194,12 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  /** The workflow definition shown, '' = all. */
+  const [kind, setKind] = useState('');
+  /** `assigned` = to decide (the inbox), `mine` = what one submitted. */
+  const [scope, setScope] = useState<Scope>(canDecide ? 'assigned' : 'mine');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
+  const decides = scope === 'assigned' && statusFilter === 'pending';
 
   const [inspectingPeriod, setInspectingPeriod] = useState<PeriodRow | null>(null);
   const [inspectingActionItemId, setInspectingActionItemId] = useState<string | null>(null);
@@ -300,7 +317,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
     try {
       const headers = await authHeaders();
       const [iRes, aRes] = await Promise.all([
-        fetch(`${API}/workflows/assigned-to-me`, { headers }),
+        fetch(`${API}/workflows/assigned-to-me?scope=${scope}&status=${statusFilter}&orgId=${orgId}`, { headers }),
         fetch(`${API}/organizations/${orgId}/timesheet-periods?status=approved`, { headers }),
       ]);
       const [i, a] = await Promise.all([iRes.json(), aRes.json()]);
@@ -314,7 +331,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  }, [orgId, scope, statusFilter]);
 
   async function approveItem(id: string) {
     setError(null);
@@ -388,7 +405,12 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
       .join('\n');
   }
 
+  // The kinds (workflow definitions) in the inbox, by their label.
+  const kinds = [...new Set(actionItems.map((i) => i.definition_name))].sort((a, b) => actionItemLabel(a, t).localeCompare(actionItemLabel(b, t)));
+  // A kind that left the inbox (after a decision) no longer filters.
+  const shownKind = kinds.includes(kind) ? kind : '';
   const filteredActionItems = actionItems.filter((item) => {
+    if (shownKind && item.definition_name !== shownKind) return false;
     const q = search.trim().toLowerCase();
     if (!q) return true;
     const haystack = [
@@ -421,10 +443,32 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-            {search.trim()
+            {search.trim() || shownKind
               ? t('approvals.actionItemsFiltered', { count: filteredActionItems.length, total: actionItems.length })
-              : t('approvals.actionItems', { count: filteredActionItems.length })}
+              : t(decides ? 'approvals.actionItems' : 'approvals.items', { count: filteredActionItems.length })}
           </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', flex: { xs: '1 1 100%', sm: '0 1 auto' } }}>
+          <TextField select size="small" label={t('approvals.view')} value={scope} onChange={(e) => setScope(e.target.value as Scope)} sx={{ minWidth: { xs: '100%', sm: 190 } }}>
+            <MenuItem value="assigned">{t('approvals.view.assigned')}</MenuItem>
+            <MenuItem value="mine">{t('approvals.view.mine')}</MenuItem>
+          </TextField>
+          <TextField select size="small" label={t('approvals.status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)} sx={{ minWidth: { xs: '100%', sm: 150 } }}>
+            {STATUS_FILTERS.map((s) => <MenuItem key={s} value={s}>{t(`approvals.status.${s}`)}</MenuItem>)}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            label={t('approvals.col.type')}
+            value={shownKind}
+            onChange={(e) => setKind(e.target.value)}
+            sx={{ minWidth: { xs: '100%', sm: 220 } }}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+          >
+            <MenuItem value="">{t('approvals.allTypes')}</MenuItem>
+            {kinds.map((k) => (
+              <MenuItem key={k} value={k}>{actionItemLabel(k, t)}</MenuItem>
+            ))}
+          </TextField>
           <TextField
             size="small"
             placeholder={t('approvals.searchPlaceholder')}
@@ -441,13 +485,14 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
               },
             }}
           />
+          </Box>
         </Box>
 
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('teamHours.member')}</TableCell>
+                <TableCell>{scope === 'mine' ? t('approvals.col.assignee') : t('teamHours.member')}</TableCell>
                 <TableCell>{t('approvals.col.type')}</TableCell>
                 <TableCell>{t('approvals.col.object')}</TableCell>
                 <TableCell>{t('audit.col.details')}</TableCell>
@@ -459,10 +504,23 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                 <Fragment key={item.id}>
                   <TableRow hover>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{itemPerson(item)?.name ?? '—'}</Typography>
-                      <Typography variant="caption" color="text.secondary">{itemPerson(item)?.email ?? ''}</Typography>
+                      {scope === 'mine' ? (
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{item.assignee_name ?? '—'}</Typography>
+                      ) : (
+                        <>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>{itemPerson(item)?.name ?? '—'}</Typography>
+                          <Typography variant="caption" color="text.secondary">{itemPerson(item)?.email ?? ''}</Typography>
+                        </>
+                      )}
                     </TableCell>
-                    <TableCell><Chip label={actionItemLabel(item.definition_name, t)} size="small" variant="outlined" /></TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                        <Chip label={actionItemLabel(item.definition_name, t)} size="small" variant="outlined" />
+                        {statusFilter !== 'pending' && (
+                          <Chip label={t(`approvals.status.${item.step_status}`)} size="small" color={STATUS_COLOR[item.step_status]} />
+                        )}
+                      </Box>
+                    </TableCell>
                     <TableCell>
                       {correspondingObject(item, t)}
                       {item.absence && (
@@ -492,13 +550,19 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                       {item.absence?.document_id && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void viewAbsenceDocument(item.absence!)}>{t('approvals.documents')}</Button>
                       )}
-                      <Tooltip title={t('approvals.mail.hint')}>
-                        <IconButton size="small" aria-label={t('approvals.mail')} sx={{ mr: 0.5 }} onClick={() => setForwardingItem(item)}>
-                          <MailIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={() => void approveItem(item.id)}>{t('approvals.approve')}</Button>
-                      <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t('approvals.reject')}</Button>
+                      {scope === 'assigned' && (
+                        <Tooltip title={t('approvals.mail.hint')}>
+                          <IconButton size="small" aria-label={t('approvals.mail')} sx={{ mr: 0.5 }} onClick={() => setForwardingItem(item)}>
+                            <MailIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {decides && item.step_status === 'pending' && (
+                        <>
+                          <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={() => void approveItem(item.id)}>{t('approvals.approve')}</Button>
+                          <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t('approvals.reject')}</Button>
+                        </>
+                      )}
                     </TableCell>
                   </TableRow>
                   {rejectingId === item.id && (
@@ -517,7 +581,7 @@ export default function Approvals({ orgId, role, authHeaders, onChanged }: Appro
                 <TableEmptyRow
                   colSpan={5}
                   icon={<CheckCircleIcon fontSize="inherit" />}
-                  title={actionItems.length === 0 ? t('approvals.nothingPending') : t('approvals.noMatch')}
+                  title={actionItems.length > 0 ? t('approvals.noMatch') : decides ? t('approvals.nothingPending') : t('approvals.nothingFound')}
                 />
               )}
             </TableBody>

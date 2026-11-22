@@ -14,7 +14,6 @@ import {
   ContactsIcon,
   DashboardIcon,
   DescriptionIcon,
-  FolderCopyIcon,
   ForumIcon,
   GroupIcon,
   HistoryIcon,
@@ -81,9 +80,9 @@ export type AppPage = PluginPage<CorePageContext>;
 export const CORE_NAV_GROUPS: NavGroupDef[] = [
   { id: 'myWork', header: 'nav.myWork' },
   { id: 'projectTracking', header: 'nav.projectTracking' },
+  { id: 'personal', header: 'nav.personal' },
   { id: 'organization', header: 'nav.organization' },
   { id: 'administration', header: 'nav.administration' },
-  { id: 'personal', header: 'nav.personal' },
 ];
 
 async function fetchJson(url: string, authHeaders: () => Promise<Record<string, string>>): Promise<unknown> {
@@ -206,6 +205,7 @@ export const CORE_PAGES: AppPage[] = [
     object: 'nav.news',
     nav: {
       group: 'organization',
+      after: 'reports',
       label: 'nav.news',
       icon: <CampaignIcon fontSize="small" />,
       badge: async ({ orgId, authHeaders }) => {
@@ -219,7 +219,7 @@ export const CORE_PAGES: AppPage[] = [
     section: 'directory',
     hash: '#/directory',
     object: 'nav.directory',
-    nav: { group: 'organization', label: 'nav.directory', icon: <ContactsIcon fontSize="small" /> },
+    nav: { group: 'organization', after: 'requests', label: 'nav.directory', icon: <ContactsIcon fontSize="small" /> },
     render: (c) => <Directory orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {
@@ -227,21 +227,22 @@ export const CORE_PAGES: AppPage[] = [
     hash: '#/balances',
     object: 'nav.balances',
     allowedByRole: (r) => r.canManage,
-    nav: { group: 'organization', label: 'nav.balances', icon: <AccountBalanceWalletIcon fontSize="small" /> },
+    nav: { group: 'personal', after: 'myData', label: 'nav.balances', icon: <AccountBalanceWalletIcon fontSize="small" /> },
     render: (c) => <BalanceReport orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {
     section: 'reports',
     hash: '#/reports',
     object: 'nav.reports',
-    nav: { group: 'organization', label: 'nav.reports', icon: <BarChartIcon fontSize="small" /> },
+    nav: { group: 'organization', after: 'managementProjects', label: 'nav.reports', icon: <BarChartIcon fontSize="small" /> },
     render: (c) => <Reports orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {
     section: 'approvals',
     hash: '#/approvals',
     object: 'nav.approvals',
-    allowedByRole: (r) => r.canManage,
+    // Everyone sees their own requests; managers and HR decide on others'.
+    allowedByRole: () => true,
     nav: {
       group: 'organization',
       label: 'nav.approvals',
@@ -251,14 +252,22 @@ export const CORE_PAGES: AppPage[] = [
         return Array.isArray(d) ? d.length : 0;
       },
     },
-    render: (c) => <Approvals orgId={c.orgId} role={c.roles.displayRole} authHeaders={c.authHeaders} onChanged={c.onBadgesChanged} />,
+    render: (c) => (
+      <Approvals
+        orgId={c.orgId}
+        role={c.roles.displayRole}
+        canDecide={c.permissions ? holdsBeyondOwn(c.permissions, 'nav.approvals', 'edit') : c.roles.canManage}
+        authHeaders={c.authHeaders}
+        onChanged={c.onBadgesChanged}
+      />
+    ),
   },
   {
     section: 'users',
     hash: '#/users',
     object: 'nav.users',
     allowedByRole: (r) => r.canSeeUsers,
-    nav: { group: 'organization', label: 'nav.users', icon: <PeopleIcon fontSize="small" />, showForChildren: true },
+    nav: { group: 'personal', label: 'nav.users', icon: <PeopleIcon fontSize="small" />, showForChildren: true },
     render: (c) => {
       const p = c.permissions;
       const r = c.roles;
@@ -284,7 +293,7 @@ export const CORE_PAGES: AppPage[] = [
     hash: '#/invitations',
     object: 'nav.invitations',
     allowedByRole: (r) => r.canManage,
-    nav: { group: 'organization', parent: 'users', label: 'nav.invitations', icon: <MailIcon fontSize="small" /> },
+    nav: { group: 'personal', parent: 'users', label: 'nav.invitations', icon: <MailIcon fontSize="small" /> },
     render: (c) => <Invitations orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   ...(['management', 'managementProjects'] as const).map((section): AppPage => ({
@@ -292,9 +301,10 @@ export const CORE_PAGES: AppPage[] = [
     hash: section === 'management' ? '#/teams' : '#/projects',
     object: 'nav.management',
     allowedByRole: (r) => r.canManage,
-    nav: section === 'management'
-      ? { group: 'organization', label: 'nav.management', icon: <WorkspacesIcon fontSize="small" /> }
-      : { group: 'organization', parent: 'management', label: 'nav.projects', icon: <FolderCopyIcon fontSize="small" /> },
+    // Projects & Teams opens the projects; Teams is its sub-entry.
+    nav: section === 'managementProjects'
+      ? { group: 'organization', after: 'directory', label: 'nav.management', icon: <WorkspacesIcon fontSize="small" /> }
+      : { group: 'organization', parent: 'managementProjects', label: 'nav.teams', icon: <GroupIcon fontSize="small" /> },
     render: (c) => (
       <Management
         session={c.session}
@@ -344,13 +354,13 @@ export const CORE_PAGES: AppPage[] = [
     render: (c) => <AdminSettings orgId={c.orgId} authHeaders={c.authHeaders} tab={section === 'adminRoles' ? 'roles' : 'staticData'} />,
   })),
 
-  // personal
   {
     section: 'requests',
     hash: '#/requests',
     object: 'nav.requests',
     nav: {
-      group: 'personal',
+      group: 'organization',
+      after: 'approvals',
       label: 'nav.requests',
       icon: <ForumIcon fontSize="small" />,
       badge: async ({ orgId, authHeaders }) => {
@@ -370,6 +380,7 @@ export const CORE_PAGES: AppPage[] = [
       />
     ),
   },
+  // personal
   {
     section: 'documents',
     hash: '#/documents',

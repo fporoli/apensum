@@ -34,6 +34,18 @@ test('entries go into their group in order, behind `after`, with sub-entries und
   ]);
 });
 
+test('`after` works whichever page is listed first; a missing target puts the entry at the end', () => {
+  const pages = [
+    { section: 'news', nav: { group: 'o', after: 'reports' } },
+    { section: 'reports', nav: { group: 'o', after: 'requests' } },
+    { section: 'approvals', nav: { group: 'o' } },
+    { section: 'lost', nav: { group: 'o', after: 'missing' } },
+    { section: 'requests', nav: { group: 'o', after: 'approvals' } },
+    { section: 'hr', nav: { group: 'o' } },
+  ];
+  assert.deepEqual(tree([{ id: 'o', header: '' }], pages), [{ id: 'o', items: ['approvals', 'requests', 'reports', 'news', 'hr', 'lost'] }]);
+});
+
 test('sections and hashes map both ways', () => {
   const { toHash, toSection } = sectionHashes([{ section: 'home', hash: '#/home' }, { section: 'expenses', hash: '#/expenses' }]);
   assert.equal(toHash.expenses, '#/expenses');

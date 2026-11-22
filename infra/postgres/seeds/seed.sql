@@ -702,3 +702,36 @@ FROM (VALUES
   ('eeee0000-0000-0000-0000-000000000004'::uuid, 'service', false, NULL)
 ) AS v(id, request_type, urgent, link_url)
 WHERE r.id = v.id AND r.request_type IS NULL;
+
+-- Open requests on the Workflow page: a vacation request each from Ueli (to Marco) and Ulla (to Marta),
+-- about six weeks ahead, with the workflow the API creates on submit (absences.controller.ts, same
+-- steps; the definition is the one the API keeps by name). Only absences without a workflow get one.
+INSERT INTO workflow_definitions (organization_id, name, description, steps)
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'approve absence', 'A vacation request awaiting the employee''s manager to approve or reject it.',
+       '[{"key": "manager_review", "label": "Manager review", "assignTo": "manager", "onApprove": {"action": "absence.approve"}, "onReject": {"action": "absence.reject"}, "source": "Vacation Request", "source_name": "getAbsenceTitle"}]'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM workflow_definitions WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND name = 'approve absence');
+
+INSERT INTO absences (id, organization_id, user_id, date_start, date_end, status, note, absence_type, half_day)
+SELECT pg_temp.seed_id(v.person || ':pending-vacation'), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', v.person::uuid,
+       date_trunc('week', CURRENT_DATE + 42)::date + v.offset_days,
+       date_trunc('week', CURRENT_DATE + 42)::date + v.offset_days + v.days - 1,
+       'pending', v.note, 'vacation', false
+FROM (VALUES
+  ('22222222-2222-2222-2222-222222222227', 0, 5, 'Family holiday'),
+  ('22222222-2222-2222-2222-222222222226', 7, 3, NULL)
+) AS v(person, offset_days, days, note)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO workflows (workflow_id, workflow_def_id, source_table, source_table_uuid, workflow_data, workflow_started,
+                       step, step_status, workflow_step_started, assigned_to_user_id)
+SELECT DISTINCT ON (a.id) pg_temp.seed_id(a.id || ':workflow'), d.workflow_def_id, 'absences', a.id,
+       jsonb_build_object('note', a.note, 'submittedByUserId', a.user_id), now() - interval '1 day',
+       'manager_review', 'pending', now() - interval '1 day', ARRAY[pg_temp.seed_manager(a.organization_id, a.user_id, CURRENT_DATE)]
+FROM absences a
+JOIN workflow_definitions d ON d.organization_id = a.organization_id AND d.name = 'approve absence'
+WHERE a.id IN (pg_temp.seed_id('22222222-2222-2222-2222-222222222227:pending-vacation'), pg_temp.seed_id('22222222-2222-2222-2222-222222222226:pending-vacation'))
+  AND a.status = 'pending'
+  AND pg_temp.seed_manager(a.organization_id, a.user_id, CURRENT_DATE) IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM workflows w WHERE w.source_table = 'absences' AND w.source_table_uuid = a.id)
+ORDER BY a.id, d.workflow_def_id
+ON CONFLICT (workflow_id) DO NOTHING;

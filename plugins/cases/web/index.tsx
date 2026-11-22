@@ -29,7 +29,7 @@ export default defineWebPlugin({
       hash: '#/assessment-templates',
       object: 'nav.cases',
       allowedByRole: (r) => r.isAdmin || r.isManager,
-      nav: { group: 'cases', label: 'nav.assessmentTemplates', icon: <ArticleIcon fontSize="small" /> },
+      nav: { group: 'cases', parent: 'cases', label: 'nav.assessmentTemplates', icon: <ArticleIcon fontSize="small" /> },
       render: (ctx) => <AssessmentTemplates orgId={ctx.orgId} authHeaders={ctx.authHeaders} canEdit={canEdit(ctx)} />,
     },
   ],

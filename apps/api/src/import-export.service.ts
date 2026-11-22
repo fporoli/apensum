@@ -5,6 +5,8 @@ import { sendMail } from './mailer';
 import { buildInviteEmail } from './orgs.controller';
 import type { Db } from './db.service';
 import { BalancesService, type MonthBalance } from './balances.service';
+import { payrollPersonalien } from './payroll-personalien';
+export { payrollPersonalien };
 import { resolveAbsenceTypes, unpaidAbsenceTypes } from './absence-types';
 import {
   departments,
@@ -174,15 +176,6 @@ function normalizeRawEmployeeRow(r: RawEmployeeImportRow): RawEmployeeImportRow 
   };
 }
 
-/**
- * A person's payroll details as `orgId` sees them: what it imported (`basicdata.orgs.<orgId>.personalien`)
- * over what imports once stored for the whole account.
- */
-export function payrollPersonalien(basicdata: unknown, orgId: string): Record<string, any> {
-  const object = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, any>) : {});
-  const data = object(basicdata);
-  return { ...object(data.personalien), ...object(object(object(data.orgs)[orgId]).personalien) };
-}
 
 /**
  * Each person's latest assignment (greatest `validFrom`, 'YYYY-MM-DD'), whatever order the rows come

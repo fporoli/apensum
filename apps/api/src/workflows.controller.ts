@@ -26,10 +26,16 @@ export class WorkflowsController {
 
   /**
    * Workflows with a step assigned to the caller, directly or through any team they belong to —
-   * their action-item queue. Defaults to just the pending ones.
+   * their action-item queue — or (`scope=mine`) the ones the caller submitted. `status`: pending
+   * (default), approved, rejected or all; `orgId` keeps one organization's.
    */
   @Get('assigned-to-me')
-  async assignedToMe(@Req() req: AuthenticatedRequest, @Query('status') status?: string) {
+  async assignedToMe(
+    @Req() req: AuthenticatedRequest,
+    @Query('status') status?: string,
+    @Query('scope') scope?: string,
+    @Query('orgId') orgId?: string,
+  ) {
     const db = this.db.getDb();
     if (!db) return [];
     const callerId = req.user ? await callerUserId(db, req.user) : null;
@@ -39,7 +45,10 @@ export class WorkflowsController {
     const teamIds = await this.workflowsSvc.callerTeamIds(db, callerId);
     const assignedToCaller = sql`${workflows.assigned_to_user_id} @> ARRAY[${callerId}]::uuid[]`;
     const assignment = teamIds.length > 0 ? or(assignedToCaller, inArray(workflows.assigned_to_team_id, teamIds)) : assignedToCaller;
-    const conditions = [assignment, eq(workflows.step_status, status ?? 'pending')];
+    const who = scope === 'mine' ? sql`${workflows.workflow_data} ->> 'submittedByUserId' = ${callerId}` : assignment;
+    const conditions = [who];
+    if (status !== 'all') conditions.push(eq(workflows.step_status, status === 'approved' || status === 'rejected' ? status : 'pending'));
+    if (orgId && /^[0-9a-f-]{36}$/i.test(orgId)) conditions.push(eq(workflow_definitions.organization_id, orgId));
     const rawRows = await db
       .select({
         id: workflows.workflow_id,
@@ -49,6 +58,9 @@ export class WorkflowsController {
         step_status: workflows.step_status,
         workflow_data: workflows.workflow_data,
         started: workflows.workflow_step_started,
+        finished: workflows.workflow_finished,
+        // Who decides (the first assignee): shown on one's own requests.
+        assignee_name: sql<string | null>`(SELECT COALESCE(u.display_name, u.email) FROM users u WHERE u.id = (${workflows.assigned_to_user_id})[1])`,
         definition_name: workflow_definitions.name,
         steps: workflow_definitions.steps,
       })

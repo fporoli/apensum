@@ -486,6 +486,7 @@ export default function App() {
                 return (
                   <li key={n.id} style={{ listStyle: 'none' }}>
                     <ListItemButton
+                      sx={{ py: '5px' }}
                       selected={section === n.section}
                       onClick={() => {
                         if (allowed(n.section)) {
@@ -569,8 +570,8 @@ export default function App() {
                               }}
                               sx={{
                                 pl: 4,
-                                py: 0.5,
-                                minHeight: 34,
+                                py: '3px',
+                                minHeight: 32,
                               }}
                             >
                               {child.icon && (

@@ -228,7 +228,7 @@ export default {
     'Riapertura di un mese da parte del superiore o delle risorse umane quando serve una correzione',
     'Ogni elemento inoltrabile via e-mail a un collega, come promemoria',
   ],
-  'features.importexport.title': 'Esportazione paghe e importazione',
+  'features.importexport.title': 'Esportazione e importazione dati',
   'features.importexport.lead': 'Integrazione fluida con i sistemi di contabilità svizzeri e onboarding rapido dei dipendenti.',
   'features.importexport.items': [
     'Esportazione per sistemi paga svizzeri: Abacus (AbaSalary codici salario CSV), Bexio ed Excel/CSV universale',

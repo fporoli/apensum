@@ -143,6 +143,9 @@ export { RequestsService, type SystemTaskInput, type SystemTaskResult } from './
 // Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
 export { BalancesService, type YearBalances, type YearClosing } from './balances.service';
 
+// A person's Personalien as the payroll export reads them (the organization's section over the shared one).
+export { payrollPersonalien } from './payroll-personalien';
+
 // AI: Azure OpenAI (Switzerland) only, every call through AiBudgetService
 export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
 export {

@@ -229,7 +229,7 @@ export default {
     'Months reopened by the manager or HR when something needs correcting',
     'Any item forwarded by e-mail to a colleague, as a reminder',
   ],
-  'features.importexport.title': 'Payroll export & import',
+  'features.importexport.title': 'Data export & import',
   'features.importexport.lead': 'Seamless connection to Swiss payroll systems and fast employee onboarding.',
   'features.importexport.items': [
     'Export for Swiss payroll systems: Abacus (AbaSalary wage types / Lohnarten CSV), Bexio and generic Excel/CSV',

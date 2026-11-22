@@ -130,3 +130,29 @@ SELECT pg_temp.seed_id(e.id || ':item'), pg_temp.seed_id(e.user_id || ':expense-
 FROM seed_expenses e
 WHERE EXISTS (SELECT 1 FROM expense_reports r WHERE r.id = pg_temp.seed_id(e.user_id || ':expense-report:' || e.month))
 ON CONFLICT DO NOTHING;
+
+-- The approvals behind the demo reports, as the API records them (expense-reports.controller.ts, same
+-- steps): decided by the reviewer for approved and finished reports, open with the manager for the
+-- submitted one. Only reports without a workflow get one, so re-seeding a live demo adds no copies.
+INSERT INTO workflow_definitions (organization_id, name, description, steps)
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'approve expense report', 'A submitted expense report awaiting the employee''s manager to approve or reject it.',
+       '[{"key": "manager_review", "label": "Manager review", "assignTo": "manager", "onApprove": {"action": "expense.approve"}, "onReject": {"action": "expense.reject"}, "source": "Expense Report", "source_name": "getExpenseReportTitle"}]'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM workflow_definitions WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND name = 'approve expense report');
+
+INSERT INTO workflows (workflow_id, workflow_def_id, source_table, source_table_uuid, workflow_data, workflow_started,
+                       workflow_finished, step, step_status, workflow_step_started, workflow_step_finished, assigned_to_user_id)
+SELECT DISTINCT ON (r.id) pg_temp.seed_id(r.id || ':workflow'), d.workflow_def_id, 'expense_reports', r.id,
+       jsonb_build_object('note', NULL, 'submittedByUserId', r.user_id), r.date_submitted,
+       CASE WHEN r.status <> 'submitted' THEN r.reviewed_at END,
+       'manager_review', CASE WHEN r.status = 'submitted' THEN 'pending' ELSE 'approved' END,
+       r.date_submitted, CASE WHEN r.status <> 'submitted' THEN r.reviewed_at END,
+       ARRAY[COALESCE(r.reviewed_by_user_id, pg_temp.seed_manager(r.organization_id, r.user_id, CURRENT_DATE))]
+FROM expense_reports r
+JOIN workflow_definitions d ON d.organization_id = r.organization_id AND d.name = 'approve expense report'
+WHERE r.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  AND r.status IN ('submitted', 'approved', 'submitted_processing', 'processing_finished', 'request_payment', 'finished')
+  AND r.date_submitted IS NOT NULL
+  AND COALESCE(r.reviewed_by_user_id, pg_temp.seed_manager(r.organization_id, r.user_id, CURRENT_DATE)) IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM workflows w WHERE w.source_table = 'expense_reports' AND w.source_table_uuid = r.id)
+ORDER BY r.id, d.workflow_def_id
+ON CONFLICT (workflow_id) DO NOTHING;

@@ -229,7 +229,7 @@ export default {
     'Réouverture d’un mois par le responsable ou les RH quand une correction s’impose',
     'Tout élément transférable par e-mail à un collègue, en guise de rappel',
   ],
-  'features.importexport.title': 'Export paie & import',
+  'features.importexport.title': 'Export & import de données',
   'features.importexport.lead': 'Connexion fluide aux systèmes de paie suisses et intégration rapide des collaborateurs.',
   'features.importexport.items': [
     'Export pour systèmes de paie suisses : Abacus (AbaSalary rubriques de paie CSV), Bexio et Excel/CSV universel',

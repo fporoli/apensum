@@ -228,7 +228,7 @@ export default {
     'Wiedereröffnen eines Monats durch Vorgesetzte oder HR, wenn etwas zu korrigieren ist',
     'Jeden Eintrag als Erinnerung per E-Mail an Kolleginnen und Kollegen weiterleiten',
   ],
-  'features.importexport.title': 'Lohn-Export & Import',
+  'features.importexport.title': 'Datenexport & Import',
   'features.importexport.lead': 'Nahtlose Anbindung an Schweizer Lohnsysteme und rasches Mitarbeiter-Onboarding.',
   'features.importexport.items': [
     'Export für Schweizer Lohnsysteme: Abacus (AbaSalary Lohnarten-CSV), Bexio sowie universelles Excel/CSV',
