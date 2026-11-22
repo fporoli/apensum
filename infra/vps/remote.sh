@@ -170,6 +170,9 @@ deploy() {
   "${COMPOSE[@]}" up -d --build --remove-orphans
   carry_documents_in
   caddy_reload
+  if is_public_demo; then
+    docker exec "$PG" psql -U worktime -d worktime --no-psqlrc --set=ON_ERROR_STOP=1 -c "$DEMOTE_DEMO_ADMIN"
+  fi
 }
 
 # Documents used to live inside the API container (no volume), so each deploy lost them. The first deploy
@@ -190,6 +193,14 @@ carry_documents_in() {
   rm -rf "$ROOT/documents-carry"
 }
 
+# The public demo (DEMO_RESET_EVERY_HOURS set) publishes its Admin login, so that account is no
+# superdeveloper there: visitors can't switch licensed modules or edit what applies to every organization.
+# seed.sql sets the flag for the other environments, so it is taken back with each seed and deploy.
+DEMOTE_DEMO_ADMIN="UPDATE public.users SET is_superdeveloper = false WHERE id = '11111111-1111-1111-1111-111111111111' AND is_superdeveloper"
+is_public_demo() {
+  [ "${DEMO_RESET_EVERY_HOURS:-0}" -gt 0 ] 2>/dev/null
+}
+
 # Loads seed.sql, then each plugin's seed (infra/postgres/seeds/plugins/<id>.sql, staged by the
 # workflow), in one transaction. It is additive (fixed keys, ON CONFLICT DO NOTHING), so running it
 # on a populated database only adds the demo rows that are missing.
@@ -207,6 +218,7 @@ load_seed() {
     copied+=("$target")
     args+=(-f "$target")
   done
+  if is_public_demo; then args+=(-c "$DEMOTE_DEMO_ADMIN"); fi
   docker exec "$PG" psql -U worktime -d worktime --no-psqlrc --set=ON_ERROR_STOP=1 --single-transaction "${args[@]}"
   docker exec "$PG" rm -f "${copied[@]}"
 }

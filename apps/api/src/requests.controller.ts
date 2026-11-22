@@ -12,7 +12,7 @@ import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeKeys } from '@worktime3/shared/requests';
 import { REQUEST_FORM, customValuesErrors, customValuesToSave, mergeForm } from '@worktime3/shared/fields';
 import { FieldsService } from './fields.service';
-import { RequestsService, currentAssignments } from './requests.service';
+import { RequestsService, currentAssignments, noticeSubject } from './requests.service';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -269,7 +269,7 @@ export class RequestsController {
       recipientUserIds: [...recipients],
       type,
       title,
-      // A confidential request's notifications carry no text.
+      // A confidential request's notifications carry no text; the callers' titles no subject (noticeSubject).
       body: r.confidential ? undefined : body,
       sourceTable: 'requests',
       sourceTableUuid: r.id,
@@ -453,7 +453,8 @@ export class RequestsController {
     const fileNames = files.map((f) => f.originalname);
     void this.versions.record('requests', created.id, 'insert', callerId, { ...created, custom: custom.value ?? {}, message, attachments: fileNames }).catch(() => {});
     const who = await this.displayName(db, callerId);
-    const title = created.urgent ? `Urgent request from ${who}: ${subject}` : `New request from ${who}: ${subject}`;
+    const named = noticeSubject({ subject, confidential });
+    const title = created.urgent ? `Urgent request from ${who}: ${named}` : `New request from ${who}: ${named}`;
     await this.notifyOthers(db, created, callerId, 'request.created', title, messagePreview(message, fileNames)).catch(() => {});
     return { ok: true, id: created.id };
   }
@@ -493,7 +494,7 @@ export class RequestsController {
     );
     void this.versions.record('requests', id, 'update_delta', callerId, { status, message: text, attachments: fileNames }).catch(() => {});
     const who = await this.displayName(db, callerId);
-    await this.notifyOthers(db, a.r, callerId, 'request.message', `${who} replied: ${a.r.subject}`, messagePreview(text, fileNames)).catch(() => {});
+    await this.notifyOthers(db, a.r, callerId, 'request.message', `${who} replied: ${noticeSubject(a.r)}`, messagePreview(text, fileNames)).catch(() => {});
     return { ok: true, status };
   }
 
@@ -520,7 +521,7 @@ export class RequestsController {
     void this.versions.record('requests', id, 'update_delta', callerId, { status: to }).catch(() => {});
     const who = await this.displayName(db, callerId);
     const label = to === 'resolved' ? 'resolved' : to === 'in_progress' ? 'in progress' : 'reopened';
-    await this.notifyOthers(db, a.r, callerId, 'request.status', `${who} set "${a.r.subject}" to ${label}`).catch(() => {});
+    await this.notifyOthers(db, a.r, callerId, 'request.status', `${who} set "${noticeSubject(a.r)}" to ${label}`).catch(() => {});
     return { ok: true, status: to };
   }
 
@@ -568,8 +569,11 @@ export class RequestsController {
     await this.event(db, id, callerId, { details: { ...changed, ...(customChanged ? { custom: true } : {}) } });
     void this.versions.record('requests', id, 'update_delta', callerId, { ...changed, ...(customChanged ? { custom: custom.value } : {}), confidential }).catch(() => {});
     const who = await this.displayName(db, callerId);
-    const title = changed.urgent === true ? `${who} marked "${a.r.subject}" as urgent` : `${who} updated "${a.r.subject}"`;
-    await this.notifyOthers(db, a.r, callerId, 'request.status', title).catch(() => {});
+    // Confidential before or after the change: either way the subject stays out.
+    const notified = { ...a.r, confidential: a.r.confidential || confidential };
+    const named = noticeSubject(notified);
+    const title = changed.urgent === true ? `${who} marked "${named}" as urgent` : `${who} updated "${named}"`;
+    await this.notifyOthers(db, notified, callerId, 'request.status', title).catch(() => {});
     return { ok: true };
   }
 
@@ -591,7 +595,7 @@ export class RequestsController {
     void this.versions.record('requests', id, 'update_delta', callerId, { assignee_user_id: assignee, status }).catch(() => {});
     if (!body.release) {
       const who = await this.displayName(db, callerId);
-      await this.notifyOthers(db, { ...a.r, assignee_user_id: null }, callerId, 'request.status', `${who} is handling "${a.r.subject}"`).catch(() => {});
+      await this.notifyOthers(db, { ...a.r, assignee_user_id: null }, callerId, 'request.status', `${who} is handling "${noticeSubject(a.r)}"`).catch(() => {});
     }
     return { ok: true, assigneeUserId: assignee, status };
   }

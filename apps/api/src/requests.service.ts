@@ -40,7 +40,7 @@ export interface SystemTaskInput {
   message: string;
   /** YYYY-MM-DD; after it, an open task alerts its handlers by e-mail. */
   dueDate?: string | null;
-  /** Only the department sees it, not `nav.requests:edit:all`; notifications carry no text. */
+  /** Only the department sees it, not `nav.requests:edit:all`; notifications and alert mails carry neither subject nor text. */
   confidential?: boolean;
 }
 
@@ -54,11 +54,12 @@ const MAX_BODY = 10_000;
 const ALERT_TICK_MS = 10 * 60_000;
 
 type Lang = 'en' | 'de' | 'fr' | 'it';
-const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: string; title: string }> = {
+const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: string; title: string; confidential: string }> = {
   en: {
     subject: 'Overdue: {{subject}}',
     title: 'Overdue since {{date}}: {{subject}}',
     body: 'This request was due on {{date}} and is still open:',
+    confidential: 'Confidential request',
     due: 'Due',
     open: 'Open',
   },
@@ -66,6 +67,7 @@ const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: 
     subject: 'Überfällig: {{subject}}',
     title: 'Überfällig seit {{date}}: {{subject}}',
     body: 'Diese Anfrage war am {{date}} fällig und ist noch offen:',
+    confidential: 'Vertrauliche Anfrage',
     due: 'Fällig',
     open: 'Öffnen',
   },
@@ -73,6 +75,7 @@ const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: 
     subject: 'En retard : {{subject}}',
     title: 'En retard depuis le {{date}} : {{subject}}',
     body: 'Cette demande était due le {{date}} et est toujours ouverte :',
+    confidential: 'Demande confidentielle',
     due: 'Échéance',
     open: 'Ouvrir',
   },
@@ -80,6 +83,7 @@ const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: 
     subject: 'Scaduta: {{subject}}',
     title: 'Scaduta dal {{date}}: {{subject}}',
     body: 'Questa richiesta scadeva il {{date}} ed è ancora aperta:',
+    confidential: 'Richiesta confidenziale',
     due: 'Scadenza',
     open: 'Apri',
   },
@@ -91,17 +95,26 @@ const langOf = (locale: string | null | undefined): Lang => {
   return l === 'en' || l === 'fr' || l === 'it' ? l : 'de';
 };
 
-/** The overdue alert's mail in the recipient's language. */
-export function overdueMail(r: { subject: string; due_date: string; id: string }, locale: string | null | undefined): { subject: string; text: string; title: string } {
+/**
+ * What notifications call a request (their titles are English): a confidential one's subject never leaves
+ * the request itself, as it can name a person and their sickness. Overdue alerts use `OVERDUE.confidential`.
+ */
+export function noticeSubject(r: { subject: string; confidential?: boolean }): string {
+  return r.confidential ? OVERDUE.en.confidential : r.subject;
+}
+
+/** The overdue alert's mail in the recipient's language; a confidential request's without its subject. */
+export function overdueMail(r: { subject: string; confidential?: boolean; due_date: string; id: string }, locale: string | null | undefined): { subject: string; text: string; title: string } {
   const lang = langOf(locale);
   const m = OVERDUE[lang];
   const date = new Date(`${r.due_date}T12:00:00Z`).toLocaleDateString(SWISS[lang], { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' });
-  const vars = { subject: r.subject, date };
+  const shown = r.confidential ? m.confidential : r.subject;
+  const vars = { subject: shown, date };
   const link = `${appBaseUrl()}/#/requests?id=${r.id}`;
   return {
     subject: fill(m.subject, vars).slice(0, 250),
     title: fill(m.title, vars),
-    text: `${fill(m.body, vars)}\n\n${r.subject}\n${m.due}: ${date}\n\n${m.open}: ${link}\n`,
+    text: `${fill(m.body, vars)}\n\n${shown}\n${m.due}: ${date}\n\n${m.open}: ${link}\n`,
   };
 }
 
@@ -228,7 +241,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         organizationId: input.organizationId,
         recipientUserIds: handlers,
         type: 'request.created',
-        title: subject,
+        title: noticeSubject({ subject, confidential: input.confidential }),
         body: input.confidential ? undefined : message.slice(0, 200),
         sourceTable: 'requests',
         sourceTableUuid: id,
@@ -278,9 +291,9 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
         await db.execute(
           sql`UPDATE requests SET overdue_alerted_at = now()
               WHERE due_date < ${today}::date AND overdue_alerted_at IS NULL AND status <> 'resolved' AND archived_at IS NULL
-              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, due_date::text AS due_date`,
+              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, due_date::text AS due_date`,
         )
-      ).rows as unknown as (RequestTarget & { id: string; assignee_user_id: string | null; subject: string; due_date: string })[];
+      ).rows as unknown as (RequestTarget & { id: string; assignee_user_id: string | null; subject: string; confidential: boolean; due_date: string })[];
       for (const r of due) {
         if (!(await this.enabled(db, r.organization_id))) continue;
         const recipients = r.assignee_user_id ? [r.assignee_user_id] : await this.handlerIds(db, r);

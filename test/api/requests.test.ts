@@ -81,3 +81,16 @@ test('the overdue alert mail is in the recipient\'s language and links to the re
   assert.match(overdueMail(r, 'fr').subject, /^En retard/);
   assert.match(overdueMail(r, null).subject, /^Überfällig/);
 });
+
+test('a confidential request keeps its subject out of notification titles and alert mails', async () => {
+  const { noticeSubject, overdueMail } = await import('../../apps/api/src/requests.service');
+  const r = { id: 'abc', subject: 'Lohnfortzahlung erschöpft: Uma A', confidential: true, due_date: '2026-12-15' };
+  assert.equal(noticeSubject(r), 'Confidential request');
+  assert.equal(noticeSubject({ ...r, confidential: false }), r.subject);
+  for (const lang of ['en', 'de', 'fr', 'it', null]) {
+    const mail = overdueMail(r, lang);
+    for (const part of [mail.subject, mail.title, mail.text]) assert.doesNotMatch(part, /Uma|Lohnfortzahlung/);
+    assert.match(mail.text, /#\/requests\?id=abc/);
+  }
+  assert.equal(overdueMail(r, 'de').subject, 'Überfällig: Vertrauliche Anfrage');
+});

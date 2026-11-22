@@ -281,7 +281,8 @@ ON CONFLICT DO NOTHING;
 -- theirs in their own seed.sql, run after this file in the same transaction, so they can use the
 -- pg_temp.seed_* helpers defined below (plugins/expenses/seed.sql: expenses and expense reports).
 --
---   * Absences (past only, approved): 20-30 vacation days a year (prorated in the first year),
+--   * Absences (past only, approved): up to 25 vacation days a year, the entitlement (prorated in
+--     the first year): 20-30 are planned and the blocks beyond it left out, so no balance is negative,
 --     as a two-week summer holiday, a one-week break and single or short days, sometimes a half
 --     day; plus a few sick days. The year's plan does not depend on today, so a later re-seed
 --     only adds the blocks that have since passed. Untaken or extra days carry over (the
@@ -378,6 +379,9 @@ DECLARE
   range_start date;
   range_end date;
   vacation numeric;
+  allowance numeric;
+  granted numeric;
+  days_off numeric;
   left_days numeric;
   block_days int;
   s date;
@@ -475,8 +479,19 @@ BEGIN
         END LOOP;
       END LOOP;
 
+      -- Never more vacation than the year's entitlement (25 days, Acme's default, prorated from the start).
+      -- Left out here and not in the plan, so a database seeded before gains no rows on a re-seed; counted
+      -- over the whole year, future blocks included, so the result does not depend on today.
+      allowance := 25.0 * (range_end - range_start + 1) / (make_date(y, 12, 31) - make_date(y, 1, 1) + 1);
+      granted := 0;
       FOR k IN 1 .. coalesce(array_length(plan_start, 1), 0) LOOP
         s := plan_start[k]; e := plan_end[k];
+        IF plan_type[k] = 'vacation' THEN
+          days_off := CASE WHEN plan_half[k] THEN 0.5
+            ELSE (SELECT count(*) FROM generate_series(s, e, INTERVAL '1 day') g WHERE pg_temp.seed_workday(g::date)) END;
+          CONTINUE WHEN granted + days_off > allowance;
+          granted := granted + days_off;
+        END IF;
         CONTINUE WHEN e >= today;
         CONTINUE WHEN EXISTS (
           SELECT 1 FROM absences a
