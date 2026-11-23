@@ -39,6 +39,8 @@ runs:
           echo "::add-mask::$auth"
           git -c http.extraheader="AUTHORIZATION: basic $auth" clone --quiet --depth 1 ${ref:+--branch "$ref"} "https://github.com/$repo.git" "plugins/$id"
           echo "plugin $id: $repo@$(git -C "plugins/$id" rev-parse --short HEAD)"
+          # The commit and its date stay in the image (the info dialog shows them): .git does not.
+          git -C "plugins/$id" log -1 --format='{"commit":"%H","date":"%cI"}' > "plugins/$id/build-info.json"
           rm -rf "plugins/$id/.git"
           ids="$ids $id"
         done

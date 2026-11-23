@@ -37,6 +37,8 @@ interface AboutInfo {
     time: string;
   };
   database: { status: string; lastChangeset: string | null };
+  /** Installed plugins: version and the commit they were built from. */
+  plugins?: { id: string; caption: string | null; version: string | null; commit: string | null; date: string | null }[];
 }
 
 /** Baked in at image build time (see apps/web/Dockerfile) — empty or unset on a local build. */
@@ -145,6 +147,32 @@ export default function AboutDialog({ open, onClose, session, authHeaders, curre
             </TableBody>
           </Table>
         </section>
+
+        {!!info?.plugins?.length && (
+          <section>
+            <Typography variant="subtitle2" gutterBottom>{t('about.plugins')}</Typography>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell />
+                  <TableCell>{t('about.version')}</TableCell>
+                  <TableCell>{t('about.commit')}</TableCell>
+                  <TableCell>{t('about.date')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {info.plugins.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell component="th" scope="row">{p.caption ? t(p.caption) : p.id}</TableCell>
+                    <TableCell>{p.version ?? '—'}</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }}>{p.commit?.slice(0, 7) ?? '—'}</TableCell>
+                    <TableCell>{formatDate(p.date)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </section>
+        )}
 
         {[
           { title: t('about.server'), rows: serverRows },

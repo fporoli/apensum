@@ -31,3 +31,28 @@ test('about still answers in offline mode and exposes no configuration', async (
   assert.equal(result.database.status, 'offline');
   assert.deepEqual(Object.keys(result.server).sort(), ['environment', 'hostname', 'nodeVersion', 'startedAt', 'time', 'timeZone']);
 });
+
+test('plugins: version, and the commit from the image build, a git checkout, or the core for a bundled one', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const { pluginInfos } = await import('../../apps/api/src/about.controller');
+  const dir = mkdtempSync(join(tmpdir(), 'plugins-'));
+  const plugin = (id: string, extra: Record<string, unknown> = {}) => {
+    mkdirSync(join(dir, id));
+    writeFileSync(join(dir, id, 'package.json'), JSON.stringify({ version: '1.2.3', apensum: { id, apensumApi: 1, ...extra } }));
+  };
+  plugin('built', { module: { id: 'built', caption: 'modules.built' } });
+  writeFileSync(join(dir, 'built', 'build-info.json'), JSON.stringify({ commit: 'a'.repeat(40), date: '2026-11-23T10:00:00+01:00' }));
+  plugin('checkout');
+  const git = (...args: string[]) => execFileSync('git', ['-C', join(dir, 'checkout'), ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.ch', 'commit', '-q', '--allow-empty', '-m', 'x');
+  const head = git('rev-parse', 'HEAD').trim();
+  plugin('bundled');
+  const infos = pluginInfos(dir, { BUILD_COMMIT: 'c'.repeat(40), BUILD_DATE: '2026-11-22T08:00:00Z' });
+  assert.deepEqual(infos.find((p) => p.id === 'built'), { id: 'built', caption: 'modules.built', version: '1.2.3', commit: 'a'.repeat(40), date: '2026-11-23T10:00:00+01:00' });
+  assert.equal(infos.find((p) => p.id === 'checkout')?.commit, head);
+  assert.deepEqual(infos.find((p) => p.id === 'bundled'), { id: 'bundled', caption: null, version: '1.2.3', commit: 'c'.repeat(40), date: '2026-11-22T08:00:00Z' });
+});
