@@ -65,6 +65,7 @@ const OTHER_LANGS = { de: ['fr', 'it'], fr: ['de', 'it'], it: ['de', 'fr'], en: 
 const SECURITY = [
   ['encryption', 'lock'],
   ['transit', 'key'],
+  ['twofactor', 'phone'],
   ['permissions', 'shield'],
   ['traceability', 'history'],
   ['separation', 'layers'],

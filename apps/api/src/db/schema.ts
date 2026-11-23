@@ -1,4 +1,4 @@
-import { pgTable, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, jsonb, numeric, integer, unique, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, bigint, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, jsonb, numeric, integer, unique, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -1524,3 +1524,18 @@ export const audit = pgView("audit", {	uuid: uuid(),
 	organization_id: uuid(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }),
 }).as(sql`SELECT id AS uuid, target_type AS entity, target_id AS entity_uuid, action, actor_user_id AS actionby, organization_id, created_at FROM audit_logs`);
+
+export const user_two_factor = pgTable("user_two_factor", {
+	user_id: uuid().primaryKey().notNull(),
+	secret_enc: text().notNull(),
+	enabled: boolean().default(false).notNull(),
+	recovery_hashes: text().array().default([""]).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	last_step: bigint({ mode: "number" }).default(0).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "user_two_factor_user_id_fkey"
+		}).onDelete("cascade"),
+]);

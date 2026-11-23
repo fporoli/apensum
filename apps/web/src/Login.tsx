@@ -28,6 +28,8 @@ export interface Session {
   token?: string;
   /** True when the token is a Keycloak access token from the SSO redirect. */
   sso?: boolean;
+  /** An organization requires two-step login and it is not set up: the token reaches only its setup. */
+  twoFactorSetupRequired?: true;
   memberships: Membership[];
   /** The user's preferred UI language (e.g. 'en', 'de'); fetched from the API after login, defaults to 'en'. */
   locale?: string;
@@ -80,6 +82,9 @@ const DEMO_INVITE_TOKEN = 'dev-invite-0001';
 /** API error codes with their own message; the text is `login.error.<code>` in the dictionaries. */
 const KNOWN_ERRORS = new Set([
   'invalid-credentials',
+  'two-factor-invalid',
+  'two-factor-expired',
+  'too-many-attempts',
   'account-inactive',
   'invalid-email',
   'display-name-required',
@@ -119,6 +124,9 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  /** Login step 2 (two-step login): the token step 1 gave, and the code. */
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
   const [token, setToken] = useState(() => {
     try {
       return new URLSearchParams(window.location.search).get('invite') ?? DEMO_INVITE_TOKEN;
@@ -212,6 +220,12 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   async function submitLogin(loginEmail: string, loginPassword: string) {
     await run(async () => {
       const data = await post('/auth/login', { email: loginEmail, password: loginPassword });
+      // Two-step login on: the code next.
+      if (!data.ok && data.error === 'two-factor-code' && typeof data.challenge === 'string') {
+        setChallenge(data.challenge);
+        setCode('');
+        return;
+      }
       if (!data.ok) fail(data.error ?? 'invalid-credentials');
       const session = data as Session;
       saveSession(session);
@@ -258,7 +272,41 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {notice && <Alert severity="success" sx={{ mb: 2 }}>{notice}</Alert>}
 
-        {mode === 'login' && (
+        {mode === 'login' && challenge && (
+          <Box
+            component="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const data = await post('/auth/login/two-factor', { challenge, code });
+                if (!data.ok) {
+                  if (data.error === 'two-factor-expired') setChallenge(null);
+                  fail(data.error ?? 'two-factor-invalid');
+                }
+                setChallenge(null);
+                const session = data as Session;
+                saveSession(session);
+                onLoggedIn(session);
+              });
+            }}
+            sx={{ display: 'grid', gap: 2 }}
+          >
+            <Typography variant="body2" color="text.secondary">{t('login.twoFactorHint')}</Typography>
+            <TextField
+              label={t('twoFactor.codeOrRecovery')}
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              size="small"
+              autoFocus
+              autoComplete="one-time-code"
+              inputProps={{ inputMode: /^[0-9 ]*$/.test(code) ? 'numeric' : 'text' }}
+            />
+            <Button type="submit" variant="contained" disabled={busy || !code.trim()}>{t('login.twoFactorSubmit')}</Button>
+            <Button size="small" onClick={() => { setChallenge(null); setError(null); }}>{t('login.twoFactorBack')}</Button>
+          </Box>
+        )}
+
+        {mode === 'login' && !challenge && (
           <Box
             component="form"
             onSubmit={(e) => {
@@ -338,6 +386,12 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
               void run(async () => {
                 const data = await post('/auth/invitations/accept', { token, displayName, password });
                 if (!data.ok) fail(data.error ?? 'request-failed');
+                // Accepted with an account that has two-step login: it signs in with its code.
+                if (data.signInRequired) {
+                  setMode('login');
+                  setNotice(t('login.inviteSignIn'));
+                  return;
+                }
                 const session = data as Session;
                 saveSession(session);
                 onLoggedIn(session);

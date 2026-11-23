@@ -114,6 +114,7 @@
     <include file="096-unpaid-leave.sql" relativeToChangelogFile="true"/>
     <include file="097-approvals-for-everyone.sql" relativeToChangelogFile="true"/>
     <include file="098-operator.sql" relativeToChangelogFile="true"/>
+    <include file="099-two-factor.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

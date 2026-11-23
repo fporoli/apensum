@@ -170,9 +170,6 @@ deploy() {
   "${COMPOSE[@]}" up -d --build --remove-orphans
   carry_documents_in
   caddy_reload
-  if is_public_demo; then
-    docker exec "$PG" psql -U worktime -d worktime --no-psqlrc --set=ON_ERROR_STOP=1 -c "$DEMOTE_DEMO_ADMIN"
-  fi
   ensure_operator
 }
 
@@ -194,13 +191,6 @@ carry_documents_in() {
   rm -rf "$ROOT/documents-carry"
 }
 
-# The public demo (DEMO_RESET_EVERY_HOURS set) publishes its Admin login, so that account is no
-# operator there: visitors can't license modules, write product news or edit what applies to every
-# organization. seed.sql makes it one for the other environments, so it is taken back with each seed and deploy.
-DEMOTE_DEMO_ADMIN="SELECT public.operator_revoke('11111111-1111-1111-1111-111111111111')"
-is_public_demo() {
-  [ "${DEMO_RESET_EVERY_HOURS:-0}" -gt 0 ] 2>/dev/null
-}
 
 # Loads seed.sql, then each plugin's seed (infra/postgres/seeds/plugins/<id>.sql, staged by the
 # workflow), in one transaction. It is additive (fixed keys, ON CONFLICT DO NOTHING), so running it
@@ -219,7 +209,6 @@ load_seed() {
     copied+=("$target")
     args+=(-f "$target")
   done
-  if is_public_demo; then args+=(-c "$DEMOTE_DEMO_ADMIN"); fi
   docker exec "$PG" psql -U worktime -d worktime --no-psqlrc --set=ON_ERROR_STOP=1 --single-transaction "${args[@]}"
   docker exec "$PG" rm -f "${copied[@]}"
 }
@@ -227,7 +216,7 @@ load_seed() {
 # The instance's own operator account (OPERATOR_EMAIL, default admin@admin.local) with the password of
 # the GitHub Environment secret OPERATOR_PASSWORD: created when missing, its password set, a member of the
 # Admin organization (apps/api/src/cli/operator.ts `operators ensure`). After every deploy and reset, the
-# public demo included (its published logins stay without operator rights), and not without the secret.
+# public demo included (its published demo logins are no operators), and not without the secret.
 # The password reaches the container's environment only (`-e NAME` copies it from here), never a command
 # line or the log.
 ensure_operator() {

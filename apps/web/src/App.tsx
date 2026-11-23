@@ -27,6 +27,7 @@ import { useI18n, type Locale } from './i18n';
 import { useBranding } from './theme';
 import Login, { clearSession, loadSession, saveSession, type Session } from './Login';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
+import { TwoFactorRequired } from './TwoFactor';
 import { keycloak, refreshSsoToken, ssoLogout } from './auth';
 import UserMenu from './UserMenu';
 import { ScreenSharer, ScreenViewer, type ShareRequest } from './ScreenShare';
@@ -370,6 +371,19 @@ export default function App() {
     }
     clearSession();
     setSession(null);
+  }
+
+  if (session?.twoFactorSetupRequired) {
+    return (
+      <TwoFactorRequired
+        session={session}
+        onDone={(s) => {
+          setSession(s);
+          saveSession(s);
+        }}
+        onSignOut={logout}
+      />
+    );
   }
 
   if (!session) {

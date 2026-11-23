@@ -26,6 +26,7 @@ import WorkTimeSettings from './WorkTimeSettings';
 import ModuleSettings from './ModuleSettings';
 import { PLUGIN_ORG_SETTINGS } from './plugins';
 import { AiSettingsPanel } from './AiSettingsPanel';
+import { TwoFactorPolicyPanel } from './TwoFactor';
 import { SettingsSection } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -283,6 +284,10 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
         {PLUGIN_ORG_SETTINGS.filter((section) => section.within === 'org.ai').map((section) => (
           <Suspense key={section.id} fallback={<LinearProgress />}>{section.render({ orgId, authHeaders })}</Suspense>
         ))}
+      </SettingsSection>
+
+      <SettingsSection id="org.security" title={t('twoFactor.policy.title')} subtitle={t('twoFactor.policy.subtitle')}>
+        <TwoFactorPolicyPanel orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
       <SettingsSection id="org.domains" title={t('orgSettings.domains')}>

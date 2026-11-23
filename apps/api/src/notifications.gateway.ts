@@ -53,7 +53,9 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
         }
         clearTimeout(authTimer);
         const token = (msg as { token: string }).token;
-        const principal = await authenticateToken(token);
+        const found = await authenticateToken(token);
+        // A setup-only token (two-step login still to be set up) gets no notifications.
+        const principal = found?.scope ? null : found;
         const db = this.db.getDb();
         const userId = principal && db ? await callerUserId(db, principal) : null;
         if (!userId) {

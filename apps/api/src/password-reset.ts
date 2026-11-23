@@ -19,8 +19,8 @@ export function passwordStamp(passwordHash: string | null | undefined): string {
   return createHash('sha256').update(passwordHash ?? '').digest('hex').slice(0, 16);
 }
 
-export function mintResetToken(key: Buffer, userId: string, passwordHash: string | null | undefined, nowSec: number): string {
-  const payload = b64url(Buffer.from(JSON.stringify({ u: userId, s: passwordStamp(passwordHash), e: nowSec + RESET_TTL_SEC })));
+export function mintResetToken(key: Buffer, userId: string, passwordHash: string | null | undefined, nowSec: number, ttlSec = RESET_TTL_SEC): string {
+  const payload = b64url(Buffer.from(JSON.stringify({ u: userId, s: passwordStamp(passwordHash), e: nowSec + ttlSec })));
   return `${payload}.${b64url(createHmac('sha256', key).update(payload).digest())}`;
 }
 

@@ -197,12 +197,12 @@ VALUES
   ('eeeeeeee-eeee-eeee-eeee-222222222222', '00000000-0000-0000-0000-000000000003')
 ON CONFLICT (membership_id, role_id) DO NOTHING;
 
--- Demo form designer: admin@acme.com edits Acme's form template (developer); below, also an operator (a member of the Admin organization).
+-- Demo form designer: admin@acme.com edits Acme's form template (developer). It is no operator: each instance
+-- gets its own operator account from its deploy (`operators ensure`, OPERATOR_PASSWORD), and operators must use
+-- two-step login, which a published demo login could not.
 INSERT INTO membership_roles (membership_id, role_id)
 VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-111111111111', '00000000-0000-0000-0000-000000000008')
 ON CONFLICT (membership_id, role_id) DO NOTHING;
--- admin@acme.com is also an operator: a member of the Admin organization (098; made by the first grant).
-SELECT operator_grant('11111111-1111-1111-1111-111111111111');
 
 INSERT INTO teams (id, organization_id, name, description, lead_user_id)
 VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Platform', 'Platform team', '22222222-2222-2222-2222-222222222222')

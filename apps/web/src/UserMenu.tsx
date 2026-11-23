@@ -21,6 +21,7 @@ import type { Session } from './Login';
 import { LOCALES, useT, type Locale } from './i18n';
 import AboutDialog from './AboutDialog';
 import AvatarEditor from './AvatarEditor';
+import { TwoFactorPanel } from './TwoFactor';
 import { canShareScreen } from './ScreenShare';
 import {
   ArrowDropDownIcon,
@@ -200,6 +201,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
             {t('usermenu.useProjectTimeRangesHint')}
           </Typography>
+          <TwoFactorPanel authHeaders={authHeaders} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSettingsOpen(false)}>{t('usermenu.cancel')}</Button>

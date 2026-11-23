@@ -4,13 +4,17 @@ import { clientIp } from './client-ip';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { Public, type AuthenticatedRequest } from './jwt.guard';
-import { mintLocalToken, purposeKey } from './jwt';
+import { mintLocalToken, purposeKey, TWO_FACTOR_SETUP_TOKEN_SEC } from './jwt';
 import { sendMail } from './mailer';
 import * as bcrypt from 'bcryptjs';
 import { users, user_identities, organizations, organization_memberships, organization_invitations, roles, membership_roles, static_data } from './db/schema';
 import { invitationNeedsOwner, isOrgOwner, pickPrimaryRole } from './access';
 import { VersionsService } from './versions.service';
 import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
+import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
+
+/** Second-step attempts per account within an hour (in memory, per API process). */
+export const TWO_FACTOR_ATTEMPTS_PER_HOUR = 10;
 
 /**
  * Auth: Keycloak is the IdP (same Postgres DB, `auth` schema).
@@ -102,6 +106,24 @@ export interface Session {
   /** Local API token (HS256). Keycloak SSO uses a Keycloak-issued token instead. */
   token: string;
   memberships: SessionMembership[];
+  /** An organization requires a second step the person has not set up: `token` reaches only its setup. */
+  twoFactorSetupRequired?: true;
+}
+
+/**
+ * The session after a login (password and, when on, the second step): a full one, or a setup-only one
+ * (30 minutes) when an organization requires a second step the person has not set up yet.
+ */
+export async function issueSession(db: Db, user: { id: string; email: string; display_name: string }): Promise<Session> {
+  const setup = (await twoFactorRequired(db, user.id)) && !(await twoFactorRow(db, user.id))?.enabled;
+  return {
+    userId: user.id,
+    email: user.email,
+    displayName: user.display_name,
+    token: setup ? await mintLocalToken(user.id, user.email, TWO_FACTOR_SETUP_TOKEN_SEC, 'two-factor-setup') : await mintLocalToken(user.id, user.email),
+    memberships: await membershipsOf(db, user.id),
+    ...(setup ? { twoFactorSetupRequired: true as const } : {}),
+  };
 }
 
 export async function membershipsOf(db: Db, userId: string): Promise<SessionMembership[]> {
@@ -250,18 +272,44 @@ export class AuthController {
     if (row.status !== 'active') return { ok: false, error: 'account-inactive' };
     const match = row.password_hash ? await bcrypt.compare(body.password, row.password_hash) : false;
     if (!match) return { ok: false, error: 'invalid-credentials' };
+    // Two-step login on: the password only earns a short token for the second step (bound to this password).
+    if ((await twoFactorRow(db, row.id))?.enabled) {
+      const challenge = mintResetToken(twoFactorChallengeKey(), row.id, row.password_hash, Math.floor(Date.now() / 1000), TWO_FACTOR_CHALLENGE_SEC);
+      return { ok: false, error: 'two-factor-code', challenge };
+    }
+    await this.signedIn(db, row.id);
+    return { ok: true, ...(await issueSession(db, row)) };
+  }
+
+  /** Login, step 2 when two-step login is on: the code from the app (or a recovery code) and the step-1 token. */
+  @Public()
+  @Post('login/two-factor')
+  async loginSecondStep(@Body() body: { challenge?: unknown; code?: unknown }) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const read = readResetToken(twoFactorChallengeKey(), body?.challenge, Math.floor(Date.now() / 1000));
+    if (!read) return { ok: false, error: 'two-factor-expired' };
+    if (!this.secondStepPerUser.allow(read.userId, Date.now())) return { ok: false, error: 'too-many-attempts' };
+    const [row] = await db
+      .select({ id: users.id, email: users.email, display_name: users.display_name, status: users.status, password_hash: user_identities.password_hash })
+      .from(users)
+      .innerJoin(user_identities, and(eq(user_identities.user_id, users.id), eq(user_identities.provider, 'password')))
+      .where(eq(users.id, read.userId));
+    // The password changed since step 1 (or the account went): start over.
+    if (!row || row.status !== 'active' || passwordStamp(row.password_hash) !== read.stamp) return { ok: false, error: 'two-factor-expired' };
+    const passed = await useSecondFactor(db, row.id, body?.code);
+    if (!passed) return { ok: false, error: 'two-factor-invalid' };
+    await this.signedIn(db, row.id);
+    return { ok: true, ...(await issueSession(db, row)), ...(passed === 'recovery' ? { recoveryCodeUsed: true } : {}) };
+  }
+
+  private readonly secondStepPerUser = new HourlyLimiter(TWO_FACTOR_ATTEMPTS_PER_HOUR);
+
+  private async signedIn(db: Db, userId: string) {
     await db
       .update(user_identities)
       .set({ last_sign_in_at: new Date().toISOString() })
-      .where(and(eq(user_identities.provider, 'password'), eq(user_identities.provider_user_id, email)));
-    const session: Session = {
-      userId: row.id,
-      email: row.email,
-      displayName: row.display_name,
-      token: await mintLocalToken(row.id, row.email),
-      memberships: await membershipsOf(db, row.id),
-    };
-    return { ok: true, ...session };
+      .where(and(eq(user_identities.provider, 'password'), eq(user_identities.user_id, userId)));
   }
 
   /**
@@ -437,14 +485,9 @@ export class AuthController {
     void this.versions.record('organization_memberships', membershipId, 'update_delta', userId, { organization_id: invitation.organization_id, user_id: userId, status: 'active' }).catch(() => {});
     void this.versions.record('organization_invitations', invitation.id, 'update_delta', userId, { status: 'accepted' }).catch(() => {});
 
-    const session: Session = {
-      userId,
-      email,
-      displayName,
-      token: await mintLocalToken(userId, email),
-      memberships: await membershipsOf(db, userId),
-    };
-    return { ok: true, ...session };
+    // An existing account with two-step login: joined, but it signs in itself (password and code).
+    if (!wasNewUser && (await twoFactorRow(db, userId))?.enabled) return { ok: true, signInRequired: true };
+    return { ok: true, ...(await issueSession(db, { id: userId, email, display_name: displayName })) };
   }
 
   /**

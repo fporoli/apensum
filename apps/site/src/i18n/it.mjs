@@ -147,6 +147,7 @@ export default {
   'secTeaser.lead': 'Orari di lavoro, giorni di malattia, salari e valutazioni meritano più protezione di una password.',
   'secTeaser.items': [
     'Documenti cifrati con AES-256, ognuno con la propria chiave',
+    "Accesso in due passaggi per tutti, obbligatorio per admin e HR se lo desiderate",
     'Autorizzazioni precise: i superiori vedono solo il proprio team',
     'Dati versionati e un registro di audit per le azioni delicate',
     'Hosting in Svizzera',
@@ -337,6 +338,8 @@ export default {
     'Ogni file caricato e ogni PDF generato viene archiviato cifrato con AES-256-GCM, ognuno con la propria chiave. La chiave principale è conservata fuori dalla banca dati e può essere sostituita.',
   'security.transit.title': 'Connessioni cifrate',
   'security.transit.text': 'Tutto il traffico passa per HTTPS (TLS), con certificati rinnovati automaticamente.',
+  'security.twofactor.title': "Accesso in due passaggi per tutti",
+  'security.twofactor.text': "Ognuno può aggiungere alla password un secondo passaggio: un codice da un’app di autenticazione sul telefono, con codici di recupero monouso in caso di telefono perso. Ogni organizzazione decide se è obbligatorio – per nessuno, per admin e HR o per tutti. Gli accessi tramite il vostro provider di identità (SSO) mantengono il suo secondo passaggio.",
   'security.permissions.title': 'Accesso minimo',
   'security.permissions.text':
     'Autorizzazioni per area e portata: dati propri, collaboratori diretti o tutti. I superiori vedono solo il proprio team; il dossier del personale spetta per impostazione alle risorse umane.',

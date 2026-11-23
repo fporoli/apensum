@@ -15,16 +15,22 @@ section where they're introduced.
 Routine creation/update timestamps are omitted for clarity; timestamps that are
 part of a table's domain data or history are shown.
 
-## Identity & Organizations (4 tables)
+## Identity & Organizations (5 tables)
 
 Users, how they authenticate, and the tenant tree they belong to. Security
 settings and SSO federation live directly on the organization row, not in side
 tables. `organizations.settings` (jsonb) also holds `branding`: the organization's
-header/page/sidebar colors and logo (see `packages/shared/src/branding.ts`).
+header/page/sidebar colors and logo (see `packages/shared/src/branding.ts`), and
+`twoFactor` (`off` / `privileged` / `all`): who must use two-step login.
+`user_two_factor` (099) holds an account's two-step login: the authenticator secret
+(encrypted with a key derived from `API_JWT_SECRET`), whether a first code confirmed it,
+the one-time recovery codes as hashes and the last time step used (each code works once).
+`organizations.enforce_mfa` is not read.
 
 ```mermaid
 erDiagram
     USERS ||--o{ USER_IDENTITIES : "authenticates via"
+    USERS ||--o| USER_TWO_FACTOR : "second step"
     USERS ||--o{ ORGANIZATIONS : "created_by_user_id"
     ORGANIZATIONS ||--o{ ORGANIZATION_DOMAINS : "claims"
     ORGANIZATIONS ||--o{ ORGANIZATIONS : "parent_organization_id"
@@ -43,6 +49,13 @@ erDiagram
         enum provider "password / google / apple / github / saml_sso / oidc / passkey"
         varchar provider_user_id
         varchar password_hash "nullable"
+    }
+    USER_TWO_FACTOR {
+        uuid user_id PK "FK users"
+        text secret_enc "AES-256-GCM"
+        boolean enabled
+        text_array recovery_hashes
+        bigint last_step
     }
     ORGANIZATIONS {
         uuid id PK

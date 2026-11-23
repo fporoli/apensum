@@ -10,6 +10,8 @@
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators grant <e-mail>
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators revoke <e-mail>
  *   docker exec -e OPERATOR_PASSWORD apensum-<env>-api node apps/api/dist/cli/operator.js operators ensure <e-mail>
+ *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js twofactor status <e-mail>
+ *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js twofactor reset <e-mail>
  *
  * <organization> is its slug or id. `owner set` makes an active member an owner (for an organization
  * without one: only owners appoint owners in the app). A license lets the organization's admin switch
@@ -25,6 +27,9 @@
  * `operators ensure` is the deploy's (infra/vps/remote.sh): the instance's own operator account, created
  * when missing, its password set to OPERATOR_PASSWORD (from the environment, never the command line),
  * and made an operator. It has no workspace of its own.
+ *
+ * `twofactor reset` takes an account's two-step login away (a lost phone and no recovery code left; check
+ * who is asking first). If an organization requires it, the person sets it up again at the next login.
  */
 import * as bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
@@ -42,7 +47,31 @@ const USAGE = [
   '       operator operators grant <e-mail>',
   '       operator operators revoke <e-mail>',
   '       OPERATOR_PASSWORD=... operator operators ensure <e-mail>',
+  '       operator twofactor status <e-mail>',
+  '       operator twofactor reset <e-mail>',
 ].join('\n');
+
+async function twoFactor(action: string | undefined, email: string | undefined, rest: string[]): Promise<void> {
+  if (!email || rest.length || (action !== 'status' && action !== 'reset')) throw new Error(USAGE);
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const address = email.trim().toLowerCase();
+    const { rows } = await pool.query<{ id: string; enabled: boolean | null; left: number | null }>(
+      `SELECT u.id, t.enabled, cardinality(t.recovery_hashes) AS left FROM users u LEFT JOIN user_two_factor t ON t.user_id = u.id WHERE u.email = $1`,
+      [address],
+    );
+    if (!rows.length) throw new Error(`no account ${address}`);
+    if (action === 'reset') {
+      const { rowCount } = await pool.query('DELETE FROM user_two_factor WHERE user_id = $1', [rows[0].id]);
+      console.log(rowCount ? `${address}: two-step login removed` : `${address}: had no two-step login`);
+      return;
+    }
+    console.log(rows[0].enabled ? `${address}: two-step login on, ${rows[0].left} recovery codes left` : `${address}: two-step login off`);
+  } finally {
+    await pool.end();
+  }
+}
 
 /** The account (created when missing) with this password, and an operator. The password is never printed. */
 async function ensureOperator(pool: Pool, email: string, password: string): Promise<string> {
@@ -239,6 +268,7 @@ async function setOwner(pool: Pool, orgId: string, email: string): Promise<boole
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === 'operators') return operators(args[1], args[2], args.slice(3));
+  if (args[0] === 'twofactor') return twoFactor(args[1], args[2], args.slice(3));
   const [subject, action, organization, value, flag, flagValue, ...rest] = args;
   const command = `${subject} ${action}`;
   const until = flag === '--until' ? flagValue : undefined;

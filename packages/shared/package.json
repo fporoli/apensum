@@ -32,6 +32,11 @@
       "types": "./dist/branding.d.ts",
       "default": "./dist/branding.js"
     },
+    "./twoFactor": {
+      "source": "./src/twoFactor.ts",
+      "types": "./dist/twoFactor.d.ts",
+      "default": "./dist/twoFactor.js"
+    },
     "./operator": {
       "source": "./src/operator.ts",
       "types": "./dist/operator.d.ts",

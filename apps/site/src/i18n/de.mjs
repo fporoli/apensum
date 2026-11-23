@@ -147,6 +147,7 @@ export default {
   'secTeaser.lead': 'Arbeitszeiten, Krankheitstage, Löhne und Beurteilungen verdienen mehr Schutz als ein Passwort.',
   'secTeaser.items': [
     'Dokumente mit AES-256 verschlüsselt, jedes mit eigenem Schlüssel',
+    "Anmeldung in zwei Schritten für alle, auf Wunsch Pflicht für Admins und HR",
     'Feine Berechtigungen: Vorgesetzte sehen nur ihr eigenes Team',
     'Versionierte Daten und ein Audit-Log für heikle Aktionen',
     'Hosting in der Schweiz',
@@ -337,6 +338,8 @@ export default {
     'Jede hochgeladene Datei und jedes erzeugte PDF wird mit AES-256-GCM verschlüsselt gespeichert, jede mit eigenem Schlüssel. Der Hauptschlüssel liegt ausserhalb der Datenbank und kann gewechselt werden.',
   'security.transit.title': 'Verschlüsselte Verbindungen',
   'security.transit.text': 'Der gesamte Datenverkehr läuft über HTTPS (TLS), die Zertifikate werden automatisch erneuert.',
+  'security.twofactor.title': "Anmeldung in zwei Schritten für alle",
+  'security.twofactor.text': "Alle können ihr Passwort um einen zweiten Schritt ergänzen: einen Code aus einer Authenticator-App auf dem Handy, mit einmaligen Wiederherstellungscodes für ein verlorenes Handy. Jede Organisation entscheidet, ob er Pflicht ist – für niemanden, für Admins und HR oder für alle. Anmeldungen über Ihren eigenen Identitätsanbieter (SSO) behalten dessen zweiten Schritt.",
   'security.permissions.title': 'So wenig Zugriff wie nötig',
   'security.permissions.text':
     'Berechtigungen pro Bereich und Umfang: eigene Daten, direkt unterstellte Personen oder alle. Vorgesetzte sehen nur ihr eigenes Team, das Personaldossier gehört standardmässig HR.',

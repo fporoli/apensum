@@ -148,6 +148,7 @@ export default {
   'secTeaser.lead': 'Working hours, sick days, salaries and reviews deserve more protection than a password.',
   'secTeaser.items': [
     'Documents encrypted with AES-256, each with its own key',
+    "Two-step login for everyone, required for admins and HR if you wish",
     'Fine-grained permissions: managers only see their own team',
     'Versioned records and an audit log for sensitive actions',
     'Hosted in Switzerland',
@@ -338,6 +339,8 @@ export default {
     'Every uploaded file and every generated PDF is encrypted at rest with AES-256-GCM, each with its own key. The master key is kept outside the database and can be rotated.',
   'security.transit.title': 'Encrypted connections',
   'security.transit.text': 'All traffic runs over HTTPS (TLS), with certificates renewed automatically.',
+  'security.twofactor.title': "Two-step login for everyone",
+  'security.twofactor.text': "Anyone can add a second step to their password: a code from an authenticator app on their phone, with one-time recovery codes for a lost phone. Each organization decides whether it is required – for nobody, for admins and HR, or for everyone. Logins through your own identity provider (SSO) keep its second step.",
   'security.permissions.title': 'Least privilege',
   'security.permissions.text':
     'Permissions per area and scope: own data, direct reports or everyone. Managers see their own team only; the personnel file belongs to HR by default.',

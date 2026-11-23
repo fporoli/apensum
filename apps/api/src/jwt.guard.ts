@@ -1,9 +1,13 @@
-import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { authenticateToken, type AuthenticatedPrincipal } from './jwt';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+
+/** Reachable with a setup-only token (two-step login required but not set up yet): two-factor.controller.ts. */
+export const TWO_FACTOR_SETUP_KEY = 'twoFactorSetup';
+export const TwoFactorSetup = () => SetMetadata(TWO_FACTOR_SETUP_KEY, true);
 
 export interface AuthenticatedRequest {
   headers?: Record<string, string | string[] | undefined>;
@@ -26,6 +30,10 @@ export class JwtAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('missing-token');
     const principal = await authenticateToken(token);
     if (!principal) throw new UnauthorizedException('invalid-token');
+    if (principal.scope === 'two-factor-setup') {
+      const allowed = this.reflector.getAllAndOverride<boolean>(TWO_FACTOR_SETUP_KEY, [context.getHandler(), context.getClass()]);
+      if (!allowed) throw new ForbiddenException('two-factor-setup-required');
+    }
     req.user = principal;
     return true;
   }

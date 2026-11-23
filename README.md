@@ -371,6 +371,20 @@ Mailpit has no auth and nothing real is sent.
 
 `.github/workflows/ci.yml` builds, tests, and — against a throwaway Postgres service container — runs `db:migrate` then `db:seed`, so a broken changelog fails the build before it reaches any real environment.
 
+## Two-step login
+
+Everyone who signs in with a password can add a second step in Settings: a code from an authenticator app (scan the QR code, confirm one code), with ten one-time recovery codes for a lost phone.\
+An organization's admin decides under Organization settings → Security who must use it: nobody, admins and HR (Admin settings, HR's employment data or the data export), or everyone; the Admin organization always requires it.\
+An account spans organizations, so the rule applies at login: whoever an organization requires it of sets it up before getting in (sessions already running last until they end, at most 12 hours), and nobody can turn it off while it is required.\
+No organization can turn off or reset someone's second step; for a lost phone without recovery codes the operator runs `twofactor reset <e-mail>` on the server (check who is asking first).\
+SSO logins keep their identity provider's own second step.\
+The authenticator secrets are encrypted with a key derived from `API_JWT_SECRET`: changing that secret leaves everyone with their recovery codes only.
+
+```sh
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js twofactor status <e-mail>
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js twofactor reset <e-mail>
+```
+
 ## Operator
 
 An organization's owners decide who is owner, admin and HR; an organization without an owner gets one from the instance's operator, who also gives the licenses of paid modules, on the server (no GitHub workflow: this repository's run logs are public).
@@ -410,11 +424,13 @@ The `vps` and `azure` workflows are manual (`workflow_dispatch`) and take all th
 **One GitHub Environment = one instance.**\
 Production is the environment named `prod`; create another (e.g. `preprod`) to get a second instance, on the same server or another one: production (`wt`), `preprod` (`wtpp`) and `test` (`wttest`) can all run on one host.
 
-**Dolphin and Whale performance fixture**: the dedicated `test/dolphin-whale-simulation` branch runs the test-only workflow.\
-It does not reset or redeploy the stack, and refuses to seed if either tenant already exists.\
+**Dolphin and Whale performance fixture**: manually dispatch `test-simulation.yml` from the dedicated `test/dolphin-whale-simulation` branch.\
+Choose `test` or `preprod`; preprod also requires the exact confirmation `SIMULATE preprod`.\
+For example, from this repository run `gh workflow run test-simulation.yml --ref test/dolphin-whale-simulation -f environment=preprod -f confirmation='SIMULATE preprod'`, then check the run with `gh run list --workflow test-simulation.yml --branch test/dolphin-whale-simulation`.\
+It does not reset or redeploy the stack, and refuses to seed if either tenant exists or either requested admin email is already in use.\
 It bulk-loads synthetic historical records (including distinct projects), then uses the real API for employee submissions, manager rejections and approvals, and HR expense processing.\
 The workflow reports row counts and three serial loopback timings per endpoint; those are not a concurrency or browser load test.\
-Synthetic logins use an ephemeral password, are not exposed to the public demo login list, and no existing account is granted tenant access.\
+The company admins are `admin@dolphin.com` and `admin@whale.com`, both with the test-only password `admin`; the selected HR, manager and employee logins use an ephemeral shared password. These accounts are not exposed to the public demo login list, and no existing account is granted tenant access.\
 A failed run after the history commits can leave both tenants present; inspect the failed stage before any retry.\
 The app supports year-end snapshots starting in 2000; earlier attendance and monthly balances remain in the fixture.
 

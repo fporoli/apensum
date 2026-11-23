@@ -18,7 +18,15 @@ export interface AuthenticatedPrincipal {
   email?: string;
   /** Keycloak vouches for `email` (claim `email_verified`); only such an address finds or creates an account. */
   emailVerified?: boolean;
+  /**
+   * A restricted local token: `two-factor-setup` reaches only the two-step login setup (jwt.guard.ts
+   * `TwoFactorSetup`), for someone an organization requires it of who has not set it up yet.
+   */
+  scope?: 'two-factor-setup';
 }
+
+/** How long a setup-only token lasts. */
+export const TWO_FACTOR_SETUP_TOKEN_SEC = 30 * 60;
 
 interface JwtHeader {
   alg: string;
@@ -155,11 +163,11 @@ export async function verifyKeycloakJwt(
   return null;
 }
 
-export async function mintLocalToken(userId: string, email: string, expiresInSec = 12 * 3600): Promise<string> {
+export async function mintLocalToken(userId: string, email: string, expiresInSec = 12 * 3600, scope?: 'two-factor-setup'): Promise<string> {
   const header = b64urlEncode(Buffer.from(JSON.stringify({ alg: LOCAL_ALG, typ: 'JWT' })));
   const now = Math.floor(Date.now() / 1000);
   const body = b64urlEncode(
-    Buffer.from(JSON.stringify({ iss: LOCAL_ISSUER, sub: userId, email, iat: now, exp: now + expiresInSec })),
+    Buffer.from(JSON.stringify({ iss: LOCAL_ISSUER, sub: userId, email, iat: now, exp: now + expiresInSec, ...(scope ? { scope } : {}) })),
   );
   const sig = createHmac('sha256', localSecret()).update(`${header}.${body}`).digest();
   return `${header}.${body}.${b64urlEncode(sig)}`;
@@ -173,10 +181,13 @@ export async function verifyLocalToken(token: string): Promise<AuthenticatedPrin
   const expected = createHmac('sha256', localSecret()).update(parsed.signingInput).digest();
   if (expected.length !== parsed.signature.length || !timingSafeEqual(expected, parsed.signature)) return null;
   if (typeof parsed.payload.sub !== 'string') return null;
+  const scope = parsed.payload.scope;
+  if (scope !== undefined && scope !== 'two-factor-setup') return null;
   return {
     kind: 'local',
     sub: parsed.payload.sub,
     email: typeof parsed.payload.email === 'string' ? parsed.payload.email : undefined,
+    ...(scope ? { scope } : {}),
   };
 }
 

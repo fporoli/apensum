@@ -148,6 +148,7 @@ export default {
   'secTeaser.lead': 'Heures de travail, jours de maladie, salaires et évaluations méritent mieux qu’un simple mot de passe.',
   'secTeaser.items': [
     'Documents chiffrés en AES-256, chacun avec sa propre clé',
+    "Connexion en deux étapes pour tous, obligatoire pour les admins et les RH si vous le souhaitez",
     'Autorisations fines : les responsables ne voient que leur équipe',
     'Données versionnées et journal d’audit pour les actions sensibles',
     'Hébergement en Suisse',
@@ -338,6 +339,8 @@ export default {
     'Chaque fichier téléversé et chaque PDF généré est stocké chiffré en AES-256-GCM, chacun avec sa propre clé. La clé principale est conservée hors de la base de données et peut être renouvelée.',
   'security.transit.title': 'Connexions chiffrées',
   'security.transit.text': 'Tout le trafic passe par HTTPS (TLS), avec des certificats renouvelés automatiquement.',
+  'security.twofactor.title': "Connexion en deux étapes pour tous",
+  'security.twofactor.text': "Chacun peut compléter son mot de passe par une deuxième étape : un code d’une application d’authentification sur son téléphone, avec des codes de récupération à usage unique en cas de perte du téléphone. Chaque organisation décide si elle est obligatoire – pour personne, pour les admins et les RH, ou pour tout le monde. Les connexions via votre propre fournisseur d’identité (SSO) gardent sa deuxième étape.",
   'security.permissions.title': 'Accès minimal',
   'security.permissions.text':
     'Autorisations par domaine et par portée : ses propres données, ses subordonnés directs ou tout le monde. Les responsables ne voient que leur équipe ; le dossier du personnel appartient par défaut aux RH.',
