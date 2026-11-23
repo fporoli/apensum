@@ -17,7 +17,7 @@ export default {
   'nav.language': 'Language',
   'nav.skip': 'Skip to content',
   'nav.features': 'Features',
-  'nav.cases': 'Cases & Assessments',
+  'nav.cases': 'Assessments',
   'nav.expenses': 'Expenses',
   'nav.security': 'Security',
   'nav.contact': 'Contact',
@@ -49,7 +49,7 @@ export default {
 
   'home.meta.title': "Apensum – Time tracking, expenses and assessments in one Swiss app",
   'home.meta.description':
-    'Apensum combines a legally compliant Swiss worktime foundation with flexible specialised modules like Cases & Assessments and Expenses. In German, French, Italian and English.',
+    'Apensum combines a legally compliant Swiss worktime foundation with flexible specialised modules like Assessments and Expenses. In German, French, Italian and English.',
   'hero.eyebrow': "The Swiss business app that grows with you",
   'hero.title': "From clocking in to the final assessment.",
   'hero.lead':
@@ -61,10 +61,10 @@ export default {
   'home.modules.title': 'Two specialised modules – currently included at no extra cost',
   'home.modules.lead':
     "On top of time tracking under labour law, you switch on specialised modules for your organisation – and with modules of your own, you extend Apensum further.",
-  'home.modules.cases.title': 'Cases & Assessments',
+  'home.modules.cases.title': 'Assessments',
   'home.modules.cases.text':
     'Confidential case dossiers, evidence, interviews with transcription, and standardised assessments (KESB, forensics, investigations). Protected in an isolated database schema under professional secrecy Art. 321 Swiss Criminal Code.',
-  'home.modules.cases.link': 'Discover Cases & Assessments module',
+  'home.modules.cases.link': 'Discover Assessments module',
   'home.modules.expenses.title': 'Expenses & Receipts',
   'home.modules.expenses.text':
     'Digital expense reporting with smartphone photo upload, Swiss-hosted AI receipt OCR, multi-currency conversion, and seamless export to Abacus and Bexio.',
@@ -158,7 +158,7 @@ export default {
   'home.pricing.link': 'See pricing',
   'home.oss.eyebrow': "Open source",
   'home.oss.title': "The code is open",
-  'home.oss.text': "Apensum is open source under the GNU AGPL-3.0, and its complete source code is on GitHub. Anyone can read and check it, run it themselves and adapt it – whoever offers a changed version as a service publishes their changes too.",
+  'home.oss.text': "The core of Apensum is open source under the GNU AGPL-3.0, and its source code is on GitHub. Anyone can read and check it, run it themselves and adapt it – whoever offers a changed version as a service publishes their changes too. The HR processes and Assessments modules are proprietary.",
   'home.oss.link': "Source code on GitHub",
 
   'features.meta.title': 'Features – Apensum',
@@ -354,7 +354,7 @@ export default {
   'security.website.title': 'A website without tracking',
   'security.website.text': 'This website sets no cookies, uses no analytics and loads nothing from third parties.',
   'security.opensource.title': "Open source code",
-  'security.opensource.text': "The complete source code is public on GitHub under the GNU AGPL-3.0. Anyone can check how Apensum stores and protects your data.",
+  'security.opensource.text': "The core's source code is public on GitHub under the GNU AGPL-3.0. Anyone can check how Apensum stores and protects your data. The HR processes and Assessments modules are proprietary.",
   'security.note': 'Questions about security or data protection? Get in touch – we are happy to answer them in detail.',
   'pricing.meta.title': 'Pricing – Apensum',
   'pricing.meta.description': 'Apensum is free during its build-up phase. Customization work is billed by the hour.',
@@ -365,7 +365,7 @@ export default {
   'pricing.app.text': 'The complete app for your organization.',
   'pricing.app.items': [
     'All in one app: attendance, project time, absences, balances, requests, and documents',
-    'Two specialised modules currently included for free: Cases & Assessments and Expenses',
+    'Two specialised modules currently included for free: Assessments and Expenses',
     'Coming soon: your own subdomain, e.g. yourcompany.apensum.ch',
     'Four languages (DE, FR, IT, EN) and Swiss payroll exports (Abacus, Bexio)',
   ],
@@ -532,13 +532,13 @@ export default {
   'security.law.text': "What the law requires for rest, breaks, Überzeit and record keeping – and how Apensum checks the recorded times for it.",
   'security.law.link': "To the Working Hours Act",
 
-  'cases.meta.title': 'Cases & Assessments – Confidential Case Dossiers & Reports | Apensum',
+  'cases.meta.title': 'Assessments – Confidential Case Dossiers & Reports | Apensum',
   'cases.meta.description': 'Case dossiers, interviews, evidence, and assessment templates for KESB, forensics, social services, and investigations. Isolated schema under Art. 321 Swiss Criminal Code.',
   'cases.hero.eyebrow': "Apensum specialised module",
   'cases.hero.title': 'Case dossiers, interviews & assessments – secure and audit-proof.',
   'cases.hero.lead': 'Engineered for child and adult protection (KESB), forensic psychiatry, social services, and investigators. Manage confidential files, record hearings, and generate standardised assessments from your custom templates – currently included for free in Apensum.',
   'cases.freeBox.title': "Currently included for free in Apensum",
-  'cases.freeBox.text': "Organisations using Apensum can activate the \"Cases & Assessments\" module with zero extra licensing fees and use it immediately.",
+  'cases.freeBox.text': "Organisations using Apensum can activate the \"Assessments\" module with zero extra licensing fees and use it immediately.",
   'cases.videoTitle': 'Video: A KESB case from intake to assessment draft',
   'cases.features.title': 'Capabilities for rigorous assessment procedures',
   'cases.features.lead': 'Strict confidentiality, complete audit logging, and intelligent drafting support.',
@@ -598,7 +598,7 @@ export default {
   'plugins.meta.description': "Apensum is a framework: a module brings its own pages, endpoints, tables and texts without changing the core.",
   'plugins.hero.eyebrow': "Modules · For developers",
   'plugins.hero.title': "Your own module in a few steps",
-  'plugins.hero.lead': "Cases and Expenses are modules themselves: plugins that bring pages, endpoints, tables and texts without the core changing. Yours is built the same way – also in a separate, private repository.",
+  'plugins.hero.lead': "Assessments and Expenses are modules themselves: plugins that bring pages, endpoints, tables and texts without the core changing. Yours is built the same way – also in a separate, private repository.",
   'plugins.docsCta': "Developer docs on GitHub",
   'plugins.steps.title': "How a module comes together",
   'plugins.steps.lead': "A plugin is a folder under plugins/<id>. The core finds it when it builds and when it starts.",

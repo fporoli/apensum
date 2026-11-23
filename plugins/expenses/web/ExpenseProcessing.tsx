@@ -58,10 +58,12 @@ const isProcessable = (status: string) => (PROCESSABLE_STATUSES as readonly stri
 
 interface ExpenseProcessingProps {
   orgId: string;
+  /** The caller: their own report is marked (four-eyes principle). */
+  userId: string;
   authHeaders: () => Promise<Record<string, string>>;
 }
 
-export default function ExpenseProcessing({ orgId, authHeaders }: ExpenseProcessingProps) {
+export default function ExpenseProcessing({ orgId, userId, authHeaders }: ExpenseProcessingProps) {
   const { t, locale } = useI18n();
   const [filter, setFilter] = useState<Filter>('open');
   const [rows, setRows] = useState<ProcessingReport[]>([]);
@@ -246,7 +248,10 @@ export default function ExpenseProcessing({ orgId, authHeaders }: ExpenseProcess
                       )}
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{row.name}</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        {row.name}
+                        {row.userId === userId && <Chip label={t('expenseProcessing.own')} size="small" color="warning" variant="outlined" sx={{ ml: 1 }} />}
+                      </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {row.personnelNumber ? t('expenseProcessing.personnelNumberShort', { number: row.personnelNumber }) : t('expenseProcessing.noPersonnelNumber')}
                       </Typography>
@@ -284,6 +289,9 @@ export default function ExpenseProcessing({ orgId, authHeaders }: ExpenseProcess
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             {t('expenseProcessing.dialog.hint')}
           </Typography>
+          {chosen.some((r) => r.userId === userId) && (
+            <Alert severity="warning" sx={{ mb: 2 }}>{t('expenseProcessing.ownWarning')}</Alert>
+          )}
           <TextField
             value={text}
             multiline

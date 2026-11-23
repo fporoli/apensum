@@ -16,7 +16,7 @@ export default {
   'nav.language': 'Sprache',
   'nav.skip': 'Zum Inhalt springen',
   'nav.features': 'Funktionen',
-  'nav.cases': 'Fälle & Gutachten',
+  'nav.cases': 'Gutachten',
   'nav.expenses': 'Spesen',
   'nav.security': 'Sicherheit',
   'nav.contact': 'Kontakt',
@@ -48,7 +48,7 @@ export default {
 
   'home.meta.title': "Apensum – Zeiterfassung, Spesen und Gutachten in einer Schweizer App",
   'home.meta.description':
-    'Apensum verbindet ein gesetzeskonformes Schweizer Arbeitszeit-Fundament mit flexiblen Fachmodulen wie Fälle & Gutachten und Spesen. Auf Deutsch, Französisch, Italienisch und Englisch.',
+    'Apensum verbindet ein gesetzeskonformes Schweizer Arbeitszeit-Fundament mit flexiblen Fachmodulen wie Gutachten und Spesen. Auf Deutsch, Französisch, Italienisch und Englisch.',
   'hero.eyebrow': "Die Schweizer Business-App, die mitwächst",
   'hero.title': "Von der Stempeluhr bis zum Gutachten.",
   'hero.lead':
@@ -60,10 +60,10 @@ export default {
   'home.modules.title': 'Zwei Fachmodule – aktuell ohne Aufpreis inklusive',
   'home.modules.lead':
     "Zur Zeiterfassung nach Arbeitsgesetz schalten Sie Fachmodule für Ihre Organisation dazu – und mit eigenen Modulen bauen Sie Apensum weiter aus.",
-  'home.modules.cases.title': 'Fälle & Gutachten',
+  'home.modules.cases.title': 'Gutachten',
   'home.modules.cases.text':
     'Vertrauliche Falldossiers, Beweismittel, Einvernahmen mit Transkription und standardisierte Gutachten (KESB, Forensik, Ermittlung). Geschützt im isolierten Datenbankschema gemäss Berufsgeheimnis Art. 321 StGB.',
-  'home.modules.cases.link': 'Modul Fälle & Gutachten entdecken',
+  'home.modules.cases.link': 'Modul Gutachten entdecken',
   'home.modules.expenses.title': 'Spesen & Belege',
   'home.modules.expenses.text':
     'Digitale Spesenabrechnung mit Smartphone-Fotoupload, KI-Belegerkennung in der Schweiz, Mehrwährungsfähigkeit und nahtlosem Export für Abacus und Bexio.',
@@ -157,7 +157,7 @@ export default {
   'home.pricing.link': 'Zu den Preisen',
   'home.oss.eyebrow': "Open Source",
   'home.oss.title': "Der Code ist offen",
-  'home.oss.text': "Apensum ist Open Source unter der GNU AGPL-3.0, der vollständige Quellcode liegt auf GitHub. Alle können ihn lesen und prüfen, selbst betreiben und anpassen – wer eine geänderte Version als Dienst anbietet, legt seine Änderungen ebenfalls offen.",
+  'home.oss.text': "Der Kern von Apensum ist Open Source unter der GNU AGPL-3.0, sein Quellcode liegt auf GitHub. Alle können ihn lesen und prüfen, selbst betreiben und anpassen – wer eine geänderte Version als Dienst anbietet, legt seine Änderungen ebenfalls offen. Die Module HR-Prozesse und Gutachten sind proprietär.",
   'home.oss.link': "Quellcode auf GitHub",
 
   'features.meta.title': 'Funktionen – Apensum',
@@ -353,7 +353,7 @@ export default {
   'security.website.title': 'Eine Website ohne Tracking',
   'security.website.text': 'Diese Website setzt keine Cookies, nutzt keine Analyse-Tools und lädt nichts von Drittanbietern.',
   'security.opensource.title': "Offener Quellcode",
-  'security.opensource.text': "Der vollständige Quellcode ist unter der GNU AGPL-3.0 öffentlich auf GitHub. Alle können nachprüfen, wie Apensum Ihre Daten speichert und schützt.",
+  'security.opensource.text': "Der Quellcode des Kerns ist unter der GNU AGPL-3.0 öffentlich auf GitHub. Alle können nachprüfen, wie Apensum Ihre Daten speichert und schützt. Die Module HR-Prozesse und Gutachten sind proprietär.",
   'security.note': 'Fragen zu Sicherheit oder Datenschutz? Melden Sie sich – wir beantworten sie gerne im Detail.',
   'pricing.meta.title': 'Preise – Apensum',
   'pricing.meta.description': 'Apensum ist während der Aufbauphase kostenlos. Anpassungen nach Mass verrechnen wir nach Aufwand.',
@@ -364,7 +364,7 @@ export default {
   'pricing.app.text': 'Die komplette App für Ihre Organisation.',
   'pricing.app.items': [
     'Alles in einer App: Präsenzzeit, Projektzeit, Absenzen, Saldi, Anfragen und Dokumente',
-    'Zwei Fachmodule aktuell kostenlos inklusive: Fälle & Gutachten sowie Spesen',
+    'Zwei Fachmodule aktuell kostenlos inklusive: Gutachten sowie Spesen',
     'Demnächst: Ihre eigene Subdomain, z. B. ihrefirma.apensum.ch',
     'Viersprachig (DE, FR, IT, EN) und Schweizer Lohnexporte (Abacus, Bexio)',
   ],
@@ -531,13 +531,13 @@ export default {
   'security.law.text': "Was das Gesetz bei Ruhezeiten, Pausen, Überzeit und Aufbewahrung verlangt – und wie Apensum die erfassten Zeiten dafür prüft.",
   'security.law.link': "Zum Arbeitsgesetz",
 
-  'cases.meta.title': 'Fälle & Gutachten – Vertrauliche Falldossiers und Berichte | Apensum',
+  'cases.meta.title': 'Gutachten – Vertrauliche Falldossiers und Berichte | Apensum',
   'cases.meta.description': 'Falldossiers, Befragungen, Beweismittel und Gutachtenvorlagen für KESB, Forensik, Sozialdienste und Ermittlungsbehörden. Isoliertes Datenbankschema nach Art. 321 StGB.',
   'cases.hero.eyebrow': "Fachmodul von Apensum",
   'cases.hero.title': 'Falldossiers, Befragungen & Gutachten – sicher und revisionsfest.',
   'cases.hero.lead': 'Entwickelt für Fachstellen wie KESB, Forensische Psychiatrie, Sozialdienste und Ermittlungsbehörden. Verwalten Sie vertrauliche Akten, protokollieren Sie Einvernahmen und generieren Sie standardisierte Gutachten nach Ihren eigenen Vorlagen – aktuell kostenlos in Apensum enthalten.',
   'cases.freeBox.title': "Aktuell kostenlos in Apensum enthalten",
-  'cases.freeBox.text': "Organisationen mit Apensum können das Modul «Fälle & Gutachten» ohne zusätzliche Lizenzgebühren freischalten und sofort produktiv nutzen.",
+  'cases.freeBox.text': "Organisationen mit Apensum können das Modul «Gutachten» ohne zusätzliche Lizenzgebühren freischalten und sofort produktiv nutzen.",
   'cases.videoTitle': 'Video: Ein KESB-Fall von der Aktenaufnahme bis zum Gutachtenentwurf',
   'cases.features.title': 'Funktionen für anspruchsvolle Abklärungsverfahren',
   'cases.features.lead': 'Strikte Vertraulichkeit, lückenlose Protokollierung und intelligente Unterstützung bei der Berichtserstellung.',
@@ -597,7 +597,7 @@ export default {
   'plugins.meta.description': "Apensum ist ein Framework: Ein eigenes Modul bringt Seiten, Schnittstellen, Tabellen und Texte mit, ohne den Kern zu ändern.",
   'plugins.hero.eyebrow': "Module · Für Entwicklerinnen und Entwickler",
   'plugins.hero.title': "Ein eigenes Modul in wenigen Schritten",
-  'plugins.hero.lead': "Fälle und Spesen sind selbst Module: Plugins, die Seiten, Schnittstellen, Tabellen und Texte mitbringen, ohne dass sich der Kern ändert. Nach demselben Muster entsteht Ihr eigenes – auch in einem eigenen, privaten Repository.",
+  'plugins.hero.lead': "Gutachten und Spesen sind selbst Module: Plugins, die Seiten, Schnittstellen, Tabellen und Texte mitbringen, ohne dass sich der Kern ändert. Nach demselben Muster entsteht Ihr eigenes – auch in einem eigenen, privaten Repository.",
   'plugins.docsCta': "Entwickler-Doku auf GitHub",
   'plugins.steps.title': "So entsteht ein Modul",
   'plugins.steps.lead': "Ein Plugin ist ein Ordner unter plugins/<id>. Der Kern findet ihn beim Bauen und beim Start.",

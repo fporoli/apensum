@@ -17,7 +17,7 @@ export default {
   'nav.language': 'Langue',
   'nav.skip': 'Aller au contenu',
   'nav.features': 'Fonctionnalités',
-  'nav.cases': 'Dossiers & Évaluations',
+  'nav.cases': 'Expertises',
   'nav.expenses': 'Frais',
   'nav.security': 'Sécurité',
   'nav.contact': 'Contact',
@@ -49,7 +49,7 @@ export default {
 
   'home.meta.title': "Apensum – Temps de travail, frais et expertises dans une application suisse",
   'home.meta.description':
-    'Apensum associe un socle suisse conforme à la loi sur le travail à des modules métier flexibles comme Dossiers & Évaluations et Frais. En français, allemand, italien et anglais.',
+    'Apensum associe un socle suisse conforme à la loi sur le travail à des modules métier flexibles comme Expertises et Frais. En français, allemand, italien et anglais.',
   'hero.eyebrow': "L’application suisse qui grandit avec vous",
   'hero.title': "De la pointeuse à l’expertise.",
   'hero.lead':
@@ -61,10 +61,10 @@ export default {
   'home.modules.title': 'Deux modules métier – actuellement inclus sans supplément',
   'home.modules.lead':
     "En plus de la saisie du temps selon la loi sur le travail, vous activez des modules métier pour votre organisation – et avec vos propres modules, vous étendez Apensum.",
-  'home.modules.cases.title': 'Dossiers & Évaluations',
+  'home.modules.cases.title': 'Expertises',
   'home.modules.cases.text':
     'Dossiers confidentiels, pièces à conviction, auditions avec transcription et rapports d’évaluation standardisés (APEA, médecine légale, enquêtes). Données isolées conformément au secret professionnel art. 321 CP.',
-  'home.modules.cases.link': 'Découvrir le module Dossiers & Évaluations',
+  'home.modules.cases.link': 'Découvrir le module Expertises',
   'home.modules.expenses.title': 'Frais & Justificatifs',
   'home.modules.expenses.text':
     'Gestion numérique des notes de frais avec capture smartphone, reconnaissance IA en Suisse, multi-devises et export fluide vers Abacus et Bexio.',
@@ -158,7 +158,7 @@ export default {
   'home.pricing.link': 'Voir les tarifs',
   'home.oss.eyebrow': "Open source",
   'home.oss.title': "Le code est ouvert",
-  'home.oss.text': "Apensum est open source sous licence GNU AGPL-3.0 et son code source complet se trouve sur GitHub. Chacun peut le lire et le vérifier, l’exploiter lui-même et l’adapter – qui propose une version modifiée sous forme de service publie aussi ses modifications.",
+  'home.oss.text': "Le cœur d’Apensum est open source sous licence GNU AGPL-3.0 et son code source se trouve sur GitHub. Chacun peut le lire et le vérifier, l’exploiter lui-même et l’adapter – qui propose une version modifiée sous forme de service publie aussi ses modifications. Les modules Processus RH et Expertises sont propriétaires.",
   'home.oss.link': "Code source sur GitHub",
 
   'features.meta.title': 'Fonctionnalités – Apensum',
@@ -354,7 +354,7 @@ export default {
   'security.website.title': 'Un site sans pistage',
   'security.website.text': 'Ce site ne dépose aucun cookie, n’utilise aucun outil d’analyse et ne charge rien de tiers.',
   'security.opensource.title': "Code source ouvert",
-  'security.opensource.text': "Le code source complet est public sur GitHub sous licence GNU AGPL-3.0. Chacun peut vérifier comment Apensum enregistre et protège vos données.",
+  'security.opensource.text': "Le code source du cœur est public sur GitHub sous licence GNU AGPL-3.0. Chacun peut vérifier comment Apensum enregistre et protège vos données. Les modules Processus RH et Expertises sont propriétaires.",
   'security.note': 'Des questions sur la sécurité ou la protection des données ? Contactez-nous – nous y répondons volontiers en détail.',
   'pricing.meta.title': 'Tarifs – Apensum',
   'pricing.meta.description': 'Apensum est gratuit pendant sa phase de lancement. Les adaptations sur mesure sont facturées selon le temps effectif.',
@@ -365,7 +365,7 @@ export default {
   'pricing.app.text': 'L’application complète pour votre organisation.',
   'pricing.app.items': [
     'Tout dans une application\u00a0: présence, temps de projet, absences, soldes, demandes et documents',
-    'Deux modules métier actuellement inclus gratuitement\u00a0: Dossiers & Évaluations et Frais',
+    'Deux modules métier actuellement inclus gratuitement\u00a0: Expertises et Frais',
     'Bientôt disponible\u00a0: votre propre sous-domaine, p. ex. votreentreprise.apensum.ch',
     'Quatre langues (DE, FR, IT, EN) et exports de paie suisses (Abacus, Bexio)',
   ],
@@ -532,13 +532,13 @@ export default {
   'security.law.text': "Ce que la loi exige pour le repos, les pauses, le travail supplémentaire et la conservation – et comment Apensum contrôle les temps saisis.",
   'security.law.link': "Vers la loi sur le travail",
 
-  'cases.meta.title': 'Dossiers & Évaluations – Dossiers confidentiels et rapports | Apensum',
+  'cases.meta.title': 'Expertises – Dossiers confidentiels et rapports | Apensum',
   'cases.meta.description': 'Dossiers de cas, auditions, pièces et modèles d’évaluation pour APEA, médecine légale et enquêteurs. Schéma isolé selon l’art. 321 CP.',
   'cases.hero.eyebrow': "Module métier d’Apensum",
   'cases.hero.title': 'Dossiers, auditions & expertises – sécurisés et conformes.',
   'cases.hero.lead': 'Conçu pour les autorités de protection (APEA), la psychiatrie légale, les services sociaux et les enquêteurs. Gérez les pièces confidentielles, consignez les auditions et générez des expertises standardisées – actuellement inclus gratuitement dans Apensum.',
   'cases.freeBox.title': "Actuellement inclus gratuitement dans Apensum",
-  'cases.freeBox.text': "Les organisations utilisant Apensum peuvent activer le module « Dossiers & Évaluations » sans frais de licence supplémentaires.",
+  'cases.freeBox.text': "Les organisations utilisant Apensum peuvent activer le module « Expertises » sans frais de licence supplémentaires.",
   'cases.videoTitle': 'Vidéo\u00a0: Un dossier APEA de la réception des pièces au projet de rapport',
   'cases.features.title': 'Fonctionnalités pour les procédures d’évaluation exigeantes',
   'cases.features.lead': 'Confidentialité stricte, traçabilité intégrale et assistance intelligente à la rédaction.',
@@ -598,7 +598,7 @@ export default {
   'plugins.meta.description': "Apensum est un framework : un module apporte ses pages, ses interfaces, ses tables et ses textes, sans modifier le noyau.",
   'plugins.hero.eyebrow': "Modules · Pour les développeuses et développeurs",
   'plugins.hero.title': "Votre propre module en quelques étapes",
-  'plugins.hero.lead': "Dossiers et Frais sont eux-mêmes des modules : des plugins qui apportent pages, interfaces, tables et textes sans que le noyau change. Le vôtre se construit de la même manière – aussi dans un dépôt séparé et privé.",
+  'plugins.hero.lead': "Expertises et Frais sont eux-mêmes des modules : des plugins qui apportent pages, interfaces, tables et textes sans que le noyau change. Le vôtre se construit de la même manière – aussi dans un dépôt séparé et privé.",
   'plugins.docsCta': "Documentation développeur sur GitHub",
   'plugins.steps.title': "Comment naît un module",
   'plugins.steps.lead': "Un plugin est un dossier sous plugins/<id>. Le noyau le trouve lors du build et au démarrage.",

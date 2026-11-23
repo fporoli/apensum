@@ -1,9 +1,9 @@
 # Plugins
 
 A plugin adds pages, API endpoints, settings and texts to Apensum without changing the core. It lives
-in `plugins/<id>`; the core finds it there when it builds and starts. `plugins/expenses` and
-`plugins/cases` are bundled plugins (in this repository); any other plugin, e.g. a private one, is a clone of its
-own repository in that folder.
+in `plugins/<id>`; the core finds it there when it builds and starts. `plugins/expenses` is the bundled
+plugin (in this repository); any other plugin is a clone of its own repository in that folder, e.g. the
+private `hr` (`fporoli/apensum-hr`) and `cases` (Assessments, `fporoli/apensum-assessment`).
 
 ## Layout
 

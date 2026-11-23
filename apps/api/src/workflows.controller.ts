@@ -177,6 +177,8 @@ export class WorkflowsController {
     return rows.map(({ workflow_started: _started, ...r }) => ({
       ...r,
       history: (histories.get(r.id) ?? []).map((e) => ({ ...e, by_name: e.by ? (actorNames.get(e.by) ?? null) : null })),
+      // The caller submitted it: deciding on it oneself is allowed, but shown (four-eyes principle).
+      is_own: (r.workflow_data as Record<string, unknown> | null)?.submittedByUserId === callerId,
       timesheet_period: r.source_table === 'timesheet_periods' ? (periodById.get(r.source_table_uuid) ?? null) : null,
       ...Object.fromEntries(pluginRecords.map((p) => [p.field, r.source_table === p.sourceTable ? (p.byId.get(r.source_table_uuid) ?? null) : null])),
       absence: r.source_table === 'absences' ? (absenceById.get(r.source_table_uuid) ?? null) : null,

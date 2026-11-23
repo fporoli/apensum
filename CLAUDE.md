@@ -159,7 +159,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Never store a document id from a request body: a row links only the file uploaded with it, and downloads check the file's `source_table` and id.\
   Never read, log or index an encrypted row's fields on the server, never add a server feature that needs them without a `compute` path, and never store a passphrase or key.\
   A lost passphrase is unrecoverable by design.
-- Cases (plugin `plugins/cases`, module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`; tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).\
+- Cases (Assessments; private plugin in `fporoli/apensum-assessment`, cloned into `plugins/cases` and named in `PRIVATE_PLUGINS` like hr; module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`; tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).\
   Assessments are archived (`archived_at`, its changeset 005, `POST .../assessments/:id/archive`), never deleted.\
   Its own fields on cases and assessments are templates of the forms `cases.case` / `cases.assessment` (`shared/forms.ts`, designed on the Cases page in design mode; values in `custom`, sealed in `enc` when encrypted, checked by `customValuesErrors`).\
   The AI draft asks Azure for a strict JSON schema of the template's section keys (`aiDraftSchema`) and can write one section again (`section_key`, plain and `compute/ai-draft`): an empty section is filled, otherwise the editor shows the text to replace, add or drop.\

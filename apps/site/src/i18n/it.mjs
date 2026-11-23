@@ -16,7 +16,7 @@ export default {
   'nav.language': 'Lingua',
   'nav.skip': 'Vai al contenuto',
   'nav.features': 'Funzionalità',
-  'nav.cases': 'Casi & Perizie',
+  'nav.cases': 'Perizie',
   'nav.expenses': 'Spese',
   'nav.security': 'Sicurezza',
   'nav.contact': 'Contatto',
@@ -48,7 +48,7 @@ export default {
 
   'home.meta.title': "Apensum – Tempo di lavoro, spese e perizie in un’app svizzera",
   'home.meta.description':
-    'Apensum unisce una base conforme alla legge svizzera sul lavoro con moduli specialistici flessibili come Casi & Perizie e Spese. In italiano, tedesco, francese e inglese.',
+    'Apensum unisce una base conforme alla legge svizzera sul lavoro con moduli specialistici flessibili come Perizie e Spese. In italiano, tedesco, francese e inglese.',
   'hero.eyebrow': "L’app svizzera che cresce con voi",
   'hero.title': "Dal cartellino alla perizia.",
   'hero.lead':
@@ -60,10 +60,10 @@ export default {
   'home.modules.title': 'Due moduli specialistici – attualmente inclusi senza costi aggiuntivi',
   'home.modules.lead':
     "Oltre alla registrazione del tempo secondo la legge sul lavoro, attivate moduli specialistici per la vostra organizzazione – e con moduli propri ampliate Apensum.",
-  'home.modules.cases.title': 'Casi & Perizie',
+  'home.modules.cases.title': 'Perizie',
   'home.modules.cases.text':
     'Dossier confidenziali, atti probatori, audizioni con trascrizione e perizie standardizzate (ARP, medicina legale, indagini). Dati protetti in uno schema isolato secondo il segreto professionale art. 321 CP.',
-  'home.modules.cases.link': 'Scopri il modulo Casi & Perizie',
+  'home.modules.cases.link': 'Scopri il modulo Perizie',
   'home.modules.expenses.title': 'Spese & Giustificativi',
   'home.modules.expenses.text':
     'Gestione digitale delle note spese con acquisizione da smartphone, OCR IA in Svizzera, supporto multivaluta ed esportazione verso Abacus e Bexio.',
@@ -157,7 +157,7 @@ export default {
   'home.pricing.link': 'Vedi i prezzi',
   'home.oss.eyebrow': "Open source",
   'home.oss.title': "Il codice è aperto",
-  'home.oss.text': "Apensum è open source con licenza GNU AGPL-3.0 e il suo codice sorgente completo è su GitHub. Chiunque può leggerlo e verificarlo, gestirlo in proprio e adattarlo – chi offre una versione modificata come servizio ne pubblica anche le modifiche.",
+  'home.oss.text': "Il nucleo di Apensum è open source con licenza GNU AGPL-3.0 e il suo codice sorgente è su GitHub. Chiunque può leggerlo e verificarlo, gestirlo in proprio e adattarlo – chi offre una versione modificata come servizio ne pubblica anche le modifiche. I moduli Processi HR e Perizie sono proprietari.",
   'home.oss.link': "Codice sorgente su GitHub",
 
   'features.meta.title': 'Funzionalità – Apensum',
@@ -353,7 +353,7 @@ export default {
   'security.website.title': 'Un sito senza tracciamento',
   'security.website.text': 'Questo sito non usa cookie, non usa strumenti di analisi e non carica nulla da terzi.',
   'security.opensource.title': "Codice sorgente aperto",
-  'security.opensource.text': "Il codice sorgente completo è pubblico su GitHub con licenza GNU AGPL-3.0. Chiunque può verificare come Apensum salva e protegge i vostri dati.",
+  'security.opensource.text': "Il codice sorgente del nucleo è pubblico su GitHub con licenza GNU AGPL-3.0. Chiunque può verificare come Apensum salva e protegge i vostri dati. I moduli Processi HR e Perizie sono proprietari.",
   'security.note': 'Domande su sicurezza o protezione dei dati? Contattateci – rispondiamo volentieri nel dettaglio.',
   'pricing.meta.title': 'Prezzi – Apensum',
   'pricing.meta.description': 'Apensum è gratuito durante la fase di avvio. Gli adattamenti su misura sono fatturati secondo il tempo effettivo.',
@@ -364,7 +364,7 @@ export default {
   'pricing.app.text': 'L’app completa per la vostra organizzazione.',
   'pricing.app.items': [
     'Tutto in un’app: presenza, ore progetto, assenze, saldi, richieste e documenti',
-    'Due moduli specialistici attualmente inclusi gratuitamente: Casi & Perizie e Spese',
+    'Due moduli specialistici attualmente inclusi gratuitamente: Perizie e Spese',
     'Prossimamente: il vostro sottodominio, es. vostraditta.apensum.ch',
     'Quattro lingue (DE, FR, IT, EN) ed esportazioni paghe svizzere (Abacus, Bexio)',
   ],
@@ -531,13 +531,13 @@ export default {
   'security.law.text': "Cosa chiede la legge per riposi, pause, lavoro straordinario e conservazione – e come Apensum verifica i tempi registrati.",
   'security.law.link': "Alla legge sul lavoro",
 
-  'cases.meta.title': 'Casi & Perizie – Dossier confidenziali e relazioni peritali | Apensum',
+  'cases.meta.title': 'Perizie – Dossier confidenziali e relazioni peritali | Apensum',
   'cases.meta.description': 'Dossier peritali, audizioni, prove e modelli di perizia per ARP, medicina legale e organi inquirenti. Schema isolato ai sensi dell’art. 321 CP.',
   'cases.hero.eyebrow': "Modulo specialistico di Apensum",
   'cases.hero.title': 'Dossier, audizioni & perizie – sicuri e conformi alle norme.',
   'cases.hero.lead': 'Progettato per autorità di protezione (ARP), psichiatria forense, servizi sociali e investigatori. Gestite atti riservati, verbalizzate audizioni e generate perizie standardizzate – attualmente incluso gratuitamente in Apensum.',
   'cases.freeBox.title': "Attualmente incluso gratuitamente in Apensum",
-  'cases.freeBox.text': "Le organizzazioni che utilizzano Apensum possono attivare il modulo « Casi & Perizie » senza costi di licenza aggiuntivi.",
+  'cases.freeBox.text': "Le organizzazioni che utilizzano Apensum possono attivare il modulo « Perizie » senza costi di licenza aggiuntivi.",
   'cases.videoTitle': 'Video: Un caso ARP dall’acquisizione atti alla bozza di perizia',
   'cases.features.title': 'Funzionalità per procedure peritali complesse',
   'cases.features.lead': 'Riservatezza rigorosa, tracciabilità completa e supporto intelligente alla redazione.',
@@ -597,7 +597,7 @@ export default {
   'plugins.meta.description': "Apensum è un framework: un modulo porta con sé pagine, interfacce, tabelle e testi, senza modificare il nucleo.",
   'plugins.hero.eyebrow': "Moduli · Per sviluppatrici e sviluppatori",
   'plugins.hero.title': "Il proprio modulo in pochi passi",
-  'plugins.hero.lead': "Casi e Spese sono anch’essi moduli: plugin che portano pagine, interfacce, tabelle e testi senza che il nucleo cambi. Il vostro nasce allo stesso modo – anche in un repository separato e privato.",
+  'plugins.hero.lead': "Perizie e Spese sono anch’essi moduli: plugin che portano pagine, interfacce, tabelle e testi senza che il nucleo cambi. Il vostro nasce allo stesso modo – anche in un repository separato e privato.",
   'plugins.docsCta': "Documentazione per sviluppatori su GitHub",
   'plugins.steps.title': "Come nasce un modulo",
   'plugins.steps.lead': "Un plugin è una cartella in plugins/<id>. Il nucleo la trova durante la build e all’avvio.",

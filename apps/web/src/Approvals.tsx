@@ -115,6 +115,8 @@ interface ActionItem {
   step_action_key?: string | null;
   step_rejectable?: boolean;
   step_in_dialog?: boolean;
+  /** The caller submitted it. */
+  is_own?: boolean;
   /** What happened, oldest first (`key` is a text key: the core's or a plugin's). */
   history?: { key: string; by_name: string | null; at: string; note?: string | null }[];
   definition_name: string;
@@ -530,6 +532,11 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                         <Chip label={actionItemLabel(item.definition_name, t)} size="small" variant="outlined" />
                         {statusFilter !== 'pending' && (
                           <Chip label={t(`approvals.status.${item.step_status}`)} size="small" color={STATUS_COLOR[item.step_status]} />
+                        )}
+                        {scope === 'assigned' && item.is_own && (
+                          <Tooltip title={t('approvals.ownRequestHint')}>
+                            <Chip label={t('approvals.ownRequest')} size="small" color="warning" variant="outlined" />
+                          </Tooltip>
                         )}
                         {item.step_status === 'pending' && (item.step_count ?? 0) > 1 && item.step_number && (
                           <Chip label={t('approvals.stepOf', { n: String(item.step_number), count: String(item.step_count) })} size="small" />

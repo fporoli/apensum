@@ -1,7 +1,7 @@
 # Apensum — Modular Swiss Business Framework & Enterprise Suite
 
 **Apensum** is a modular enterprise business framework and application suite engineered specifically for Swiss labor law (ArG) and enterprise requirements.\
-It combines a robust time-tracking and organizational core with an extensible plugin architecture, bundled business modules (Gutachten/Cases and Spesen/Expenses), and a high-performance marketing website.
+It combines a robust time-tracking and organizational core with an extensible plugin architecture, business modules as plugins (Spesen/Expenses bundled; Gutachten/Assessments and HR processes in private repositories), and a high-performance marketing website.
 
 Built with **NestJS** (API), **React 18 + MUI + Vite** (Web & PWA), **Postgres**, **Keycloak** (OIDC IdP in `auth` schema), and **Caddy** (edge reverse proxy).\
 Schema is strictly versioned with **Liquibase** and typed against **Drizzle ORM**.
@@ -12,7 +12,7 @@ Schema is strictly versioned with **Liquibase** and typed against **Drizzle ORM*
   Plugins contribute isolated DB schemas/tables, NestJS controllers, React pages, navigation entries, permission namespaces, and workflow hooks.
 - **Swiss Labor Law (ArG) Compliance**: Automatic holiday calendars for all 26 Swiss cantons, Pensum-prorated vacation calculations, and strict statutory Überzeit tracking (hours exceeding 45/50 h/week) segregated from flextime/overtime.
 - **Swiss Payroll Interfaces**: 1-click monthly payroll export for Abacus (AbaSalary wage types / Lohnarten CSV), Bexio, and formatted Excel (XLSX) / CSV.
-- **Zero-Knowledge Dossier Encryption (`plugins/cases`)**: End-to-end envelope encryption (AES-256-GCM + PBKDF2/Argon2id) for sensitive case dossiers, medical/legal assessments, and audio recordings.
+- **Zero-Knowledge Dossier Encryption (`plugins/cases`, private plugin)**: End-to-end envelope encryption (AES-256-GCM + PBKDF2/Argon2id) for sensitive case dossiers, medical/legal assessments, and audio recordings.
 - **Integrated AI Pipeline**: Audio transcription and drafts with Azure OpenAI in Switzerland only (Whisper, GPT), and automated draft synthesis for case interviews and assessments with strict per-instance and per-org monthly budget caps.
 - **Multi-Currency Expense Management (`plugins/expenses`)**: Multi-currency receipts, OCR capture, approval chains, and payroll debiting.
 - **Absence Calendar Feeds**: RFC 5545 iCalendar / WebCal live feeds for Apple Calendar, Microsoft Outlook, and Google Calendar with scoped capability tokens (`personal`, `team`, `all`).
@@ -51,7 +51,7 @@ host-run API and web app directly.
 | `apps/api` | NestJS API, one controller per resource. |
 | `apps/site` | Static marketing website and developer docs in 4 languages (de/en/fr/it). Built with modern zero-dependency generator (`build.mjs`). |
 | `packages/shared` | Code shared by web and API: `permissions.ts` (permission catalogue), `fields.ts` (configurable form fields), `branding.ts`, `worktime.ts` (daily targets, holidays, month summaries, vacation entitlement), and `pluginApi.ts`. |
-| `plugins/cases` | Bundled plugin: Gutachten & Cases with client-side zero-knowledge AES-256-GCM encryption, interview audio transcription, and AI draft synthesis. |
+| `plugins/cases` | Private plugin (`fporoli/apensum-assessment`, cloned here): Gutachten / Assessments with client-side zero-knowledge AES-256-GCM encryption, interview audio transcription, and AI draft synthesis. |
 | `plugins/expenses` | Bundled plugin: Multi-currency expense claims, receipt OCR, multi-tier approval workflow, and payroll exports. |
 | `infra/liquibase` | The database schema's source of truth (see below). |
 | `infra/postgres/seeds` | `seed.sql`: demo orgs/users/projects/project times/expenses. Run manually, separate from schema migrations. |

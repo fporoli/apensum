@@ -44,7 +44,7 @@ export default defineWebPlugin({
       object: 'nav.expenseProcessing',
       allowedByRole: (r) => r.isHr,
       nav: { group: 'expenses', after: 'expenseReports', label: 'nav.expenseProcessing', icon: <PaymentsIcon fontSize="small" /> },
-      render: ({ orgId, authHeaders }) => <ExpenseProcessing orgId={orgId} authHeaders={authHeaders} />,
+      render: ({ orgId, userId, authHeaders }) => <ExpenseProcessing orgId={orgId} userId={userId} authHeaders={authHeaders} />,
     },
   ],
   orgSettings: [
