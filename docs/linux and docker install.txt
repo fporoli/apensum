@@ -14,14 +14,14 @@
     9  sudo apt install ca-certificates curl
    10  sudo install -m 0755 -d /etc/apt/keyrings
    17  # Add the repository to Apt sources:
-   18  sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
-   19  Types: deb
-   20  URIs: https://download.docker.com/linux/ubuntu
-   21  Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
-   22  Components: stable
-   23  Architectures: $(dpkg --print-architecture)
-   24  Signed-By: /etc/apt/keyrings/docker.asc
-   25  EOF
+sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
    26  sudo apt update
    27  sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
    28  sudo apt autoremove
