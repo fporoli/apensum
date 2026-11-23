@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   balanceRangeEnd,
   computeYearBalances,
+  liveAttendanceFrom,
   reportAlerts,
   type BalanceInputs,
   type ClosedMonth,
@@ -48,6 +49,15 @@ function weekdays(from: string, to: string): string[] {
 test('balanceRangeEnd covers the year and the current month', () => {
   assert.equal(balanceRangeEnd(2026, '2026-11-11'), '2027-01-01');
   assert.equal(balanceRangeEnd(2025, '2026-11-11'), '2026-12-01');
+});
+
+test('attendance skips frozen months but retains the Monday before the first live or legacy month', () => {
+  const closed = new Map<string, number | null>([['2026-09-01', 0], ['2026-10-01', 45]]);
+  assert.equal(liveAttendanceFrom('2026-09-01', '2026-11-11', closed), '2026-10-26');
+  assert.equal(liveAttendanceFrom('2026-09-01', '2026-11-01', closed), '2026-11-01');
+  closed.set('2026-10-01', null);
+  assert.equal(liveAttendanceFrom('2026-09-01', '2026-11-11', closed), '2026-09-28');
+  assert.equal(liveAttendanceFrom('2026-11-15', '2026-11-11', closed), '2026-11-11');
 });
 
 test('computeYearBalances: months before the start are empty, open months run live up to today', () => {

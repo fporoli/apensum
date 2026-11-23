@@ -26,6 +26,7 @@ import {
 } from '@worktime3/web/plugin';
 import type { ExpenseRow } from './expenseRows';
 import { MILEAGE_CATEGORY } from '../shared/booking';
+import { ExpensePager, useExpensePage } from './expensePagination';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -40,8 +41,6 @@ const STATUSES = [
   'submitted_processing', 'processing_finished', 'request_payment', 'finished',
 ] as const;
 type Status = (typeof STATUSES)[number];
-
-const EDITABLE_STATUSES: readonly Status[] = ['in_preparation', 'rejected'];
 
 interface ReportRow {
   id: string;
@@ -82,9 +81,12 @@ interface ExpenseReportsProps {
 
 export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseReportsProps) {
   const { t, locale } = useI18n();
-  const [reports, setReports] = useState<ReportRow[]>([]);
-  const [items, setItems] = useState<ExpenseRow[]>([]);
-  const [unmapped, setUnmapped] = useState<ExpenseRow[]>([]);
+  const reportPage = useExpensePage<ReportRow, ReportRow>(`${API}/organizations/${orgId}/expense-reports?userId=${userId}`, authHeaders);
+  const { entries: history, draft, loading, reload: reloadReports } = reportPage;
+  const availablePage = useExpensePage<ExpenseRow>(draft ? `${API}/organizations/${orgId}/expenses?userId=${userId}&unmapped=true&draft=${draft.id}` : null, authHeaders);
+  const { entries: unmapped } = availablePage;
+  const [draftItems, setDraftItems] = useState<{ id: string; entries: ExpenseRow[] }>();
+  const items = draftItems && draftItems.id === draft?.id ? draftItems.entries : [];
   const [categories, setCategories] = useState<Record<string, string>>({});
   const [subCategories, setSubCategories] = useState<Record<string, string>>({});
   const [catTranslations, setCatTranslations] = useState<Record<string, Record<string, string>>>({});
@@ -92,22 +94,10 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
   const [submitNote, setSubmitNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const [inspectingReport, setInspectingReport] = useState<ReportRow | null>(null);
   const [inspectingItems, setInspectingItems] = useState<ExpenseRow[]>([]);
   const [inspectingLoading, setInspectingLoading] = useState(false);
-
-  async function reloadReports() {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API}/organizations/${orgId}/expense-reports?userId=${userId}`, { headers: await authHeaders() });
-      const data = await res.json();
-      if (Array.isArray(data)) setReports(data);
-    } catch { /* offline fallback */ } finally {
-      setLoading(false);
-    }
-  }
 
   async function reloadStaticData() {
     try {
@@ -132,37 +122,33 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
   }
 
   useEffect(() => {
-    void reloadReports();
     void reloadStaticData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, userId]);
 
-  const draft = useMemo(() => reports.find((r) => EDITABLE_STATUSES.includes(r.status)) ?? null, [reports]);
-  const history = useMemo(() => reports.filter((r) => r.id !== draft?.id).sort((a, b) => (a.date_submitted ?? '') < (b.date_submitted ?? '') ? 1 : -1), [reports, draft]);
-
-  async function reloadDraftDetail() {
-    if (!draft) {
-      setItems([]);
-      setUnmapped([]);
-      return;
-    }
-    try {
-      const [itemsRes, expensesRes] = await Promise.all([
-        fetch(`${API}/expense-reports/${draft.id}/items`, { headers: await authHeaders() }),
-        fetch(`${API}/organizations/${orgId}/expenses?userId=${userId}`, { headers: await authHeaders() }),
-      ]);
-      const itemsData = await itemsRes.json();
-      const expensesData = await expensesRes.json();
-      setItems(Array.isArray(itemsData) ? itemsData : []);
-      const all: ExpenseRow[] = Array.isArray(expensesData.entries) ? expensesData.entries : [];
-      setUnmapped(all.filter((e) => !e.expense_report_id));
-    } catch { /* offline fallback */ }
-  }
-
+  const [itemsRevision, refreshItems] = useState(0);
+  const draftId = draft?.id;
   useEffect(() => {
-    void reloadDraftDetail();
+    if (!draftId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`${API}/expense-reports/${draftId}/items`, { headers: await authHeaders(), signal: controller.signal });
+        const data = await res.json();
+        if (!res.ok || !Array.isArray(data)) throw new Error();
+        if (!controller.signal.aborted) setDraftItems({ id: draftId, entries: data });
+      } catch {
+        if (!controller.signal.aborted) setError(t('expenses.paging.loadFailed'));
+      }
+    })();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.id]);
+  }, [draftId, itemsRevision]);
+
+  function reloadDraftDetail() {
+    refreshItems(n => n + 1);
+    availablePage.reload();
+  }
 
   async function createReport() {
     setError(null);
@@ -170,7 +156,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
       const res = await fetch(`${API}/organizations/${orgId}/expense-reports`, { method: 'POST', headers: await authHeaders() });
       const data = await res.json();
       if (!data.ok) { setError(t('expenseReports.createFailed', { error: data.error ?? 'unknown error' })); return; }
-      await reloadReports();
+      reloadReports();
     } catch {
       setError(t('expenseReports.createFailedOffline'));
     }
@@ -187,7 +173,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
       });
       const data = await res.json();
       if (!data.ok) { setError(t('expenseReports.attachFailed', { error: data.error ?? 'unknown error' })); return; }
-      await reloadDraftDetail();
+      reloadDraftDetail();
     } catch {
       setError(t('expenseReports.attachFailedOffline'));
     }
@@ -203,7 +189,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
         setError(t('expenseReports.attachFailed', { error: data.error ?? 'unknown error' }));
         return;
       }
-      await reloadDraftDetail();
+      reloadDraftDetail();
     } catch {
       setError(t('expenseReports.attachFailedOffline'));
     }
@@ -226,7 +212,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
       }
       setSuccess(data.autoApproved ? t('expenseReports.autoApproved') : t('expenseReports.submitted'));
       setSubmitNote('');
-      await reloadReports();
+      reloadReports();
     } catch {
       setError(t('expenseReports.submitFailedOffline'));
     }
@@ -275,7 +261,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
 
       <Paper sx={{ p: 2 }}>
         {!draft ? (
-          <Button variant="contained" startIcon={<AddIcon fontSize="small" />} onClick={createReport}>{t('expenseReports.newReport')}</Button>
+          <Button variant="contained" disabled={loading || reportPage.failed} startIcon={<AddIcon fontSize="small" />} onClick={createReport}>{t('expenseReports.newReport')}</Button>
         ) : (
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
@@ -324,7 +310,9 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
               </Table>
             </TableContainer>
 
-            <Typography variant="subtitle2" sx={{ mt: 2.5, mb: 1 }}>{t('expenseReports.availableExpenses', { count: unmapped.length })}</Typography>
+            <Typography variant="subtitle2" sx={{ mt: 2.5, mb: 1 }}>{t('expenses.paging.available')}</Typography>
+            {availablePage.loading && <LinearProgress />}
+            {availablePage.failed && <Alert severity="error">{t('expenses.paging.loadFailed')}</Alert>}
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -346,12 +334,13 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
                       </TableCell>
                     </TableRow>
                   ))}
-                  {unmapped.length === 0 && (
+                  {!availablePage.loading && !availablePage.failed && unmapped.length === 0 && (
                     <TableEmptyRow colSpan={4} icon={<ReceiptLongIcon fontSize="inherit" />} title={t('expenseReports.noUnmappedExpenses')} />
                   )}
                 </TableBody>
               </Table>
             </TableContainer>
+            <ExpensePager {...availablePage} />
 
             <TextField
               size="small"
@@ -368,7 +357,8 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
         )}
       </Paper>
 
-      {history.length > 0 && (
+      {reportPage.failed && <Alert severity="error">{t('expenses.paging.loadFailed')}</Alert>}
+      {(history.length > 0 || reportPage.page > 0) && (
         <Paper sx={{ p: 2 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{t('expenseReports.history')}</Typography>
           <TableContainer>
@@ -397,6 +387,7 @@ export default function ExpenseReports({ orgId, userId, authHeaders }: ExpenseRe
               </TableBody>
             </Table>
           </TableContainer>
+          <ExpensePager {...reportPage} />
         </Paper>
       )}
 

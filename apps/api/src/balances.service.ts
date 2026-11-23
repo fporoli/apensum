@@ -199,6 +199,25 @@ export function balanceRangeEnd(year: number, today: string): string {
   return currentEnd > yearEnd ? currentEnd : yearEnd;
 }
 
+/** Only live months and older snapshots without frozen legal overtime need attendance. */
+export function liveAttendanceFrom(from: string, today: string, closed: ReadonlyMap<string, number | null>): string {
+  if (from >= today) return today;
+  for (let month = monthStart(from); month < today; month = nextMonth(month)) {
+    if (closed.get(month) == null) return weekStart(month < from ? from : month);
+  }
+  return today;
+}
+
+async function balanceBatches<T, R>(people: readonly T[], load: (person: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < people.length; i += 4) {
+    results.push(...await Promise.all(people.slice(i, i + 4).map(load)));
+  }
+  return results;
+}
+
+type BalanceContext = { settings: WorkTimeSettings; unpaidTypes: ReadonlySet<string> };
+
 const EMPTY_SUMMARY: MonthSummary = { scheduled: 0, holiday: 0, absenceByType: {}, target: 0, actual: 0, delta: 0, vacationDays: 0 };
 
 function mergeAbsences(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
@@ -566,7 +585,7 @@ export class BalancesService {
     if (!start) {
       const result = await db.execute(sql`
         SELECT to_char(LEAST(
-          (SELECT MIN((check_in AT TIME ZONE ${timeZone})::date) FROM work_times WHERE organization_id = ${orgId} AND user_id = ${userId}),
+          ((SELECT MIN(check_in) FROM work_times WHERE organization_id = ${orgId} AND user_id = ${userId}) AT TIME ZONE ${timeZone})::date,
           (SELECT MIN(date_start) FROM absences WHERE organization_id = ${orgId} AND user_id = ${userId} AND status = 'approved'),
           (SELECT MIN(month) FROM work_time_months WHERE organization_id = ${orgId} AND user_id = ${userId})
         ), 'YYYY-MM-DD') AS first_day`);
@@ -617,8 +636,22 @@ export class BalancesService {
    * year's own closing when it has one.
    */
   async year(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearBalances & { adjustments: Adjustment[]; closing: YearClosingInfo | null }> {
+    const { balances } = await this.calculateYear(db, orgId, userId, year, now, await this.balanceContext(db, orgId));
+    return balances;
+  }
+
+  private async balanceContext(db: Db, orgId: string): Promise<BalanceContext> {
+    const [settings, types] = await Promise.all([this.workTime.settings(db, orgId), resolveAbsenceTypes(db, orgId)]);
+    return { settings, unpaidTypes: unpaidAbsenceTypes(types) };
+  }
+
+  private async calculateYear(db: Db, orgId: string, userId: string, year: number, now: Date, { settings, unpaidTypes }: BalanceContext, knownTimeZone?: string) {
     await this.closeMissing(db, orgId, userId);
-    const [settings, timeZone, closings] = await Promise.all([this.workTime.settings(db, orgId), this.workTime.timeZone(db, userId), this.closings(db, orgId, userId)]);
+    const [timeZone, closings, closedRows] = await Promise.all([
+      knownTimeZone ?? this.workTime.timeZone(db, userId),
+      this.closings(db, orgId, userId),
+      db.select().from(work_time_months).where(and(eq(work_time_months.organization_id, orgId), eq(work_time_months.user_id, userId))),
+    ]);
     const today = localDate(now, timeZone);
     const { start, until } = await this.startDate(db, orgId, userId, settings, timeZone, today);
     const opening = closings.filter((c) => c.year < year).at(-1) ?? null;
@@ -626,10 +659,10 @@ export class BalancesService {
     const from = countedFrom && countedFrom > start ? countedFrom : start;
     const yearStart = `${year}-01-01`;
     const modelFrom = from < yearStart ? from : yearStart;
-    const [model, attendance, closedRows, periods, adjustments, overrides, vacation, absenceTypes] = await Promise.all([
-      this.workTime.model(db, orgId, userId, modelFrom, balanceRangeEnd(year, today)),
-      from < today ? this.workTime.attendanceByDay(db, orgId, userId, weekStart(from), today, timeZone, false) : Promise.resolve(new Map<string, number>()),
-      db.select().from(work_time_months).where(and(eq(work_time_months.organization_id, orgId), eq(work_time_months.user_id, userId))),
+    const attendanceFrom = liveAttendanceFrom(from, today, new Map(closedRows.map(r => [r.month, r.legal_overtime_minutes])));
+    const [model, attendance, periods, adjustments, overrides, vacation] = await Promise.all([
+      this.workTime.model(db, orgId, userId, modelFrom, balanceRangeEnd(year, today), settings),
+      attendanceFrom < today ? this.workTime.attendanceByDay(db, orgId, userId, attendanceFrom, today, timeZone, false) : new Map<string, number>(),
       db
         .select({ period_start: timesheet_periods.period_start, status: timesheet_periods.status })
         .from(timesheet_periods)
@@ -637,7 +670,6 @@ export class BalancesService {
       this.adjustments(db, orgId, userId),
       this.entitlementOverrides(db, orgId, userId),
       vacationProfile(db, orgId, userId),
-      resolveAbsenceTypes(db, orgId),
     ]);
     const balances = computeYearBalances({
       year,
@@ -651,16 +683,16 @@ export class BalancesService {
       periodStatus: new Map(periods.map((p) => [monthStart(p.period_start), p.status])),
       adjustments,
       entitlementOverrides: overrides,
-      unpaidTypes: unpaidAbsenceTypes(absenceTypes),
+      unpaidTypes,
       vacation,
       opening,
     });
     const own = closings.find((c) => c.year === year);
-    return {
+    return { today, closings, balances: {
       ...balances,
       adjustments: adjustments.filter((a) => a.effectiveDate >= `${year}-01-01` && a.effectiveDate < `${year + 1}-01-01`),
       closing: own ? { ...own, reopenable: !closings.some((c) => c.year > year) } : null,
-    };
+    } };
   }
 
   /**
@@ -669,17 +701,22 @@ export class BalancesService {
    * is still open (years close in order). `notEmployed` when the year lies before their start.
    */
   async yearStatus(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearStatus> {
-    const b = await this.year(db, orgId, userId, year, now);
+    return this.calculateYearStatus(db, orgId, userId, year, now, await this.balanceContext(db, orgId));
+  }
+
+  async yearStatuses(db: Db, orgId: string, people: readonly { id: string; timezone: string | null }[], year: number, now = new Date()): Promise<YearStatus[]> {
+    if (!people.length) return [];
+    const context = await this.balanceContext(db, orgId);
+    return balanceBatches(people, p => this.calculateYearStatus(db, orgId, p.id, year, now, context, p.timezone || 'UTC'));
+  }
+
+  private async calculateYearStatus(db: Db, orgId: string, userId: string, year: number, now: Date, context: BalanceContext, timeZone?: string): Promise<YearStatus> {
+    const { balances: b, today, closings } = await this.calculateYear(db, orgId, userId, year, now, context, timeZone);
     const yearStart = `${year}-01-01`;
-    const today = await this.workTime.timeZone(db, userId).then((tz) => localDate(now, tz));
     const startYear = Number(b.start.slice(0, 4));
     const values = { overtime: b.overtime.closing, legalOvertime: b.legalOvertime.closing, vacation: b.vacation.remaining };
     const openMonths = b.months.filter((m) => m.month >= yearStart && m.status !== 'closed' && m.status !== 'before-start' && m.status !== 'not-recorded').map((m) => m.month);
-    let previousOpen = false;
-    if (year - 1 >= startYear) {
-      const closings = await this.closings(db, orgId, userId);
-      previousOpen = !closings.some((c) => c.year === year - 1);
-    }
+    const previousOpen = year - 1 >= startYear && !closings.some((c) => c.year === year - 1);
     return {
       year,
       notEmployed: startYear > year,
@@ -745,32 +782,31 @@ export class BalancesService {
       conditions.push(inArray(organization_memberships.user_id, userIds));
     }
     const people = await db
-      .select({ user_id: users.id, display_name: users.display_name, email: users.email })
+      .select({ user_id: users.id, display_name: users.display_name, email: users.email, timezone: users.timezone })
       .from(organization_memberships)
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(and(...conditions))
       .orderBy(asc(users.display_name));
-    const settings = await this.workTime.settings(db, orgId);
+    if (!people.length) return [];
+    const context = await this.balanceContext(db, orgId);
     const year = Number(month.slice(0, 4));
-    const rows = [];
-    for (const p of people) {
-      const balances = await this.year(db, orgId, p.user_id, year, now);
+    const rows = await balanceBatches(people, async (p) => {
+      const { balances, today } = await this.calculateYear(db, orgId, p.user_id, year, now, context, p.timezone || 'UTC');
       const row = balances.months.find((m) => m.month === month);
-      if (!row) continue;
-      const today = localDate(now, await this.workTime.timeZone(db, p.user_id));
+      if (!row) return null;
       const legalYearToDate = balances.months.filter((m) => m.month <= month).reduce((s, m) => s + m.legalOvertimeMinutes, 0);
-      rows.push({
+      return {
         userId: p.user_id,
         displayName: p.display_name,
         email: p.email,
         month: row,
         vacationRemaining: balances.vacation.remaining,
         legalYearToDate,
-        legalYearLimit: settings.legalOvertimeYearLimitMinutes,
-        alerts: row.status === 'before-start' ? [] : reportAlerts(row, balances.vacation.remaining, today, settings, legalYearToDate),
-      });
-    }
-    return rows;
+        legalYearLimit: context.settings.legalOvertimeYearLimitMinutes,
+        alerts: row.status === 'before-start' ? [] : reportAlerts(row, balances.vacation.remaining, today, context.settings, legalYearToDate),
+      };
+    });
+    return rows.filter(row => row !== null);
   }
 
   async addAdjustment(

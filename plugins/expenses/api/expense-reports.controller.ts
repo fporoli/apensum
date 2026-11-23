@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Query, Req } from '@nestjs/common';
-import { and, asc, desc, eq, getTableColumns, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, ne, sql, type SQL } from 'drizzle-orm';
+import { listPage, pageRows } from './list-page';
 import { DbService, callerUserId, can, canSeeUserData, isOrgMember, listableUserIds, membershipManagerId, type AuthenticatedRequest, AuditService, VersionsService, WorkflowsService } from '@worktime3/api/plugin';
 import { projects, subprojects, users } from '@worktime3/api/schema';
 import { expense_report_items, expense_reports, expenses } from './db/schema';
@@ -46,18 +47,22 @@ export class ExpenseReportsController {
     @Req() req: AuthenticatedRequest,
     @Query('userId') userId?: string,
     @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
+    const paging = listPage(page, pageSize);
+    const empty = paging ? { ...pageRows([], paging.size), draft: null } : [];
     const db = this.db.getDb();
-    if (!db) return [];
+    if (!db) return empty;
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return [];
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return empty;
 
     const processes = await can(db, orgId, callerId, 'nav.expenseProcessing', 'see');
     const statusIsFinanceStage = !!status && (STATUSES as readonly string[]).includes(status) && PIPELINE.includes(status as Status) && status !== 'approved';
     const conditions: SQL[] = [eq(expense_reports.organization_id, orgId)];
     if (userId) {
       // Someone else's reports: admins can view anyone's; everyone else only that person's own manager.
-      if (!(await canSeeUserData(db, orgId, callerId, 'nav.expenseReports', userId))) return [];
+      if (!(await canSeeUserData(db, orgId, callerId, 'nav.expenseReports', userId))) return empty;
       conditions.push(eq(expense_reports.user_id, userId));
     } else if (processes && statusIsFinanceStage) {
       // The finance queue: a billing_admin (or admin) may list org-wide by finance-stage status,
@@ -71,16 +76,25 @@ export class ExpenseReportsController {
       conditions.push(eq(expense_reports.status, status as Status));
     }
 
-    return db
+    const reportRows = () => db
       .select({
         ...getTableColumns(expense_reports),
         user_display_name: users.display_name,
         user_email: users.email,
       })
       .from(expense_reports)
-      .innerJoin(users, eq(users.id, expense_reports.user_id))
-      .where(and(...conditions))
-      .orderBy(desc(expense_reports.date_submitted));
+      .innerJoin(users, eq(users.id, expense_reports.user_id));
+    if (!paging) return reportRows().where(and(...conditions)).orderBy(desc(expense_reports.date_submitted));
+
+    const newest = [desc(expense_reports.date_submitted), desc(expense_reports.id)];
+    const [draft] = !status && userId ? await reportRows()
+      .where(and(...conditions, inArray(expense_reports.status, ['in_preparation', 'rejected'])))
+      .orderBy(...newest).limit(1) : [];
+    const rows = await reportRows()
+      .where(and(...conditions, draft ? ne(expense_reports.id, draft.id) : undefined))
+      .orderBy(sql`${expense_reports.date_submitted} DESC NULLS LAST`, desc(expense_reports.id))
+      .limit(paging.size + 1).offset(paging.offset);
+    return { ...pageRows(rows, paging.size), draft: draft ?? null };
   }
 
   @Post('organizations/:orgId/expense-reports')

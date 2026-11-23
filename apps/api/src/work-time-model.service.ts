@@ -219,11 +219,11 @@ export class WorkTimeModelService {
     return rows.map((r) => ({ dateStart: r.date_start, dateEnd: r.date_end, halfDay: r.half_day, type: r.absence_type }));
   }
 
-  async model(db: Db, orgId: string, userId: string, from: string, toExclusive: string): Promise<WorkTimeModel> {
-    const settings = await this.settings(db, orgId);
+  async model(db: Db, orgId: string, userId: string, from: string, toExclusive: string, knownSettings?: WorkTimeSettings): Promise<WorkTimeModel> {
+    const settings = knownSettings ?? await this.settings(db, orgId);
     const [schedules, holidays, spans] = await Promise.all([
       this.schedules(db, orgId, userId),
-      this.holidays(db, orgId, from, toExclusive, { userId }),
+      holidaysFor(db, orgId, from, toExclusive, { userId }, settings),
       this.approvedAbsences(db, orgId, userId, from, toExclusive),
     ]);
     return { schedules, fallback: defaultSchedule(settings.fullTimeWeeklyMinutes), holidays, absences: spans };
@@ -244,8 +244,7 @@ export class WorkTimeModelService {
       FROM work_times
       WHERE organization_id = ${orgId} AND user_id = ${userId}
         AND check_in < (${toExclusive}::date::timestamp AT TIME ZONE ${timeZone})
-        AND COALESCE(check_out, now()) > (${from}::date::timestamp AT TIME ZONE ${timeZone})
-        ${includeOpen ? sql`` : sql`AND check_out IS NOT NULL`}`);
+        AND ${includeOpen ? sql`COALESCE(check_out, now())` : sql`check_out`} > (${from}::date::timestamp AT TIME ZONE ${timeZone})`);
     return minutesByLocalDay(result.rows as unknown as TimeSpan[], from, toExclusive, timeZone);
   }
 

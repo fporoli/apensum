@@ -127,8 +127,9 @@ async function exercise(people, other) {
   await ok(`expense-reports/${report}/approve`, managerToken, { note });
   const res = await ok(`${base}/expense-processing/process`, hrToken, { reportIds: [report] });
   assert.equal(res.processed, 1);
+  const draft = await ok(`${base}/expense-reports`, workerToken, {});
   console.log(`${employee.slug}: verified employee/manager reject → correct → resubmit → approve on absence, timesheet and expense; HR processed expense`);
-  return { adminToken, managerToken, hrToken };
+  return { adminToken, managerToken, hrToken, workerToken, employee, draftId: draft.id };
 }
 
 async function closeYears(people, hrToken) {
@@ -195,13 +196,33 @@ async function verify(people, tokens) {
   assert(counts.closed_years > 0 && counts.expense_reports > counts.people);
   console.log(`${slug}: ${JSON.stringify(counts)}`);
 
+  for (const path of ['expenses', 'expense-reports']) {
+    const { data: legacy } = await request(`${base}/${path}`, tokens.adminToken);
+    const total = (Array.isArray(legacy) ? legacy : legacy.entries).length;
+    const { data: first } = await request(`${base}/${path}?page=0&pageSize=25`, tokens.adminToken);
+    const { data: second } = await request(`${base}/${path}?page=1&pageSize=25`, tokens.adminToken);
+    const { data: last } = await request(`${base}/${path}?page=${Math.ceil(total / 25) - 1}&pageSize=25`, tokens.adminToken);
+    assert.equal(first.entries.length, 25);
+    assert.equal(second.entries.length, 25);
+    assert.equal(new Set([...first.entries, ...second.entries].map(r => r.id)).size, 50);
+    assert.equal(first.hasMore, true);
+    assert.equal(last.entries.length, total % 25 || 25);
+    assert.equal(last.hasMore, false);
+  }
+  const personQuery = `userId=${tokens.employee.person}&pageSize=2`;
+  const { data: reportFirst } = await request(`${base}/expense-reports?${personQuery}&page=0`, tokens.workerToken);
+  const { data: reportSecond } = await request(`${base}/expense-reports?${personQuery}&page=1`, tokens.workerToken);
+  assert.equal(reportFirst.draft?.id, tokens.draftId);
+  assert.equal(reportSecond.draft?.id, reportFirst.draft.id);
+  assert([...reportFirst.entries, ...reportSecond.entries].every(r => r.id !== reportFirst.draft.id));
+
   for (const [name, path, token, rows] of [
     ['directory', `${base}/directory`, tokens.adminToken, d => d.people.length],
     ['monthly balances', `${base}/balances/report?month=${lastMonth.slice(0, 7)}`, tokens.hrToken, d => d.rows.length],
     ['year-end overview', `${base}/balance-years?year=${year - 1}`, tokens.hrToken, d => d.rows.length],
     ['manager approvals', `workflows/assigned-to-me?orgId=${org}&status=all`, tokens.managerToken, d => d.length],
     ['timesheet list', `${base}/timesheet-periods`, tokens.adminToken, d => d.length],
-    ['expense-report list', `${base}/expense-reports`, tokens.adminToken, d => d.length],
+    ['expense-report list (25 per page)', `${base}/expense-reports?page=0&pageSize=25`, tokens.adminToken, d => d.entries.length],
   ]) {
     const samples = [];
     let count, bytes;

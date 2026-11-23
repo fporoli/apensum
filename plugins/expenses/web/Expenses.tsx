@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import dayjs from 'dayjs';
 import { validateFields } from '@worktime3/shared/fields';
+import { addDays, isIsoDate } from '@worktime3/shared/worktime';
 import { EXPENSE_FORM } from '../shared/form';
 import { ALLOWANCE_CATEGORY, MILEAGE_CATEGORY, allowanceTypesOn, bookExpense, isRateCategory, isUnconverted, type ExchangeRate } from '../shared/booking';
 import {
@@ -30,6 +31,7 @@ import {
 } from '@worktime3/web/plugin';
 import type { ExpenseRow } from './expenseRows';
 import { ReceiptCaptureButtons } from './receiptCapture';
+import { ExpensePager, useExpensePage } from './expensePagination';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -130,7 +132,8 @@ interface ExpensesProps {
 
 export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) {
   const { t, locale } = useI18n();
-  const [entries, setEntries] = useState<ExpenseRow[]>([]);
+  const expensePage = useExpensePage<ExpenseRow>(`${API}/organizations/${orgId}/expenses?userId=${userId}`, authHeaders);
+  const { entries, reload, loading } = expensePage;
   const [projects, setProjects] = useState<Option[]>([]);
   const [subprojectsByProject, setSubprojectsByProject] = useState<Record<string, Option[]>>({});
   const [categories, setCategories] = useState<Record<string, string>>({});
@@ -146,9 +149,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const { form, savedForm, designer } = useFormTemplate(orgId, EXPENSE_FORM, authHeaders);
   const additionalTitle = useGroupTitle(form, 'additional');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingSnapshot, setEditingSnapshot] = useState<ExpenseRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [showAdditional, setShowAdditional] = useState(false);
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
   const [confirmRemoveDocId, setConfirmRemoveDocId] = useState<string | null>(null);
@@ -171,17 +174,6 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   // Receipt in another currency (checkbox): then its currency is chosen and the booked amount may be overridden.
   const [foreign, setForeign] = useState(false);
   const [override, setOverride] = useState(false);
-
-  async function reload() {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API}/organizations/${orgId}/expenses?userId=${userId}`, { headers: await authHeaders() });
-      const data = await res.json();
-      if (Array.isArray(data.entries)) setEntries(data.entries);
-    } catch { /* offline fallback */ } finally {
-      setLoading(false);
-    }
-  }
 
   async function reloadStaticData() {
     try {
@@ -301,7 +293,6 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   }
 
   useEffect(() => {
-    void reload();
     void reloadStaticData();
     void reloadProjects();
     void loadDefaultCurrency();
@@ -334,6 +325,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
 
   function resetForm() {
     setEditingId(null);
+    setEditingSnapshot(null);
     setReceipt(null);
     draft.clear();
     setValues(emptyForm(String(values.currency ?? '')));
@@ -385,12 +377,14 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       if (file && savedId && !(await uploadPayslip(savedId, file, false))) {
         // The expense is saved; keep the form so the receipt can be attached again.
         setEditingId(savedId);
-        await reload();
+        reload();
         return;
       }
       resetForm();
       setSuccess(t('expenses.saved'));
-      await reload();
+      if (!editingId) expensePage.go(0);
+      reload();
+      allowancePage.reload();
     } catch {
       setError(t('expenses.saveFailedOffline'));
     } finally {
@@ -410,7 +404,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       }
       if (editingId === id) resetForm();
       setSuccess(t('expenses.removed'));
-      await reload();
+      reload();
+      allowancePage.reload();
     } catch {
       setError(t('expenses.saveFailedOffline'));
     }
@@ -431,7 +426,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       }
       if (announce) {
         setSuccess(t('expenses.uploadSuccess'));
-        await reload();
+        reload();
       }
       return true;
     } catch {
@@ -452,7 +447,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       }
       setSuccess(t('expenses.payslipRemoved'));
       if (editingId === id) setReceipt(null);
-      await reload();
+      reload();
     } catch {
       setError(t('expenses.saveFailedOffline'));
     }
@@ -486,6 +481,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
 
   function startEdit(row: ExpenseRow) {
     setEditingId(row.id);
+    setEditingSnapshot(row);
     draft.clear();
     setReceipt(null);
     if (row.document_id) void loadReceipt(row.id);
@@ -570,16 +566,14 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const kmText = typeof values.quantity === 'number' ? String(values.quantity) : '';
   const [kmInput, setKmInput] = useState('');
   useEffect(() => { setKmInput(kmText); }, [kmText, editingId]);
-  const editingRow = editingId ? entries.find((e) => e.id === editingId) : undefined;
-  // The same allowance on the same day once more (a hint: it may be meant, e.g. for two trips).
-  const duplicateAllowance = allowance && !!values.subCategory && entries.some((e) =>
-    e.id !== editingId && e.category === ALLOWANCE_CATEGORY && e.sub_category === values.subCategory && e.expense_date.slice(0, 10) === String(values.expenseDate ?? ''));
+  const editingRow = editingId ? entries.find((e) => e.id === editingId) ?? editingSnapshot : null;
+  const allowanceDate = String(values.expenseDate ?? '');
+  const allowanceType = String(values.subCategory ?? '');
+  const allowanceCheck = allowance && allowanceType && isIsoDate(allowanceDate) ?
+    `${API}/organizations/${orgId}/expenses?${new URLSearchParams({ userId, category: ALLOWANCE_CATEGORY, subCategory: allowanceType, from: allowanceDate, to: addDays(allowanceDate, 1) })}` : null;
+  const allowancePage = useExpensePage<ExpenseRow>(allowanceCheck, authHeaders);
+  const duplicateAllowance = allowancePage.entries.some(e => e.id !== editingId);
   const editingLocked = editingRow ? isRowLocked(editingRow) : false;
-  // Newest first: the expense just added appears at the top.
-  const sortedEntries = useMemo(
-    () => [...entries].sort((a, b) => b.expense_date.localeCompare(a.expense_date) || b.id.localeCompare(a.id)),
-    [entries],
-  );
 
   return (
     <FieldDesignScope designer={designer}>
@@ -761,7 +755,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                 </TableRow>
               </TableHead>
               <TableBody>
-                {sortedEntries.map((row) => {
+                {entries.map((row) => {
                   const locked = isRowLocked(row);
                   const numVal = Number(row.value);
                   const formattedVal = Number.isFinite(numVal) ? formatMoney(numVal, locale) : row.value;
@@ -833,12 +827,14 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                     </TableRow>
                   );
                 })}
-                {entries.length === 0 && (
+                {!loading && !expensePage.failed && entries.length === 0 && (
                   <TableEmptyRow colSpan={7} icon={<ReceiptLongIcon fontSize="inherit" />} title={t('expenses.noEntries')} />
                 )}
               </TableBody>
             </Table>
           </TableContainer>
+          {expensePage.failed && <Alert severity="error">{t('expenses.paging.loadFailed')}</Alert>}
+          <ExpensePager {...expensePage} />
         </Paper>
       </Box>
 

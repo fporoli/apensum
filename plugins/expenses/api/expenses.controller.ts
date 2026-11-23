@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpException, Param, Patch, Post, Query, Req, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { and, asc, eq, getTableColumns, gte, lt, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, gte, isNull, lt, sql, type SQL } from 'drizzle-orm';
+import { listPage, pageRows } from './list-page';
 import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db, VersionsService, callerUserId, can, canSeeUserData, isOrgMember, reachesAll, type AuthenticatedRequest, DocumentsService, MAX_DOCUMENT_BYTES, FieldsService } from '@worktime3/api/plugin';
@@ -175,16 +176,23 @@ export class ExpensesController {
     @Query('userId') userId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('unmapped') unmapped?: string,
+    @Query('category') category?: string,
+    @Query('subCategory') subCategory?: string,
   ) {
+    const paging = listPage(page, pageSize);
+    const empty = paging ? pageRows([], paging.size) : { entries: [] };
     const db = this.db.getDb();
-    if (!db) return { entries: [] };
+    if (!db) return empty;
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { entries: [] };
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return empty;
 
     let targetUserId = userId;
     if (targetUserId && targetUserId !== callerId) {
       if (!(await canSeeUserData(db, orgId, callerId, 'nav.expenses', targetUserId))) {
-        return { entries: [] };
+        return empty;
       }
     } else if (!targetUserId && !(await reachesAll(db, orgId, callerId, 'nav.expenses'))) {
       // No person asked for: everyone's entries only for grants reaching all; otherwise one's own.
@@ -195,10 +203,13 @@ export class ExpensesController {
     if (targetUserId) conditions.push(eq(expenses.user_id, targetUserId));
     if (from) conditions.push(gte(expenses.expense_date, from));
     if (to) conditions.push(lt(expenses.expense_date, to));
+    if (unmapped === 'true') conditions.push(isNull(expense_report_items.expense_id));
+    if (category) conditions.push(eq(expenses.category, category));
+    if (subCategory) conditions.push(eq(expenses.sub_category, subCategory));
 
     // Names + report mapping come along so the UI can list expenses (and whether/where
     // each is attached) without a lookup per row.
-    const rows = await db
+    const query = db
       .select({
         ...getTableColumns(expenses),
         project_name: projects.name,
@@ -211,10 +222,11 @@ export class ExpensesController {
       .leftJoin(subprojects, eq(subprojects.id, expenses.subproject_id))
       .leftJoin(expense_report_items, eq(expense_report_items.expense_id, expenses.id))
       .leftJoin(expense_reports, eq(expense_reports.id, expense_report_items.expense_report_id))
-      .where(and(...conditions))
-      .orderBy(asc(expenses.expense_date));
+      .where(and(...conditions));
 
-    return { entries: rows };
+    if (!paging) return { entries: await query.orderBy(asc(expenses.expense_date)) };
+    const rows = await query.orderBy(desc(expenses.expense_date), desc(expenses.id)).limit(paging.size + 1).offset(paging.offset);
+    return pageRows(rows, paging.size);
   }
 
   @Patch('expenses/:id')

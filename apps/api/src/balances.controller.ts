@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { DbService } from './db.service';
 import { ADJUSTMENT_KINDS, BALANCE_KINDS, BalancesService, type AdjustmentKind, type BalanceKind } from './balances.service';
-import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isYearClosed, listableUserIds } from './access';
+import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isYearClosed, listableUserIds, permissionIdsOf, visibleUserIds } from './access';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { organization_memberships, users } from './db/schema';
 import type { AuthenticatedRequest } from './jwt.guard';
@@ -150,17 +150,21 @@ export class BalancesController {
     const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true)];
     if (ids !== 'all') conditions.push(inArray(organization_memberships.user_id, ids));
     const people = await db
-      .select({ id: users.id, name: users.display_name, email: users.email })
+      .select({ id: users.id, name: users.display_name, email: users.email, timezone: users.timezone, membershipStatus: organization_memberships.status })
       .from(organization_memberships)
       .innerJoin(users, eq(users.id, organization_memberships.user_id))
       .where(and(...conditions))
       .orderBy(asc(users.display_name));
-    const rows = [];
-    for (const p of people) {
-      const status = await this.balances.yearStatus(db, orgId, p.id, year);
-      if (status.notEmployed) continue;
-      rows.push({ userId: p.id, displayName: p.name, email: p.email, ...status, canEdit: await canEditBeyondOwn(db, orgId, callerId, OBJECT, p.id) });
-    }
+    const [statuses, editable] = await Promise.all([
+      this.balances.yearStatuses(db, orgId, people, year),
+      this.yearEditors(db, orgId, callerId, people.some(p => p.membershipStatus !== 'active')),
+    ]);
+    const rows = people.flatMap((p, i) => {
+      const status = statuses[i];
+      if (status.notEmployed) return [];
+      const canEdit = (editable.allActive && p.membershipStatus === 'active') || editable.others.has(p.id);
+      return [{ userId: p.id, displayName: p.name, email: p.email, ...status, canEdit }];
+    });
     return { ok: true, year, rows };
   }
 
@@ -199,6 +203,14 @@ export class BalancesController {
     if (!body.userId || !(await isOrgMember(db, orgId, body.userId)) || !(await canEditBeyondOwn(db, orgId, callerId, OBJECT, body.userId))) return { ok: false, error: 'forbidden' };
     if (!Number.isInteger(body.year)) return { ok: false, error: 'invalid-year' };
     return this.balances.reopenYear(db, orgId, body.userId, body.year as number, callerId);
+  }
+
+  private async yearEditors(db: Db, orgId: string, callerId: string, includeInactive: boolean) {
+    const held = await permissionIdsOf(db, orgId, callerId);
+    held.delete(`${OBJECT}:edit:own`);
+    const allActive = held.delete(`${OBJECT}:edit:all`);
+    const others = allActive && !includeInactive ? new Set<string>() : await visibleUserIds(db, orgId, callerId, OBJECT, 'edit', held);
+    return { allActive, others: others === 'all' ? new Set<string>() : others };
   }
 
   /** Closes every open year of the person's employment up to `year`, oldest first; stops at the first that can't close. */

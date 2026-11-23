@@ -9,6 +9,11 @@ import type { Locale } from '@worktime3/web/plugin';
 // prettier-ignore
 export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
   en: {
+    'expenses.paging.previous': 'Previous',
+    'expenses.paging.next': 'Next',
+    'expenses.paging.page': 'Page {{page}}',
+    'expenses.paging.available': 'Available expenses',
+    'expenses.paging.loadFailed': 'Could not load expenses or expense reports.',
     'expenses.category': 'Category',
     'expenses.subCategory': 'Sub-category',
     'expenses.originalValue': "Amount (receipt)",
@@ -209,6 +214,11 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Expense report ({{date}})',
   },
   de: {
+    'expenses.paging.previous': 'Zurück',
+    'expenses.paging.next': 'Weiter',
+    'expenses.paging.page': 'Seite {{page}}',
+    'expenses.paging.available': 'Verfügbare Spesen',
+    'expenses.paging.loadFailed': 'Spesen oder Spesenabrechnungen konnten nicht geladen werden.',
     'expenses.category': 'Kategorie',
     'expenses.subCategory': 'Unterkategorie',
     'expenses.originalValue': "Betrag (Beleg)",
@@ -409,6 +419,11 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Spesenbericht ({{date}})',
   },
   fr: {
+    'expenses.paging.previous': 'Précédent',
+    'expenses.paging.next': 'Suivant',
+    'expenses.paging.page': 'Page {{page}}',
+    'expenses.paging.available': 'Frais disponibles',
+    'expenses.paging.loadFailed': 'Impossible de charger les frais ou les notes de frais.',
     'expenses.category': 'Catégorie',
     'expenses.subCategory': 'Sous-catégorie',
     'expenses.originalValue': "Montant (reçu)",
@@ -609,6 +624,11 @@ export const EXPENSE_TEXTS: Record<Locale, Record<string, string>> = {
     'expenseReports.reportDetails': 'Note de frais ({{date}})',
   },
   it: {
+    'expenses.paging.previous': 'Indietro',
+    'expenses.paging.next': 'Avanti',
+    'expenses.paging.page': 'Pagina {{page}}',
+    'expenses.paging.available': 'Spese disponibili',
+    'expenses.paging.loadFailed': 'Impossibile caricare le spese o le note spese.',
     'expenses.category': 'Categoria',
     'expenses.subCategory': 'Sottocategoria',
     'expenses.originalValue': "Importo (ricevuta)",

@@ -174,6 +174,10 @@ A plugin page wrapped in `TeamView` (`kind` = its team view) gets the Team tab f
 - **Home quick action:** `homeAction: { label, icon, after }` on a page adds a button to the Home page for
   whoever may open the page (`after`: `time`, `absences`, `timesheet` or another page's section).
 
+## Expense list pagination
+
+The Expenses and Expense Reports pages request 25 records at a time. On the organization-scoped `GET expenses` and `GET expense-reports` routes, supply zero-based `page` and `pageSize` (1–100) for `{ entries, hasMore }`. Paginated entries are newest first with an ID tie-breaker; calls without either parameter retain the original response and order. An unfiltered single-person paginated report list returns the active editable `draft` separately from its history. The draft's expense picker uses `unmapped=true` to page only unattached expenses. HR Expense Processing is unchanged.
+
 ## Seed (demo data)
 
 A plugin's `seed.sql` (in its folder) runs after the core's `infra/postgres/seeds/seed.sql`, in the same
