@@ -37,6 +37,6 @@ $$;
 --rollback DROP FUNCTION operator_revoke(uuid); DROP FUNCTION operator_grant(uuid);
 
 --changeset worktime:098-operator-members
--- Whoever was superdeveloper becomes an operator; then the flag goes.
-SELECT operator_grant(id) FROM (SELECT id FROM users WHERE is_superdeveloper ORDER BY email) s;
+-- The old flag goes without successors: environments start from scratch (the seed makes its operator),
+-- and a production instance gets its first one from the operator CLI (`operators grant`).
 ALTER TABLE users DROP COLUMN is_superdeveloper;
