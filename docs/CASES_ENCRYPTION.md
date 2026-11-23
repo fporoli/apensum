@@ -30,7 +30,7 @@ cannot move a secret to another row). The plaintext columns are blanked (`''`, `
 | --- | --- | --- |
 | case | title, subject name and date of birth, metadata, custom fields | reference number, domain, status, lead, confidentiality |
 | interview | name, transcript, summary, tags, audio type and key | role, date, duration, interviewer |
-| assessment | title, section texts, custom fields | status, template, version |
+| assessment | title, section texts, custom fields, AI evidence, the assessor's notes for the AI | status, template, version |
 | document | title, extracted text, file name and type, file key | category |
 
 Files (documents, interview audio) are stored as ciphertext named `document.bin` / `interview-audio.bin`, under their
