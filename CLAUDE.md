@@ -111,6 +111,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Any id from a request (user, membership, team lead) is checked against the organization before it is stored or grants access.\
   Membership settings hold the person's calendar-feed token: return, audit or take them only through `membership-settings.ts`.\
   Registration is open: each registration gets its own workspace as owner, admin and HR (`registrationRoleIds`); nobody becomes operator by registering, the first account included: `operators grant` of the operator CLI (or an operator on the Superusers page) does it.\
+  Every registration is told to the operators (`registration-notice.ts`): a mail in each one's language and a notification in the Admin organization (`organizations`, opening Super Admin → Licenses), best effort.\
   Handlers take `@Req() req: AuthenticatedRequest`.
 - **Every org-scoped handler authorizes itself**, using helpers from `access.ts`:
   1. `const db = this.db.getDb(); if (!db) return <offline/empty shape>;`

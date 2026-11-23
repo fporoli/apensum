@@ -10,6 +10,8 @@ import * as bcrypt from 'bcryptjs';
 import { users, user_identities, organizations, organization_memberships, organization_invitations, roles, membership_roles, static_data } from './db/schema';
 import { invitationNeedsOwner, isOrgOwner, pickPrimaryRole } from './access';
 import { VersionsService } from './versions.service';
+import { NotificationsService } from './notifications.service';
+import { noticeRegistration } from './registration-notice';
 import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
 import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
 
@@ -165,6 +167,7 @@ export class AuthController {
   constructor(
     private readonly db: DbService,
     private readonly versions: VersionsService,
+    private readonly notifications?: NotificationsService,
   ) {}
 
   /**
@@ -232,6 +235,8 @@ export class AuthController {
       subject: 'Welcome to Apensum',
       text: `Hi ${body.displayName.trim()},\n\nYour account and personal workspace "${slug}" are ready.\n`,
     }).catch(() => {});
+    // The instance's operators hear of every registration (registration is open), by mail and in the Admin organization.
+    void noticeRegistration(db, this.notifications, { name: body.displayName.trim(), email, workspace: `${body.displayName.trim()}'s workspace`, orgId }).catch(() => {});
     return { ok: true, ...session };
   }
 

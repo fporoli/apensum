@@ -346,6 +346,8 @@ export default function App() {
     else if (n.source_table === 'timesheet_periods') navigate('timesheet');
     else if (n.source_table === 'absences') navigate('absences');
     else if (n.source_table === 'basicdata' || n.source_table === 'users') navigate('myData');
+    // Operators: a new registration (registration-notice.ts) opens the organizations under Super Admin.
+    else if (n.source_table === 'organizations') navigate('superAdminLicenses');
   }
 
   function switchOrg(newOrgId: string) {
