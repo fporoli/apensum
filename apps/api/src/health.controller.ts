@@ -3,7 +3,7 @@ import { Public } from './jwt.guard';
 import { lastSmtpStatus } from './mailer';
 
 /** When this process started: lets scripts/wait-for-api.mjs tell a fresh API from a leftover one. */
-const STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
+export const STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
 
 /**
  * A demo instance that starts over on a schedule (DEMO_RESET_EVERY_HOURS, set for the GitHub Environment

@@ -194,9 +194,9 @@ carry_documents_in() {
 }
 
 # The public demo (DEMO_RESET_EVERY_HOURS set) publishes its Admin login, so that account is no
-# superdeveloper there: visitors can't switch licensed modules or edit what applies to every organization.
-# seed.sql sets the flag for the other environments, so it is taken back with each seed and deploy.
-DEMOTE_DEMO_ADMIN="UPDATE public.users SET is_superdeveloper = false WHERE id = '11111111-1111-1111-1111-111111111111' AND is_superdeveloper"
+# operator there: visitors can't license modules, write product news or edit what applies to every
+# organization. seed.sql makes it one for the other environments, so it is taken back with each seed and deploy.
+DEMOTE_DEMO_ADMIN="SELECT public.operator_revoke('11111111-1111-1111-1111-111111111111')"
 is_public_demo() {
   [ "${DEMO_RESET_EVERY_HOURS:-0}" -gt 0 ] 2>/dev/null
 }

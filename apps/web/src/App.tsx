@@ -26,6 +26,7 @@ import {
 import { useI18n, type Locale } from './i18n';
 import { useBranding } from './theme';
 import Login, { clearSession, loadSession, saveSession, type Session } from './Login';
+import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { keycloak, refreshSsoToken, ssoLogout } from './auth';
 import UserMenu from './UserMenu';
 import { ScreenSharer, ScreenViewer, type ShareRequest } from './ScreenShare';
@@ -620,6 +621,13 @@ export default function App() {
 
   return (
     <DesignModeProvider value={designMode}>
+      {currentOrgId === OPERATOR_ORG_ID && (
+        // The Admin organization: a thick red frame around everything, so nobody mistakes it for a customer's.
+        <Box
+          aria-hidden
+          sx={{ position: 'fixed', inset: 0, border: '6px solid', borderColor: 'error.main', pointerEvents: 'none', zIndex: (th) => th.zIndex.tooltip + 1 }}
+        />
+      )}
       <Box sx={{ display: 'flex', minHeight: '100vh' }}>
         <AppBar ref={setAppBarNode} position="fixed" sx={{ zIndex: (th) => th.zIndex.drawer + 1 }}>
           <Toolbar sx={{ gap: 1.5, flexWrap: 'wrap', py: 1 }}>

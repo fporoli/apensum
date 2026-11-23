@@ -4,7 +4,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { Request, Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
-import { callerUserId, can, isOrgMember, isSuperDeveloper, type Executor } from './access';
+import { callerUserId, can, isOrgMember, isOperator, type Executor } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
@@ -13,6 +13,7 @@ import { appBaseUrl } from './orgs.controller';
 import { newsletterIssue, newsUnsubscribeToken, publicApiRoot, sitePostUrl } from './news-newsletter';
 import { allowedOrigins } from './site-contact.controller';
 import { markdownImages, markdownPlain } from '@worktime3/shared/markdown';
+import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { MAX_NEWS_IMAGES, newsImageId, newsTextFor, validateNewsTexts, type NewsTexts } from '@worktime3/shared/news';
 
 /**
@@ -22,9 +23,17 @@ import { MAX_NEWS_IMAGES, newsImageId, newsTextFor, validateNewsTexts, type News
  * post's departments (whoever's assignment in force is in one, and its leaders), or everyone.
  * Publishing notifies the audience and, when asked, mails them a link (best effort).
  *
- * Product news (organization_id NULL, 082): a superdeveloper writes it once for the admins
- * (`nav.admin`) of every organization; it shows in each of their organizations' News page.
+ * Product news (organization_id NULL, 082): an operator writes it once for the admins
+ * (`nav.admin`) of every organization; it shows in each of their organizations' News page. It is
+ * written only on the Super Admin pages of the Admin organization, through the same handlers at
+ * `operator/news` (no organization: `orgId` null), which reach product news alone; an organization's
+ * routes only read it. Its pictures are documents of the Admin organization (OPERATOR_ORG_ID).
  */
+
+const ORG_NEWS = 'organizations/:orgId/news';
+const OPERATOR_NEWS = 'operator/news';
+/** A route for an organization's news and the same one for product news on the Super Admin pages. */
+const both = (path = '') => [`${ORG_NEWS}${path}`, `${OPERATOR_NEWS}${path}`];
 
 /** Pause between two newsletter mails. */
 export const NEWSLETTER_PAUSE_MS = 250;
@@ -98,22 +107,23 @@ export interface NewsCaller {
   /** An admin of this organization (`nav.admin`): reads product news. */
   admin: boolean;
   /** Writes product news for every organization's admins. */
-  superdeveloper: boolean;
+  operator: boolean;
 }
 
-/** Who changes a post: the organization's news writers, or for product news a superdeveloper. */
+/** Who changes a post: the organization's news writers, or for product news an operator. */
 export function mayEditNews(caller: NewsCaller, post: { organization_id: string | null }): boolean {
-  return post.organization_id === null ? caller.superdeveloper : caller.editor;
+  return post.organization_id === null ? caller.operator : caller.editor;
 }
 
 /**
  * SQL condition over `p` (news_posts): the caller sees the post in this organization. The
  * organization's posts: writers all of them, readers the published ones addressed to them. Product
- * news: superdevelopers all of it, the organization's admins what is published.
+ * news: operators all of it, the organization's admins what is published.
  */
-function visibleTo(orgId: string, caller: NewsCaller): SQL {
+function visibleTo(orgId: string | null, caller: NewsCaller): SQL {
+  if (orgId === null) return sql`(p.organization_id IS NULL AND ${caller.operator ? sql`TRUE` : sql`FALSE`})`;
   const own = caller.editor ? sql`TRUE` : sql`(p.published_at IS NOT NULL AND ${inAudience(orgId, caller.id)})`;
-  const product = caller.superdeveloper ? sql`TRUE` : caller.admin ? sql`p.published_at IS NOT NULL` : sql`FALSE`;
+  const product = caller.operator ? sql`TRUE` : caller.admin ? sql`p.published_at IS NOT NULL` : sql`FALSE`;
   return sql`((p.organization_id = ${orgId} AND ${own}) OR (p.organization_id IS NULL AND ${product}))`;
 }
 
@@ -128,7 +138,7 @@ interface Reader {
   orgNames?: string[];
 }
 
-@Controller('organizations/:orgId/news')
+@Controller()
 export class NewsController {
   constructor(
     private readonly db: DbService,
@@ -137,30 +147,38 @@ export class NewsController {
     private readonly documents: DocumentsService,
   ) {}
 
-  /** The caller and what they may do, when they are a member who may read news here (the module is on). */
-  private async caller(db: Executor, orgId: string, req: AuthenticatedRequest): Promise<NewsCaller | null> {
+  /**
+   * The caller and what they may do, when they are a member who may read news here (the module is on).
+   * On the Super Admin pages (`orgId` null): an operator, for product news.
+   */
+  private async caller(db: Executor, orgId: string | null, req: AuthenticatedRequest): Promise<NewsCaller | null> {
     const id = req.user ? await callerUserId(db, req.user) : null;
+    if (orgId === null) {
+      if (!id) return null;
+      return (await isOperator(db, id)) ? { id, editor: false, admin: false, operator: true } : null;
+    }
     if (!id || !(await isOrgMember(db, orgId, id))) return null;
     if (!(await can(db, orgId, id, 'nav.news', 'see'))) return null;
     return {
       id,
       editor: await can(db, orgId, id, 'nav.news', 'edit'),
       admin: await can(db, orgId, id, 'nav.admin', 'see'),
-      superdeveloper: await isSuperDeveloper(db, id),
+      // Product news is written on the Super Admin pages only; here it is read.
+      operator: false,
     };
   }
 
-  /** The post, when it is this organization's or product news. */
-  private async load(db: Executor, orgId: string, id: string): Promise<PostRow | null> {
+  /** The post, when it is this organization's or product news (in the console: product news only). */
+  private async load(db: Executor, orgId: string | null, id: string): Promise<PostRow | null> {
     const rows = await db.execute(
       sql`SELECT id, organization_id, texts, require_ack, is_public, ${iso('published_at')} AS published_at FROM news_posts
-          WHERE id = ${id} AND (organization_id = ${orgId} OR organization_id IS NULL)`,
+          WHERE id = ${id} AND (${orgId === null ? sql`FALSE` : sql`organization_id = ${orgId}`} OR organization_id IS NULL)`,
     );
     return (rows.rows[0] as unknown as PostRow) ?? null;
   }
 
   /** The post when the caller may see it here. */
-  private async readable(db: Executor, orgId: string, caller: NewsCaller, id: string): Promise<PostRow | null> {
+  private async readable(db: Executor, orgId: string | null, caller: NewsCaller, id: string): Promise<PostRow | null> {
     const post = await this.load(db, orgId, id);
     if (!post) return null;
     const rows = await db.execute(sql`SELECT 1 FROM news_posts p WHERE p.id = ${id} AND ${visibleTo(orgId, caller)}`);
@@ -168,7 +186,7 @@ export class NewsController {
   }
 
   /** The post when the caller may change it, else the error to return. */
-  private async editable(db: Executor, orgId: string, caller: NewsCaller | null, id: string): Promise<PostRow | { error: string }> {
+  private async editable(db: Executor, orgId: string | null, caller: NewsCaller | null, id: string): Promise<PostRow | { error: string }> {
     if (!caller) return { error: 'forbidden' };
     const post = await this.load(db, orgId, id);
     if (!post) return { error: 'not-found' };
@@ -218,7 +236,7 @@ export class NewsController {
   }
 
   /** Validated texts, departments of this organization and the confirmation flag; or an error code. */
-  private async parse(db: Executor, orgId: string, body: Record<string, unknown>, product: boolean) {
+  private async parse(db: Executor, orgId: string | null, body: Record<string, unknown>, product: boolean) {
     const texts = validateNewsTexts(body?.texts);
     if (!texts.ok) return texts;
     const departmentIds = cleanDepartmentIds(body?.departmentIds);
@@ -226,7 +244,7 @@ export class NewsController {
     if (product && departmentIds.length > 0) return { ok: false as const, error: 'news-product-departments' };
     const isPublic = body?.public === true;
     if (isPublic && !product) return { ok: false as const, error: 'news-public-product-only' };
-    if (departmentIds.length > 0) {
+    if (departmentIds.length > 0 && orgId !== null) {
       const found = await db.execute(
         sql`SELECT count(*)::int AS n FROM departments WHERE organization_id = ${orgId} AND id IN (${sql.join(departmentIds.map((d) => sql`${d}`), sql`, `)})`,
       );
@@ -258,8 +276,9 @@ export class NewsController {
   }
 
   /** Posts the caller may see here, newest first (drafts first), with their own read state. */
-  @Get()
-  async list(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
+  @Get(both())
+  async list(@Param('orgId') orgParam: string | undefined, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, editor: false, productEditor: false, posts: [] };
     const caller = await this.caller(db, orgId, req);
@@ -275,18 +294,18 @@ export class NewsController {
           WHERE ${visibleTo(orgId, caller)}
           ORDER BY p.published_at DESC NULLS FIRST LIMIT 300`,
     );
-    return { ok: true, editor: caller.editor, productEditor: caller.superdeveloper, posts: rows.rows };
+    return { ok: true, editor: caller.editor, productEditor: caller.operator, posts: rows.rows };
   }
 
   /** Published posts for the caller here they have not read (or not confirmed yet): the navbar badge. */
-  @Get('summary')
+  @Get(`${ORG_NEWS}/summary`)
   async summary(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, unread: 0 };
     const caller = await this.caller(db, orgId, req);
     if (!caller) return { ok: true, unread: 0 };
     // Writers count only what is addressed to them, like everyone else.
-    const reader = { ...caller, editor: false, superdeveloper: false, admin: caller.admin };
+    const reader = { ...caller, editor: false, operator: false, admin: caller.admin };
     const rows = await db.execute(
       sql`SELECT count(*)::int AS n FROM news_posts p
           LEFT JOIN news_post_reads r ON r.post_id = p.id AND r.user_id = ${caller.id}
@@ -295,13 +314,14 @@ export class NewsController {
     return { ok: true, unread: (rows.rows[0]?.n as number) ?? 0 };
   }
 
-  /** A new draft; `product: true` (superdevelopers) for the admins of every organization. */
-  @Post()
-  async create(@Param('orgId') orgId: string, @Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+  /** A new draft; on the Super Admin pages product news for the admins of every organization. */
+  @Post(both())
+  async create(@Param('orgId') orgParam: string | undefined, @Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
-    const product = body?.product === true;
+    const product = orgId === null;
     if (!caller || !mayEditNews(caller, { organization_id: product ? null : orgId })) return { ok: false, error: 'forbidden' };
     const input = await this.parse(db, orgId, body, product);
     if (!input.ok) return input;
@@ -319,8 +339,9 @@ export class NewsController {
   }
 
   /** Changes a draft or a published post (a correction does not notify anyone again). */
-  @Put(':id')
-  async update(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+  @Put(both('/:id'))
+  async update(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @Body() body: Record<string, unknown>, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
@@ -336,8 +357,9 @@ export class NewsController {
   }
 
   /** Publishes a draft: notifies its audience and, with `mail`, mails each of them a link (best effort). */
-  @Post(':id/publish')
-  async publish(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: { mail?: unknown }, @Req() req: AuthenticatedRequest) {
+  @Post(both('/:id/publish'))
+  async publish(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @Body() body: { mail?: unknown }, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
@@ -354,7 +376,7 @@ export class NewsController {
     void this.versions.record('news_posts', id, 'update_delta', authorId, { published: true }).catch(() => {});
 
     const product = post.organization_id === null;
-    const audience = (product ? await this.productAudience(db) : await this.audience(db, orgId, id)).filter((a) => a.id !== authorId);
+    const audience = (product ? await this.productAudience(db) : await this.audience(db, orgId!, id)).filter((a) => a.id !== authorId);
     // One notification per reader, in the organization it concerns, titled in their language.
     const groups = new Map<string, { orgId: string; lang: string; ids: string[] }>();
     for (const a of audience) {
@@ -393,8 +415,9 @@ export class NewsController {
     return { ok: true, notified: audience.length, mailed };
   }
 
-  @Delete(':id')
-  async remove(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  @Delete(both('/:id'))
+  async remove(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
@@ -408,7 +431,7 @@ export class NewsController {
   }
 
   /** The caller opened the post. */
-  @Post(':id/read')
+  @Post(`${ORG_NEWS}/:id/read`)
   async read(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
@@ -420,7 +443,7 @@ export class NewsController {
   }
 
   /** The caller confirms they read a post that asks for it. */
-  @Post(':id/acknowledge')
+  @Post(`${ORG_NEWS}/:id/acknowledge`)
   async acknowledge(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
@@ -436,14 +459,15 @@ export class NewsController {
   }
 
   /** For whoever may change the post: everyone it reaches, with when they read and confirmed it. */
-  @Get(':id/reads')
-  async reads(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  @Get(both('/:id/reads'))
+  async reads(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, people: [] };
     const caller = await this.caller(db, orgId, req);
     const post = await this.editable(db, orgId, caller, id);
     if ('error' in post) return { ok: false, error: post.error, people: [] };
-    const audience = post.organization_id === null ? await this.productAudience(db) : await this.audience(db, orgId, id);
+    const audience = post.organization_id === null ? await this.productAudience(db) : await this.audience(db, orgId!, id);
     const reads = (
       await db.execute(sql`SELECT user_id, ${iso('read_at')} AS read_at, ${iso('acknowledged_at')} AS acknowledged_at FROM news_post_reads WHERE post_id = ${id}`)
     ).rows as { user_id: string; read_at: string; acknowledged_at: string | null }[];
@@ -461,8 +485,9 @@ export class NewsController {
   }
 
   /** Public product news and the newsletter: who could get it and how many already did. Superdevelopers only. */
-  @Get(':id/newsletter')
-  async newsletterStatus(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  @Get(both('/:id/newsletter'))
+  async newsletterStatus(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
@@ -482,8 +507,9 @@ export class NewsController {
    * Sends a published public post to the newsletter's confirmed subscribers who did not get it yet
    * (newsletter_deliveries), in the background; `test: true` sends it only to the caller.
    */
-  @Post(':id/newsletter')
-  async newsletter(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: { test?: unknown }, @Req() req: AuthenticatedRequest) {
+  @Post(both('/:id/newsletter'))
+  async newsletter(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @Body() body: { test?: unknown }, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
@@ -558,11 +584,12 @@ export class NewsController {
 
   /**
    * Uploads a picture for the post's text; the text then shows it as `![alt](doc:<id>)`. Product news
-   * pictures are documents of the organization they were uploaded in.
+   * pictures are documents of the Admin organization (OPERATOR_ORG_ID).
    */
-  @Post(':id/images')
+  @Post(both('/:id/images'))
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1 } }))
-  async upload(@Param('orgId') orgId: string, @Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined, @Req() req: AuthenticatedRequest) {
+  async upload(@Param('orgId') orgParam: string | undefined, @Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined, @Req() req: AuthenticatedRequest) {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const caller = await this.caller(db, orgId, req);
@@ -572,20 +599,21 @@ export class NewsController {
     if (!NEWS_IMAGE_TYPES.includes(file.mimetype)) return { ok: false, error: 'news-image-type' };
     const count = await db.execute(sql`SELECT count(*)::int AS n FROM news_post_documents WHERE post_id = ${id}`);
     if ((count.rows[0]?.n as number) >= MAX_NEWS_IMAGES) return { ok: false, error: 'news-too-many-images' };
-    const documentId = await this.documents.upload(db as Db, orgId, caller!.id, file, { table: 'news_posts', id });
+    const documentId = await this.documents.upload(db as Db, orgId ?? OPERATOR_ORG_ID, caller!.id, file, { table: 'news_posts', id });
     await db.execute(sql`INSERT INTO news_post_documents (post_id, document_id) VALUES (${id}, ${documentId})`);
     return { ok: true, documentId };
   }
 
   /** A picture of a post, for whoever may see the post. */
-  @Get(':id/images/:documentId')
+  @Get(both('/:id/images/:documentId'))
   async image(
-    @Param('orgId') orgId: string,
+    @Param('orgId') orgParam: string | undefined,
     @Param('id') id: string,
     @Param('documentId') documentId: string,
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ): Promise<void> {
+    const orgId = orgParam ?? null;
     const db = this.db.getDb();
     const caller = db ? await this.caller(db, orgId, req) : null;
     if (!db || !caller || !(await this.readable(db, orgId, caller, id))) {

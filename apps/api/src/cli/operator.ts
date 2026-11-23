@@ -6,14 +6,24 @@
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license list <organization>
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license grant <organization> <module> [--until YYYY-MM-DD]
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license revoke <organization> <module>
+ *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators list
+ *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators grant <e-mail>
+ *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators revoke <e-mail>
  *
  * <organization> is its slug or id. `owner set` makes an active member an owner (for an organization
  * without one: only owners appoint owners in the app). A license lets the organization's admin switch
  * a licensed module on, through the last day given; without one the module is off and keeps its data.
  * Every change is in the organization's audit log.
+ *
+ * Operators are the active members of the Admin organization (OPERATOR_ORG_ID, 098): its Super Admin
+ * pages (licenses, product news, superusers) and the AI limits, no right inside any other
+ * organization. This command line or an operator on the Superusers page makes someone one, never a
+ * registration or an invitation; each grant and revocation is in the Admin organization's audit log.
+ * The first grant creates the Admin organization.
  */
 import { Pool } from 'pg';
 import { isIsoDate } from '@worktime3/shared/worktime';
+import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { pluginsDir, readPluginManifests } from '../plugins';
 
 const USAGE = [
@@ -22,7 +32,66 @@ const USAGE = [
   '       operator license list <organization slug or id>',
   '       operator license grant <organization slug or id> <module> [--until YYYY-MM-DD]',
   '       operator license revoke <organization slug or id> <module>',
+  '       operator operators list',
+  '       operator operators grant <e-mail>',
+  '       operator operators revoke <e-mail>',
 ].join('\n');
+
+async function listOperators(pool: Pool): Promise<string[]> {
+  const { rows } = await pool.query<{ email: string }>(
+    `SELECT u.email::text AS email FROM organization_memberships m JOIN users u ON u.id = m.user_id
+     WHERE m.organization_id = $1 AND m.status = 'active' ORDER BY 1`,
+    [OPERATOR_ORG_ID],
+  );
+  return rows.map((r) => r.email);
+}
+
+/** False when nothing changed (already one, or none). The change and its audit entry in one transaction. */
+async function setOperator(pool: Pool, email: string, operator: boolean): Promise<boolean> {
+  const { rows } = await pool.query<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
+  if (!rows.length) throw new Error(`no account ${email}`);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const fn = operator ? 'operator_grant' : 'operator_revoke';
+    const result = await client.query<{ changed: boolean }>(`SELECT ${fn}($1::uuid) AS changed`, [rows[0].id]);
+    const changed = result.rows[0]?.changed === true;
+    if (changed) {
+      await client.query(
+        `INSERT INTO audit_logs (organization_id, actor_user_id, action, target_type, target_id, metadata)
+         VALUES ($1, NULL, $2, 'user', $3, jsonb_build_object('by', 'operator CLI'))`,
+        [OPERATOR_ORG_ID, operator ? 'operator.grant' : 'operator.revoke', rows[0].id],
+      );
+    }
+    await client.query('COMMIT');
+    return changed;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function operators(action: string | undefined, email: string | undefined, rest: string[]): Promise<void> {
+  const valid = !rest.length && (action === 'list' ? !email : (action === 'grant' || action === 'revoke') && !!email);
+  if (!valid) throw new Error(USAGE);
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    if (email) {
+      const address = email.trim().toLowerCase();
+      const changed = await setOperator(pool, address, action === 'grant');
+      console.log(action === 'grant'
+        ? (changed ? `${address} is now an operator` : `${address} already is an operator`)
+        : (changed ? `${address} is no operator any more` : `${address} was no operator`));
+    }
+    const list = await listOperators(pool);
+    console.log(list.length ? `operators: ${list.join(', ')}` : 'no operator');
+  } finally {
+    await pool.end();
+  }
+}
 
 /** The licensed modules of the plugins installed here: a typo must not pass as a license. */
 function licensableModules(): string[] {
@@ -73,6 +142,8 @@ async function revokeLicense(pool: Pool, orgId: string, moduleId: string): Promi
 async function organizationId(pool: Pool, key: string): Promise<string> {
   const { rows } = await pool.query<{ id: string }>('SELECT id FROM organizations WHERE id::text = $1 OR slug::text = $1', [key]);
   if (rows.length !== 1) throw new Error(rows.length ? `"${key}" matches more than one organization: use the id` : `no organization "${key}"`);
+  // The Admin organization has no owners or licenses: its members are the operators (`operators`).
+  if (rows[0].id === OPERATOR_ORG_ID) throw new Error('that is the Admin organization: use `operators`');
   return rows[0].id;
 }
 
@@ -114,7 +185,9 @@ async function setOwner(pool: Pool, orgId: string, email: string): Promise<boole
 }
 
 async function main() {
-  const [subject, action, organization, value, flag, flagValue, ...rest] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  if (args[0] === 'operators') return operators(args[1], args[2], args.slice(3));
+  const [subject, action, organization, value, flag, flagValue, ...rest] = args;
   const command = `${subject} ${action}`;
   const until = flag === '--until' ? flagValue : undefined;
   const wantsValue = ['owner set', 'license grant', 'license revoke'].includes(command);

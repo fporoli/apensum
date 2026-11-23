@@ -16,8 +16,8 @@ const quiet = { record: async () => {} } as any;
 const forbidden = { ok: false, error: 'forbidden' };
 const text = (q: any): string => (q.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : c?.queryChunks ? text(c) : '?')).join('');
 
-/** The caller: the permission ids they hold in ORG (none = no member) and whether superdeveloper. */
-function setup(caller: { grants?: string[]; superdeveloper?: boolean }, tables: Record<string, unknown[]> = {}) {
+/** The caller: the permission ids they hold in ORG (none = no member) and whether operator. */
+function setup(caller: { grants?: string[]; operator?: boolean }, tables: Record<string, unknown[]> = {}) {
   const writes: string[] = [];
   const write = (table: any) => {
     writes.push(getTableName(table));
@@ -28,7 +28,7 @@ function setup(caller: { grants?: string[]; superdeveloper?: boolean }, tables: 
     execute: async (q: unknown) => {
       const s = text(q);
       if (s.includes('JOIN membership_roles')) return { rows: (caller.grants ?? []).map((permission_id) => ({ name: 'some-role', permission_id })) };
-      if (s.includes('is_superdeveloper')) return { rows: [{ is_superdeveloper: !!caller.superdeveloper }] };
+      if (s.includes('is_operator')) return { rows: [{ is_operator: !!caller.operator }] };
       return { rows: [] };
     },
     select: () => ({
@@ -48,8 +48,8 @@ function setup(caller: { grants?: string[]; superdeveloper?: boolean }, tables: 
   return { db, writes, service: { getDb: () => db } as any };
 }
 
-test('roles: a superdeveloper who is no member neither reads nor changes them', async () => {
-  const { service, writes } = setup({ superdeveloper: true }, { roles: [{ id: 'r', organization_id: ORG, name: 'x', admin_user_ids: [] }] });
+test('roles: an operator who is no member neither reads nor changes them', async () => {
+  const { service, writes } = setup({ operator: true }, { roles: [{ id: 'r', organization_id: ORG, name: 'x', admin_user_ids: [] }] });
   const roles = new OrgRolesController(service, quiet, quiet);
   assert.deepEqual(await roles.list(ORG, req), { ok: true, roles: [] });
   assert.deepEqual(await roles.create(ORG, { name: 'mine' }, req), forbidden);
@@ -69,7 +69,7 @@ test('roles: only an owner edits them, whatever grants a role carries', async ()
 });
 
 test('static data: members only', async () => {
-  const { service } = setup({ superdeveloper: true }, { static_data: [{ id: 's' }] });
+  const { service } = setup({ operator: true }, { static_data: [{ id: 's' }] });
   const data = new StaticDataController(service, quiet);
   assert.deepEqual(await data.listAll(ORG, req), []);
   assert.deepEqual(await data.get(ORG, 'absences', req), []);
@@ -77,7 +77,7 @@ test('static data: members only', async () => {
 
 test('modules: a licensed one needs a license and the admin, whoever asks', async () => {
   registerModule({ id: 'boundarytest', caption: 'x', description: 'x', objects: [], defaultEnabled: false, licensed: true } as any);
-  const outsider = setup({ superdeveloper: true }, { organizations: [{ settings: {} }] });
+  const outsider = setup({ operator: true }, { organizations: [{ settings: {} }] });
   assert.deepEqual(await new OrgsController(outsider.service, quiet, quiet).setModules(ORG, { boundarytest: true }, req), forbidden);
   const admin = setup({ grants: ['nav.orgSettings:edit:all'] }, { organizations: [{ settings: {} }] });
   const orgs = new OrgsController(admin.service, quiet, quiet);

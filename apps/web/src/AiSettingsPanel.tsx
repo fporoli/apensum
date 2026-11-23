@@ -16,7 +16,7 @@ interface AiSettingsResponse {
 /**
  * Organization settings -> AI and costs: the organization's monthly limit for paid cloud AI calls
  * (every AI function: Cases, receipt reading, ...) and this month's spend (API ai-settings.controller.ts).
- * Whoever sees Organization settings sees it; only a superdeveloper changes it and sees the whole
+ * Whoever sees Organization settings sees it; only an operator changes it and sees the whole
  * server's spend.
  */
 export function AiSettingsPanel({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {

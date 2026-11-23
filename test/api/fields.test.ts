@@ -205,7 +205,7 @@ function sqlText(query: any): string {
   return (query.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : '?')).join('');
 }
 
-function setup(opts: { roles?: string[]; superdeveloper?: boolean; rows?: any[] }) {
+function setup(opts: { roles?: string[]; operator?: boolean; rows?: any[] }) {
   const writes: string[] = [];
   const stored: any[] = [];
   const db = {
@@ -213,7 +213,7 @@ function setup(opts: { roles?: string[]; superdeveloper?: boolean; rows?: any[] 
       const text = sqlText(q);
       if (text.includes('FROM user_identities')) return { rows: [{ user_id: 'caller-1' }] };
       if (text.includes('JOIN membership_roles')) return { rows: (opts.roles ?? []).map((name) => ({ name })) };
-      if (text.includes('is_superdeveloper')) return { rows: [{ is_superdeveloper: !!opts.superdeveloper }] };
+      if (text.includes('is_operator')) return { rows: [{ is_operator: !!opts.operator }] };
       if (text.includes('SELECT organization_id, field_key, is_custom, config FROM field_config')) return { rows: opts.rows ?? [] };
       if (text.includes('INSERT INTO field_config')) {
         writes.push('insert');
@@ -256,9 +256,9 @@ test('FieldsController: only developers edit the org layer, nobody the global on
   assert.deepEqual(await dev.controller.putOrg('org-1', 'basicdata', 'middleName', { config: { hidden: true } }, dev.req), { ok: true, config: { hidden: true } });
   assert.deepEqual(dev.writes, ['insert']);
 
-  const superDev = setup({ roles: [], superdeveloper: true });
-  assert.deepEqual(await superDev.controller.putOrg('org-9', 'basicdata', 'street', { config: { width: 'l' } }, superDev.req), { ok: false, error: 'forbidden' });
-  assert.deepEqual(superDev.writes, []);
+  const operatorOnly = setup({ roles: [], operator: true });
+  assert.deepEqual(await operatorOnly.controller.putOrg('org-9', 'basicdata', 'street', { config: { width: 'l' } }, operatorOnly.req), { ok: false, error: 'forbidden' });
+  assert.deepEqual(operatorOnly.writes, []);
   for (const name of ['putGlobal', 'deleteGlobal']) assert.equal(name in FieldsController.prototype, false, name);
 });
 
@@ -287,8 +287,8 @@ test('FieldsService caches per org and clears on writes', async () => {
 test('FieldsController.designAccess', async () => {
   const dev = setup({ roles: ['member', 'developer'] });
   assert.deepEqual(await dev.controller.designAccess('org-1', dev.req), { ok: true, canDesign: true });
-  const superDev = setup({ roles: [], superdeveloper: true });
-  assert.deepEqual(await superDev.controller.designAccess('org-1', superDev.req), { ok: true, canDesign: false });
+  const operatorOnly = setup({ roles: [], operator: true });
+  assert.deepEqual(await operatorOnly.controller.designAccess('org-1', operatorOnly.req), { ok: true, canDesign: false });
   const member = setup({ roles: ['admin'] });
   assert.deepEqual(await member.controller.designAccess('org-1', member.req), { ok: true, canDesign: false });
 });

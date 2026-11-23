@@ -725,7 +725,6 @@ export const users = pgTable("users", {
 	settings: jsonb().default({}).notNull(),
 	is_active: boolean().default(true).notNull(),
 	basicdata: jsonb().default({}).notNull(),
-	is_superdeveloper: boolean().default(false).notNull(),
 }, (table) => [
 	unique("users_email_key").on(table.email),
 ]);

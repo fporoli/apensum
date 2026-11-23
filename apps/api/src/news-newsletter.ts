@@ -11,6 +11,8 @@ import { purposeKey } from './jwt';
 
 /** The API's public root as the caller reached it (behind Caddy: the forwarded host and scheme). */
 export function publicApiRoot(req: Pick<Request, 'headers'> & { protocol?: string } | { headers?: Record<string, string | string[] | undefined>; protocol?: string }): string {
+  // Set on servers: the API's public host, whichever host the request came through.
+  if (process.env.PUBLIC_API_URL) return process.env.PUBLIC_API_URL.replace(/\/+$/, '');
   const headers = req.headers ?? {};
   const proto = String(headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
   const host = String(headers['x-forwarded-host'] || headers.host || 'localhost:8001').split(',')[0].trim();

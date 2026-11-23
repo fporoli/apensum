@@ -32,6 +32,11 @@
       "types": "./dist/branding.d.ts",
       "default": "./dist/branding.js"
     },
+    "./operator": {
+      "source": "./src/operator.ts",
+      "types": "./dist/operator.d.ts",
+      "default": "./dist/operator.js"
+    },
     "./ai": {
       "source": "./src/ai.ts",
       "types": "./dist/ai.d.ts",

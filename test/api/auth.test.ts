@@ -40,6 +40,6 @@ test('parseDemoAccounts reads JSON-string entries in key order and skips malform
   assert.deepEqual(parseDemoAccounts([]), []);
 });
 
-test('the first user of an instance is owner and admin of their workspace, later ones owner only', () => {
+test('whoever registers is owner, admin and HR of their own workspace', () => {
   assert.deepEqual(registrationRoleIds(), [OWNER_ROLE_ID, ADMIN_ROLE_ID, HR_ROLE_ID]);
 });

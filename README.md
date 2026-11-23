@@ -381,11 +381,22 @@ docker exec apensum-<env>-api node apps/api/dist/cli/operator.js owner set <slug
 docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license list <slug or id>
 docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license grant <slug or id> <module> [--until YYYY-MM-DD]
 docker exec apensum-<env>-api node apps/api/dist/cli/operator.js license revoke <slug or id> <module>
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators list
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators grant <e-mail>
+docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators revoke <e-mail>
 ```
 
 An owner has to be an active member.\
 A license runs through the day given; without one the module is off and its data stays, and the organization's admin switches a licensed module on.\
 Every change is in the organization's audit log.
+
+The operators (superusers) are the active members of one fixed organization, "Apensum Admin" (`OPERATOR_ORG_ID` in `packages/shared/src/operator.ts`, changelog 098).\
+In it they see only the Super Admin pages (`SuperAdmin.tsx`, API `operator/*` in `operator.controller.ts`): Instance (what runs and is configured, counts; no people's data), Licenses (every organization with its members, owners and licenses, granted, changed and removed), AI limits (each organization's monthly limit and this month's spend, the instance budget), Product news (written, published, sent to the newsletter; organizations only read it) and Superusers.\
+The whole app has a thick red frame while the Admin organization is selected.\
+They have no right inside any other organization, and the pages never show people's data.\
+Nobody joins the Admin organization through registration, invitations or roles: only `operators grant` above or an operator on the Superusers page makes someone one (an existing account; the last one stays), and each change is in the Admin organization's audit log.\
+The first grant creates the organization: on a fresh instance, register, then grant yourself on the server.\
+On servers `PUBLIC_API_URL` (the API host, set by the VPS compose file) keeps the links in newsletter mails and calendar feeds on the public API.
 
 ## Deploy
 

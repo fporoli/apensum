@@ -147,8 +147,8 @@ export class AuthController {
 
   /**
    * Register: creates the user and a personal workspace org they are owner, admin and HR of.
-   * The very first user of an instance (an empty production database) also becomes
-   * superdeveloper, so a fresh instance needs no SQL to be run.
+   * Nobody becomes the instance's operator by registering, the first account included: the
+   * operator CLI grants that (`operators grant`).
    */
   @Public()
   @Post('register')
@@ -162,12 +162,10 @@ export class AuthController {
     const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
     if (existing) return { ok: false, error: 'email-taken' };
     const passwordHash = await bcrypt.hash(body.password, 10);
-    const { u: user, orgId, membershipId, slug, first } = await db.transaction(async (tx) => {
-      const [anyone] = await tx.select({ id: users.id }).from(users).limit(1);
-      const first = !anyone;
+    const { u: user, orgId, membershipId, slug } = await db.transaction(async (tx) => {
       const [u] = await tx
         .insert(users)
-        .values({ email, display_name: body.displayName.trim(), is_superdeveloper: first })
+        .values({ email, display_name: body.displayName.trim() })
         .returning({ id: users.id, email: users.email, display_name: users.display_name });
       const uid = u.id;
       await tx
@@ -191,11 +189,11 @@ export class AuthController {
       await tx.insert(membership_roles).values(registrationRoleIds().map((role_id) => ({ membership_id: membership.id, role_id })));
       // Static data (absence types, `locales`, `countries`) is inherited from the global rows
       // (`organization_id = null`); an org gets its own copy only when it customizes one.
-      return { u, orgId: org.id, membershipId: membership.id, slug: workspaceSlug, first };
+      return { u, orgId: org.id, membershipId: membership.id, slug: workspaceSlug };
     });
 
     const userId = user.id;
-    void this.versions.record('users', userId, 'insert', userId, { ...user, ...(first ? { is_superdeveloper: true } : {}) }).catch(() => {});
+    void this.versions.record('users', userId, 'insert', userId, user).catch(() => {});
     void this.versions.record('organizations', orgId, 'insert', userId, { id: orgId, slug, name: `${body.displayName.trim()}'s workspace`, type: 'personal' }).catch(() => {});
     void this.versions.record('organization_memberships', membershipId, 'insert', userId, { id: membershipId, organization_id: orgId, user_id: userId, status: 'active' }).catch(() => {});
 
@@ -356,7 +354,7 @@ export class AuthController {
     }
     const email = invitation.email.toLowerCase();
     const [existingUser] = await db
-      .select({ id: users.id, status: users.status, display_name: users.display_name, is_superdeveloper: users.is_superdeveloper })
+      .select({ id: users.id, status: users.status, display_name: users.display_name })
       .from(users)
       .where(eq(users.email, email));
     let setsPassword = true;
@@ -376,7 +374,7 @@ export class AuthController {
           .from(organization_memberships)
           .where(eq(organization_memberships.user_id, existingUser.id));
         const onlyInvitingOrg = orgs.length > 0 && orgs.every((m) => m.organization_id === invitation.organization_id);
-        if (identities.length > 0 || existingUser.is_superdeveloper || !onlyInvitingOrg) return { ok: false, error: 'invitation-account-exists' };
+        if (identities.length > 0 || !onlyInvitingOrg) return { ok: false, error: 'invitation-account-exists' };
       }
     } else if (!body.displayName?.trim()) {
       return { ok: false, error: 'display-name-required' };

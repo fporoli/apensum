@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, ForbiddenException, Get, Header,
 import { sql } from 'drizzle-orm';
 import { parseAiSettings, validateAiSettings } from '@worktime3/shared/ai';
 import { AiBudgetService, azureAllowed, instanceBudgetChf } from './ai-budget.service';
-import { callerUserId, can, isSuperDeveloper } from './access';
+import { callerUserId, can, isOperator } from './access';
 import { DbService, type Db } from './db.service';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { VersionsService } from './versions.service';
@@ -11,7 +11,7 @@ import { VersionsService } from './versions.service';
  * The organization's limit for paid cloud AI calls and this month's spend (Organization settings ->
  * AI and costs; organizations.settings.ai, packages/shared/src/ai.ts). It covers every AI function
  * that goes through AiBudgetService (Cases, the expenses plugin's receipt reading, ...). Whoever sees
- * Organization settings sees it; only a superdeveloper changes it and sees the whole instance's
+ * Organization settings sees it; only an operator changes it and sees the whole instance's
  * spend, since the instance owner pays the Azure bill.
  */
 @Controller('organizations/:orgId/ai-settings')
@@ -38,19 +38,19 @@ export class AiSettingsController {
   @Header('Cache-Control', 'private, no-store')
   async get(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const callerId = await this.caller(req);
-    const superdeveloper = await isSuperDeveloper(this.db, callerId);
-    if (!superdeveloper && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see'))) throw new ForbiddenException('forbidden');
+    const operator = await isOperator(this.db, callerId);
+    if (!operator && !(await can(this.db, orgId, callerId, 'nav.orgSettings', 'see'))) throw new ForbiddenException('forbidden');
     const rows = await this.db.execute(sql`SELECT settings->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
     const totals = await this.budget.totals(orgId);
     return {
       ok: true,
       settings: parseAiSettings((rows.rows[0] as { ai?: unknown } | undefined)?.ai),
       azure: azureAllowed(),
-      canConfigure: superdeveloper,
+      canConfigure: operator,
       usage: {
         orgSpentChf: totals.orgSpentChf,
         orgCalls: totals.orgCalls,
-        ...(superdeveloper ? { instanceSpentChf: totals.instanceSpentChf, instanceBudgetChf: instanceBudgetChf() } : {}),
+        ...(operator ? { instanceSpentChf: totals.instanceSpentChf, instanceBudgetChf: instanceBudgetChf() } : {}),
       },
     };
   }
@@ -58,7 +58,7 @@ export class AiSettingsController {
   @Put()
   async put(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest, @Body() body: unknown) {
     const callerId = await this.caller(req);
-    if (!(await isSuperDeveloper(this.db, callerId))) throw new ForbiddenException('forbidden');
+    if (!(await isOperator(this.db, callerId))) throw new ForbiddenException('forbidden');
     const checked = validateAiSettings(body);
     if (!checked.ok) throw new BadRequestException(checked.error);
     await this.db.execute(sql`

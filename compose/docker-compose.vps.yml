@@ -107,6 +107,8 @@ services:
       DOCUMENTS_KEY: ${DOCUMENTS_KEY:-}
       DOCUMENTS_KEY_PREVIOUS: ${DOCUMENTS_KEY_PREVIOUS:-}
       APP_BASE_URL: https://${WEB_HOST:?required}
+      # Links the API puts into mails and feeds (newsletter pictures and unsubscribe, calendar feeds).
+      PUBLIC_API_URL: https://${API_HOST:?required}/api/v1
       # A demo instance reset on a schedule (GitHub Environment variable; health.controller.ts). Empty = never.
       DEMO_RESET_EVERY_HOURS: ${DEMO_RESET_EVERY_HOURS:-}
       # AI (assistant, Cases, receipts) on Azure OpenAI in Switzerland (optional, paid; see env.example.*.cfg).

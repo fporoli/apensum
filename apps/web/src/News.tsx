@@ -35,7 +35,7 @@ interface Post {
   texts: NewsTexts;
   require_ack: boolean;
   published_at: string | null;
-  /** Product news: from a superdeveloper to every organization's admins. */
+  /** Product news: from an operator to every organization's admins. */
   product: boolean;
   /** Product news also on the website and for its newsletter. */
   is_public: boolean;
@@ -89,7 +89,7 @@ function postHtml(body: string): string {
  * A post's text. Pictures need the caller's credentials, so each is fetched and shown from a
  * blob URL. The HTML comes from renderMarkdown, which escapes everything it is given.
  */
-function PostBody({ orgId, postId, body, authHeaders }: { orgId: string; postId: string | null; body: string; authHeaders: () => Promise<Record<string, string>> }) {
+function PostBody({ base, postId, body, authHeaders }: { base: string; postId: string | null; body: string; authHeaders: () => Promise<Record<string, string>> }) {
   const ref = useRef<HTMLDivElement>(null);
   const html = useMemo(() => postHtml(body), [body]);
   useEffect(() => {
@@ -101,7 +101,7 @@ function PostBody({ orgId, postId, body, authHeaders }: { orgId: string; postId:
       const headers = await authHeaders();
       for (const img of Array.from(root.querySelectorAll<HTMLImageElement>('img[data-news-image]'))) {
         try {
-          const res = await fetch(`${API}/organizations/${orgId}/news/${postId}/images/${img.dataset.newsImage}`, { headers });
+          const res = await fetch(`${base}/${postId}/images/${img.dataset.newsImage}`, { headers });
           if (!res.ok || cancelled) continue;
           const url = URL.createObjectURL(await res.blob());
           urls.push(url);
@@ -115,7 +115,7 @@ function PostBody({ orgId, postId, body, authHeaders }: { orgId: string; postId:
       cancelled = true;
       for (const u of urls) URL.revokeObjectURL(u);
     };
-  }, [html, orgId, postId, authHeaders]);
+  }, [html, base, postId, authHeaders]);
   return (
     <Box
       ref={ref}
@@ -136,7 +136,10 @@ function PostBody({ orgId, postId, body, authHeaders }: { orgId: string; postId:
 }
 
 interface NewsProps {
-  orgId: string;
+  /** The organization's news; without it, `base` is the Super Admin pages' product news. */
+  orgId?: string;
+  /** The API base of the posts (default: the organization's news). */
+  base?: string;
   userId: string | null;
   authHeaders: () => Promise<Record<string, string>>;
   /** Changes when a notification arrives, so the list reloads. */
@@ -149,9 +152,13 @@ interface NewsProps {
  * News: posts by the organization's admin or HR (nav.news:edit) to everyone or some departments.
  * Readers open a post (marked read) and confirm it when asked; writers draft, publish (notifying
  * the audience, optionally by e-mail), correct and delete posts and see who read them.
+ * On the Super Admin pages (no `orgId`): product news, written there only.
  */
-export default function News({ orgId, authHeaders, refreshKey, onChanged }: NewsProps) {
+export default function News({ orgId, base: baseProp, authHeaders, refreshKey, onChanged }: NewsProps) {
   const { t, locale } = useI18n();
+  const base = baseProp ?? `${API}/organizations/${orgId}/news`;
+  /** Super Admin: product news only, no departments, no read marks, no `#/news` links. */
+  const productOnly = !orgId;
   const [posts, setPosts] = useState<Post[]>([]);
   const [editor, setEditor] = useState(false);
   const [productEditor, setProductEditor] = useState(false);
@@ -180,8 +187,8 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
     try {
       const headers = await authHeaders();
       const [list, deps] = await Promise.all([
-        fetch(`${API}/organizations/${orgId}/news`, { headers }).then((r) => r.json()),
-        fetch(`${API}/organizations/${orgId}/departments`, { headers }).then((r) => r.json()),
+        fetch(base, { headers }).then((r) => r.json()),
+        orgId ? fetch(`${API}/organizations/${orgId}/departments`, { headers }).then((r) => r.json()) : Promise.resolve(null),
       ]);
       setPosts(Array.isArray(list?.posts) ? list.posts : []);
       setEditor(list?.editor === true);
@@ -192,7 +199,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, orgId, t]);
+  }, [authHeaders, base, orgId, t]);
 
   useEffect(() => {
     void load();
@@ -213,7 +220,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
   const post = useCallback(
     async (path: string, body?: unknown, method = 'POST') => {
       try {
-        const res = await fetch(`${API}/organizations/${orgId}/news${path}`, {
+        const res = await fetch(`${base}${path}`, {
           method,
           headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
           body: body === undefined ? undefined : JSON.stringify(body),
@@ -226,12 +233,12 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
         return null;
       }
     },
-    [authHeaders, orgId, errorText, t],
+    [authHeaders, base, errorText, t],
   );
 
   // Opening a published post marks it read.
   useEffect(() => {
-    if (!selected?.published_at || selected.read_at) return;
+    if (productOnly || !selected?.published_at || selected.read_at) return;
     void (async () => {
       const data = await post(`/${selected.id}/read`);
       if (data?.ok) {
@@ -239,26 +246,27 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
         onChanged?.();
       }
     })();
-  }, [selected, post, onChanged]);
+  }, [productOnly, selected, post, onChanged]);
 
   useEffect(() => {
     setReads(null);
     if (!selected?.published_at || !(selected.product ? productEditor : editor)) return;
     void (async () => {
       try {
-        const res = await fetch(`${API}/organizations/${orgId}/news/${selected.id}/reads`, { headers: await authHeaders() });
+        const res = await fetch(`${base}/${selected.id}/reads`, { headers: await authHeaders() });
         const data = await res.json();
         if (data?.ok) setReads(data.people);
       } catch {
         /* the list just stays hidden */
       }
     })();
-  }, [editor, productEditor, selected, orgId, authHeaders]);
+  }, [editor, productEditor, selected, base, authHeaders]);
 
   function open(id: string | null) {
     setSelectedId(id);
     setError(null);
     setNotice(null);
+    if (productOnly) return;
     const hash = id ? `#/news?id=${id}` : '#/news';
     if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
   }
@@ -295,7 +303,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
     }
   }
 
-  /** Organization posts are changed by the organization's news writers, product news by a superdeveloper. */
+  /** Organization posts are changed by the organization's news writers, product news by an operator. */
   const canEdit = (p: Post) => (p.product ? productEditor : editor);
   const audienceChips = (p: Post) =>
     p.product ? (
@@ -310,8 +318,8 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
 
   const header = (
     <PageHeader
-      title={t('news.title')}
-      subtitle={t('news.subtitle')}
+      title={t(productOnly ? 'operator.news.title' : 'news.title')}
+      subtitle={t(productOnly ? 'operator.news.subtitle' : 'news.subtitle')}
       end={
         (editor || productEditor) && !selected ? (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => startEdit(null)}>
@@ -352,13 +360,13 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
                   {[selected.published_at ? formatLocaleDateTime(selected.published_at, locale) : null, selected.author_name].filter(Boolean).join(' · ')}
                 </Typography>
                 <Box lang={text?.lang}>
-                  <PostBody orgId={orgId} postId={selected.id} body={text?.body ?? ''} authHeaders={authHeaders} />
+                  <PostBody base={base} postId={selected.id} body={text?.body ?? ''} authHeaders={authHeaders} />
                 </Box>
               </>
             );
           })()}
 
-          {selected.published_at && selected.require_ack && (
+          {!productOnly && selected.published_at && selected.require_ack && (
             <Box sx={{ mt: 3 }}>
               {selected.acknowledged_at ? (
                 <Alert severity="success" icon={<CheckCircleIcon />}>
@@ -389,7 +397,7 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
           )}
 
           {selected.is_public && selected.published_at && productEditor && (
-            <NewsletterPanel orgId={orgId} postId={selected.id} authHeaders={authHeaders} errorText={errorText} />
+            <NewsletterPanel base={base} postId={selected.id} authHeaders={authHeaders} errorText={errorText} />
           )}
 
           {canEdit(selected) && reads && (
@@ -452,10 +460,9 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
 
       {draft && (
         <PostEditor
-          orgId={orgId}
+          base={base}
           draft={draft}
           departments={departments}
-          canChooseProduct={editor && productEditor}
           authHeaders={authHeaders}
           errorText={errorText}
           onClose={() => setDraft(null)}
@@ -493,12 +500,12 @@ export default function News({ orgId, authHeaders, refreshKey, onChanged }: News
 
 /** Public product news: send it to the website's newsletter subscribers (a test to oneself first). */
 function NewsletterPanel({
-  orgId,
+  base,
   postId,
   authHeaders,
   errorText,
 }: {
-  orgId: string;
+  base: string;
   postId: string;
   authHeaders: () => Promise<Record<string, string>>;
   errorText: (code: string | undefined) => string;
@@ -507,7 +514,7 @@ function NewsletterPanel({
   const [status, setStatus] = useState<{ subscribers: number; sent: number; running: boolean } | null>(null);
   const [message, setMessage] = useState<{ severity: 'success' | 'error'; text: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const url = `${API}/organizations/${orgId}/news/${postId}/newsletter`;
+  const url = `${base}/${postId}/newsletter`;
 
   const load = useCallback(async () => {
     try {
@@ -601,20 +608,17 @@ function PublishDialog({ post, onClose, onPublish }: { post: Post | null; onClos
 
 /** Writing a post: a title and Markdown text per language, pictures, audience and the confirmation flag. */
 function PostEditor({
-  orgId,
+  base,
   draft: initial,
   departments,
-  canChooseProduct,
   authHeaders,
   errorText,
   onClose,
   onSaved,
 }: {
-  orgId: string;
+  base: string;
   draft: Draft;
   departments: Department[];
-  /** A superdeveloper who also writes this organization's news chooses which a new post is. */
-  canChooseProduct: boolean;
   authHeaders: () => Promise<Record<string, string>>;
   errorText: (code: string | undefined) => string;
   onClose: () => void;
@@ -638,10 +642,10 @@ function PostEditor({
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/organizations/${orgId}/news${draft.id ? `/${draft.id}` : ''}`, {
+      const res = await fetch(`${base}${draft.id ? `/${draft.id}` : ''}`, {
         method: draft.id ? 'PUT' : 'POST',
         headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texts: draft.texts, departmentIds: draft.product ? [] : draft.departmentIds, requireAck: draft.requireAck, product: draft.product, public: draft.product && draft.isPublic }),
+        body: JSON.stringify({ texts: draft.texts, departmentIds: draft.product ? [] : draft.departmentIds, requireAck: draft.requireAck, public: draft.product && draft.isPublic }),
       });
       const data = await res.json();
       if (!data?.ok) {
@@ -667,7 +671,7 @@ function PostEditor({
     try {
       const form = new FormData();
       form.append('file', file, file.name);
-      const res = await fetch(`${API}/organizations/${orgId}/news/${id}/images`, { method: 'POST', headers: await authHeaders(), body: form });
+      const res = await fetch(`${base}/${id}/images`, { method: 'POST', headers: await authHeaders(), body: form });
       const data = await res.json();
       if (!data?.ok) {
         setError(errorText(data?.error));
@@ -727,7 +731,7 @@ function PostEditor({
         {preview ? (
           <Paper variant="outlined" sx={{ p: 2, minHeight: 240 }}>
             <Typography variant="h6" sx={{ mb: 1 }}>{draft.texts[lang].title}</Typography>
-            <PostBody orgId={orgId} postId={draft.id} body={draft.texts[lang].body} authHeaders={authHeaders} />
+            <PostBody base={base} postId={draft.id} body={draft.texts[lang].body} authHeaders={authHeaders} />
           </Paper>
         ) : (
           <TextField
@@ -746,12 +750,6 @@ function PostEditor({
             minRows={10}
             fullWidth
             helperText={t('news.editor.markdownHint')}
-          />
-        )}
-        {!draft.id && canChooseProduct && (
-          <FormControlLabel
-            control={<Checkbox checked={draft.product} onChange={(e) => setDraft((d) => ({ ...d, product: e.target.checked }))} />}
-            label={t('news.product.choose')}
           />
         )}
         {draft.product ? (

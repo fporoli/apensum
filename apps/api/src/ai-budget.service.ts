@@ -1,5 +1,6 @@
 import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
+import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { parseAiSettings } from '@worktime3/shared/ai';
 import { azureOpenAiConfig } from './ai-client';
 import { DbService, type Db } from './db.service';
@@ -113,7 +114,7 @@ export type AiUsageKind = string;
 
 const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 /** Start of the current calendar month in Zurich, as a SQL timestamptz expression. */
-const MONTH_START = sql`(date_trunc('month', now() AT TIME ZONE 'Europe/Zurich') AT TIME ZONE 'Europe/Zurich')`;
+export const MONTH_START = sql`(date_trunc('month', now() AT TIME ZONE 'Europe/Zurich') AT TIME ZONE 'Europe/Zurich')`;
 
 @Injectable()
 export class AiBudgetService {
@@ -131,7 +132,7 @@ export class AiBudgetService {
 
   /**
    * The organization's monthly limit for every paid AI call (organizations.settings.ai.monthlyLimitChf,
-   * set by a superdeveloper under Organization settings -> AI and costs).
+   * set by an operator under Organization settings -> AI and costs).
    */
   async orgMonthlyLimitChf(orgId: string): Promise<number> {
     const rows = await this.db.execute(sql`SELECT settings->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
@@ -257,7 +258,8 @@ export class AiBudgetService {
 
   private async mailSuperdevelopers(subject: string, text: string): Promise<void> {
     try {
-      const rows = await this.db.execute(sql`SELECT email FROM users WHERE is_superdeveloper = true`);
+      const rows = await this.db.execute(sql`SELECT u.email FROM organization_memberships m JOIN users u ON u.id = m.user_id
+                                              WHERE m.organization_id = ${OPERATOR_ORG_ID} AND m.status = 'active'`);
       for (const r of rows.rows as { email: string }[]) {
         await sendMail({ to: r.email, subject, text }).catch(() => {});
       }

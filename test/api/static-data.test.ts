@@ -11,7 +11,7 @@ function sqlText(query: any): string {
 
 function setupStaticData(opts: {
   roles?: string[];
-  superdeveloper?: boolean;
+  operator?: boolean;
   existingRow?: { id: string; organization_id: string | null } | null;
   insertError?: unknown;
 }) {
@@ -34,7 +34,7 @@ function setupStaticData(opts: {
       if (text.includes('JOIN membership_roles')) {
         return { rows: (opts.roles ?? []).map((name) => ({ name, permission_id: name === 'admin' ? 'nav.admin:edit:all' : null })) };
       }
-      if (text.includes('is_superdeveloper')) return { rows: [{ is_superdeveloper: !!opts.superdeveloper }] };
+      if (text.includes('is_operator')) return { rows: [{ is_operator: !!opts.operator }] };
       return { rows: [] };
     },
     select: () => selectChain,
@@ -88,7 +88,7 @@ test('resolveEffectiveStaticData inherits global rows and overrides them with or
 });
 
 test('StaticDataController.create always makes an org row and handles duplicates', async () => {
-  const orgAdmin = setupStaticData({ roles: ['admin'], superdeveloper: false });
+  const orgAdmin = setupStaticData({ roles: ['admin'], operator: false });
   assert.deepEqual(
     await orgAdmin.controller.create('org-1', { entity: 'projects', enumName: 'project_type', values: { a: 'A' } }, orgAdmin.req),
     { ok: true, id: 'sd-new' },
@@ -96,17 +96,17 @@ test('StaticDataController.create always makes an org row and handles duplicates
   assert.equal(orgAdmin.inserted[0].organization_id, 'org-1');
 
   // A scope in the body is ignored: no one creates rows for all organizations through the API.
-  const superDevAdmin = setupStaticData({ roles: ['admin'], superdeveloper: true });
-  await superDevAdmin.controller.create('org-1', { scope: 'global', entity: 'users', enumName: 'locales', values: {} } as never, superDevAdmin.req);
-  assert.equal(superDevAdmin.inserted[0].organization_id, 'org-1');
+  const operatorAdmin = setupStaticData({ roles: ['admin'], operator: true });
+  await operatorAdmin.controller.create('org-1', { scope: 'global', entity: 'users', enumName: 'locales', values: {} } as never, operatorAdmin.req);
+  assert.equal(operatorAdmin.inserted[0].organization_id, 'org-1');
 
-  // A superdeveloper without org admin rights may not create org rows either.
-  const superDev = setupStaticData({ roles: [], superdeveloper: true });
+  // An operator without org admin rights may not create org rows either.
+  const operatorOnly = setupStaticData({ roles: [], operator: true });
   assert.deepEqual(
-    await superDev.controller.create('org-1', { entity: 'users', enumName: 'locales', values: {} }, superDev.req),
+    await operatorOnly.controller.create('org-1', { entity: 'users', enumName: 'locales', values: {} }, operatorOnly.req),
     { ok: false, error: 'forbidden' },
   );
-  assert.equal(superDev.inserted.length, 0);
+  assert.equal(operatorOnly.inserted.length, 0);
 
   const dup = setupStaticData({ roles: ['admin'], insertError: { code: '23505' } });
   assert.deepEqual(
@@ -116,9 +116,9 @@ test('StaticDataController.create always makes an org row and handles duplicates
 });
 
 test('StaticDataController.update and remove enforce org vs global ownership', async () => {
-  // No one edits or deletes rows for all organizations, superdevelopers included
-  for (const superdeveloper of [false, true]) {
-    const global = setupStaticData({ roles: ['admin'], superdeveloper, existingRow: { id: 'g1', organization_id: null } });
+  // No one edits or deletes rows for all organizations, operators included
+  for (const operator of [false, true]) {
+    const global = setupStaticData({ roles: ['admin'], operator, existingRow: { id: 'g1', organization_id: null } });
     assert.deepEqual(await global.controller.update('org-1', 'g1', { values: { en: 'English' } }, global.req), {
       ok: false,
       error: 'global-read-only',
@@ -132,7 +132,7 @@ test('StaticDataController.update and remove enforce org vs global ownership', a
   assert.deepEqual(await own.controller.update('org-1', 'o1', { values: { a: 'A' } }, own.req), { ok: true });
   assert.deepEqual(await own.controller.remove('org-1', 'o1', own.req), { ok: true });
 
-  const adminOtherOrg = setupStaticData({ roles: ['admin'], superdeveloper: false, existingRow: { id: 'o9', organization_id: 'org-9' } });
+  const adminOtherOrg = setupStaticData({ roles: ['admin'], operator: false, existingRow: { id: 'o9', organization_id: 'org-9' } });
   assert.deepEqual(await adminOtherOrg.controller.update('org-1', 'o9', { values: {} }, adminOtherOrg.req), {
     ok: false,
     error: 'forbidden',

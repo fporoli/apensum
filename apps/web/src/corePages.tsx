@@ -18,6 +18,8 @@ import {
   GroupIcon,
   HistoryIcon,
   ImportExportIcon,
+  KeyIcon,
+  MemoryIcon,
   MailIcon,
   PeopleIcon,
   PersonIcon,
@@ -25,8 +27,10 @@ import {
   SettingsIcon,
   TimerIcon,
   TuneIcon,
+  VerifiedUserIcon,
   WorkspacesIcon,
 } from './icons';
+import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 
 const Home = lazy(() => import('./Home'));
 const MyData = lazy(() => import('./MyData'));
@@ -50,6 +54,12 @@ const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
 const News = lazy(() => import('./News'));
 const ImportExport = lazy(() => import('./ImportExport'));
+const SuperAdminHome = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminHome })));
+const SuperAdminLicenses = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminLicenses })));
+const SuperAdminAi = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminAi })));
+const SuperAdminInstance = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminInstance })));
+const SuperAdminNews = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminNews })));
+const SuperAdminUsers = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminUsers })));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -83,6 +93,8 @@ export const CORE_NAV_GROUPS: NavGroupDef[] = [
   { id: 'personal', header: 'nav.personal' },
   { id: 'organization', header: 'nav.organization' },
   { id: 'administration', header: 'nav.administration' },
+  // Only in the Admin organization (OPERATOR_ORG_ID), for the instance's operators.
+  { id: 'superAdmin', header: 'nav.superAdmin' },
 ];
 
 async function fetchJson(url: string, authHeaders: () => Promise<Record<string, string>>): Promise<unknown> {
@@ -100,7 +112,7 @@ export const CORE_PAGES: AppPage[] = [
     section: 'home',
     hash: '#/home',
     nav: { group: 'myWork', label: 'nav.home', icon: <DashboardIcon fontSize="small" /> },
-    render: (c) => (
+    render: (c) => c.orgId === OPERATOR_ORG_ID ? <SuperAdminHome onNavigate={(target) => c.navigate(target)} /> : (
       <Home
         orgId={c.orgId}
         userId={c.userId}
@@ -413,5 +425,46 @@ export const CORE_PAGES: AppPage[] = [
         showEmployment={c.permissions ? holdsAny(c.permissions, 'section.people.employment') : true}
       />
     ),
+  },
+  // Super Admin: only operators hold `nav.operator`, and only in the Admin organization (access.ts).
+  {
+    section: 'superAdminInstance',
+    hash: '#/super-admin/instance',
+    object: 'nav.operator',
+    allowedByRole: () => false,
+    nav: { group: 'superAdmin', label: 'nav.superAdminInstance', icon: <MemoryIcon fontSize="small" /> },
+    render: (c) => <SuperAdminInstance authHeaders={c.authHeaders} />,
+  },
+  {
+    section: 'superAdminLicenses',
+    hash: '#/super-admin/licenses',
+    object: 'nav.operator',
+    allowedByRole: () => false,
+    nav: { group: 'superAdmin', label: 'nav.superAdminLicenses', icon: <KeyIcon fontSize="small" /> },
+    render: (c) => <SuperAdminLicenses authHeaders={c.authHeaders} />,
+  },
+  {
+    section: 'superAdminAi',
+    hash: '#/super-admin/ai',
+    object: 'nav.operator',
+    allowedByRole: () => false,
+    nav: { group: 'superAdmin', label: 'nav.superAdminAi', icon: <BarChartIcon fontSize="small" /> },
+    render: (c) => <SuperAdminAi authHeaders={c.authHeaders} />,
+  },
+  {
+    section: 'superAdminNews',
+    hash: '#/super-admin/news',
+    object: 'nav.operator',
+    allowedByRole: () => false,
+    nav: { group: 'superAdmin', label: 'nav.superAdminNews', icon: <CampaignIcon fontSize="small" /> },
+    render: (c) => <SuperAdminNews authHeaders={c.authHeaders} />,
+  },
+  {
+    section: 'superAdminUsers',
+    hash: '#/super-admin/superusers',
+    object: 'nav.operator',
+    allowedByRole: () => false,
+    nav: { group: 'superAdmin', label: 'nav.superAdminUsers', icon: <VerifiedUserIcon fontSize="small" /> },
+    render: (c) => <SuperAdminUsers authHeaders={c.authHeaders} />,
   },
 ];

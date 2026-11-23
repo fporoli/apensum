@@ -14,11 +14,11 @@ const OTHER = '00000000-0000-4000-8000-00000000000b';
 const ORG = '00000000-0000-4000-8000-00000000000c';
 const as = (sub: string) => ({ user: { kind: 'local' as const, sub } });
 
-/** An owner of ORG who is no superdeveloper; writes are counted. */
+/** An owner of ORG who is no operator; writes are counted. */
 function ownerDb(tables: Record<string, unknown[]> = {}) {
   const writes: string[] = [];
   const db: any = {
-    execute: async () => ({ rows: [{ name: 'owner', permission_id: null, is_superdeveloper: false }] }),
+    execute: async () => ({ rows: [{ name: 'owner', permission_id: null, is_operator: false }] }),
     select: () => ({
       from: (table: any) => {
         const rows = tables[getTableName(table)] ?? [];
@@ -67,7 +67,7 @@ test('auth: SSO takes no account from the body, only from a verified e-mail in t
 });
 
 const invitation = { id: 'i', organization_id: ORG, email: 'other@example.ch', role_id: 'r', status: 'pending', expires_at: '2999-01-01T00:00:00Z' };
-const account = { id: OTHER, status: 'active', display_name: 'Other', is_superdeveloper: false };
+const account = { id: OTHER, status: 'active', display_name: 'Other', is_operator: false };
 const accept = { token: 't', displayName: 'X', password: 'chosen-by-inviter' };
 
 test("auth: accepting an invitation never replaces an existing account's password", async () => {

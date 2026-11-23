@@ -767,7 +767,7 @@ and optionally mails them a link. `news_post_reads` records when each person
 opened a post and, for a post with `require_ack`, confirmed reading it. Pictures
 are documents linked by `news_post_documents` and shown as `![alt](doc:<id>)`.
 A post with `organization_id` NULL (082) is product news: written by a
-superdeveloper for the admins of every organization, never with departments.
+operator for the admins of every organization, never with departments.
 A product post with `is_public` (083) is also on the website (`public/news`)
 and can be sent to the newsletter's confirmed subscribers; `newsletter_deliveries`
 records who got it, so no one gets it twice.

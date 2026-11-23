@@ -13,6 +13,7 @@ import {
   type Scope,
 } from '@worktime3/shared/permissions';
 import { resolveModules, withoutDisabledModules } from '@worktime3/shared/modules';
+import { OPERATOR_ORG_ID, OPERATOR_PERMISSION } from '@worktime3/shared/operator';
 
 /** The slice of Db these helpers need — easy to fake in tests, satisfied by any real Db. */
 export type Executor = Pick<Db, 'execute'>;
@@ -95,10 +96,16 @@ export async function invitationNeedsOwner(
   return rows.rows.some((r: Record<string, unknown>) => (invitee.setsPassword || r.status !== 'active') && ownerAppoints(String(r.name)));
 }
 
-/** True when the user is a superdeveloper: AI limits and product news. Nothing inside an organization. */
-export async function isSuperDeveloper(db: Executor, userId: string): Promise<boolean> {
-  const rows = await db.execute(sql`SELECT is_superdeveloper FROM users WHERE id = ${userId} LIMIT 1`);
-  return rows.rows[0]?.is_superdeveloper === true;
+/**
+ * True when the user is an operator: an active member of the Admin organization (OPERATOR_ORG_ID,
+ * 098). Licenses, product news, superusers and the AI limits; nothing inside any other organization.
+ */
+export async function isOperator(db: Executor, userId: string): Promise<boolean> {
+  const rows = await db.execute(
+    sql`SELECT EXISTS (SELECT 1 FROM organization_memberships
+          WHERE organization_id = ${OPERATOR_ORG_ID} AND user_id = ${userId} AND status = 'active') AS is_operator`,
+  );
+  return rows.rows[0]?.is_operator === true;
 }
 
 /** True when the user may edit this organization's form template: its developer. */
@@ -348,6 +355,8 @@ export async function isProjectPeriodLocked(
 
 /** The caller's permission ids in this organization, merged across all their active roles. */
 export async function permissionIdsOf(db: Executor, organizationId: string, userId: string): Promise<Set<string>> {
+  // The Admin organization: its members hold the Super Admin pages and nothing else, whatever any role says.
+  if (organizationId === OPERATOR_ORG_ID) return new Set((await isOperator(db, userId)) ? [OPERATOR_PERMISSION] : []);
   const rows = await db.execute(
     sql`SELECT r.name, rp.permission_id, o.settings -> 'modules' AS modules,
           (SELECT jsonb_agg(l.module_id) FROM organization_licenses l

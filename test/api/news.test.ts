@@ -59,11 +59,59 @@ test('news audience: department ids are uuids, without duplicates', () => {
   assert.equal(cleanDepartmentIds('x'), null);
 });
 
-test('who changes a post: the organization news writers its posts, a superdeveloper product news', () => {
-  const hr = { id: 'u', editor: true, admin: false, superdeveloper: false };
-  const dev = { id: 'd', editor: false, admin: false, superdeveloper: true };
+test('who changes a post: the organization news writers its posts, an operator product news', () => {
+  const hr = { id: 'u', editor: true, admin: false, operator: false };
+  const dev = { id: 'd', editor: false, admin: false, operator: true };
   assert.equal(mayEditNews(hr, { organization_id: 'org' }), true);
   assert.equal(mayEditNews(hr, { organization_id: null }), false);
   assert.equal(mayEditNews(dev, { organization_id: null }), true);
-  assert.equal(mayEditNews(dev, { organization_id: 'org' }), false, 'a superdeveloper is no writer of an organization by that alone');
+  assert.equal(mayEditNews(dev, { organization_id: 'org' }), false, 'an operator is no writer of an organization by that alone');
+});
+
+// Product news is written on the Super Admin pages only (`operator/news`, no organization).
+import { NewsController } from '../../apps/api/src/news.controller';
+
+const req = (sub: string) => ({ user: { kind: 'local' as const, sub }, headers: {} }) as any;
+const texts = { de: { title: 'Neu', body: 'Text' } };
+
+function sqlText(query: any): string {
+  return (query.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : '?')).join('');
+}
+
+/** `operators` are operators; everyone is an org member with every news right (writer and admin). */
+function newsSetup(operators: string[]) {
+  const inserts: unknown[][] = [];
+  const db = {
+    execute: async (q: any) => {
+      const text = sqlText(q);
+      const params = (q.queryChunks ?? []).filter((c: any) => c === null || (!Array.isArray(c?.value) && typeof c !== 'object'));
+      if (text.includes('is_operator')) return { rows: [{ is_operator: operators.some((o) => params.includes(o)) }] };
+      if (text.includes('INSERT INTO news_posts')) {
+        inserts.push(params);
+        return { rows: [{ id: 'post-1' }] };
+      }
+      // membership, permissions: a member holding nav.news see/edit and nav.admin
+      if (text.includes('organization_memberships') || text.includes('permission')) {
+        return { rows: [{ id: 'm', status: 'active', name: 'admin', permission_id: 'nav.news:edit:all' }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const controller = new NewsController({ getDb: () => db } as any, {} as any, { record: async () => {} } as any, {} as any);
+  return { controller, inserts };
+}
+
+test('product news: only an operator writes it, on the Super Admin route', async () => {
+  {
+    const { controller, inserts } = newsSetup(['op']);
+    assert.deepEqual(await controller.create(undefined, { texts }, req('someone')), { ok: false, error: 'forbidden' });
+    assert.equal(inserts.length, 0);
+
+    assert.deepEqual(await controller.create(undefined, { texts, public: true }, req('op')), { ok: true, id: 'post-1' });
+    assert.equal(inserts[0][0], null, 'no organization: product news');
+
+    const list = await controller.list(undefined, req('op'));
+    assert.equal(list.productEditor, true);
+    assert.equal(list.editor, false);
+  }
 });

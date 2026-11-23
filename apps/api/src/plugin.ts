@@ -117,7 +117,7 @@ export { AuditService } from './audit.service';
 // Authentication and authorization (CLAUDE.md: every org-scoped handler authorizes itself)
 export { Public, type AuthenticatedRequest } from './jwt.guard';
 export {
-  callerUserId, can, canSeeUserData, canEditUserData, canEditBeyondOwn, isOrgMember, isManagerOf, isSuperDeveloper,
+  callerUserId, can, canSeeUserData, canEditUserData, canEditBeyondOwn, isOrgMember, isManagerOf, isOperator,
   listableUserIds, membershipManagerId, permissionIdsOf, reachesAll,
 } from './access';
 
