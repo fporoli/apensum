@@ -1,19 +1,21 @@
 -- As root, update the system and set a password for the `root` user. This is necessary to ensure the system is up-to-date and secure.
 
-    1  apt update
-    2  apt upgrade
-    3  passwd
-    4  shutdown -r now
+apt update
+apt upgrade
+passwd
+shutdown -r now
 
 -- Install Docker and Docker Compose. This is necessary to run the Apensum stack.
 
-    5  sudo apt install ca-certificates curl
-    6  sudo install -m 0755 -d /etc/apt/keyrings
-    7  sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    8  sudo chmod a+r /etc/apt/keyrings/docker.asc
-    9  sudo apt install ca-certificates curl
-   10  sudo install -m 0755 -d /etc/apt/keyrings
-   17  # Add the repository to Apt sources:
+sudo apt install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo apt install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+
+# Add the repository to Apt sources:
+
 sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
@@ -22,42 +24,43 @@ Components: stable
 Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-   26  sudo apt update
-   27  sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-   28  sudo apt autoremove
-   29  sudo docker run hello-world
-   30  adduser ubuntu
-   31  groupadd docker
-   32  sudo usermod -aG docker ubuntu
-   33  shutdown -r now
+
+sudo apt update
+sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo apt autoremove
+sudo docker run hello-world
+adduser ubuntu
+groupadd docker
+sudo usermod -aG docker ubuntu
+shutdown -r now
 
 -- Add the `ubuntu` user to the sudoers file to allow it to run commands with elevated privileges. This is necessary for administrative tasks.
 
-   35  apt install vim
-   37  vi /etc/sudoers
+   apt install vim
+   vi /etc/sudoers
 
 -- Enable the firewall and allow only the necessary ports (SSH, HTTP, HTTPS). This is important for security.
 
-   38  apt install ufw
-   39  sudo ufw default deny incoming
-   40  sudo ufw default allow outgoing
-   41  sudo ufw allow 22/tcp      # SSH
-   42  sudo ufw allow 80/tcp      # HTTP (Caddy, Let's Encrypt certificates)
-   43  sudo ufw allow 443/tcp     # HTTPS
-   44  sudo ufw enable            # asks for confirmation: answer y
-   45  sudo ufw status verbose
-   48  sudo apt install net-tools
+   apt install ufw
+   sudo ufw default deny incoming
+   sudo ufw default allow outgoing
+   sudo ufw allow 22/tcp      # SSH
+   sudo ufw allow 80/tcp      # HTTP (Caddy, Let's Encrypt certificates)
+   sudo ufw allow 443/tcp     # HTTPS
+   sudo ufw enable            # asks for confirmation: answer y
+   sudo ufw status verbose
+   sudo apt install net-tools
 
 -- As ubuntu user, generate an SSH key pair (private + public) and copy the public key to the server's `~/.ssh/authorized_keys` file. This allows passwordless SSH login.
 
-    2  mkdir .ssh
-    4  cd .ssh
-    9  vi id_ed25519.pub
-   11  mv id_ed25519.pub authorized_keys
-   12  docker ps
-   13  sudo ls -al
-   18  docker ps
+mkdir .ssh
+cd .ssh
+vi id_ed25519.pub
+mv id_ed25519.pub authorized_keys
+docker ps
+sudo ls -al
+docker ps
 
 -- Create directories for the various Apensum environments (production, demo, pre-production, test) under `/opt`. Set the owner and group to `ubuntu` to ensure proper permissions.
 
-   19  sudo install -d -o ubuntu -g ubuntu /opt/edge /opt/apensum-prod /opt/apensum-demo /opt/apensum-preprod /opt/apensum-test
+sudo install -d -o ubuntu -g ubuntu /opt/edge /opt/apensum-prod /opt/apensum-demo /opt/apensum-preprod /opt/apensum-test
