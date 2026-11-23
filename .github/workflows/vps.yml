@@ -105,7 +105,7 @@ jobs:
           DOMAIN: ${{ vars.DOMAIN }}
           MAIL_SUB: ${{ vars.MAIL_SUB }}
           PORTAINER_SUB: ${{ vars.PORTAINER_SUB }}
-          # The instance's own operator account, ensured on every deploy and reset (not on the public demo):
+          # The instance's own operator account, ensured on every deploy and reset:
           # OPERATOR_EMAIL (default admin@admin.local) with the password of the secret OPERATOR_PASSWORD.
           OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
           OPERATOR_PASSWORD: ${{ secrets.OPERATOR_PASSWORD }}

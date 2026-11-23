@@ -226,12 +226,12 @@ load_seed() {
 
 # The instance's own operator account (OPERATOR_EMAIL, default admin@admin.local) with the password of
 # the GitHub Environment secret OPERATOR_PASSWORD: created when missing, its password set, a member of the
-# Admin organization (apps/api/src/cli/operator.ts `operators ensure`). After every deploy and reset, never
-# on the public demo, and not without the secret. The password reaches the container's environment only
-# (`-e NAME` copies it from here), never a command line or the log.
+# Admin organization (apps/api/src/cli/operator.ts `operators ensure`). After every deploy and reset, the
+# public demo included (its published logins stay without operator rights), and not without the secret.
+# The password reaches the container's environment only (`-e NAME` copies it from here), never a command
+# line or the log.
 ensure_operator() {
   [ -n "${OPERATOR_PASSWORD:-}" ] || { echo "OPERATOR_PASSWORD is not set: no operator account ensured"; return 0; }
-  if is_public_demo; then return 0; fi
   OPERATOR_PASSWORD="$OPERATOR_PASSWORD" docker exec -e OPERATOR_PASSWORD "$PREFIX-api" \
     node apps/api/dist/cli/operator.js operators ensure "${OPERATOR_EMAIL:-admin@admin.local}"
 }

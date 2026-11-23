@@ -396,7 +396,7 @@ The whole app has a thick red frame while the Admin organization is selected.\
 They have no right inside any other organization, and the pages never show people's data.\
 Nobody joins the Admin organization through registration, invitations or roles: only `operators grant` above or an operator on the Superusers page makes someone one (an existing account; the last one stays), and each change is in the Admin organization's audit log.\
 The first grant creates the organization.\
-Each VPS instance but the public demo also gets its own operator account on every deploy and reset (`remote.sh` `ensure_operator`, CLI `operators ensure`): `OPERATOR_EMAIL` (GitHub Environment variable, default `admin@admin.local`) with the password of the GitHub Environment secret `OPERATOR_PASSWORD` (at least 8 characters; without it, nothing happens).\
+Each VPS instance, the public demo included, also gets its own operator account on every deploy and reset (`remote.sh` `ensure_operator`, CLI `operators ensure`): `OPERATOR_EMAIL` (GitHub Environment variable, default `admin@admin.local`) with the password of the GitHub Environment secret `OPERATOR_PASSWORD` (at least 8 characters; without it, nothing happens).\
 It is created when missing, its password set to the secret each time, and it belongs to the Admin organization alone; the password never appears in a command line or the (public) run logs.
 On servers `PUBLIC_API_URL` (the API host, set by the VPS compose file) keeps the links in newsletter mails and calendar feeds on the public API.
 
