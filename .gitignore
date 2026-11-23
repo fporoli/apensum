@@ -162,7 +162,7 @@ apps/site/videos/out/
 # Plugins (docs/PLUGINS.md): only the bundled ones are in this repository; a private plugin is
 # cloned into plugins/<id> and stays in its own repository.
 plugins/*
-!plugins/expenses
+!plugins/notes
 # Plugin changelogs staged for the migrate image (scripts/plugins.mjs stage-changelogs).
 infra/liquibase/plugins/*
 !infra/liquibase/plugins/.gitkeep

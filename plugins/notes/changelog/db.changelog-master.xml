@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The notes plugin's changelog, run after the core's (infra/liquibase/apensum-migrate.sh).
+  Same rules as the core's: a new NNN-*.sql file per change, never edit an applied changeset.
+  Changesets are recorded as "notes/changelog/<file>"; use the author "notes".
+-->
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <include file="001-notes.sql" relativeToChangelogFile="true"/>
+
+</databaseChangeLog>

@@ -1,9 +1,11 @@
 # Plugins
 
 A plugin adds pages, API endpoints, settings and texts to Apensum without changing the core. It lives
-in `plugins/<id>`; the core finds it there when it builds and starts. `plugins/expenses` is the bundled
-plugin (in this repository); any other plugin is a clone of its own repository in that folder, e.g. the
-private `hr` (`fporoli/apensum-hr`) and `cases` (Assessments, `fporoli/apensum-assessment`).
+in `plugins/<id>`; the core finds it there when it builds and starts. `plugins/notes` is the bundled
+example plugin (in this repository, see its README): the smallest complete plugin, to copy for a new
+module. Any other plugin is a clone of its own repository in that folder, e.g. the private `expenses`
+(`fporoli/apensum-expenses`), `hr` (`fporoli/apensum-hr`) and `cases` (Assessments,
+`fporoli/apensum-assessment`); the examples below that name their files are in those.
 
 ## Layout
 
@@ -76,7 +78,7 @@ it (`namespaceMismatch` in `packages/shared/src/pluginApi.ts`) and refuse a plug
 each offending name. Text keys need no prefix but may not override a core text.
 
 `"legacyNames": true` turns the check off. It is only for a plugin carved out of the core that keeps
-the names it had there (the bundled expenses plugin: `expense_reports`, `nav.expenseReports`, ...).
+the names it had there (the expenses plugin: `expense_reports`, `nav.expenseReports`, ...).
 A new plugin never sets it.
 
 ## Pages and the navbar
@@ -251,7 +253,7 @@ changeset. Use the plugin id as changeset author.
   of the checkout has (e.g. a plugin that was removed) is reported.
 - **Permissions:** insert the `permissions` rows of the manifest's objects and the default grants on the
   global roles (`organization_id IS NULL`), with `ON CONFLICT DO NOTHING`; see
-  `plugins/expenses/changelog/001-permissions.sql` and its test.
+  `plugins/notes/changelog/001-notes.sql` and its test.
 - **Tables** may live in `public`. List them in the manifest (`"tables": ["expenses", ...]`):
   `npm run dev:introspect` then leaves them out of the core's `schema.ts` and writes them into the
   plugin's own `api/db/schema.ts` (generated, never edit; it imports the core's tables it refers to
@@ -281,7 +283,7 @@ changeset. Use the plugin id as changeset author.
 - **Authorization works as in the core** (CLAUDE.md): every org-scoped handler checks the caller with
   `callerUserId` + `can` / `canSeeUserData` / ... from the contract.
 - **Texts are the plugin's own.** They are merged into the dictionaries at startup; a key may not
-  override a core text (see `plugins/expenses/test/texts.test.mjs`).
+  override a core text (see `plugins/notes/test/texts.test.mjs`).
 
 ## Developing a private plugin locally
 
@@ -323,7 +325,7 @@ are limited to the catalogue (`mergePermissionRows` in access.ts).
   - `build-push` before building, so they are in the api, web, migrate and seed images;
   - `vps` before staging, so their changelogs and seeds reach the server.
 
-  CI (`ci.yml`) leaves them out: the core's CI tests the core and the bundled plugins, and its logs
+  CI (`ci.yml`) leaves them out: the core's CI tests the core and the bundled example plugin, and its logs
   are public. A private plugin has its own CI that checks the core out and itself into
   `plugins/<id>` (e.g. the hr plugin's `.github/workflows/test.yml`).
 - An image that contains a private plugin contains its code, so its registry package must be

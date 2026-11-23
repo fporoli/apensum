@@ -1,0 +1,23 @@
+{
+  "name": "@worktime3/notes",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "description": "Notes: personal notes per organization, the example plugin to start a new module from (bundled Apensum plugin)",
+  "apensum": {
+    "id": "notes",
+    "apensumApi": 2,
+    "dbSchema": "notes",
+    "permissions": [
+      { "id": "nav.notes", "kind": "nav", "scopes": ["own"], "caption": "nav.notes" }
+    ],
+    "module": {
+      "id": "notes",
+      "caption": "modules.notes",
+      "defaultEnabled": false,
+      "objects": ["nav.notes"]
+    },
+    "api": "dist/api/index.js",
+    "web": "web/index.tsx"
+  }
+}

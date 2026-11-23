@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CI (job core-only): the core must work without any plugin. Run against an API started with an
 // empty APENSUM_PLUGINS_DIR on a migrated and seeded database. Checks that the core's endpoints
-// answer and that nothing of the bundled plugins (expenses, cases) is left: no routes, no permissions,
+// answer and that nothing of the plugins (expenses, cases, notes) is left: no routes, no permissions,
 // no modules, no report, no team view, no payroll column.
 //
 //   API_URL (default http://localhost:8001/api/v1), ORG_ID (default the seed's Acme)

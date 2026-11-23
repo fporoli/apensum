@@ -1,0 +1,73 @@
+/**
+ * The notes plugin's UI texts (merged into the app's dictionaries at startup, apps/web/src/plugins.ts).
+ * Every language has the same keys and {{placeholders}} as English; test/texts.test.mjs checks it.
+ */
+import type { Locale } from '@worktime3/web/plugin';
+
+// prettier-ignore
+export const NOTES_TEXTS: Record<Locale, Record<string, string>> = {
+  en: {
+    'nav.notes': 'Notes',
+    'modules.notes': 'Notes',
+    'modules.notes.description': 'Personal notes for everyone, visible only to themselves (example plugin).',
+    'notes.title': 'Notes',
+    'notes.subtitle': 'Your own notes in this organization. Nobody else sees them.',
+    'notes.placeholder': 'Write a note…',
+    'notes.add': 'Add note',
+    'notes.delete': 'Delete',
+    'notes.deleteConfirm': 'Delete this note?',
+    'notes.empty': 'No notes yet.',
+    'notes.error.invalid-note': 'A note needs some text (at most 2000 characters).',
+    'notes.error.forbidden': 'You may not write notes here.',
+    'notes.error.not-found': 'This note no longer exists.',
+    'notes.error.failed': 'That did not work.',
+  },
+  de: {
+    'nav.notes': 'Notizen',
+    'modules.notes': 'Notizen',
+    'modules.notes.description': 'Persönliche Notizen für alle, nur für sie selbst sichtbar (Beispiel-Plugin).',
+    'notes.title': 'Notizen',
+    'notes.subtitle': 'Ihre eigenen Notizen in dieser Organisation. Niemand sonst sieht sie.',
+    'notes.placeholder': 'Notiz schreiben…',
+    'notes.add': 'Notiz hinzufügen',
+    'notes.delete': 'Löschen',
+    'notes.deleteConfirm': 'Diese Notiz löschen?',
+    'notes.empty': 'Noch keine Notizen.',
+    'notes.error.invalid-note': 'Eine Notiz braucht Text (höchstens 2000 Zeichen).',
+    'notes.error.forbidden': 'Sie dürfen hier keine Notizen schreiben.',
+    'notes.error.not-found': 'Diese Notiz gibt es nicht mehr.',
+    'notes.error.failed': 'Das hat nicht geklappt.',
+  },
+  fr: {
+    'nav.notes': 'Notes',
+    'modules.notes': 'Notes',
+    'modules.notes.description': 'Des notes personnelles pour chacun, visibles par lui seul (plugin d’exemple).',
+    'notes.title': 'Notes',
+    'notes.subtitle': 'Vos propres notes dans cette organisation. Personne d’autre ne les voit.',
+    'notes.placeholder': 'Écrire une note…',
+    'notes.add': 'Ajouter la note',
+    'notes.delete': 'Supprimer',
+    'notes.deleteConfirm': 'Supprimer cette note ?',
+    'notes.empty': 'Pas encore de notes.',
+    'notes.error.invalid-note': 'Une note a besoin de texte (2000 caractères au plus).',
+    'notes.error.forbidden': 'Vous ne pouvez pas écrire de notes ici.',
+    'notes.error.not-found': 'Cette note n’existe plus.',
+    'notes.error.failed': 'Cela n’a pas fonctionné.',
+  },
+  it: {
+    'nav.notes': 'Note',
+    'modules.notes': 'Note',
+    'modules.notes.description': 'Note personali per tutti, visibili solo a sé stessi (plugin d’esempio).',
+    'notes.title': 'Note',
+    'notes.subtitle': 'Le vostre note in questa organizzazione. Nessun altro le vede.',
+    'notes.placeholder': 'Scrivere una nota…',
+    'notes.add': 'Aggiungi nota',
+    'notes.delete': 'Elimina',
+    'notes.deleteConfirm': 'Eliminare questa nota?',
+    'notes.empty': 'Ancora nessuna nota.',
+    'notes.error.invalid-note': 'Una nota ha bisogno di testo (al massimo 2000 caratteri).',
+    'notes.error.forbidden': 'Non potete scrivere note qui.',
+    'notes.error.not-found': 'Questa nota non esiste più.',
+    'notes.error.failed': 'Non ha funzionato.',
+  },
+};
