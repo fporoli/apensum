@@ -12,7 +12,11 @@ const manifests: { tables?: string[]; dbSchema?: string }[] = existsSync(plugins
       return existsSync(pkg) ? [JSON.parse(readFileSync(pkg, 'utf8')).apensum ?? {}] : [];
     })
   : [];
-const pluginTables = manifests.flatMap((m) => m.tables ?? []);
+// Tables the core's old changesets created in public for what is now a plugin, so they exist whether or not
+// that plugin is installed (CI and the core-only build have no private plugins): always the plugin's, never
+// in the core's schema.ts. The expenses plugin (private) introspects them into its own api/db/schema.ts.
+const LEGACY_PLUGIN_TABLES = ['expenses', 'expense_reports', 'expense_report_items', 'exchange_rates'];
+const pluginTables = [...new Set([...LEGACY_PLUGIN_TABLES, ...manifests.flatMap((m) => m.tables ?? [])])];
 const pluginSchemas = manifests.flatMap((m) => (m.dbSchema ? [m.dbSchema] : []));
 
 // Drizzle never owns migrations here — Liquibase does (see infra/liquibase).
