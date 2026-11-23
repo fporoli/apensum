@@ -457,6 +457,7 @@ interface InstanceInfo {
   azure: boolean;
   documentsEncrypted: boolean;
   demoResetEveryHours: number | null;
+  disk?: { diskFreeBytes: number | null; diskTotalBytes: number | null };
   counts: Record<'organizations' | 'withoutOwner' | 'activeUsers' | 'memberships' | 'licenses' | 'subscribers' | 'documents' | 'databaseBytes', number>;
 }
 
@@ -505,6 +506,11 @@ export function SuperAdminInstance({ authHeaders }: { authHeaders: AuthHeaders }
             {status(info.smtp === 'ok', t('superAdmin.instance.smtp'), t(`superAdmin.instance.smtp.${info.smtp}`))}
             {status(info.azure, t('superAdmin.instance.azure'), info.azure ? undefined : t('superAdmin.ai.off'))}
             {status(info.documentsEncrypted, t('superAdmin.instance.documents'), info.documentsEncrypted ? undefined : t('superAdmin.instance.documentsPlain'))}
+            {info.disk?.diskFreeBytes != null && info.disk.diskTotalBytes ? status(
+              info.disk.diskFreeBytes / info.disk.diskTotalBytes >= 0.1 && info.disk.diskFreeBytes >= 2 * 1024 ** 3,
+              t('superAdmin.instance.disk'),
+              t('superAdmin.instance.diskFree', { free: formatFileSize(info.disk.diskFreeBytes, locale), total: formatFileSize(info.disk.diskTotalBytes, locale) }),
+            ) : null}
             {info.demoResetEveryHours && status(true, t('superAdmin.instance.demo', { hours: String(info.demoResetEveryHours) }))}
           </Paper>
           <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>

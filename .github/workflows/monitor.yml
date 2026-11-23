@@ -1,0 +1,83 @@
+# The outside monitor: every 10 minutes it checks every instance's API health, web app and the websites
+# (repository variable MONITOR_TARGETS, a JSON list of { id, url, kind: health | page }) and the certificates.
+# A check failing twice in a row (20 minutes: a demo reset or a blip mails nobody), its recovery and a
+# certificate within 14 days of its end are mailed to OPERATOR_EMAIL of prod (else prod's sender address),
+# through prod's SMTP. The check job holds no secret; the alert job uses the prod environment, and only runs
+# when there is something to send. Public logs: they show only the public addresses and ok/failed.
+# The internal checks (disk, mail relay) run inside the API (monitor.service.ts).
+name: monitor
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      alert: ${{ steps.run.outputs.alert }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/cache/restore@v4
+        with:
+          path: monitor-state.json
+          key: monitor-state-${{ github.run_id }}
+          restore-keys: monitor-state-
+      - id: run
+        env:
+          MONITOR_TARGETS: ${{ vars.MONITOR_TARGETS }}
+        run: node scripts/monitor.mjs monitor-state.json monitor-alert.txt
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: monitor-state.json
+          key: monitor-state-${{ github.run_id }}
+      - if: steps.run.outputs.alert == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitor-alert
+          path: monitor-alert.txt
+          retention-days: 1
+
+  alert:
+    needs: check
+    if: needs.check.outputs.alert == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: prod
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: monitor-alert
+      - name: Mail the operator
+        env:
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
+          SMTP_FROM: ${{ vars.SMTP_FROM }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+        run: |
+          set -euo pipefail
+          from_addr=$(printf '%s' "$SMTP_FROM" | sed -E 's/.*<([^>]+)>.*/\1/')
+          to="${OPERATOR_EMAIL:-$from_addr}"
+          subject=$(head -n 1 monitor-alert.txt)
+          {
+            printf 'From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n' "$SMTP_FROM" "$to" "$subject"
+            tail -n +2 monitor-alert.txt
+          } > mail.txt
+          curl --silent --show-error --ssl-reqd --url "smtp://$SMTP_HOST:${SMTP_PORT:-587}" \
+            --user "$SMTP_USER:$SMTP_PASSWORD" --mail-from "$from_addr" --mail-rcpt "$to" --upload-file mail.txt
+          echo "mailed: $subject"

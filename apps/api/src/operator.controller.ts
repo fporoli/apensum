@@ -9,6 +9,7 @@ import { azureAllowed, instanceBudgetChf, MONTH_START } from './ai-budget.servic
 import { AuditService } from './audit.service';
 import { currentMasterKey } from './document-crypto';
 import { demoResetEveryHours, STARTED_AT } from './health.controller';
+import { diskFacts } from './monitor.service';
 import { lastSmtpStatus } from './mailer';
 import { VersionsService } from './versions.service';
 import { DbService } from './db.service';
@@ -251,6 +252,7 @@ export class OperatorController {
       azure: azureAllowed(),
       documentsEncrypted: currentMasterKey() !== null,
       demoResetEveryHours: demoResetEveryHours(),
+      disk: await diskFacts(),
       counts: { ...counts, databaseBytes: Number(counts.databaseBytes) },
     };
   }

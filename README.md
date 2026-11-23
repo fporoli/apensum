@@ -372,6 +372,15 @@ Mailpit has no auth and nothing real is sent.
 
 `.github/workflows/ci.yml` builds, tests, and — against a throwaway Postgres service container — runs `db:migrate` then `db:seed`, so a broken changelog fails the build before it reaches any real environment.
 
+## Monitoring
+
+Outside: `.github/workflows/monitor.yml` checks every 10 minutes the targets in the repository variable `MONITOR_TARGETS` (a JSON list of `{ id, url, kind: health | page }`: each instance's `GET health`, its web app, the websites) and their TLS certificates (`scripts/monitor.mjs`, logic in `scripts/monitor-lib.mjs`).\
+A check failing twice in a row (20 minutes, so a demo reset or a blip mails nobody), its recovery and a certificate within 14 days of its end are mailed to `OPERATOR_EMAIL` of the `prod` environment (else prod's sender address) through prod's SMTP; the state between runs is in the Actions cache.\
+The check job holds no secret and its public log shows only public addresses and ok/failed; the alert job uses the `prod` environment only when there is something to send.\
+GitHub runs scheduled workflows best effort, sometimes a few minutes late.
+
+Inside: the API (`monitor.service.ts`, every hour, `MONITOR=off` disables it) reports to the operators, by mail and as a notification in the Admin organization, at most once a day each: free disk space under 10 % or 2 GB (also shown under Super Admin → Instance) and a failing mail relay (as a notification only, since mail does not get through then).
+
 ## Two-step login
 
 Everyone who signs in with a password can add a second step in Settings: a code from an authenticator app (scan the QR code, confirm one code), with ten one-time recovery codes for a lost phone.\

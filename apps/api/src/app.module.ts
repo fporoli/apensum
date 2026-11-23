@@ -71,6 +71,7 @@ import { AiSettingsController } from './ai-settings.controller';
 import { OperatorController } from './operator.controller';
 import { TwoFactorController } from './two-factor.controller';
 import { ExchangeRatesController } from './exchange-rates.controller';
+import { MonitorService } from './monitor.service';
 import { AiBudgetService } from './ai-budget.service';
 import { loadApiPlugins } from './plugins';
 import { API_PLUGINS, PluginRegistrar } from './plugin-registrar';
@@ -147,6 +148,7 @@ const plugins = loadApiPlugins();
     RbacService,
     ScreenShareService,
     AuditService,
+    MonitorService,
     VersionsService,
     WorkflowsService,
     AssistantService,

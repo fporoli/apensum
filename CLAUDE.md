@@ -112,6 +112,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Membership settings hold the person's calendar-feed token: return, audit or take them only through `membership-settings.ts`.\
   Registration is open: each registration gets its own workspace as owner, admin and HR (`registrationRoleIds`); nobody becomes operator by registering, the first account included: `operators grant` of the operator CLI (or an operator on the Superusers page) does it.\
   Every registration is told to the operators (`registration-notice.ts`): a mail in each one's language and a notification in the Admin organization (`organizations`, opening Super Admin → Licenses), best effort.\
+  Monitoring (README "Monitoring"): outside `.github/workflows/monitor.yml` (`MONITOR_TARGETS`, two failures in a row before a mail, recovery and certificates, mail via prod's SMTP to its `OPERATOR_EMAIL`); inside `monitor.service.ts` (hourly, disk and mail relay, once a day each, `MONITOR=off`), notifications `operator_monitor` opening Super Admin → Instance.\
   Handlers take `@Req() req: AuthenticatedRequest`.
 - **Every org-scoped handler authorizes itself**, using helpers from `access.ts`:
   1. `const db = this.db.getDb(); if (!db) return <offline/empty shape>;`
