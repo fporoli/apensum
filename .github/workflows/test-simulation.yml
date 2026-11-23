@@ -1,9 +1,20 @@
-name: Dolphin and Whale simulation (VPS test only)
+name: Dolphin and Whale simulation (VPS)
 
 on:
-  push:
-    branches: [test/dolphin-whale-simulation]
   workflow_dispatch:
+    inputs:
+      environment:
+        description: VPS environment to populate
+        type: choice
+        required: true
+        default: test
+        options:
+          - test
+          - preprod
+      confirmation:
+        description: For preprod, enter exactly SIMULATE preprod
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -15,11 +26,20 @@ concurrency:
 jobs:
   simulate:
     if: github.ref == 'refs/heads/test/dolphin-whale-simulation'
-    environment: test
+    environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Confirm preprod target
+        env:
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [[ "$TARGET_ENVIRONMENT" == "preprod" && "$CONFIRMATION" != "SIMULATE preprod" ]]; then
+            echo "Preprod requires the exact confirmation: SIMULATE preprod" >&2
+            exit 1
+          fi
       - name: Upload simulation files
         uses: appleboy/scp-action@v1
         with:
@@ -27,8 +47,8 @@ jobs:
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           source: test/simulation/history.sql,test/simulation/run.cjs
-          target: /tmp/apensum-test-simulation-${{ github.run_id }}
-      - name: Seed and verify on VPS test
+          target: /tmp/apensum-${{ inputs.environment }}-simulation-${{ github.run_id }}
+      - name: Seed and verify on VPS
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ vars.VPS_HOST }}
@@ -37,9 +57,11 @@ jobs:
           command_timeout: 25m
           script: |
             set -eu
-            src=/tmp/apensum-test-simulation-${{ github.run_id }}
+            environment=${{ inputs.environment }}
+            container="apensum-${environment}-api"
+            src="/tmp/apensum-${environment}-simulation-${{ github.run_id }}"
             dst=/app/test/simulation-${{ github.run_id }}
-            trap 'docker exec apensum-test-api rm -rf "$dst"; rm -rf "$src"' EXIT
-            docker exec apensum-test-api mkdir -p "$dst"
-            docker cp "$src/test/simulation/." "apensum-test-api:$dst/"
-            docker exec apensum-test-api node "$dst/run.cjs" vps-test
+            trap 'docker exec "$container" rm -rf "$dst"; rm -rf "$src"' EXIT
+            docker exec "$container" mkdir -p "$dst"
+            docker cp "$src/test/simulation/." "$container:$dst/"
+            docker exec "$container" node "$dst/run.cjs" "vps-$environment"

@@ -14,6 +14,7 @@ const today = localDate(new Date(), zone);
 const year = Number(today.slice(0, 4));
 const lastMonth = new Date(Date.UTC(year, Number(today.slice(5, 7)) - 2, 1)).toISOString().slice(0, 10);
 const password = randomBytes(32).toString('base64url');
+const adminPassword = 'admin';
 const api = `http://127.0.0.1:${process.env.API_PORT ?? 8001}/api/v1/`;
 const note = 'Dolphin/Whale test simulation';
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -49,9 +50,12 @@ async function seed() {
     await client.query('INSERT INTO sim_holidays SELECT DISTINCT unnest($1::date[])', [holidays]);
     await client.query(readFileSync(`${__dirname}/history.sql`, 'utf8'));
     const hashes = await Promise.all(Array.from({ length: 8 }, () => bcrypt.hash(password, 10)));
+    const adminHash = await bcrypt.hash(adminPassword, 10);
     await client.query(`INSERT INTO user_identities (user_id, provider, provider_user_id, password_hash)
-      SELECT person, 'password', email, ($1::text[])[(CASE slug WHEN 'dolphin' THEN 0 ELSE 4 END) +
-        (CASE n WHEN leaders + 3 THEN 4 ELSE n END)] FROM sim_people WHERE n IN (1, 2, 3, leaders + 3)`, [hashes]);
+      SELECT person, 'password', email, CASE WHEN n = 1 THEN $2::text ELSE ($1::text[])[
+        (CASE slug WHEN 'dolphin' THEN 0 ELSE 4 END) +
+        (CASE n WHEN leaders + 3 THEN 4 ELSE n END)] END
+      FROM sim_people WHERE n IN (1, 2, 3, leaders + 3)`, [hashes, adminHash]);
     const { rows } = await client.query('SELECT org, slug, person, n, hired::text, leaders, email FROM sim_people ORDER BY slug, n');
     await client.query('COMMIT');
     return rows;
@@ -85,7 +89,10 @@ async function exercise(people, other) {
   const employee = people.find(p => p.n === p.leaders + 3);
   const org = employee.org;
   const base = `organizations/${org}`;
-  const login = async ({ email }) => (await ok('auth/login', null, { email, password })).token;
+  const login = async ({ email }) => (await ok('auth/login', null, {
+    email,
+    password: email.startsWith('admin@') ? adminPassword : password,
+  })).token;
   const workerToken = await login(employee);
   const managerToken = await login(manager);
   const hrToken = await login(hr);
@@ -239,11 +246,12 @@ async function verify(people, tokens) {
 
 async function main() {
   assert(process.env.DATABASE_URL, 'Missing DATABASE_URL');
-  assert(['vps-test', 'local-check'].includes(process.argv[2]), 'Explicit simulation target required');
+  assert(['vps-test', 'vps-preprod', 'local-check'].includes(process.argv[2]), 'Explicit simulation target required');
   const { data: health } = await request('health');
   assert.equal(health.status, 'ok', 'API is not healthy');
-  if (process.argv[2] === 'vps-test') {
-    assert.equal(new URL(process.env.DATABASE_URL).hostname, 'apensum-test-pg');
+  if (process.argv[2] === 'vps-test' || process.argv[2] === 'vps-preprod') {
+    const environment = process.argv[2].slice('vps-'.length);
+    assert.equal(new URL(process.env.DATABASE_URL).hostname, `apensum-${environment}-pg`);
   } else {
     assert.equal(new URL(process.env.DATABASE_URL).pathname, '/apensum_simulation_check');
   }

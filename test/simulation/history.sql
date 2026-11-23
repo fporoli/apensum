@@ -5,7 +5,8 @@ $$;
 
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM organizations WHERE slug IN ('dolphin', 'whale'))
-     OR EXISTS (SELECT 1 FROM users WHERE email::text LIKE '%@dolphin.example' OR email::text LIKE '%@whale.example') THEN
+     OR EXISTS (SELECT 1 FROM users WHERE email::text LIKE '%@dolphin.example' OR email::text LIKE '%@whale.example'
+       OR email IN ('admin@dolphin.com', 'admin@whale.com')) THEN
     RAISE EXCEPTION 'Dolphin/Whale simulation already exists or names are in use; no seed changes made';
   END IF;
 END $$;
@@ -23,7 +24,8 @@ WITH companies(slug, name, founded, headcount, leaders) AS (
            [1 + pg_temp.sim_roll(slug || n || ':last', 13)] || ' ' || lpad(n::text, 3, '0') AS last_name
   FROM companies c CROSS JOIN LATERAL generate_series(1, headcount) n
 )
-SELECT *, lpad(n::text, 3, '0') || '@' || slug || '.example' AS email,
+SELECT *, CASE WHEN n = 1 THEN 'admin@' || slug || '.com'
+               ELSE lpad(n::text, 3, '0') || '@' || slug || '.example' END AS email,
        CASE WHEN n = 1 THEN NULL ELSE pg_temp.sim_id(slug || ':' || manager_number) END AS manager,
        CASE WHEN n <= 2 THEN 1 WHEN n <= leaders + 2 THEN n - 1 ELSE manager_number - 1 END AS dept,
        CASE WHEN n = 1 THEN make_date(founded, 1, 1)
