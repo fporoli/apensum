@@ -1,0 +1,45 @@
+name: Dolphin and Whale simulation (VPS test only)
+
+on:
+  push:
+    branches: [test/dolphin-whale-simulation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worktime3-vps
+  cancel-in-progress: false
+
+jobs:
+  simulate:
+    if: github.ref == 'refs/heads/test/dolphin-whale-simulation'
+    environment: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Upload simulation files
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: test/simulation/history.sql,test/simulation/run.cjs
+          target: /tmp/apensum-test-simulation-${{ github.run_id }}
+      - name: Seed and verify on VPS test
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 25m
+          script: |
+            set -eu
+            src=/tmp/apensum-test-simulation-${{ github.run_id }}
+            dst=/app/test/simulation-${{ github.run_id }}
+            trap 'docker exec apensum-test-api rm -rf "$dst"; rm -rf "$src"' EXIT
+            docker exec apensum-test-api mkdir -p "$dst"
+            docker cp "$src/test/simulation/." "apensum-test-api:$dst/"
+            docker exec apensum-test-api node "$dst/run.cjs" vps-test

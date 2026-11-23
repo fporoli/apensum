@@ -397,6 +397,8 @@ The `vps` and `azure` workflows are manual (`workflow_dispatch`) and take all th
 **One GitHub Environment = one instance.**\
 Production is the environment named `prod`; create another (e.g. `preprod`) to get a second instance, on the same server or another one: production (`wt`), `preprod` (`wtpp`) and `test` (`wttest`) can all run on one host.
 
+**Dolphin and Whale performance fixture**: the dedicated `test/dolphin-whale-simulation` branch runs the test-only workflow. It does not reset or redeploy the stack, and refuses to seed if either tenant already exists. It bulk-loads synthetic historical records (including distinct projects), then uses the real API for employee submissions, manager rejections and approvals, and HR expense processing. The workflow reports row counts and three serial loopback timings per endpoint; those are not a concurrency or browser load test. Synthetic logins use an ephemeral password, are not exposed to the public demo login list, and no existing account is granted tenant access. A failed run after the history commits can leave both tenants present; inspect the failed stage before any retry. The app supports year-end snapshots starting in 2000; earlier attendance and monthly balances remain in the fixture.
+
 **Secrets**
 
 | Name | Notes |
