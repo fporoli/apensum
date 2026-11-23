@@ -104,9 +104,20 @@ INSERT INTO departments (id, organization_id, name, leader_user_id, sort_order) 
   ('dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Administration', '22222222-2222-2222-2222-222222222222', 1),
   ('dddddddd-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'HR', '22222222-2222-2222-2222-222222222226', 2),
   ('dddddddd-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Sales', '22222222-2222-2222-2222-222222222224', 3),
-  ('dddddddd-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Marketing', NULL, 4),
+  ('dddddddd-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Marketing', '22222222-2222-2222-2222-222222222222', 4),
   ('dddddddd-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Research & Development', '22222222-2222-2222-2222-222222222223', 5)
 ON CONFLICT DO NOTHING;
+-- Marketing has no one yet: Alice leads it (databases seeded before had it without a leader).
+UPDATE departments SET leader_user_id = '22222222-2222-2222-2222-222222222222'
+WHERE id = 'dddddddd-0000-0000-0000-000000000004' AND leader_user_id IS NULL;
+
+-- Acme is a company already set up, so its admins see no "Set up your organization" checklist on Home
+-- (setup.controller.ts: done once every required step is). Its work-time rules are written down as the
+-- defaults they are anyway (40-hour week, Working Hours Act maximum 45 hours, 15 minutes project time
+-- tolerance), so nothing counts differently; values already set stay.
+UPDATE organizations
+SET settings = jsonb_build_object('fullTimeWeeklyMinutes', 2400, 'legalMaxWeeklyMinutes', 2700, 'projectTimeToleranceMinutes', 15) || settings
+WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- Acme reporting lines, dated (employee_assignments; approvals route to the manager in force):
 --   Alice  -> Admin, Adam

@@ -1,4 +1,4 @@
-import { pgTable, bigint, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, jsonb, numeric, integer, unique, varchar, inet, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, bigint, index, uniqueIndex, foreignKey, check, uuid, text, timestamp, boolean, date, jsonb, numeric, integer, unique, varchar, inet, primaryKey, pgView, pgEnum, customType, char } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -1538,4 +1538,23 @@ export const user_two_factor = pgTable("user_two_factor", {
 			foreignColumns: [users.id],
 			name: "user_two_factor_user_id_fkey"
 		}).onDelete("cascade"),
+]);
+
+export const exchange_rates = pgTable("exchange_rates", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid(),
+	currency: char({ length: 3 }).notNull(),
+	target_currency: char({ length: 3 }).notNull(),
+	valid_from: date().notNull(),
+	rate: numeric({ precision: 18, scale:  8 }).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "exchange_rates_organization_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_exchange_rates").on(table.organization_id, table.currency, table.target_currency, table.valid_from),
+	check("chk_exchange_rates_currency", sql`currency ~ '^[A-Z]{3}$'::text`),
+	check("chk_exchange_rates_target", sql`(target_currency ~ '^[A-Z]{3}$'::text) AND (target_currency <> currency)`),
+	check("chk_exchange_rates_rate", sql`rate > (0)::numeric`),
 ]);

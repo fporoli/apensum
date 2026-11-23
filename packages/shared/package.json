@@ -32,6 +32,11 @@
       "types": "./dist/branding.d.ts",
       "default": "./dist/branding.js"
     },
+    "./exchangeRates": {
+      "source": "./src/exchangeRates.ts",
+      "types": "./dist/exchangeRates.d.ts",
+      "default": "./dist/exchangeRates.js"
+    },
     "./twoFactor": {
       "source": "./src/twoFactor.ts",
       "types": "./dist/twoFactor.d.ts",

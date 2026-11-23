@@ -112,6 +112,8 @@ export type { ReportDefinition, ReportRow } from '@worktime3/shared/reports';
 // Database and history
 export { DbService, type Db } from './db.service';
 export { VersionsService } from './versions.service';
+// Exchange rates (the core's, Organization settings): the rates in force for an organization and its reporting currency.
+export { effectiveRates, exchangeRatesOf, FALLBACK_REPORTING_CURRENCY, reportingCurrencyOf } from './exchange-rates';
 export { AuditService } from './audit.service';
 
 // Authentication and authorization (CLAUDE.md: every org-scoped handler authorizes itself)

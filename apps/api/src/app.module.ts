@@ -70,6 +70,7 @@ import { CalendarFeedService } from './calendar-feed.service';
 import { AiSettingsController } from './ai-settings.controller';
 import { OperatorController } from './operator.controller';
 import { TwoFactorController } from './two-factor.controller';
+import { ExchangeRatesController } from './exchange-rates.controller';
 import { AiBudgetService } from './ai-budget.service';
 import { loadApiPlugins } from './plugins';
 import { API_PLUGINS, PluginRegistrar } from './plugin-registrar';
@@ -125,6 +126,7 @@ const plugins = loadApiPlugins();
     AiSettingsController,
     OperatorController,
     TwoFactorController,
+    ExchangeRatesController,
     ...plugins.controllers,
   ],
   providers: [

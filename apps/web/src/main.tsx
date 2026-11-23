@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { CssBaseline, ThemeProvider } from '@mui/material';
 import App from './App';
 import DemoResetNotice from './DemoResetNotice';
+import UpdateNotice from './UpdateNotice';
 import { I18nProvider } from './i18n';
 import { BrandingContext, createAppTheme, DEFAULT_BRANDING_COLORS, ThemeModeContext, type ThemeMode } from './theme';
 import type { OrgBranding } from '@worktime3/shared/branding';
@@ -68,6 +69,7 @@ function Root() {
                 <>
                   <App />
                   <DemoResetNotice />
+                  <UpdateNotice />
                 </>
               )}
             </DatePickerLocalization>

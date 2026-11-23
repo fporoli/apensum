@@ -26,6 +26,7 @@ import WorkTimeSettings from './WorkTimeSettings';
 import ModuleSettings from './ModuleSettings';
 import { PLUGIN_ORG_SETTINGS } from './plugins';
 import { AiSettingsPanel } from './AiSettingsPanel';
+import ExchangeRateSettings from './ExchangeRateSettings';
 import { TwoFactorPolicyPanel } from './TwoFactor';
 import { SettingsSection } from './SettingsSection';
 
@@ -271,6 +272,10 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
 
       <SettingsSection id="org.workTime" title={t('workTimeSettings.title')} subtitle={t('workTimeSettings.subtitle')}>
         <WorkTimeSettings orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
+
+      <SettingsSection id="org.exchangeRates" title={t('exchangeRates.title')} subtitle={t('exchangeRates.subtitle', { currency: savedCurrency || 'CHF' })}>
+        <ExchangeRateSettings orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
       {PLUGIN_ORG_SETTINGS.filter((section) => !section.within).map((section) => (
