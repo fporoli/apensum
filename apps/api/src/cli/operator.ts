@@ -9,6 +9,7 @@
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators list
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators grant <e-mail>
  *   docker exec apensum-<env>-api node apps/api/dist/cli/operator.js operators revoke <e-mail>
+ *   docker exec -e OPERATOR_PASSWORD apensum-<env>-api node apps/api/dist/cli/operator.js operators ensure <e-mail>
  *
  * <organization> is its slug or id. `owner set` makes an active member an owner (for an organization
  * without one: only owners appoint owners in the app). A license lets the organization's admin switch
@@ -20,7 +21,12 @@
  * organization. This command line or an operator on the Superusers page makes someone one, never a
  * registration or an invitation; each grant and revocation is in the Admin organization's audit log.
  * The first grant creates the Admin organization.
+ *
+ * `operators ensure` is the deploy's (infra/vps/remote.sh): the instance's own operator account, created
+ * when missing, its password set to OPERATOR_PASSWORD (from the environment, never the command line),
+ * and made an operator. It has no workspace of its own.
  */
+import * as bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import { isIsoDate } from '@worktime3/shared/worktime';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
@@ -35,7 +41,51 @@ const USAGE = [
   '       operator operators list',
   '       operator operators grant <e-mail>',
   '       operator operators revoke <e-mail>',
+  '       OPERATOR_PASSWORD=... operator operators ensure <e-mail>',
 ].join('\n');
+
+/** The account (created when missing) with this password, and an operator. The password is never printed. */
+async function ensureOperator(pool: Pool, email: string, password: string): Promise<string> {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error(`not an e-mail address: ${email}`);
+  if (password.length < 8) throw new Error('OPERATOR_PASSWORD must have at least 8 characters');
+  const hash = await bcrypt.hash(password, 10);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let created = false;
+    let { rows } = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
+    if (!rows.length) {
+      ({ rows } = await client.query<{ id: string }>(`INSERT INTO users (email, display_name) VALUES ($1, 'Operator') RETURNING id`, [email]));
+      created = true;
+    }
+    const userId = rows[0].id;
+    const updated = await client.query(
+      `UPDATE user_identities SET password_hash = $2 WHERE user_id = $1 AND provider = 'password'`,
+      [userId, hash],
+    );
+    if (!updated.rowCount) {
+      await client.query(
+        `INSERT INTO user_identities (user_id, provider, provider_user_id, password_hash) VALUES ($1, 'password', $2, $3)`,
+        [userId, email, hash],
+      );
+    }
+    const granted = await client.query<{ added: boolean }>('SELECT operator_grant($1::uuid) AS added', [userId]);
+    if (granted.rows[0]?.added) {
+      await client.query(
+        `INSERT INTO audit_logs (organization_id, actor_user_id, action, target_type, target_id, metadata)
+         VALUES ($1, NULL, 'operator.grant', 'user', $2, jsonb_build_object('by', 'deploy'))`,
+        [OPERATOR_ORG_ID, userId],
+      );
+    }
+    await client.query('COMMIT');
+    return `${email}: ${created ? 'account created' : 'password set'}, operator`;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 async function listOperators(pool: Pool): Promise<string[]> {
   const { rows } = await pool.query<{ email: string }>(
@@ -74,12 +124,14 @@ async function setOperator(pool: Pool, email: string, operator: boolean): Promis
 }
 
 async function operators(action: string | undefined, email: string | undefined, rest: string[]): Promise<void> {
-  const valid = !rest.length && (action === 'list' ? !email : (action === 'grant' || action === 'revoke') && !!email);
+  const valid = !rest.length && (action === 'list' ? !email : (action === 'grant' || action === 'revoke' || action === 'ensure') && !!email);
   if (!valid) throw new Error(USAGE);
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is not set');
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
-    if (email) {
+    if (action === 'ensure') {
+      console.log(await ensureOperator(pool, email!.trim().toLowerCase(), process.env.OPERATOR_PASSWORD ?? ''));
+    } else if (email) {
       const address = email.trim().toLowerCase();
       const changed = await setOperator(pool, address, action === 'grant');
       console.log(action === 'grant'
