@@ -10,6 +10,7 @@ const Expenses = lazy(() => import('./Expenses'));
 const ExpenseReports = lazy(() => import('./ExpenseReports'));
 const ExpenseProcessing = lazy(() => import('./ExpenseProcessing'));
 const ExchangeRateSettings = lazy(() => import('./ExchangeRateSettings'));
+const AllowanceSettings = lazy(() => import('./AllowanceSettings'));
 const PhoneUpload = lazy(() => import('./PhoneUpload'));
 const ExpenseReportReview = lazy(() => import('./ExpenseReportReview'));
 
@@ -52,6 +53,13 @@ export default defineWebPlugin({
       title: (t) => t('exchangeRates.title'),
       subtitle: (t, org) => t('exchangeRates.subtitle', { currency: org.defaultCurrency || '—' }),
       render: ({ orgId, authHeaders }) => <ExchangeRateSettings orgId={orgId} authHeaders={authHeaders} />,
+    },
+    {
+      // Flat-rate expenses (Pauschalspesen): the organization's amounts per type, from its expense regulations.
+      id: 'org.expenseAllowances',
+      title: (t) => t('expenses.allowances.title'),
+      subtitle: (t) => t('expenses.allowances.subtitle'),
+      render: ({ orgId, authHeaders }) => <AllowanceSettings orgId={orgId} authHeaders={authHeaders} />,
     },
   ],
   // A phone that scanned the expense form's QR code gets the receipt page alone, without signing in.

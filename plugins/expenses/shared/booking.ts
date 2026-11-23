@@ -7,7 +7,10 @@
  *     unless the person overrides the booked amount (valueOverride): then that amount, with the
  *     effective rate (amount / receipt amount) kept;
  *   - mileage (category MILEAGE_CATEGORY): km x the rate per km in force on that date (static_data
- *     expenses/mileage_rate: key = valid from, value = rate; global default, org copy overrides).
+ *     expenses/mileage_rate: key = valid from, value = rate; global default, org copy overrides);
+ *   - a flat-rate allowance (category ALLOWANCE_CATEGORY, sub-category = its type): count x the
+ *     organization's amount for that type in force on the date (static_data expenses/allowance:
+ *     {type: {validFrom: amount}}; the global row has the types without amounts).
  * The rate used is stored with the expense, so later rate changes never change booked expenses.
  * Plain erasable TypeScript: imported by the browser, the API and Node tests.
  */
@@ -17,6 +20,28 @@ export const MILEAGE_CATEGORY = 'mileage';
 
 /** Most km one mileage expense may claim (a typo guard, not a policy). */
 export const MAX_MILEAGE_KM = 10_000;
+
+/** Category key of a flat-rate allowance (Pauschalspesen; sub_category = type, quantity = count). Offered by the form itself. */
+export const ALLOWANCE_CATEGORY = 'allowance';
+
+/** Most allowances one expense may claim (a typo guard, not a policy). */
+export const MAX_ALLOWANCE_COUNT = 100;
+
+/** Categories whose amount comes from a rate, not from a receipt (no receipt amount, no receipt needed). */
+export function isRateCategory(category: string | null | undefined): boolean {
+  return category === MILEAGE_CATEGORY || category === ALLOWANCE_CATEGORY;
+}
+
+/** The amount of allowance `type` in force on `date` from the static_data values {type: {validFrom: amount}}, or null. */
+export function allowanceRateOn(values: Readonly<Record<string, unknown>> | null | undefined, type: string, date: string): number | null {
+  const rates = values?.[type];
+  return rates && typeof rates === 'object' && !Array.isArray(rates) ? mileageRateOn(rates as Record<string, unknown>, date) : null;
+}
+
+/** The allowance types with an amount in force on `date` (the ones the form offers then). */
+export function allowanceTypesOn(values: Readonly<Record<string, unknown>> | null | undefined, date: string): string[] {
+  return Object.keys(values ?? {}).filter((type) => allowanceRateOn(values, type, date) !== null);
+}
 
 export interface ExchangeRate {
   currency: string;
@@ -65,8 +90,10 @@ export interface BookingInput {
   originalCurrency: string | null;
   /** Amount entered directly (no receipt amount), in the reporting currency. */
   value: number | null;
-  /** km for a mileage expense. */
+  /** km for a mileage expense, the count of an allowance. */
   quantity: number | null;
+  /** The allowance type (an allowance's sub-category). */
+  subCategory?: string | null;
   /**
    * A receipt in another currency whose booked amount the person entered by hand (e.g. from the card
    * statement) instead of taking the rate: `value` is booked, the effective rate is stored with it.
@@ -92,7 +119,17 @@ export function bookExpense(
   reportingCurrency: string,
   rates: readonly ExchangeRate[],
   mileageRates: Readonly<Record<string, unknown>> | null | undefined,
+  allowanceRates?: Readonly<Record<string, unknown>> | null,
 ): BookingResult {
+  if (input.category === ALLOWANCE_CATEGORY) {
+    const type = input.subCategory ?? '';
+    if (!type) return { ok: false, error: 'allowance-type-required' };
+    const count = input.quantity;
+    if (count === null || !Number.isInteger(count) || count <= 0 || count > MAX_ALLOWANCE_COUNT) return { ok: false, error: 'allowance-count-required' };
+    const rate = allowanceRateOn(allowanceRates, type, input.expenseDate);
+    if (rate === null) return { ok: false, error: 'allowance-rate-missing' };
+    return { ok: true, booking: { value: roundMoney(count * rate), currency: reportingCurrency, exchangeRate: null, unitRate: rate } };
+  }
   if (input.category === MILEAGE_CATEGORY) {
     const km = input.quantity;
     if (km === null || !Number.isFinite(km) || km <= 0 || km > MAX_MILEAGE_KM) return { ok: false, error: 'mileage-km-required' };
@@ -120,6 +157,18 @@ export function bookExpense(
 /** An expense still booked in another currency than the reporting one (stored before conversion existed). */
 export function isUnconverted(row: { currency: string }, reportingCurrency: string): boolean {
   return !!reportingCurrency && row.currency !== reportingCurrency;
+}
+
+/** Checks one allowance amount as entered (Organization settings); the error is an API code. */
+export function validateAllowanceRate(raw: unknown, types: readonly string[]): { ok: true; value: { type: string; validFrom: string; amount: number } } | { ok: false; error: string } {
+  const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const type = typeof o.type === 'string' ? o.type : '';
+  if (!types.includes(type)) return { ok: false, error: 'allowance-type' };
+  const validFrom = typeof o.validFrom === 'string' ? o.validFrom : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom) || Number.isNaN(Date.parse(`${validFrom}T00:00:00Z`))) return { ok: false, error: 'allowance-date' };
+  const amount = typeof o.amount === 'number' ? o.amount : Number.NaN;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 10_000) return { ok: false, error: 'allowance-amount' };
+  return { ok: true, value: { type, validFrom, amount: roundMoney(amount) } };
 }
 
 /** Checks one exchange rate as entered (Organization settings); the error is an API code. */

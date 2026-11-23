@@ -3,7 +3,7 @@ import { ExchangeRatesController } from './exchange-rates.controller';
 import { ExpenseReceiptService } from './expense-receipt.service';
 import { EXPENSES_API_REPORT } from './expense-report';
 import { EXPENSE_TEAM_VIEWS } from './team-views';
-import { EXPENSES_PAYROLL } from './import-export';
+import { EXPENSES_ALLOWANCES_PAYROLL, EXPENSES_PAYROLL } from './import-export';
 import { expenseReceipts } from './documents';
 import { EXPENSE_WORKFLOWS } from './workflow';
 import { EXPENSE_FORM } from '../shared/form';
@@ -20,7 +20,7 @@ export default defineApiPlugin({
   providers: [ExpenseReceiptService, ReceiptHandoffService],
   reports: [EXPENSES_API_REPORT],
   teamViews: EXPENSE_TEAM_VIEWS,
-  payroll: [EXPENSES_PAYROLL],
+  payroll: [EXPENSES_PAYROLL, EXPENSES_ALLOWANCES_PAYROLL],
   workflows: EXPENSE_WORKFLOWS,
   documents: { expense: expenseReceipts },
   forms: [EXPENSE_FORM],

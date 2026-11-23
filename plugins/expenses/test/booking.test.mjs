@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { MILEAGE_CATEGORY, bookExpense, exchangeRateOn, isUnconverted, mileageRateOn, roundMoney, validateExchangeRate } from '../shared/booking.ts';
+import { ALLOWANCE_CATEGORY, MILEAGE_CATEGORY, allowanceTypesOn, bookExpense, exchangeRateOn, isRateCategory, isUnconverted, mileageRateOn, roundMoney, validateAllowanceRate, validateExchangeRate } from '../shared/booking.ts';
 
 const rates = [
   { currency: 'EUR', targetCurrency: 'CHF', validFrom: '2026-01-01', rate: 0.94 },
@@ -75,4 +75,24 @@ test('booking: a foreign receipt with the booked amount entered by hand keeps th
   // In the reporting currency there is nothing to override: the receipt amount is booked.
   assert.deepEqual(bookExpense({ ...card, originalCurrency: 'CHF' }, 'CHF', rates, mileage),
     { ok: true, booking: { value: 120, currency: 'CHF', exchangeRate: null, unitRate: null } });
+});
+
+test('a flat-rate allowance is count x the amount of its type in force on the date', () => {
+  const allowances = { lunch: { '2026-01-01': '35', '2026-07-01': '37.50' }, dinner: {}, day_full: { '2026-01-01': 60 } };
+  const book = (input) => bookExpense({ category: ALLOWANCE_CATEGORY, expenseDate: '2026-03-02', originalValue: null, originalCurrency: null, value: null, quantity: 2, subCategory: 'lunch', ...input }, 'CHF', [], {}, allowances);
+  assert.deepEqual(book({}), { ok: true, booking: { value: 70, currency: 'CHF', exchangeRate: null, unitRate: 35 } });
+  assert.equal(book({ expenseDate: '2026-08-01', quantity: 1 }).booking.value, 37.5);
+  assert.deepEqual(book({ subCategory: 'dinner' }), { ok: false, error: 'allowance-rate-missing' });
+  assert.deepEqual(book({ subCategory: null }), { ok: false, error: 'allowance-type-required' });
+  assert.deepEqual(book({ quantity: 1.5 }), { ok: false, error: 'allowance-count-required' });
+  assert.deepEqual(book({ expenseDate: '2025-12-31' }), { ok: false, error: 'allowance-rate-missing' });
+  assert.deepEqual(allowanceTypesOn(allowances, '2026-03-02'), ['lunch', 'day_full']);
+  assert.equal(isRateCategory(ALLOWANCE_CATEGORY) && isRateCategory(MILEAGE_CATEGORY) && !isRateCategory('meals'), true);
+});
+
+test('an allowance amount as entered in the settings', () => {
+  assert.deepEqual(validateAllowanceRate({ type: 'lunch', validFrom: '2026-01-01', amount: 35.004 }, ['lunch']), { ok: true, value: { type: 'lunch', validFrom: '2026-01-01', amount: 35 } });
+  assert.equal(validateAllowanceRate({ type: 'brunch', validFrom: '2026-01-01', amount: 35 }, ['lunch']).error, 'allowance-type');
+  assert.equal(validateAllowanceRate({ type: 'lunch', validFrom: '2026-13-01', amount: 35 }, ['lunch']).error, 'allowance-date');
+  assert.equal(validateAllowanceRate({ type: 'lunch', validFrom: '2026-01-01', amount: 0 }, ['lunch']).error, 'allowance-amount');
 });

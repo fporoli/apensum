@@ -184,3 +184,12 @@ WHERE r.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
   AND NOT EXISTS (SELECT 1 FROM workflows w WHERE w.source_table = 'expense_reports' AND w.source_table_uuid = r.id)
 ORDER BY r.id, d.workflow_def_id
 ON CONFLICT (workflow_id) DO NOTHING;
+
+-- Flat-rate expenses (Pauschalspesen) for the demo: Acme's own amounts for lunch and dinner away,
+-- in its copy of the allowance types (006). Only made when Acme has no copy yet.
+INSERT INTO static_data (organization_id, entity, enum_name, "values", translation)
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', entity, enum_name,
+       "values" || '{"lunch": {"2020-01-01": "35.00"}, "dinner": {"2020-01-01": "40.00"}}'::jsonb, translation
+FROM static_data
+WHERE organization_id IS NULL AND entity = 'expenses' AND enum_name = 'allowance'
+ON CONFLICT DO NOTHING;

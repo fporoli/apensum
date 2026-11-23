@@ -7,6 +7,7 @@ import {
   Collapse,
   IconButton,
   LinearProgress,
+  MenuItem,
   Paper,
   Table,
   TableBody,
@@ -23,7 +24,7 @@ import {
 import dayjs from 'dayjs';
 import { validateFields } from '@worktime3/shared/fields';
 import { EXPENSE_FORM } from '../shared/form';
-import { MILEAGE_CATEGORY, bookExpense, isUnconverted, type ExchangeRate } from '../shared/booking';
+import { ALLOWANCE_CATEGORY, MILEAGE_CATEGORY, allowanceTypesOn, bookExpense, isRateCategory, isUnconverted, type ExchangeRate } from '../shared/booking';
 import {
   useI18n, formatLocaleDate, formatLocaleNumber, formatMoney, parseLocaleNumber, ConfigFieldGroup, useGroupTitle, type FieldOption, FieldDesignScope, useFormTemplate, DESIGN_PANEL_WIDTH, FormDesignPanel, ConfirmDialog, PageHeader, TableEmptyRow, DeleteIcon, DownloadIcon, EditIcon, ExpandLessIcon, ExpandMoreIcon, ReceiptLongIcon, AttachmentView, DropZone, useAttachmentDraft, type Attachment, currencyOptions,
 } from '@worktime3/web/plugin';
@@ -98,8 +99,8 @@ function formFromRow(row: ExpenseRow): ExpenseValues {
     value: toNumber(row.value) ?? 0,
     currency: row.currency,
     comment: row.comment ?? '',
-    originalValue: row.category === MILEAGE_CATEGORY ? null : hasOriginal ? toNumber(row.original_value) : toNumber(row.value),
-    originalCurrency: row.category === MILEAGE_CATEGORY ? '' : hasOriginal ? (row.original_currency ?? '') : row.currency,
+    originalValue: isRateCategory(row.category) ? null : hasOriginal ? toNumber(row.original_value) : toNumber(row.value),
+    originalCurrency: isRateCategory(row.category) ? '' : hasOriginal ? (row.original_currency ?? '') : row.currency,
     quantity: toNumber(row.quantity),
   };
 }
@@ -160,6 +161,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   // Booking: the org's exchange rates and rate per km (the API books with the same rules, packages/shared/src/expenses.ts).
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [mileageRates, setMileageRates] = useState<Record<string, unknown>>({});
+  // Flat-rate allowances: the org's amounts {type: {validFrom: amount}} and the types' labels.
+  const [allowanceRates, setAllowanceRates] = useState<Record<string, unknown>>({});
+  const [allowanceLabels, setAllowanceLabels] = useState<Record<string, Record<string, string>>>({});
   // Receipt recognition (Azure, offered when the instance has it).
   const [scanAvailable, setScanAvailable] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -197,11 +201,17 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   }
 
   function categoryLabel(key: string): string {
-    return categoryTranslations[locale]?.[key] ?? categories[key] ?? (key === MILEAGE_CATEGORY ? t('expenses.mileage') : key);
+    return categoryTranslations[locale]?.[key] ?? categories[key]
+      ?? (key === MILEAGE_CATEGORY ? t('expenses.mileage') : key === ALLOWANCE_CATEGORY ? t('expenses.allowance') : key);
+  }
+
+  function allowanceLabel(type: string): string {
+    return allowanceLabels[locale]?.[type] ?? allowanceLabels.en?.[type] ?? type;
   }
 
   function translatedSubCategoryLabel(category: string, subCategory: string | null): string | null {
     if (!subCategory) return null;
+    if (category === ALLOWANCE_CATEGORY) return allowanceLabel(subCategory);
     const key = `${category}$${subCategory}`;
     return subCategoryTranslations[locale]?.[key] ?? subCategories[key] ?? subCategory;
   }
@@ -226,6 +236,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
       const data = await ratesRes.json();
       setRates(Array.isArray(data?.rates) ? data.rates : []);
       setMileageRates(data?.mileageRates && typeof data.mileageRates === 'object' ? data.mileageRates : {});
+      setAllowanceRates(data?.allowanceRates && typeof data.allowanceRates === 'object' ? data.allowanceRates : {});
+      setAllowanceLabels(data?.allowanceLabels && typeof data.allowanceLabels === 'object' ? data.allowanceLabels : {});
       setScanAvailable((await scanRes.json())?.available === true);
     } catch { /* offline fallback */ }
   }
@@ -255,7 +267,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
         if (sg.originalCurrency) next.originalCurrency = sg.originalCurrency;
         if (sg.category && sg.category !== prev.category) { next.category = sg.category; next.subCategory = ''; }
         if (sg.merchant && !String(prev.comment ?? '').trim()) next.comment = sg.merchant;
-        if (next.category === MILEAGE_CATEGORY) next.category = '';
+        if (isRateCategory(String(next.category ?? ''))) next.category = '';
         return next;
       });
       if (sg.originalCurrency) {
@@ -347,7 +359,8 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     setSuccess(null);
     const checked = validateFields(savedForm, values);
     // Same rule as the API: the receipt amount (or the km) is what the booked amount comes from.
-    if (computed && !hasBasis) checked.errors.push({ field: mileage ? 'quantity' : 'originalValue', rule: 'required' });
+    if (computed && !hasBasis) checked.errors.push({ field: rated ? 'quantity' : 'originalValue', rule: 'required' });
+    if (allowance && !values.subCategory) checked.errors.push({ field: 'subCategory', rule: 'required' });
     if (foreignReceipt && !values.originalCurrency) checked.errors.push({ field: 'originalCurrency', rule: 'required' });
     if (checked.errors.length > 0) {
       showFieldErrors(checked.errors);
@@ -479,7 +492,7 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
     const next = formFromRow(row);
     setValues(next);
     // A foreign receipt whose stored amount differs from what today's rates give was overridden by hand: keep it.
-    const isForeign = row.category !== MILEAGE_CATEGORY && !!next.originalCurrency && next.originalCurrency !== defaultCurrency;
+    const isForeign = !isRateCategory(row.category) && !!next.originalCurrency && next.originalCurrency !== defaultCurrency;
     setForeign(isForeign);
     const recomputed = bookExpense({
       category: row.category, expenseDate: String(next.expenseDate), originalValue: typeof next.originalValue === 'number' ? next.originalValue : null,
@@ -497,49 +510,56 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const options = useMemo<Record<string, FieldOption[]>>(
     () => ({
       // Mileage is offered by the form itself, after the org's own categories.
-      categories: [...Object.keys(categories).filter((key) => key !== MILEAGE_CATEGORY).map((key) => ({ value: key, label: categoryLabel(key) })),
-        { value: MILEAGE_CATEGORY, label: t('expenses.mileage') }],
+      // Flat-rate allowances only when the organization has set amounts (Organization settings).
+      categories: [...Object.keys(categories).filter((key) => !isRateCategory(key)).map((key) => ({ value: key, label: categoryLabel(key) })),
+        { value: MILEAGE_CATEGORY, label: t('expenses.mileage') },
+        ...(Object.values(allowanceRates).some((r) => r && typeof r === 'object' && Object.keys(r).length > 0) ? [{ value: ALLOWANCE_CATEGORY, label: t('expenses.allowance') }] : [])],
       subCategories: subCategoryOptions(subCategories, category).map(({ key }) => ({ value: key, label: translatedSubCategoryLabel(category, key) ?? key })),
       projects: projects.map((p) => ({ value: p.id, label: p.name })),
       subprojects: subprojects.map((sp) => ({ value: sp.id, label: sp.name })),
       currencies: currencyOptions(currencies, currencyTranslations, locale, defaultCurrency, [String(values.currency ?? ''), String(values.originalCurrency ?? '')]),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categories, subCategories, categoryTranslations, subCategoryTranslations, projects, subprojects, category, locale, currencies, currencyTranslations, defaultCurrency, values.currency, values.originalCurrency],
+    [categories, subCategories, categoryTranslations, subCategoryTranslations, projects, subprojects, category, locale, currencies, currencyTranslations, defaultCurrency, values.currency, values.originalCurrency, allowanceRates],
   );
   const mileage = category === MILEAGE_CATEGORY;
+  const allowance = category === ALLOWANCE_CATEGORY;
+  // Worked out from a rate (km, or a count of allowances), without a receipt amount.
+  const rated = mileage || allowance;
+  const allowanceTypes = allowance ? allowanceTypesOn(allowanceRates, String(values.expenseDate ?? '')) : [];
   const originalValue = typeof values.originalValue === 'number' ? values.originalValue : null;
   // The booked amount as the API will work it out (receipt x rate in force, km x rate per km, or as entered).
   const booking = useMemo(() => bookExpense({
     category,
     expenseDate: String(values.expenseDate ?? ''),
-    originalValue: mileage ? null : originalValue,
-    originalCurrency: mileage ? null : String(values.originalCurrency ?? '') || null,
+    originalValue: rated ? null : originalValue,
+    originalCurrency: rated ? null : String(values.originalCurrency ?? '') || null,
     value: typeof values.value === 'number' ? values.value : null,
     quantity: typeof values.quantity === 'number' ? values.quantity : null,
+    subCategory: String(values.subCategory ?? '') || null,
     valueOverride: foreign && override,
-  }, defaultCurrency, rates, mileageRates), [category, mileage, originalValue, values.expenseDate, values.originalCurrency, values.value, values.quantity, defaultCurrency, rates, mileageRates, foreign, override]);
+  }, defaultCurrency, rates, mileageRates, allowanceRates), [category, rated, originalValue, values.expenseDate, values.originalCurrency, values.value, values.quantity, values.subCategory, defaultCurrency, rates, mileageRates, allowanceRates, foreign, override]);
   // With the receipt amount on the form (the default) the booked amount is always worked out; only a
   // template that hides the receipt amount lets people enter the booked amount directly.
   const receiptAmountShown = form.fields.some((f) => f.key === 'originalValue' && !f.hidden && !f.retired);
-  const computed = mileage || receiptAmountShown;
-  const hasBasis = mileage ? typeof values.quantity === 'number' : originalValue !== null;
-  const foreignReceipt = foreign && !mileage && receiptAmountShown;
+  const computed = rated || receiptAmountShown;
+  const hasBasis = rated ? typeof values.quantity === 'number' : originalValue !== null;
+  const foreignReceipt = foreign && !rated && receiptAmountShown;
   const shownValues = computed && !(foreignReceipt && override)
     ? { ...values, value: booking.ok && hasBasis ? booking.booking.value : null, currency: defaultCurrency || values.currency }
     : { ...values, currency: defaultCurrency || values.currency };
   // Fewer fields: sub-lists only when there is something to choose; receipt currency and booked amount only
   // for a foreign receipt (or when a template hides the receipt amount); mileage shows km instead.
   const hiddenKeys = [
-    ...(mileage || options.subCategories.length === 0 ? ['subCategory'] : []),
+    ...(rated || options.subCategories.length === 0 ? ['subCategory'] : []),
     ...(subprojects.length === 0 ? ['subprojectId'] : []),
-    ...(mileage ? ['originalValue', 'originalCurrency', 'value'] : receiptAmountShown && !foreign ? ['originalCurrency', 'value'] : []),
+    ...(rated ? ['originalValue', 'originalCurrency', 'value'] : receiptAmountShown && !foreign ? ['originalCurrency', 'value'] : []),
   ];
   const disabledKeys = [
     ...(defaultCurrency ? ['currency'] : []),
     ...(computed && !foreignReceipt ? ['value'] : []),
   ];
-  const foreignBox = !mileage && receiptAmountShown ? (
+  const foreignBox = !rated && receiptAmountShown ? (
     <FormControlLabel
       sx={{ alignSelf: 'center', ml: 0 }}
       control={<Checkbox size="small" checked={foreign} onChange={(e) => toggleForeign(e.target.checked)} />}
@@ -551,6 +571,9 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
   const [kmInput, setKmInput] = useState('');
   useEffect(() => { setKmInput(kmText); }, [kmText, editingId]);
   const editingRow = editingId ? entries.find((e) => e.id === editingId) : undefined;
+  // The same allowance on the same day once more (a hint: it may be meant, e.g. for two trips).
+  const duplicateAllowance = allowance && !!values.subCategory && entries.some((e) =>
+    e.id !== editingId && e.category === ALLOWANCE_CATEGORY && e.sub_category === values.subCategory && e.expense_date.slice(0, 10) === String(values.expenseDate ?? ''));
   const editingLocked = editingRow ? isRowLocked(editingRow) : false;
   // Newest first: the expense just added appears at the top.
   const sortedEntries = useMemo(
@@ -600,6 +623,48 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                 </Typography>
               )}
             </Box>
+          )}
+          {allowance && (
+            <Box sx={{ mt: 1.5, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
+              <TextField
+                select
+                size="small"
+                label={t('expenses.allowances.type')}
+                value={allowanceTypes.includes(String(values.subCategory ?? '')) ? String(values.subCategory) : ''}
+                onChange={(e) => updateField('subCategory', e.target.value)}
+                error={!!fieldErrors.subCategory}
+                sx={{ minWidth: 220 }}
+              >
+                {allowanceTypes.map((type) => <MenuItem key={type} value={type}>{allowanceLabel(type)}</MenuItem>)}
+              </TextField>
+              <TextField
+                size="small"
+                type="number"
+                label={t('expenses.allowances.count')}
+                value={typeof values.quantity === 'number' ? values.quantity : ''}
+                onChange={(e) => updateField('quantity', e.target.value === '' ? null : Math.round(Number(e.target.value)))}
+                error={!!fieldErrors.quantity}
+                inputProps={{ min: 1, step: 1 }}
+                sx={{ width: 110 }}
+              />
+              {booking.ok && booking.booking.unitRate !== null && (
+                <Typography variant="body2" color="text.secondary">
+                  {t('expenses.allowanceCalc', {
+                    count: String(values.quantity),
+                    type: allowanceLabel(String(values.subCategory)),
+                    rate: formatMoney(booking.booking.unitRate, locale),
+                    value: formatMoney(booking.booking.value, locale),
+                    currency: defaultCurrency,
+                  })}
+                </Typography>
+              )}
+              {allowanceTypes.length === 0 && (
+                <Typography variant="body2" color="warning.main">{t('expenses.allowances.noneOnDate')}</Typography>
+              )}
+            </Box>
+          )}
+          {allowance && duplicateAllowance && (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>{t('expenses.allowances.duplicate')}</Alert>
           )}
           {foreignReceipt && booking.ok && booking.booking.exchangeRate !== null && (
             <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -714,6 +779,11 @@ export default function Expenses({ orgId, userId, authHeaders }: ExpensesProps) 
                         {row.category === MILEAGE_CATEGORY && row.quantity && (
                           <Typography variant="caption" color="text.secondary" component="div">
                             {formatLocaleNumber(Number(row.quantity), locale)} km
+                          </Typography>
+                        )}
+                        {row.category === ALLOWANCE_CATEGORY && row.quantity && (
+                          <Typography variant="caption" color="text.secondary" component="div">
+                            {t('expenses.allowances.times', { count: formatLocaleNumber(Number(row.quantity), locale) })}
                           </Typography>
                         )}
                         {isUnconverted(row, defaultCurrency) && (

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { validateExchangeRate } from '../shared/booking';
+import { validateAllowanceRate, validateExchangeRate } from '../shared/booking';
 import { DbService, VersionsService, callerUserId, can, isOrgMember, type AuthenticatedRequest } from '@worktime3/api/plugin';
 import { bookingContext, effectiveRates } from './expense-booking';
 
@@ -20,9 +20,9 @@ export class ExchangeRatesController {
   @Get('organizations/:orgId/exchange-rates')
   async list(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, rates: [], reportingCurrency: null, mileageRates: {} };
+    if (!db) return { ok: true, offline: true, rates: [], reportingCurrency: null, mileageRates: {}, allowanceRates: {}, allowanceLabels: {} };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: true, rates: [], reportingCurrency: null, mileageRates: {} };
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: true, rates: [], reportingCurrency: null, mileageRates: {}, allowanceRates: {}, allowanceLabels: {} };
     const ctx = await bookingContext(db, orgId);
     const rows = await db.execute(sql`
       SELECT id, currency, target_currency, valid_from::text AS valid_from, rate::float8 AS rate, (organization_id IS NULL) AS standard
@@ -34,6 +34,9 @@ export class ExchangeRatesController {
       ok: true,
       reportingCurrency: ctx.reportingCurrency,
       mileageRates: ctx.mileageRates,
+      // Flat-rate allowances: {type: {validFrom: amount}} and the types' labels per language.
+      allowanceRates: ctx.allowanceRates,
+      allowanceLabels: ctx.allowanceLabels,
       editable,
       // `standard`: a default for every organization (read-only), in force while this one keeps none for the currency.
       rates: (rows.rows as { id: string; currency: string; target_currency: string; valid_from: string; rate: number; standard: boolean }[]).map((r) => ({
@@ -75,5 +78,40 @@ export class ExchangeRatesController {
     if (rows.rows.length === 0) return { ok: false, error: 'not-found' };
     void this.versions.record('exchange_rates', id, 'delete', callerId, rows.rows[0]).catch(() => {});
     return { ok: true };
+  }
+
+  /**
+   * Sets the amount of an allowance type from a date (`{type, validFrom, amount}`), or removes it
+   * (`amount: null`). Kept in the organization's own copy of static_data expenses/allowance, made
+   * from the global row (the types) on the first change.
+   */
+  @Post('organizations/:orgId/expense-allowances')
+  async setAllowance(@Param('orgId') orgId: string, @Body() body: { type?: unknown; validFrom?: unknown; amount?: unknown }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !(await can(db, orgId, callerId, 'nav.orgSettings', 'edit'))) return { ok: false, error: 'forbidden' };
+    const { allowanceRates } = await bookingContext(db, orgId);
+    const types = Object.keys(allowanceRates);
+    const removing = body?.amount === null;
+    const checked = validateAllowanceRate(removing ? { ...body, amount: 1 } : body, types);
+    if (!checked.ok) return checked;
+    const { type, validFrom, amount } = checked.value;
+    await db.execute(sql`
+      INSERT INTO static_data (organization_id, entity, enum_name, "values", translation)
+      SELECT ${orgId}::uuid, entity, enum_name, "values", translation FROM static_data
+      WHERE organization_id IS NULL AND entity = 'expenses' AND enum_name = 'allowance'
+      ON CONFLICT DO NOTHING`);
+    const rows = await db.execute(sql`
+      UPDATE static_data
+      SET "values" = jsonb_set("values", ARRAY[${type}],
+        CASE WHEN ${removing} THEN COALESCE("values" -> ${type}, '{}'::jsonb) - ${validFrom}
+             ELSE COALESCE("values" -> ${type}, '{}'::jsonb) || jsonb_build_object(${validFrom}::text, ${amount.toFixed(2)}::text) END)
+      WHERE organization_id = ${orgId}::uuid AND entity = 'expenses' AND enum_name = 'allowance'
+      RETURNING id, "values"`);
+    const row = rows.rows[0] as { id: string; values: Record<string, unknown> } | undefined;
+    if (!row) return { ok: false, error: 'not-found' };
+    void this.versions.record('static_data', row.id, 'update_delta', callerId, { values: row.values }).catch(() => {});
+    return { ok: true, allowanceRates: row.values };
   }
 }

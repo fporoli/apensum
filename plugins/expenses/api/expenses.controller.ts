@@ -9,7 +9,7 @@ import { expenses, expense_report_items, expense_reports } from './db/schema';
 import { mergeForm, validateFields, type ResolvedForm } from '@worktime3/shared/fields';
 import { EXPENSE_FORM } from '../shared/form';
 import { BOOKING_COLUMNS, bookColumns, bookingContext } from './expense-booking';
-import { MILEAGE_CATEGORY } from '../shared/booking';
+import { isRateCategory } from '../shared/booking';
 import { ExpenseReceiptService } from './expense-receipt.service';
 
 type ExpenseColumns = Partial<typeof expenses.$inferInsert>;
@@ -53,9 +53,9 @@ function pickFields(form: ResolvedForm, body: Record<string, unknown>, all: bool
   return out;
 }
 
-/** A non-mileage expense without receipt amount while the form shows that field: the field error, else null. */
+/** An expense not worked out from a rate, without receipt amount while the form shows that field: the field error, else null. */
 export function missingReceiptAmount(row: Record<string, unknown>, receiptShown: boolean) {
-  if (!receiptShown || row.category === MILEAGE_CATEGORY) return null;
+  if (!receiptShown || isRateCategory(typeof row.category === 'string' ? row.category : null)) return null;
   if (row.original_value !== null && row.original_value !== undefined && row.original_value !== '') return null;
   return { ok: false as const, error: 'invalid-field', fields: [{ field: 'originalValue', rule: 'required' }] };
 }
