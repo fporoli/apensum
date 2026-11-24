@@ -22,3 +22,10 @@ test('codes to keep are added when the list lacks them', () => {
 test('an empty list still offers the default currency', () => {
   assert.deepEqual(currencyOptions({}, {}, 'en', 'CHF'), [{ value: 'CHF', label: 'CHF' }]);
 });
+
+test('a currency list whose values carry properties takes its names from the translations', () => {
+  assert.deepEqual(
+    currencyOptions({ CHF: {}, EUR: { rounding: '0.05' } }, { en: { CHF: 'Swiss franc', EUR: 'Euro' }, de: { EUR: 'Euro (DE)' } }, 'de', 'CHF'),
+    [{ value: 'CHF', label: 'CHF – Swiss franc' }, { value: 'EUR', label: 'EUR – Euro (DE)' }],
+  );
+});

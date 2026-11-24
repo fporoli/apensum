@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attributeTextValid, attributeValue, effectiveRow, propertiesOf, staticAttributes, staticValueLabel, withAttribute } from './staticData.ts';
+import { attributeTextValid, attributeValue, effectiveRow, keepLabels, propertiesOf, staticAttributes, staticValueLabel, withAttribute } from './staticData.ts';
 
 // The rows an organization sees: the global descriptions (core and plugin migrations), the organization's copy with
 // one property of its own (and a try at changing a global one), and the lists the choices come from.
@@ -71,4 +71,26 @@ test('labels come from the translations; a property value is never a label', () 
   assert.equal(staticValueLabel(labels, 'fr', 'other'), 'other');
   assert.deepEqual(staticAttributes(labels, 'meals'), { vat: 'standard' });
   assert.deepEqual(staticAttributes(labels, 'travel'), {});
+});
+
+test('a radio: one value of the list, stored as true on it only', () => {
+  // The rows organization org-2 sees: the global ones and its own copy.
+  const withRadio = [...rows.filter((r) => r.organization_id !== 'org-1'), {
+    organization_id: 'org-2', entity: 'static_data', enum_name: 'properties',
+    values: { 'users.locales.usedefault': { type: 'radio' } }, translation: { de: { 'users.locales.usedefault': 'Standard' } },
+  }];
+  assert.deepEqual(propertiesOf(withRadio, 'users', 'locales', 'de'), [{ key: 'usedefault', type: 'radio', label: 'Standard' }]);
+  const radio = { key: 'usedefault', type: 'radio', label: 'Standard' };
+  assert.deepEqual(withAttribute({}, radio, true), { usedefault: true });
+  assert.deepEqual(withAttribute({ usedefault: true }, radio, false), {});
+  assert.equal(attributeValue({ usedefault: true }, radio), true);
+  assert.equal(attributeValue({}, radio), false);
+});
+
+test('a list of labels that gets properties keeps its labels as English translations', () => {
+  assert.deepEqual(
+    keepLabels({ de: 'Deutsch', fr: 'Français', it: {} }, { en: { de: 'German' }, de: { fr: 'Französisch' } }),
+    { en: { de: 'German', fr: 'Français' }, de: { fr: 'Französisch' } },
+  );
+  assert.deepEqual(keepLabels({ x: {} }, { de: { x: 'X' } }), { de: { x: 'X' } });
 });

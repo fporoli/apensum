@@ -151,7 +151,7 @@ A plugin's files that belong to a person (expenses: receipts) appear on that per
 
 A plugin's static data lists may map each key to properties instead of a label (labels then in the list's translations), as the expenses plugin's categories do (their expense account and default VAT type):
 
-- Describe them in your changelog: add `"<entity>.<list>.<property>": { "type": "checkbox" | "select" | "text", ... }` to the global list `static_data` / `properties` (core changeset 101) and their labels to its translations, in all four languages.\
+- Describe them in your changelog: add `"<entity>.<list>.<property>": { "type": "checkbox" | "radio" | "select" | "text", ... }` (radio: one value of the list) to the global list `static_data` / `properties` (core changeset 101) and their labels to its translations, in all four languages.\
   A `checkbox` may set `"default": true` (it is stored only when it differs), a `select` names the list its choices come from (`"list": "<entity>.<list>"`, a static data list of its own), a `text` may set a `pattern`; `"sort"` orders them.\
   Admin settings → static data shows a control for each, with no code of the plugin's; the core describes absence and request types the same way, and the list describes its own fields, so the same editor edits it.\
   The expenses plugin's changeset 010 is an example.

@@ -2,8 +2,8 @@
  * Static data (Admin settings -> static data): a list maps keys either to labels (`{"travel": "Travel"}`) or to
  * properties (`{"sick": {"approval": false}}`, labels then in the list's translations).
  * Which properties a list's values carry is itself static data: the list static_data/properties (core changeset 101)
- * maps "<entity>.<list>.<property>" to its description (type, the list a choice is from, a pattern, a checkbox's
- * default, the order), its labels are that list's translations. It describes its own fields as well, so one editor
+ * maps "<entity>.<list>.<property>" to its description (type: checkbox, radio = one value of the list, select = a
+ * choice from another list, text; the list a choice is from, a pattern, a checkbox's default, the order), its labels are that list's translations. It describes its own fields as well, so one editor
  * edits every list, the description included. The core's and the plugins' properties come from migrations (global
  * rows); an organization adds its own in its copy, and the global ones always win.
  * Keep it erasable TypeScript (Node tests import it).
@@ -21,7 +21,8 @@ export interface StaticDataRowLike {
 /** The list that describes the properties of every list. */
 export const PROPERTIES_LIST = { entity: 'static_data', enumName: 'properties' } as const;
 
-export type StaticAttributeType = 'checkbox' | 'select' | 'text';
+/** `radio`: at most one value of the list has it (e.g. the default language), stored as `true` on that value only. */
+export type StaticAttributeType = 'checkbox' | 'radio' | 'select' | 'text';
 
 /** A property of each value of a list, ready to show: its label in the language, a choice's options with theirs. */
 export interface StaticAttribute {
@@ -73,7 +74,7 @@ export function propertiesOf(rows: readonly StaticDataRowLike[], entity: string,
     if (!id.startsWith(prefix) || !isObject(raw)) continue;
     const key = id.slice(prefix.length);
     const type = raw.type;
-    if (!key || key.includes('.') || (type !== 'checkbox' && type !== 'select' && type !== 'text')) continue;
+    if (!key || key.includes('.') || (type !== 'checkbox' && type !== 'radio' && type !== 'select' && type !== 'text')) continue;
     const attribute: StaticAttribute & { sort: number } = {
       key, type, label: staticValueLabel(descriptions, locale, id), sort: Number(raw.sort) || 999,
     };
@@ -90,9 +91,13 @@ export function propertiesOf(rows: readonly StaticDataRowLike[], entity: string,
   return out.sort((a, b) => a.sort - b.sort || a.key.localeCompare(b.key)).map(({ sort: _sort, ...a }) => a);
 }
 
-/** A value's properties with one of them set (removed when it is a checkbox's default or empty). */
+/**
+ * A value's properties with one of them set (removed when it is a checkbox's default, an unset radio or empty).
+ * A radio is set on one value and cleared on the others by the caller.
+ */
 export function withAttribute(attrs: Record<string, unknown> | null | undefined, attribute: StaticAttribute, value: unknown): Record<string, unknown> {
   const { [attribute.key]: _old, ...rest } = attrs ?? {};
+  if (attribute.type === 'radio') return value === true ? { ...rest, [attribute.key]: true } : rest;
   if (attribute.type === 'checkbox') return value === (attribute.default ?? false) ? rest : { ...rest, [attribute.key]: value === true };
   const text = typeof value === 'string' ? value.trim() : '';
   return text ? { ...rest, [attribute.key]: text } : rest;
@@ -101,6 +106,7 @@ export function withAttribute(attrs: Record<string, unknown> | null | undefined,
 /** A property's current value as the editor shows it (a checkbox's default when unset). */
 export function attributeValue(attrs: Record<string, unknown> | null | undefined, attribute: StaticAttribute): boolean | string {
   const v = attrs?.[attribute.key];
+  if (attribute.type === 'radio') return v === true;
   if (attribute.type === 'checkbox') return typeof v === 'boolean' ? v : attribute.default ?? false;
   return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
 }
@@ -126,6 +132,16 @@ export function staticValueLabel(
 ): string {
   const value = row?.values?.[key];
   return row?.translation?.[locale]?.[key] ?? (typeof value === 'string' && value ? value : undefined) ?? row?.translation?.en?.[key] ?? key;
+}
+
+/**
+ * The translations after a list of labels got properties: each label that has no English translation becomes it, so
+ * no label is lost when the values turn into property objects.
+ */
+export function keepLabels(values: Record<string, unknown>, translation: Record<string, Record<string, string>>): Record<string, Record<string, string>> {
+  const en = { ...(translation.en ?? {}) };
+  for (const [key, value] of Object.entries(values)) if (typeof value === 'string' && value.trim() && !en[key]) en[key] = value;
+  return Object.keys(en).length ? { ...translation, en } : translation;
 }
 
 /** A value's properties (an empty object for a label value or nothing). */

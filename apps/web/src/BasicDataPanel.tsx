@@ -1,3 +1,4 @@
+import { staticValueLabel } from '@worktime3/shared/staticData';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -111,9 +112,9 @@ interface Option { value: string; label: string }
 
 function optionsFromRow(row: StaticDataRow | undefined, locale: string): Option[] {
   if (!row?.values) return [];
-  const localized = row.translation?.[locale] ?? {};
   return Object.keys(row.values)
-    .map((key) => ({ value: key, label: localized[key] ?? row.values![key] ?? key }))
+    // A list whose values carry properties (static_data/properties) has its labels in the translations only.
+    .map((key) => ({ value: key, label: staticValueLabel(row, locale, key) }))
     .sort((a, b) => {
       const aOther = a.value.toLowerCase() === 'other';
       const bOther = b.value.toLowerCase() === 'other';

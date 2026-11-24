@@ -16,6 +16,7 @@ import {
   LinearProgress,
   MenuItem,
   Paper,
+  Radio,
   Table,
   TableBody,
   TableCell,
@@ -28,7 +29,7 @@ import {
 } from '@mui/material';
 import { LOCALES, useI18n, useT, type Locale } from './i18n';
 import RolesPermissions from './RolesPermissions';
-import { PROPERTIES_LIST, attributeTextValid, attributeValue, propertiesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
+import { PROPERTIES_LIST, attributeTextValid, attributeValue, keepLabels, propertiesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, ContentCopyIcon, DeleteIcon, EditIcon, PublicIcon, SearchIcon, TuneIcon } from './icons';
 
@@ -186,7 +187,13 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
 
   /** A declared property of one value (a checkbox at its default and an empty field are not stored). */
   function updateAttribute(rowId: number, attribute: StaticAttribute, value: unknown) {
-    setEnumKvList((prev) => prev.map((kv) => (kv.rowId === rowId ? { ...kv, attrs: withAttribute(kv.attrs, attribute, value) } : kv)));
+    setEnumKvList((prev) => {
+      // One value of the list: switching it on for this value switches it off for the others.
+      if (attribute.type === 'radio') {
+        return prev.map((kv) => ({ ...kv, attrs: withAttribute(kv.attrs, attribute, value === true && kv.rowId === rowId) }));
+      }
+      return prev.map((kv) => (kv.rowId === rowId ? { ...kv, attrs: withAttribute(kv.attrs, attribute, value) } : kv));
+    });
   }
 
   function addKvRow() {
@@ -225,12 +232,14 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setSuccess(null);
     setDialogError(null);
     const values = kvListToValues(enumKvList, attributeRow);
+    // A list of labels that got properties keeps its labels as English translations.
+    const translation = attributeRow ? keepLabels(Object.fromEntries(enumKvList.map((kv) => [kv.key.trim(), kv.label])), enumTranslations) : enumTranslations;
     try {
       if (editingEnum) {
         const res = await fetch(`${API}/organizations/${orgId}/static-data/${editingEnum.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-          body: JSON.stringify({ enumName: enumName.trim(), values, translation: enumTranslations }),
+          body: JSON.stringify({ enumName: enumName.trim(), values, translation }),
         });
         const data = await res.json();
         if (data.ok === false) {
@@ -246,7 +255,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
             entity: enumEntity.trim(),
             enumName: enumName.trim(),
             values,
-            translation: enumTranslations,
+            translation,
           }),
         });
         const data = await res.json();
@@ -292,6 +301,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
       const set = declared.flatMap((a) => {
         if (!(a.key in value)) return [];
         const v = attributeValue(value, a);
+        if (a.type === 'radio') return v ? [a.label] : [];
         if (a.type === 'checkbox') return [v ? a.label : `${a.label} ✗`];
         if (a.type === 'select') return [`${a.label}: ${a.options?.find((o) => o.value === v)?.label ?? String(v)}`];
         return [`${a.label}: ${v}`];
@@ -521,6 +531,16 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                   <Box sx={{ flex: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                     {declaredAttributes.map((a) => {
                       const v = attributeValue(kv.attrs, a);
+                      if (a.type === 'radio') {
+                        return (
+                          <FormControlLabel
+                            key={a.key}
+                            sx={{ m: 0, mr: 1 }}
+                            control={<Radio size="small" checked={v === true} onClick={() => updateAttribute(kv.rowId, a, v !== true)} />}
+                            label={a.label}
+                          />
+                        );
+                      }
                       if (a.type === 'checkbox') {
                         return (
                           <FormControlLabel
