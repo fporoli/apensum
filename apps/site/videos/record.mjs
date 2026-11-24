@@ -11,12 +11,12 @@
 // `site-media` GitHub release, from which the `site` workflow takes them when it deploys.
 // The scenes run in order: Ueli requests vacation, Marco approves it, Ulla files a review, the
 // admin shows modules and branding; Uma (developer) customizes the basic-data form (her
-// changes are undone before each take); Marta works a KESB case (cases). Run them all after a
-// reset, or single ones to retake.
+// changes are undone before each take); Marta works a KESB case (cases); Ulla plans next month's shifts
+// (roster). Run them all after a reset, or single ones to retake.
 // The employee (receipt reading) and cases scenes call Azure (Switzerland): .env.dev needs the
 // AZURE_OPENAI_* values and the budget (`infra/azure/ai-provision.sh local`), the API restarted.
-// The cases scene uses the fictitious KESB sample in data-dev/samples/kesb-jonas-meier/
-// (arztbericht-jonas-meier.pdf, interview-laura-meier-ch.mp3; not in git).
+// The cases scene uses the fictitious KESB sample in test/sampledata/cases/
+// (arztbericht-jonas-meier.pdf, interview-laura-meier-ch.mp3).
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
@@ -53,7 +53,9 @@ function overlay() {
     opacity: 0; transition: opacity .35s ease, transform .35s ease; }
   #__demo .caption.on { opacity: 1; transform: translate(-50%, 0); }
   #__demo .title { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 14px; color: #fff;
-    background: radial-gradient(900px 500px at 80% 0%, rgba(255,255,255,.16), transparent 70%), linear-gradient(135deg, #1a56db, #0f3fa8);
+    /* Translucent: the app's first screen shows through behind the title. */
+    background: radial-gradient(900px 500px at 80% 0%, rgba(255,255,255,.12), transparent 70%), linear-gradient(135deg, rgba(26,86,219,.72), rgba(15,63,168,.80));
+    backdrop-filter: blur(3px); text-shadow: 0 2px 12px rgba(0,0,0,.25);
     opacity: 0; transition: opacity .6s ease; }
   #__demo .title.on { opacity: 1; }
   #__demo .title.on ~ .cursor { opacity: 0; }
@@ -393,6 +395,8 @@ const SCENES = {
       await s.title('Administration', 'Module und Erscheinungsbild');
       await s.nav('Organisationseinstellungen');
       await s.caption('Module pro Organisation ein- und ausschalten – der Menüpunkt verschwindet sofort');
+      // The settings sections are collapsed: open "Module" first.
+      await s.click(p.getByText('Module', { exact: true }).first(), 900);
       const toggle = p.getByRole('checkbox', { name: /Anfragen/ }).first();
       await s.click(toggle, 1800);
       await s.moveTo(p.locator('.MuiDrawer-root').getByRole('button', { name: /^Dokumente/ }).first());
@@ -400,7 +404,7 @@ const SCENES = {
       await s.click(toggle, 1600);
 
       await s.caption('Eigenes Logo und eigene Farben für die ganze Organisation');
-      await s.moveTo(p.getByText('Erscheinungsbild').first());
+      await s.click(p.getByText('Erscheinungsbild', { exact: true }).first(), 900);
       await p.mouse.wheel(0, 420);
       await s.wait(3200);
       await s.caption('');
@@ -473,7 +477,7 @@ SCENES.developer = {
 
 // ---------------------------------------------------------------------------------------------
 /** The fictitious KESB sample (not in git): a doctor's letter and the recorded interview with the sister. */
-const SAMPLE = join(ROOT, '..', '..', '..', 'data-dev', 'samples', 'kesb-jonas-meier');
+const SAMPLE = join(ROOT, '..', '..', '..', 'test', 'sampledata', 'cases');
 const CASE_REF = 'KESB-2026-0517';
 
 /** Calls the dev API as the given demo user; returns [json, orgId, token]. */
@@ -525,7 +529,16 @@ SCENES.cases = {
   async run(s) {
     const p = s.page;
     await s.title('Fallführung', 'Eine KESB-Abklärung: von den Akten zum Gutachtenentwurf');
-    await s.nav('Fälle');
+    // An entry with sub-entries: its name includes the nested expand button.
+    await s.click(p.locator('.MuiDrawer-root').getByRole('button', { name: /^Gutachten/ }).first(), 1200);
+    // Cases are end-to-end encrypted: Marta unlocks them with her passphrase (the seed's demo one).
+    await s.caption('Jeder Fall ist Ende-zu-Ende verschlüsselt – entsperrt mit der eigenen Passphrase');
+    await s.click(p.getByText('Gesperrt', { exact: true }).first(), 900);
+    const unlock = p.getByRole('dialog');
+    await s.type(unlock.getByLabel('Passphrase'), 'marta-cases-demo', 300);
+    await s.click(unlock.getByRole('button', { name: 'Entsperren' }), 300);
+    await p.getByText('Entsperrt', { exact: true }).first().waitFor({ timeout: 30000 }).catch(() => {});
+    await s.wait(1200);
     await s.caption('Ein neues Falldossier: Geschäftsnummer, betroffene Person und Vertraulichkeit');
     await s.click(p.getByRole('button', { name: 'Neuer Fall' }).first(), 900);
     const dlg = p.getByRole('dialog');
@@ -555,26 +568,29 @@ SCENES.cases = {
     await s.choose(iv.getByRole('combobox', { name: /^Rolle im Verfahren/ }), 'Angehörige Person');
     await iv.locator('input[type=file]').first().setInputFiles(join(SAMPLE, 'interview-laura-meier-ch.mp3'));
     await s.wait(900);
-    await s.click(iv.getByRole('button', { name: 'Speichern' }), 2200);
-
-    const ed = p.getByRole('dialog');
+    // Saving with the audio starts the transcription in the same dialog.
     await s.caption('Transkribiert in der Schweiz (Microsoft Azure) – in Sekunden statt Minuten');
-    await s.click(ed.getByRole('button', { name: 'Transkript entwerfen' }), 300);
-    await ed.getByText('Bitte das Transkript prüfen', { exact: false }).waitFor({ timeout: 150000 });
+    await s.click(iv.getByRole('button', { name: 'Speichern und transkribieren' }), 300);
+    const ed = p.getByRole('dialog');
+    // An empty field is filled directly (a draft to accept only replaces existing text).
+    const filled = async (label, timeout) => {
+      const box = ed.getByLabel(label);
+      for (const t0 = Date.now(); Date.now() - t0 < timeout; await sleep(500)) if ((await box.inputValue().catch(() => '')).trim()) return box;
+      throw new Error(`${label} stayed empty`);
+    };
+    const transcript = await filled('Vollständiges Transkript / Protokoll', 300000);
     await s.wait(800);
-    await s.caption('Ein Entwurf: Die Fachperson prüft ihn und übernimmt ihn erst dann');
-    await s.moveTo(ed.getByRole('textbox').last(), 0.5, 0.3);
-    await s.wait(2200);
-    await s.click(ed.getByRole('button', { name: 'Entwurf ins Eingabefeld übernehmen' }), 900);
-    await s.click(ed.getByRole('button', { name: 'Speichern' }), 1800);
+    await s.caption('Die Fachperson prüft das Transkript, bevor sie es speichert');
+    await s.moveTo(transcript, 0.5, 0.3);
+    await s.wait(2600);
+    await s.click(ed.getByRole('button', { name: 'Speichern', exact: true }), 1800);
 
     await s.caption('Die Zusammenfassung: nur Aussagen aus dem Transkript, Unklares bleibt offen');
     await s.click(ed.getByRole('button', { name: 'Zusammenfassung entwerfen' }), 300);
-    await ed.getByText('Bitte diesen Entwurf vor dem Speichern', { exact: false }).waitFor({ timeout: 90000 });
-    await s.moveTo(ed.getByRole('textbox').last(), 0.5, 0.3);
-    await s.wait(2600);
-    await s.click(ed.getByRole('button', { name: 'Entwurf ins Eingabefeld übernehmen' }), 900);
-    await s.click(ed.getByRole('button', { name: 'Speichern' }), 1600);
+    const summary = await filled('Zusammenfassung / Kernaussagen', 120000);
+    await s.moveTo(summary, 0.5, 0.3);
+    await s.wait(2800);
+    await s.click(ed.getByRole('button', { name: 'Speichern', exact: true }), 1600);
     await s.click(ed.getByRole('button', { name: 'Schliessen' }), 1200);
 
     await s.caption('Das Gutachten nach der Vorlage der Organisation – als KI-Entwurf aus den Akten');
@@ -602,6 +618,83 @@ SCENES.cases = {
     await s.wait(1800);
     await s.caption('Prüfen, ergänzen, beurteilen – und als PDF exportieren');
     await s.moveTo(p.getByRole('button', { name: 'PDF exportieren' }).first());
+    await s.wait(2400);
+    await s.caption('');
+    await s.wait(600);
+  },
+};
+
+/** The month after the current one, YYYY-MM (the roster scene plans it). */
+function nextMonth() {
+  const [y, m] = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }).split('-').map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+}
+
+// Shift planning (the roster plugin, licensed; the seed turns it on for Acme): Ulla (HR) plans next month.
+// Reading the wish calls Azure (Switzerland), like the employee scene.
+SCENES.roster = {
+  user: 'ulla',
+  // Off camera: next month starts empty of automatic shifts, unpublished, without wishes from an earlier take.
+  async prepare(page) {
+    const { call, orgId } = await apiAs('ulla');
+    const month = nextMonth();
+    await call(`/organizations/${orgId}/roster/publish?month=${month}`, 'DELETE');
+    await call(`/organizations/${orgId}/roster/auto-plan?month=${month}`, 'DELETE');
+    const data = (await call(`/organizations/${orgId}/roster?month=${month}`)) ?? {};
+    for (const w of data.wishes ?? []) await call(`/organizations/${orgId}/roster/wishes/${w.id}`, 'DELETE');
+    await page.reload();
+    await page.locator('.MuiDrawer-root').first().waitFor();
+    await sleep(1500);
+  },
+  async run(s) {
+    const p = s.page;
+    await s.title('Dienstplan', 'Schichten planen – mit Regelprüfung, Wünschen und Vorschlag');
+    await s.nav('Dienstplan');
+    await s.click(p.getByRole('button', { name: 'Nächster Monat' }), 1400);
+
+    await s.caption('Schichten und Bedarf pro Wochentag – mit Qualifikationen wie Pflegefachperson');
+    await s.click(p.getByRole('tab', { name: 'Schichten und Bedarf' }), 2600);
+    await s.click(p.getByRole('tab', { name: 'Plan' }), 1200);
+
+    await s.caption('Marta wünscht sich etwas – in ihren eigenen Worten');
+    const marta = p.getByRole('row').filter({ hasText: 'Marta' }).first();
+    await s.click(marta.getByRole('button', { name: 'Wünsche' }), 900);
+    const dlg = p.getByRole('dialog');
+    await s.type(dlg.getByPlaceholder(/vor dem 10/i), 'Bitte vor dem 10. keine Nachtdienste, und am 24. und 25. möchte ich frei haben.', 300);
+    await s.caption('Die KI (Azure, Schweiz) liest daraus Regeln – geprüft, bevor sie gelten');
+    await s.click(dlg.getByRole('button', { name: 'Mit KI auslesen' }), 300);
+    // The rules read from the text, shown before they are saved.
+    const rule = dlg.locator('.MuiChip-outlinedPrimary').first();
+    await rule.waitFor({ timeout: 60000 });
+    await s.wait(500);
+    await s.moveTo(rule);
+    await s.wait(2800);
+    await s.click(dlg.getByRole('button', { name: 'Wunsch speichern' }), 1800);
+    const close = p.getByRole('dialog').getByRole('button', { name: /Schliessen|Abbrechen/ });
+    if (await close.count()) await s.click(close.first(), 900);
+
+    await s.caption('Ein Vorschlag für den ganzen Monat: Ruhezeiten, Wochenhöchstzeit, Wünsche und Fairness');
+    await s.click(p.getByRole('button', { name: 'Automatisch planen' }), 2200);
+    await s.caption('Was offen bleibt, sagt warum: wer abwesend ist, wem die Qualifikation fehlt …');
+    const alert = p.locator('.MuiAlert-root').filter({ hasText: /vorgeschlagen/ }).first();
+    await s.moveTo(alert, 0.3, 0.6);
+    await s.wait(3200);
+    await s.click(p.getByRole('button', { name: 'Übernehmen' }), 2000);
+
+    await s.caption('Die Regelprüfung und die Besetzung pro Schicht laufen beim Planen mit');
+    await p.mouse.move(720, 500);
+    for (let i = 0; i < 3; i++) {
+      await p.mouse.wheel(0, 300);
+      await s.wait(1100);
+    }
+    await s.wait(1200);
+    await p.mouse.wheel(0, -900);
+    await s.wait(900);
+
+    await s.caption('Veröffentlicht: Alle sehen ihre Schichten – und der Plan wird ihre Sollzeit');
+    await s.click(p.getByRole('button', { name: 'Veröffentlichen' }).first(), 1000);
+    await s.click(p.getByRole('dialog').getByRole('button', { name: 'Veröffentlichen' }), 2200);
+    await s.moveTo(p.getByText(/^Veröffentlicht/).first());
     await s.wait(2400);
     await s.caption('');
     await s.wait(600);

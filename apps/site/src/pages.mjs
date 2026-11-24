@@ -936,6 +936,149 @@ ${ctaBand(ctx)}`;
 }
 
 /** The plugin page's steps: icon, and a short code example (the same in every language). */
+export function roster(ctx) {
+  const { t, assets, lang } = ctx;
+  const cards = [
+    ['grid', 'calendar'],
+    ['rules', 'shield'],
+    ['auto', 'sparkle'],
+    ['wishes', 'chat'],
+    ['publish', 'clock'],
+    ['rights', 'users'],
+  ];
+  const video = assets.media?.['demo-roster.mp4'];
+  const poster = assets.media?.['demo-roster.jpg'];
+  const videoBlock = video
+    ? `<figure class="shot feature-video">
+        <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('roster.videoTitle')}">
+          <source src="${video}" type="video/mp4">
+        </video>
+        <figcaption>${t('roster.videoTitle')}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
+      </figure>`
+    : '';
+
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${t('roster.hero.eyebrow')} · <span class="chip chip-ok"><b></b>${t('common.freeBadge')}</span></p>
+    <h1>${t('roster.hero.title')}</h1>
+    <p class="lead">${t('roster.hero.lead')}</p>
+    <div class="actions" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+      <a class="btn btn-primary" href="${ctx.demo}">${t('cta.demo')}${icon('arrow')}</a>
+      <a class="btn btn-ghost" href="${ctx.contactLink('demo')}">${icon('mail')}${t('cta.contact')}</a>
+    </div>
+  </div>
+</section>
+
+<section class="section tight">
+  <div class="wrap">
+    ${videoBlock}
+    <div class="card pricing-teaser" style="margin-bottom: 40px;">
+      <div>
+        <p class="eyebrow">${icon('calendar')}${t('common.includedInFramework')}</p>
+        <h2>${t('roster.freeBox.title')}</h2>
+        <p class="lead">${t('roster.freeBox.text')}</p>
+      </div>
+      <div class="price-badge"><strong>CHF&nbsp;0</strong><span>${t('common.freeBadge')}</span></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="section-head">
+      <h2>${t('roster.features.title')}</h2>
+      <p class="lead">${t('roster.features.lead')}</p>
+    </div>
+    <div class="grid grid-3">
+    ${cards.map(([k, ic]) => `<article class="card feature">
+        <div class="feature-icon">${icon(ic)}</div>
+        <h3>${t(`roster.cards.${k}.title`)}</h3>
+        <p>${t(`roster.cards.${k}.text`)}</p>
+      </article>`).join('\n    ')}
+    </div>
+  </div>
+</section>
+
+<section class="section band">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">${icon('calendar')}${t('roster.hero.eyebrow')}</p>
+      <h2>${t('roster.check.title')}</h2>
+      ${checklist(t.list('roster.checkItems'))}
+    </div>
+    <div class="card">
+      <div class="feature-icon">${icon('doc')}</div>
+      <h3>${t('roster.setup.title')}</h3>
+      <p class="muted" style="margin-bottom: 20px;">${t('roster.setup.text')}</p>
+      <div class="actions">
+        <a class="btn btn-primary btn-sm" href="${ctx.link('support')}#roster">${t('roster.setup.link')}${icon('arrow')}</a>
+      </div>
+    </div>
+  </div>
+</section>
+${ctaBand(ctx)}`;
+
+  return layout(ctx, { title: t('roster.meta.title'), description: t('roster.meta.description'), body });
+}
+
+/**
+ * Support: how-to articles, one section each (an anchor per article, `#<id>`), listed at the top. Each article has
+ * an introduction, numbered steps and notes (`support.<id>.*`); its texts must stay true to the app.
+ */
+export const SUPPORT_ARTICLES = [
+  ['staticData', 'sliders'],
+  ['roster', 'calendar'],
+];
+
+export function support(ctx) {
+  const { t } = ctx;
+  const toc = SUPPORT_ARTICLES.map(([id, ic]) => `<a class="card feature" href="#${id}">
+        <div class="feature-icon">${icon(ic)}</div>
+        <h3>${t(`support.${id}.title`)}</h3>
+        <p>${t(`support.${id}.summary`)}</p>
+      </a>`).join('\n    ');
+  const articles = SUPPORT_ARTICLES.map(([id, ic]) => `<article class="support-article" id="${id}">
+    <p class="eyebrow">${icon(ic)}${t('support.eyebrow')}</p>
+    <h2>${t(`support.${id}.title`)}</h2>
+    <p class="lead">${t(`support.${id}.intro`)}</p>
+    <h3>${t('support.steps')}</h3>
+    <ol class="support-steps">${t.list(`support.${id}.steps`).map((x) => `<li>${x}</li>`).join('')}</ol>
+    <h3>${t('support.notes')}</h3>
+    ${checklist(t.list(`support.${id}.notes`))}
+  </article>`).join('\n  ');
+
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${t('support.eyebrow')}</p>
+    <h1>${t('support.title')}</h1>
+    <p class="lead">${t('support.lead')}</p>
+  </div>
+</section>
+
+<section class="section tight">
+  <div class="wrap">
+    <div class="grid grid-3">
+    ${toc}
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="wrap support">
+  ${articles}
+    <div class="card pricing-teaser">
+      <div>
+        <h2>${t('support.contact.title')}</h2>
+        <p class="lead">${t('support.contact.text')}</p>
+      </div>
+      <div class="actions"><a class="btn btn-primary" href="${ctx.contactLink('general')}">${icon('mail')}${t('cta.contact')}</a></div>
+    </div>
+  </div>
+</section>`;
+
+  return layout(ctx, { title: t('support.meta.title'), description: t('support.meta.description'), body });
+}
+
 const PLUGIN_STEPS = [
   ['folder', 'layers', `plugins/demo/package.json
 {
@@ -1176,4 +1319,4 @@ export function newsResult(ctx, kind) {
   return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
 }
 
-export const RENDER = { home, features, cases, expenses, plugins, pricing, security, law, about, references, contact, news, impressum, privacy };
+export const RENDER = { home, features, cases, expenses, roster, plugins, support, pricing, security, law, about, references, contact, news, impressum, privacy };

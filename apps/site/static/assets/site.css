@@ -568,3 +568,12 @@ dialog.zoom img {
   cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); display: flex; align-items: center; justify-content: center;
 }
 .zoom-close:hover, .zoom-close:focus-visible { background: #fff; outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+/* Support: the articles one below the other, each with an anchor (the cards at the top link to them). */
+a.card.feature { color: inherit; text-decoration: none; }
+a.card.feature:hover { border-color: var(--brand, #1a56db); }
+.support { display: grid; gap: 56px; max-width: 860px; }
+.support-article { scroll-margin-top: 96px; }
+.support-article h3 { margin: 28px 0 12px; }
+.support-steps { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; }
+.support-steps li { padding-left: 4px; }
