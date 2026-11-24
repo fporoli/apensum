@@ -121,8 +121,11 @@ export interface WorkflowKind {
   variants?: (db: Db, organizationId: string) => Promise<{ key: string; label: string }[]>;
   /** The catalogue for an organization (and variant), e.g. with facts from its form's fields; else `catalogue`. */
   catalogueFor?: (db: Db, organizationId: string, variant?: string) => Promise<WorkflowKindCatalogue>;
-  /** Runs when a workflow of the kind finishes approved (its last step done). */
-  onFinished?: (db: Db, sourceTableUuid: string, actorUserId: string) => Promise<void>;
+  /**
+   * Runs when a workflow of the kind finishes approved (its last step done): e.g. the record becomes "approved" only
+   * then, not at a first approval with more to come.
+   */
+  onFinished?: (db: Db, sourceTableUuid: string, actorUserId: string, core: { versions: VersionsService }) => Promise<void>;
 }
 /**
  * Loads the records of one source table for the Workflow page (GET workflows/assigned-to-me): one
@@ -302,7 +305,7 @@ export class WorkflowsService {
     };
     const [workflow] = await db.insert(workflows).values(values).returning({ id: workflows.workflow_id });
     void this.versions.record('workflows', workflow.id, 'insert', params.actorUserId, { id: workflow.id, ...values }).catch(() => {});
-    if (placed.index < 0) await kind.onFinished?.(db, params.sourceTableUuid, params.actorUserId);
+    if (placed.index < 0) await kind.onFinished?.(db, params.sourceTableUuid, params.actorUserId, { versions: this.versions });
     if (placed.index >= 0) {
       void this.notifyAssignees(db, {
         sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
@@ -771,7 +774,7 @@ export class WorkflowsService {
       : { step_status: outcome, workflow_step_finished: now, workflow_finished: now, workflow_data: workflowData };
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
-    if (!next && outcome === 'approved') await this.kindOfTable(workflow.source_table)?.onFinished?.(db, workflow.source_table_uuid, callerId);
+    if (!next && outcome === 'approved') await this.kindOfTable(workflow.source_table)?.onFinished?.(db, workflow.source_table_uuid, callerId, { versions: this.versions });
 
     if (organizationId) {
       void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflow.id).catch(() => {});

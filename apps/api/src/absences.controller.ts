@@ -12,7 +12,9 @@ import { absences, static_data, users, workflows } from './db/schema';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService, APPROVE_ABSENCE_WORKFLOW_NAME } from './workflows.service';
-import { absenceNeedsApproval, resolveAbsenceTypes } from './absence-types';
+import { absenceNeedsApproval, resolveAbsenceTypes, unpaidAbsenceTypes } from './absence-types';
+import type { WorkflowKindCatalogue } from '@worktime3/shared/workflowConfig';
+import { sql } from 'drizzle-orm';
 import { NotificationsService } from './notifications.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 
@@ -28,6 +30,31 @@ export async function touchesLockedPeriod(db: Db, orgId: string, userId: string,
   }
   return false;
 }
+
+/**
+ * An absence request's workflow (configurable, Admin settings -> Workflows): approvals one after the other, each a
+ * decision (nobody approves their own); rejecting is final (the person asks anew). The absence is approved once the
+ * last approval is done. Facts: its type, calendar days (a half day 0.5), unpaid, in probation, the person's department
+ * (code) and management flag. Default: the manager. Types without approval (sickness, accident) have no workflow.
+ */
+export const ABSENCE_CATALOGUE: WorkflowKindCatalogue = {
+  id: 'absences.request',
+  definitionName: APPROVE_ABSENCE_WORKFLOW_NAME,
+  rejectModes: ['none', 'end'],
+  facts: { type: 'string', days: 'number', unpaid: 'boolean', probation: 'boolean', 'requester.department': 'string', 'requester.management': 'boolean' },
+  blocks: {
+    review: {
+      label: 'Approval', action: 'absence.reviewed', returnAction: 'absence.reject', decides: true,
+      assignees: ['manager', 'department', 'team', 'permission:section.people.employment', 'permission:nav.absences'],
+    },
+  },
+  defaultConfig: {
+    version: 1,
+    steps: [{ key: 'manager_review', do: ['review'], assignTo: 'manager', reject: 'end', label: { de: 'Freigabe Vorgesetzte', fr: 'Approbation du supérieur', it: 'Approvazione del superiore', en: 'Manager approval' } }],
+  },
+  source: 'Vacation Request',
+  source_name: 'getAbsenceTitle',
+};
 
 @Controller()
 export class AbsencesController implements OnModuleInit {
@@ -53,11 +80,48 @@ export class AbsencesController implements OnModuleInit {
       void this.versions.record('absences', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
     });
 
+    // An approval with more to come changes nothing yet; the last one approves the absence (onFinished).
+    this.workflowsSvc.registerAction('absence.reviewed', async () => {});
+    this.workflowsSvc.registerKind({
+      catalogue: ABSENCE_CATALOGUE,
+      description: 'An absence request: approved by the steps the organization set (the manager by default).',
+      sourceTable: 'absences',
+      facts: (db, id) => this.facts(db, id),
+      onFinished: async (db, id, actorUserId) => {
+        const patch = { status: 'approved' as const, reviewed_by_user_id: actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
+        await db.update(absences).set(patch).where(and(eq(absences.id, id), eq(absences.status, 'pending')));
+        void this.versions.record('absences', id, 'update_delta', actorUserId, patch).catch(() => {});
+      },
+    });
+
     this.workflowsSvc.registerAction('absence.reject', async (db, ctx) => {
       const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: ctx.decisionNote };
       await db.update(absences).set(patch).where(eq(absences.id, ctx.sourceTableUuid));
       void this.versions.record('absences', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
     });
+  }
+
+  /** An absence's facts for its workflow's conditions. */
+  private async facts(db: Db, id: string): Promise<Record<string, unknown>> {
+    const [a] = await db.select({ organization_id: absences.organization_id, user_id: absences.user_id, absence_type: absences.absence_type,
+      date_start: absences.date_start, date_end: absences.date_end, half_day: absences.half_day }).from(absences).where(eq(absences.id, id));
+    if (!a) return {};
+    const types = await resolveAbsenceTypes(db, a.organization_id);
+    const days = a.half_day ? 0.5 : Math.round((Date.parse(`${a.date_end}T00:00:00Z`) - Date.parse(`${a.date_start}T00:00:00Z`)) / 86_400_000) + 1;
+    const probationUntil = await probationUntilOf(db, a.organization_id, a.user_id);
+    const rows = await db.execute(sql`
+      SELECT d.code, ea.is_management FROM employee_assignments ea LEFT JOIN departments d ON d.id = ea.department_id
+      WHERE ea.organization_id = ${a.organization_id}::uuid AND ea.user_id = ${a.user_id}::uuid AND ea.valid_from <= CURRENT_DATE
+      ORDER BY ea.valid_from DESC LIMIT 1`);
+    const assignment = rows.rows[0] as { code: string | null; is_management: boolean | null } | undefined;
+    return {
+      type: a.absence_type,
+      days,
+      unpaid: unpaidAbsenceTypes(types).has(a.absence_type),
+      probation: !!probationUntil && a.date_start <= probationUntil,
+      'requester.management': !!assignment?.is_management,
+      ...(assignment?.code ? { 'requester.department': assignment.code } : {}),
+    };
   }
 
   @Post('organizations/:orgId/absences')
@@ -104,14 +168,15 @@ export class AbsencesController implements OnModuleInit {
 
     const now = new Date().toISOString();
     const managerUserId = await membershipManagerId(db, orgId, callerId);
-    // Without a manager, or for a type flagged {approval: false} in static data, there's nobody to ask.
+    // A type flagged {approval: false} in static data (sickness, accident) is recorded at once; the others go through
+    // the organization's absence workflow (a manager's approval without a manager is done at once there).
     const needsApproval = absenceNeedsApproval(types, absenceType);
-    const autoApproved = !managerUserId || !needsApproval;
+    const recordedAtOnce = !needsApproval;
     // Vacation in probation is a warning to the person and the manager, never a refusal.
     const probationUntil = absenceType === VACATION_ABSENCE_TYPE ? await probationUntilOf(db, orgId, callerId) : null;
     const inProbation = !!probationUntil && dateStart <= probationUntil;
     const probationWarning = inProbation ? `Vacation during probation (until ${probationUntil})` : '';
-    const reviewFields = autoApproved
+    const reviewFields = recordedAtOnce
       ? { status: 'approved' as const, reviewed_by_user_id: callerId, reviewed_at: now }
       : { status: 'pending' as const, reviewed_by_user_id: null, reviewed_at: null };
 
@@ -121,28 +186,17 @@ export class AbsencesController implements OnModuleInit {
     // One action for every type: "recorded without approval" alone would tell that it is sickness.
     void this.audit.record(orgId, callerId, 'absence.submit', 'absence', created.id).catch(() => {});
 
-    if (!autoApproved && managerUserId) {
-      const definition = await this.workflowsSvc.ensureDefinition(db, orgId, APPROVE_ABSENCE_WORKFLOW_NAME, "A vacation request awaiting the employee's manager to approve or reject it.", [
-        {
-          key: 'manager_review',
-          label: 'Manager review',
-          assignTo: 'manager',
-          onApprove: { action: 'absence.approve' },
-          onReject: { action: 'absence.reject' },
-          source: 'Vacation Request',
-          source_name: 'getAbsenceTitle',
-        },
-      ]);
-      await this.workflowsSvc.createWorkflow(db, {
-        workflowDefId: definition.workflow_def_id,
-        sourceTable: 'absences',
+    let autoApproved = recordedAtOnce;
+    if (!recordedAtOnce) {
+      const started = await this.workflowsSvc.start(db, {
+        kind: ABSENCE_CATALOGUE.id,
+        organizationId: orgId,
         sourceTableUuid: created.id,
-        step: 'manager_review',
-        assignedToUserId: [managerUserId],
-        workflowData: { note: note || null },
         actorUserId: callerId,
+        workflowData: { note: note || null },
         notification: { title: 'New absence request to review', body: [probationWarning, note].filter(Boolean).join('\n') || undefined },
       });
+      autoApproved = !!started?.finished;
     }
 
     if (autoApproved && managerUserId && this.notifications) {

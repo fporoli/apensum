@@ -120,3 +120,11 @@ test('a required block must be in every configuration', () => {
   const run = { ...KIND, firstStepDecides: false, blocks: { review: { ...KIND.blocks.review }, pay: { ...KIND.blocks.pay, after: [], required: true } } };
   assert.deepEqual(codes(validateWorkflowConfig(run, { version: 1, steps: [{ key: 'a', do: ['review'], assignTo: 'permission:nav.expensePayout' }] })), ['steps block-required']);
 });
+
+test('reject end: rejected for good, the default where the kind has no back', () => {
+  const absence = { ...KIND, rejectModes: ['none', 'end'] };
+  const r = validateWorkflowConfig(absence, { version: 1, steps: [{ key: 'm', do: ['review'], assignTo: 'manager' }] });
+  assert.equal(r.value.steps[0].reject, 'end');
+  assert.deepEqual(compileWorkflow(absence, r.value)[0].returnActions, ['expense.reject']);
+  assert.deepEqual(codes(validateWorkflowConfig(absence, { version: 1, steps: [{ key: 'm', do: ['review'], assignTo: 'manager', reject: 'back' }] })), ['steps[0].reject invalid-reject']);
+});

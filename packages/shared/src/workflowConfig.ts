@@ -35,9 +35,12 @@ export const MAX_WORKFLOW_STEPS = 8;
 const KEY = /^[a-z0-9_]{1,30}$/;
 const LANGS = ['de', 'fr', 'it', 'en'] as const;
 
-/** `none` = the step can't be rejected; `back` = back to the person who submitted, to change and submit again. */
-export type RejectMode = 'none' | 'back';
-export const REJECT_MODES: readonly RejectMode[] = ['none', 'back'];
+/**
+ * `none` = the step can't be rejected; `back` = back to the person who submitted, to change and submit again;
+ * `end` = rejected for good (e.g. an absence: the person asks anew).
+ */
+export type RejectMode = 'none' | 'back' | 'end';
+export const REJECT_MODES: readonly RejectMode[] = ['none', 'back', 'end'];
 
 /** A fact's type: what a condition may compare it with. */
 export type FactType = 'number' | 'string' | 'strings' | 'boolean';
@@ -71,7 +74,7 @@ export interface WorkflowBlock {
   assignees: string[];
   /** The action run when the step is approved (registered with WorkflowsService). */
   action: string;
-  /** The action run when the step is sent back (reject `back`); none = the block can't be rejected. */
+  /** The action run when the step is rejected (reject `back` or `end`); none = the block can't be rejected. */
   returnAction?: string;
   /** At most once in a workflow. */
   once?: boolean;
@@ -208,15 +211,17 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
       if (assigneeKind(assignTo) && !assigneeAllowed(block, assignTo)) errors.push({ path: `${at}.assignTo`, code: 'assignee-not-allowed' });
       done.add(b);
     });
-    const reject = s.reject === undefined ? (blocks.every((b: string) => kind.blocks[b]?.returnAction) ? 'back' : 'none') : s.reject;
+    // Default: the kind's way of rejecting (back, else end) where every block can be rejected, else none.
+    const rejecting = kind.rejectModes.find((m) => m !== 'none') ?? 'none';
+    const reject = s.reject === undefined ? (blocks.every((b: string) => kind.blocks[b]?.returnAction) ? rejecting : 'none') : s.reject;
     if (!REJECT_MODES.includes(reject as RejectMode) || !kind.rejectModes.includes(reject as RejectMode)) errors.push({ path: `${at}.reject`, code: 'invalid-reject' });
-    else if (reject === 'back' && !blocks.every((b: string) => kind.blocks[b]?.returnAction)) errors.push({ path: `${at}.reject`, code: 'not-rejectable' });
+    else if (reject !== 'none' && !blocks.every((b: string) => kind.blocks[b]?.returnAction)) errors.push({ path: `${at}.reject`, code: 'not-rejectable' });
     if (s.when !== undefined) {
       if (i === 0 && kind.firstStepDecides !== false) errors.push({ path: `${at}.when`, code: 'first-step-condition' });
       else if (blocks.some((b: string) => kind.blocks[b]?.last)) errors.push({ path: `${at}.when`, code: 'last-step-condition' });
       else errors.push(...conditionErrors(s.when, kind.facts, `${at}.when`));
     }
-    if (i === 0 && reject !== 'back' && kind.firstStepDecides !== false) errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
+    if (i === 0 && reject === 'none' && kind.firstStepDecides !== false) errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
     let label: WorkflowStepConfig['label'];
     if (s.label !== undefined) {
       if (!isObject(s.label) || Object.entries(s.label).some(([l, v]) => !(LANGS as readonly string[]).includes(l) || typeof v !== 'string' || v.length > 60)) {
@@ -290,7 +295,7 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       assignTo: s.assignTo,
       blocks: s.do,
       actions: blocks.map((b) => b.action),
-      returnActions: reject === 'back' ? blocks.map((b) => b.returnAction!).filter(Boolean) : [],
+      returnActions: reject !== 'none' ? blocks.map((b) => b.returnAction!).filter(Boolean) : [],
       reject,
       rejectable: reject !== 'none',
       ...(blocks.some((b) => b.inDialog) ? { inDialog: true } : {}),
