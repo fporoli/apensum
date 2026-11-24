@@ -323,6 +323,9 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   const visibleTranslationKvList = visibleKvList.filter((kv) => kv.key.trim());
 
   const isOverridingGlobal = globalKeys.has(rowKey(enumEntity.trim(), enumName.trim()));
+  // The property descriptions: an organization's copy holds only its own, the built-in (global) ones are shown read-only.
+  const isPropertiesList = enumEntity.trim() === PROPERTIES_LIST.entity && enumName.trim() === PROPERTIES_LIST.enumName;
+  const builtInProperties = isPropertiesList ? enums.find((r) => !r.organization_id && r.entity === PROPERTIES_LIST.entity && r.enum_name === PROPERTIES_LIST.enumName) : undefined;
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -482,7 +485,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
           <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
             {isOverridingGlobal && (
               <Alert severity="info" variant="outlined">
-                {t('staticdata.orgOverrideInfo')}
+                {t(isPropertiesList ? 'staticdata.propertiesOwnInfo' : 'staticdata.orgOverrideInfo')}
               </Alert>
             )}
             {dialogError && <Alert severity="error">{dialogError}</Alert>}
@@ -506,7 +509,20 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
               required
               placeholder={t('staticdata.enumNamePlaceholder')}
             />
-            <Typography variant="subtitle2">{t('staticdata.values')}</Typography>
+            {builtInProperties && (
+              <Box>
+                <Typography variant="subtitle2">{t('staticdata.builtIn')}</Typography>
+                <Box sx={{ display: 'grid', gap: 0.5, mt: 0.5, p: 1, borderRadius: 1, bgcolor: 'action.hover' }}>
+                  {Object.entries(builtInProperties.values).map(([key, value]) => (
+                    <Box key={key} sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>{builtInProperties.translation?.[locale]?.[key] ?? builtInProperties.translation?.en?.[key] ?? key}</Typography>
+                      <Typography variant="caption" color="text.secondary">{valuePreview(builtInProperties, key, value)}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
+            )}
+            <Typography variant="subtitle2">{t(builtInProperties ? 'staticdata.ownValues' : 'staticdata.values')}</Typography>
             {enumKvList.length > 15 && (
               <TextField
                 size="small"
