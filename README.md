@@ -381,6 +381,56 @@ GitHub runs scheduled workflows best effort, sometimes a few minutes late.
 
 Inside: the API (`monitor.service.ts`, every hour, `MONITOR=off` disables it) reports to the operators, by mail and as a notification in the Admin organization, at most once a day each: free disk space under 10 % or 2 GB (also shown under Super Admin → Instance) and a failing mail relay (as a notification only, since mail does not get through then).
 
+## Backups
+
+`.github/workflows/backup.yml` backs up a VPS instance every night at 01:30 UTC (prod; an environment without `BACKUP_S3_ENDPOINT` is skipped): the whole database (`pg_dump`, Keycloak's `auth` schema included) and the documents volume, as two objects `<stamp>-db.dump.age` and `<stamp>-documents.tar.age` under `BACKUP_PATH/<environment>/` in an S3-compatible bucket (e.g. MinIO on another server).\
+On the server (`infra/vps/backup.sh`, sent over SSH) both are encrypted with the [age](https://age-encryption.org) public key `BACKUP_AGE_RECIPIENT` while they are read: the runner and the storage see only ciphertext, and nothing on the server can decrypt it.\
+The runner moves the files (AWS CLI, path-style addressing); the server has no key for the storage, so a compromised server can't delete the backups.\
+Kept: the newest backup of each of the 7 newest days, 4 newest weeks and 12 newest months (`scripts/backup-retention.mjs`).\
+A failed run is mailed to `OPERATOR_EMAIL` (else the sender address) through the environment's SMTP.
+
+On the 1st of each month the workflow tests the newest backup (`verify`): it restores it into a scratch database on the server, checks it and drops it, and reads the documents archive through.\
+`restore` (manual, confirmation `RESTORE <environment>`, from main) replaces the instance's database and documents with a backup (input `backup` = its stamp, empty = the newest): restored next to the live database first, then swapped while the API and Keycloak are stopped; the database before stays as `worktime_before_<time>` (the next restore drops it), the documents before as a tar in `~/apensum-<env>-db-backups`.\
+A backup of an older version is brought up to date by the next `deploy` (its migrations).\
+The documents stay encrypted with `DOCUMENTS_KEY` inside the backup: a restore needs that key too.\
+`verify` and `restore` send the private key to the server for the run only.\
+There is no restore of one organization (its rows hang together with everyone's): restore a backup into a scratch database, look up what is needed and enter it again.
+
+Setup, once per environment (keys made on your own computer, never pasted anywhere but GitHub and the storage).\
+The storage belongs on another server than the instance, its API (MinIO: port 9000) behind TLS, its console (9001) not open to the internet.\
+On the storage, a bucket and a user that may use only that bucket (MinIO client `mc`):
+
+```sh
+mc alias set backup https://<host>:9000 <root user>      # asks for the root password
+mc mb backup/apensum-backups
+cat > apensum-backup-policy.json <<'EOF'
+{ "Version": "2012-10-17", "Statement": [
+  { "Effect": "Allow", "Action": ["s3:ListBucket", "s3:GetBucketLocation"], "Resource": ["arn:aws:s3:::apensum-backups"] },
+  { "Effect": "Allow", "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"], "Resource": ["arn:aws:s3:::apensum-backups/*"] } ] }
+EOF
+mc admin policy create backup apensum-backup apensum-backup-policy.json
+mc admin user add backup apensum-backup                 # asks for its secret key (a long random one)
+mc admin policy attach backup apensum-backup --user apensum-backup
+```
+
+Then in GitHub:
+
+```sh
+age-keygen -o apensum-backup.age          # prints the public key (age1...); keep the file in a password manager
+gh secret set BACKUP_AGE_KEY --env prod < apensum-backup.age
+gh variable set BACKUP_AGE_RECIPIENT --env prod --body age1...
+gh variable set BACKUP_S3_ENDPOINT --env prod --body https://<host>:9000
+gh variable set BACKUP_S3_BUCKET --env prod --body apensum-backups
+gh variable set BACKUP_PATH --env prod --body apensum-backups      # optional, the default
+gh secret set BACKUP_S3_ACCESS_KEY --env prod --body apensum-backup
+gh secret set BACKUP_S3_SECRET_KEY --env prod                      # asks for the user's secret key
+```
+
+`BACKUP_S3_REGION` is optional (default `us-east-1`, MinIO's).\
+Then run the workflow by hand (`backup`, then `verify`).\
+The first run installs `age` on the server (`sudo apt-get install age`, else it says to run it once).\
+Without the age private key the backups can't be read: it is in the secret and in the password manager only.
+
 ## Two-step login
 
 Everyone who signs in with a password can add a second step in Settings: a code from an authenticator app (scan the QR code, confirm one code), with ten one-time recovery codes for a lost phone.\
@@ -466,6 +516,7 @@ The app supports year-end snapshots starting in 2000; earlier attendance and mon
 | `KEYCLOAK_ADMIN` | |
 | `SHOW_DEMO_ACCOUNTS` | Optional, `true`/`false` |
 | `RESET_BACKUP` | Optional, `false` skips the backup before `reset-seed` (set on demo, preprod, test; only prod is backed up) |
+| `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_REGION`, `BACKUP_PATH`, `BACKUP_AGE_RECIPIENT` | Optional, the nightly backup (see Backups); secrets `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, `BACKUP_AGE_KEY` |
 | `DEMO_RESET_EVERY_HOURS` | Optional, demo only (`2`): the app warns before `demo-reset.yml` resets it and waits through the reset |
 | `GHCR_USERNAME` | Optional |
 | `SMTP_HOST/PORT/FROM/USER/SECURE` | Optional |

@@ -1,0 +1,188 @@
+# Backups of an instance (README "Backups"): every night of prod, a restore test on the 1st of each month,
+# and a manual restore. On the server (infra/vps/backup.sh) the whole database (Keycloak's auth schema included)
+# and the documents volume are encrypted with the age public key BACKUP_AGE_RECIPIENT while they are read; this
+# runner only moves the ciphertext to S3-compatible storage (e.g. MinIO: BACKUP_S3_ENDPOINT, bucket BACKUP_S3_BUCKET,
+# prefix BACKUP_PATH/<environment>, keys BACKUP_S3_ACCESS_KEY / BACKUP_S3_SECRET_KEY) and deletes what the
+# retention drops (scripts/backup-retention.mjs: 7 days, 4 weeks, 12 months). The server holds no key for the
+# storage, so it can't delete the backups. The private age key BACKUP_AGE_KEY goes to the server only for
+# `verify` and `restore`.
+# An environment without BACKUP_S3_ENDPOINT is skipped. A failure is mailed to OPERATOR_EMAIL (else the sender
+# address). Logs are public: they show no names, sizes or contents.
+#   backup    a new backup now
+#   verify    restores the newest backup (or `backup`) into a scratch database on the server and drops it
+#   restore   DESTRUCTIVE: replaces the instance's database and documents with the backup `backup` (a stamp
+#             like 20261123T013000Z, or empty = the newest). The database before stays as worktime_before_<time>.
+name: backup
+run-name: 'backup: ${{ inputs.action || (github.event.schedule == ''0 4 1 * *'' && ''verify'' || ''backup'') }} on ${{ inputs.environment || ''prod'' }}'
+
+on:
+  schedule:
+    - cron: '30 1 * * *'
+    - cron: '0 4 1 * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'What to run'
+        required: true
+        type: choice
+        options: [backup, verify, restore]
+      environment: { description: 'GitHub Environment = instance', default: 'prod' }
+      backup: { description: 'verify/restore: the stamp of the backup (empty = the newest)', default: '' }
+      confirmation: { description: 'restore: type RESTORE <environment name>' }
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-${{ inputs.environment || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.environment || 'prod' }}
+    env:
+      ACTION: ${{ inputs.action || (github.event.schedule == '0 4 1 * *' && 'verify' || 'backup') }}
+      ENVIRONMENT: ${{ inputs.environment || 'prod' }}
+      STAMP: ${{ inputs.backup }}
+      RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+      ENDPOINT: ${{ vars.BACKUP_S3_ENDPOINT }}
+      BUCKET: ${{ vars.BACKUP_S3_BUCKET }}
+      BACKUP_PATH: ${{ vars.BACKUP_PATH || 'apensum-backups' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.BACKUP_S3_REGION || 'us-east-1' }}
+      # MinIO and other S3-compatibles: checksums only where S3 requires them.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Check the configuration
+        id: config
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ENDPOINT" ]; then
+            echo "::warning::$ENVIRONMENT has no BACKUP_S3_ENDPOINT: no backup."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [[ "$ENVIRONMENT" =~ ^[a-z0-9-]+$ ]] || { echo "Bad environment name"; exit 1; }
+          [[ "$RECIPIENT" =~ ^age1[0-9a-z]+$ ]] || { echo "BACKUP_AGE_RECIPIENT is not an age public key"; exit 1; }
+          [[ "$ENDPOINT" =~ ^https?://[A-Za-z0-9.:-]+/?$ ]] || { echo "BACKUP_S3_ENDPOINT must be like https://host:9000"; exit 1; }
+          [[ "$ENDPOINT" == https://* ]] || echo "::warning::BACKUP_S3_ENDPOINT is not https: the files are encrypted, but use TLS."
+          [[ "$BUCKET" =~ ^[a-z0-9.-]{3,63}$ ]] || { echo "BACKUP_S3_BUCKET is missing or not a bucket name"; exit 1; }
+          [[ "$BACKUP_PATH" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "BACKUP_PATH has odd characters"; exit 1; }
+          [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] || { echo "BACKUP_S3_ACCESS_KEY / BACKUP_S3_SECRET_KEY are not set"; exit 1; }
+          [[ -z "$STAMP" || "$STAMP" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || { echo "backup must be a stamp like 20261123T013000Z"; exit 1; }
+          if [ "$ACTION" = restore ] && [ "$CONFIRMATION" != "RESTORE $ENVIRONMENT" ]; then
+            echo "Restore not run. Type RESTORE followed by the environment name."; exit 1
+          fi
+          if [ "$ACTION" = restore ] && [ "$GITHUB_REF_NAME" != main ]; then echo "Run this workflow from main."; exit 1; fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - if: steps.config.outputs.skip == 'false'
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            infra/vps
+            scripts
+
+      - name: Access
+        if: steps.config.outputs.skip == 'false'
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/vps && chmod 600 ~/.ssh/vps
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName $VPS_HOST
+            User $VPS_USER
+            IdentityFile ~/.ssh/vps
+            IdentitiesOnly yes
+            StrictHostKeyChecking accept-new
+            ServerAliveInterval 30
+            LogLevel ERROR
+          EOF
+          chmod 600 ~/.ssh/config
+          aws configure set default.s3.addressing_style path
+          # Also checks the endpoint, the keys and the bucket before anything is dumped.
+          aws s3api head-bucket --endpoint-url "$ENDPOINT" --bucket "$BUCKET" >/dev/null
+
+      - name: Back up
+        if: steps.config.outputs.skip == 'false' && env.ACTION == 'backup'
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          prefix="$BACKUP_PATH/$ENVIRONMENT"
+          ssh vps "bash -s -- $ENVIRONMENT dump $RECIPIENT" < infra/vps/backup.sh > "$stamp-db.dump.age"
+          ssh vps "bash -s -- $ENVIRONMENT documents $RECIPIENT" < infra/vps/backup.sh > "$stamp-documents.tar.age"
+          test -s "$stamp-db.dump.age" && test -s "$stamp-documents.tar.age"
+          # An S3 object appears only once its upload is complete, so a broken upload never looks like a backup.
+          for f in "$stamp-db.dump.age" "$stamp-documents.tar.age"; do
+            aws s3 cp --only-show-errors --endpoint-url "$ENDPOINT" "$f" "s3://$BUCKET/$prefix/$f"
+          done
+          echo "Backup $stamp stored."
+          aws s3api list-objects-v2 --endpoint-url "$ENDPOINT" --bucket "$BUCKET" --prefix "$prefix/" \
+            --query 'Contents[].Key' --output text | tr '\t' '\n' | node scripts/backup-retention.mjs > delete.txt
+          while read -r name; do
+            aws s3 rm --only-show-errors --endpoint-url "$ENDPOINT" "s3://$BUCKET/$prefix/$name"
+          done < delete.txt
+          echo "Older backups removed: $(( $(wc -l < delete.txt) / 2 ))."
+          echo "Backup $stamp of $ENVIRONMENT stored." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore test or restore
+        if: steps.config.outputs.skip == 'false' && env.ACTION != 'backup'
+        env:
+          BACKUP_AGE_KEY: ${{ secrets.BACKUP_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$BACKUP_AGE_KEY" ] || { echo "BACKUP_AGE_KEY is not set"; exit 1; }
+          prefix="$BACKUP_PATH/$ENVIRONMENT"
+          stamp="$STAMP"
+          if [ -z "$stamp" ]; then
+            stamp=$(aws s3api list-objects-v2 --endpoint-url "$ENDPOINT" --bucket "$BUCKET" --prefix "$prefix/" \
+              --query 'Contents[].Key' --output text | tr '\t' '\n' \
+              | sed -nE 's#.*/([0-9]{8}T[0-9]{6}Z)-documents\.tar\.age$#\1#p' | sort | tail -n 1)
+          fi
+          [ -n "$stamp" ] || { echo "No backup found"; exit 1; }
+          echo "Using backup $stamp"
+          aws s3 cp --only-show-errors --endpoint-url "$ENDPOINT" "s3://$BUCKET/$prefix/$stamp-db.dump.age" db.dump.age
+          aws s3 cp --only-show-errors --endpoint-url "$ENDPOINT" "s3://$BUCKET/$prefix/$stamp-documents.tar.age" documents.tar.age
+          work="apensum-restore-$ENVIRONMENT"
+          ssh vps "rm -rf ~/$work && install -d -m 700 ~/$work"
+          scp -q db.dump.age documents.tar.age "vps:$work/"
+          printf '%s\n' "$BACKUP_AGE_KEY" | ssh vps "umask 077 && cat > ~/$work/key"
+          ssh vps "bash -s -- $ENVIRONMENT $ACTION \$HOME/$work" < infra/vps/backup.sh
+          echo "$ACTION of backup $stamp on $ENVIRONMENT: done." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean up
+        if: always() && steps.config.outputs.skip == 'false'
+        run: |
+          ssh vps "rm -rf ~/apensum-restore-$ENVIRONMENT" 2>/dev/null || true
+          rm -f ~/.ssh/vps *.age
+
+      - name: Mail the operator
+        if: failure()
+        env:
+          SMTP_HOST: ${{ vars.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT }}
+          SMTP_USER: ${{ vars.SMTP_USER }}
+          SMTP_FROM: ${{ vars.SMTP_FROM }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          OPERATOR_EMAIL: ${{ vars.OPERATOR_EMAIL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [ -n "$SMTP_HOST" ] || exit 0
+          from_addr=$(printf '%s' "$SMTP_FROM" | sed -E 's/.*<([^>]+)>.*/\1/')
+          to="${OPERATOR_EMAIL:-$from_addr}"
+          printf 'From: %s\r\nTo: %s\r\nSubject: [Apensum] %s of %s failed\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nThe %s of %s failed: %s\r\n' \
+            "$SMTP_FROM" "$to" "$ACTION" "$ENVIRONMENT" "$ACTION" "$ENVIRONMENT" "$RUN_URL" > mail.txt
+          curl --silent --show-error --ssl-reqd --url "smtp://$SMTP_HOST:${SMTP_PORT:-587}" \
+            --user "$SMTP_USER:$SMTP_PASSWORD" --mail-from "$from_addr" --mail-rcpt "$to" --upload-file mail.txt
