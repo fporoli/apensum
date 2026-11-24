@@ -51,6 +51,7 @@ import { SiteContactController } from './site-contact.controller';
 import { SiteNewsletterController } from './site-newsletter.controller';
 import { WorkflowsController } from './workflows.controller';
 import { WorkflowConfigsController } from './workflow-configs.controller';
+import { RequestWorkflow } from './request-workflow';
 import { StaticDataController } from './static-data.controller';
 import { AuditController } from './audit.controller';
 import { AssistantController } from './assistant.controller';
@@ -134,6 +135,7 @@ const plugins = loadApiPlugins();
     ...plugins.controllers,
   ],
   providers: [
+    RequestWorkflow,
     DbService,
     AiBudgetService,
     ImportExportService,

@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req } from '@nestjs/common';
+import { cleanUnitCode, codeFromName } from '@worktime3/shared/workflowConfig';
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DbService, type Db } from './db.service';
@@ -92,6 +93,7 @@ export class EmploymentController {
         leader_name: leader.display_name,
         is_active: departments.is_active,
         sort_order: departments.sort_order,
+        code: departments.code,
       })
       .from(departments)
       .leftJoin(leader, eq(leader.id, departments.leader_user_id))
@@ -115,7 +117,7 @@ export class EmploymentController {
   @Post('organizations/:orgId/departments')
   async createDepartment(
     @Param('orgId') orgId: string,
-    @Body() body: { name?: string; leaderUserId?: string | null; sortOrder?: number },
+    @Body() body: { name?: string; leaderUserId?: string | null; sortOrder?: number; code?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -127,9 +129,15 @@ export class EmploymentController {
     const leader = await this.checkLeader(db, orgId, body.leaderUserId);
     if (leader === false) return { ok: false, error: 'leader-not-a-member' };
     if (await this.nameTaken(db, orgId, name)) return { ok: false, error: 'duplicate-name' };
+    // Its code (workflows name it): the one given, else one made from the name.
+    const given = cleanUnitCode(body.code);
+    if (given === undefined) return { ok: false, error: 'invalid-code' };
+    const code = given ?? (await this.freeCode(db, orgId, codeFromName(name)));
+    if (given && (await this.codeTaken(db, orgId, given))) return { ok: false, error: 'duplicate-code' };
     const values = {
       organization_id: orgId,
       name,
+      code,
       leader_user_id: leader,
       sort_order: Number.isInteger(body.sortOrder) ? (body.sortOrder as number) : 0,
     };
@@ -143,14 +151,14 @@ export class EmploymentController {
   async updateDepartment(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
-    @Body() body: { name?: string; leaderUserId?: string | null; isActive?: boolean; sortOrder?: number },
+    @Body() body: { name?: string; leaderUserId?: string | null; isActive?: boolean; sortOrder?: number; code?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = await this.departmentEditor(db, orgId, req);
     if (!callerId) return { ok: false, error: 'forbidden' };
-    const [existing] = await db.select({ id: departments.id }).from(departments).where(and(eq(departments.id, id), eq(departments.organization_id, orgId)));
+    const [existing] = await db.select({ id: departments.id, code: departments.code }).from(departments).where(and(eq(departments.id, id), eq(departments.organization_id, orgId)));
     if (!existing) return { ok: false, error: 'not-found' };
 
     const patch: Partial<typeof departments.$inferInsert> = {};
@@ -167,8 +175,16 @@ export class EmploymentController {
     }
     if (typeof body.isActive === 'boolean') patch.is_active = body.isActive;
     if (Number.isInteger(body.sortOrder)) patch.sort_order = body.sortOrder as number;
+    if (body.code !== undefined) {
+      const code = cleanUnitCode(body.code);
+      if (!code) return { ok: false, error: 'invalid-code' };
+      if (code !== existing.code && (await this.codeTaken(db, orgId, code, id))) return { ok: false, error: 'duplicate-code' };
+      if (code !== existing.code) patch.code = code;
+    }
     if (Object.keys(patch).length === 0) return { ok: true, noop: true };
     await db.update(departments).set(patch).where(eq(departments.id, id));
+    // Workflows name departments by code: their stored configurations follow the new one.
+    if (patch.code && existing.code) await this.workflows.renameUnit(db, orgId, 'department', existing.code, patch.code);
     void this.versions.record('departments', id, 'update_delta', callerId, patch).catch(() => {});
     void this.audit.record(orgId, callerId, 'department.update', 'department', id, patch).catch(() => {});
     return { ok: true };
@@ -181,10 +197,11 @@ export class EmploymentController {
     if (!db) return { ok: true, offline: true };
     const callerId = await this.departmentEditor(db, orgId, req);
     if (!callerId) return { ok: false, error: 'forbidden' };
-    const [existing] = await db.select({ id: departments.id }).from(departments).where(and(eq(departments.id, id), eq(departments.organization_id, orgId)));
+    const [existing] = await db.select({ id: departments.id, code: departments.code }).from(departments).where(and(eq(departments.id, id), eq(departments.organization_id, orgId)));
     if (!existing) return { ok: false, error: 'not-found' };
     const [used] = await db.select({ n: count() }).from(employee_assignments).where(eq(employee_assignments.department_id, id));
     if (Number(used?.n ?? 0) > 0) return { ok: false, error: 'department-in-use' };
+    if (existing.code && (await this.workflows.unitInUse(db, orgId, 'department', existing.code))) return { ok: false, error: 'department-in-workflow' };
     await db.delete(departments).where(eq(departments.id, id));
     void this.versions.record('departments', id, 'delete', callerId, { id }).catch(() => {});
     void this.audit.record(orgId, callerId, 'department.delete', 'department', id, {}).catch(() => {});
@@ -404,6 +421,20 @@ export class EmploymentController {
   }
 
   // ---------- helpers ----------
+
+  /** Whether another department of the organization has `code`. */
+  private async codeTaken(db: Db, orgId: string, code: string, exceptId?: string): Promise<boolean> {
+    const rows = await db.select({ id: departments.id }).from(departments).where(and(eq(departments.organization_id, orgId), eq(departments.code, code)));
+    return rows.some((r) => r.id !== exceptId);
+  }
+
+  /** `base`, or `base-2`, `base-3`, ... whichever the organization doesn't use yet. */
+  private async freeCode(db: Db, orgId: string, base: string): Promise<string> {
+    for (let n = 1; ; n++) {
+      const code = n === 1 ? base : `${base.slice(0, 36)}-${n}`;
+      if (!(await this.codeTaken(db, orgId, code))) return code;
+    }
+  }
 
   private async departmentEditor(db: Db, orgId: string, req: AuthenticatedRequest): Promise<string | null> {
     const callerId = req.user ? await callerUserId(db, req.user) : null;

@@ -246,6 +246,8 @@ A plugin can let each organization arrange its workflow (Admin settings -> Workf
 A kind is a catalogue (`@worktime3/shared/workflowConfig`, `WorkflowKindCatalogue`): its building blocks (the action each runs, `returnAction` when it can be sent back, which assignees it allows, `once`, `after`, `last`), the facts a condition may test (with their types), the reject modes and the default configuration; plus `facts(db, id)`, which reads a record's facts when a step with a condition comes up.\
 The organization's JSON only arranges what the catalogue offers; the checker (`validateWorkflowConfig`) refuses anything else, in the editor and in the API.\
 When the plugin's own page does a block's work, it calls `completeBlock(db, table, id, block, eventKey, callerId)`.\
+A kind can also have variants (`variants(db, orgId)`: one configuration each, e.g. per type of record; a variant without one has no workflow and `start` returns null), a catalogue per organization (`catalogueFor`, e.g. facts from the organization's form fields) and `onFinished(db, id, actorUserId)` when its last step is done.\
+Assignees name departments and teams by their code (`department:<code>`, `team:<code>`), if the block allows them.\
 `EXPENSE_REPORT_KIND` in `plugins/expenses/api/workflow.ts` is the example.
 
 ## AI assistant tools

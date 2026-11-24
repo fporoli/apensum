@@ -10,6 +10,7 @@ import { VersionsService } from './versions.service';
 import { sendMail } from './mailer';
 import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
+import { workflowParticipants } from './request-workflow';
 
 /** Assignments in force today, one row per person of the organization. */
 export function currentAssignments(orgId: string): SQL {
@@ -22,8 +23,9 @@ export function currentAssignments(orgId: string): SQL {
 export interface RequestTarget {
   organization_id: string;
   requester_user_id: string | null;
-  target_kind: 'manager' | 'department';
+  target_kind: 'manager' | 'department' | 'workflow';
   target_department_id: string | null;
+  id?: string;
 }
 
 /** A task a module or plugin opens (`RequestsService.openTask`). */
@@ -148,6 +150,8 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
 
   /** Who handles `r` today (ids), not counting `nav.requests:edit:all`. */
   async handlerIds(db: Executor, r: RequestTarget): Promise<string[]> {
+    // A request with a workflow: whoever its steps went or go to (not the requester).
+    if (r.target_kind === 'workflow') return r.id ? (await workflowParticipants(db as Db, r.id)).filter((x) => x !== r.requester_user_id) : [];
     if (r.target_kind === 'manager') {
       if (!r.requester_user_id) return [];
       const manager = await membershipManagerId(db, r.organization_id, r.requester_user_id);

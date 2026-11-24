@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compileWorkflow, evaluateCondition, nextApplicableStep, validateWorkflowConfig } from './workflowConfig.ts';
+import { cleanUnitCode, codeFromName, compileWorkflow, evaluateCondition, nextApplicableStep, validateWorkflowConfig } from './workflowConfig.ts';
 
 const KIND = {
   id: 'expenses.report',
@@ -82,4 +82,16 @@ test('compiling: actions in order, a review step flagged, the label from the blo
   const [m, s] = compileWorkflow(KIND, r.value);
   assert.deepEqual([m.actions, m.returnActions, m.reject, m.review], [['expense.approve'], ['expense.reject'], 'back', true]);
   assert.deepEqual([s.actions, s.returnActions, s.rejectable, s.inDialog, s.label], [['expense.process', 'expense.paid'], [], false, true, 'Settle']);
+});
+
+test('codes of departments and teams; team assignees only where a block allows them', () => {
+  assert.equal(cleanUnitCode(' Frontdesk '), 'frontdesk');
+  assert.equal(cleanUnitCode('it support'), undefined);
+  assert.equal(cleanUnitCode(''), null);
+  assert.equal(codeFromName('Research & Développement'), 'research-developpement');
+  assert.equal(codeFromName('***'), 'unit');
+  const steps = (assignTo) => ({ version: 1, steps: [{ key: 'a', do: ['review'], assignTo }] });
+  assert.deepEqual(codes(validateWorkflowConfig(KIND, steps('department:frontdesk'))), []);
+  assert.deepEqual(codes(validateWorkflowConfig(KIND, steps('team:it-support'))), ['steps[0].assignTo assignee-not-allowed']);
+  assert.deepEqual(codes(validateWorkflowConfig(KIND, steps('department:Front Desk'))), ['steps[0].assignTo invalid-assignee']);
 });

@@ -13,6 +13,24 @@
  */
 
 export const WORKFLOW_CONFIG_VERSION = 1;
+
+/** A department's or team's code (`department:<code>`, `team:<code>`): lower-case letters, digits and -, up to 40. */
+export const UNIT_CODE = /^[a-z0-9][a-z0-9-]{0,39}$/;
+
+/** A code from a request: trimmed and lower-case; null = none, undefined = not a valid code. */
+export function cleanUnitCode(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') return undefined;
+  const code = value.trim().toLowerCase();
+  if (!code) return null;
+  return UNIT_CODE.test(code) ? code : undefined;
+}
+
+/** A code made from a name (the suggestion when a department or team is created). */
+export function codeFromName(name: string): string {
+  const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+  return slug || 'unit';
+}
 export const MAX_WORKFLOW_STEPS = 8;
 const KEY = /^[a-z0-9_]{1,30}$/;
 const LANGS = ['de', 'fr', 'it', 'en'] as const;
@@ -35,7 +53,7 @@ export interface WorkflowStepConfig {
   key: string;
   /** The blocks done in this step, in order (one or more of the kind's). */
   do: string[];
-  /** `manager`, `permission:<object>` or `department:<id>`. */
+  /** `manager`, `permission:<object>`, `department:<code>` or `team:<code>`. */
   assignTo: string;
   when?: Condition;
   reject?: RejectMode;
@@ -49,7 +67,7 @@ export interface WorkflowConfig {
 
 /** What a building block does and where it may stand; part of a kind's catalogue (code). */
 export interface WorkflowBlock {
-  /** Who may do it: `manager`, `department`, and `permission:<object>` for each object allowed. */
+  /** Who may do it: `manager`, `department`, `team`, and `permission:<object>` for each object allowed. */
   assignees: string[];
   /** The action run when the step is approved (registered with WorkflowsService). */
   action: string;
@@ -95,10 +113,11 @@ export interface WorkflowConfigError {
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** The kind of an assignee (`manager`, `department`, `permission`), or null. */
-function assigneeKind(value: string): 'manager' | 'department' | 'permission' | null {
+/** The kind of an assignee (`manager`, `department`, `team`, `permission`), or null. */
+export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | null {
   if (value === 'manager') return 'manager';
-  if (/^department:[0-9a-f-]{36}$/i.test(value)) return 'department';
+  if (value.startsWith('department:') && UNIT_CODE.test(value.slice('department:'.length))) return 'department';
+  if (value.startsWith('team:') && UNIT_CODE.test(value.slice('team:'.length))) return 'team';
   if (/^permission:[a-zA-Z0-9.]+$/.test(value)) return 'permission';
   return null;
 }
@@ -108,6 +127,7 @@ function assigneeAllowed(block: WorkflowBlock, assignTo: string): boolean {
   const kind = assigneeKind(assignTo);
   if (kind === 'manager') return block.assignees.includes('manager');
   if (kind === 'department') return block.assignees.includes('department');
+  if (kind === 'team') return block.assignees.includes('team');
   if (kind === 'permission') return block.assignees.includes(assignTo);
   return false;
 }
@@ -251,7 +271,8 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
     const lastBlock = blocks[blocks.length - 1];
     return {
       key: s.key,
-      label: s.label?.en ?? blocks.map((b) => b.label).join(' + '),
+      // English, else the label in another language, else the blocks' names.
+      label: s.label?.en ?? Object.values(s.label ?? {}).find(Boolean) ?? blocks.map((b) => b.label).join(' + '),
       ...(s.label ? { labels: s.label } : {}),
       assignTo: s.assignTo,
       blocks: s.do,

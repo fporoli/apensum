@@ -3,14 +3,19 @@ import { Alert, Box, Button, Chip, Paper, TextField, Typography } from '@mui/mat
 import {
   validateWorkflowConfig, type FactType, type RejectMode, type WorkflowConfig, type WorkflowConfigError, type WorkflowKindCatalogue,
 } from '@worktime3/shared/workflowConfig';
-import { useT } from './i18n';
+import { useI18n, useT } from './i18n';
 import { ConfirmDialog, PageHeader } from './components';
-import { RestartAltIcon, SaveIcon } from './icons';
+import { AddIcon, ContentCopyIcon, DeleteIcon, RestartAltIcon, SaveIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 interface KindInfo {
   id: string;
+  /** A kind with variants (request types) has one entry per variant; without its own configuration it has no workflow. */
+  variant: string | null;
+  variantLabel: string | null;
+  variantLabels: Record<string, string> | null;
+  optional: boolean;
   blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
@@ -34,6 +39,37 @@ function catalogueOf(kind: KindInfo): WorkflowKindCatalogue {
 
 const pretty = (config: WorkflowConfig) => JSON.stringify(config, null, 2);
 
+/** A step to copy into the configuration, fitting the kind (its blocks and facts). */
+function exampleOf(kind: KindInfo): string {
+  if (kind.id === 'requests.request') {
+    return JSON.stringify({ key: 'order', do: ['task'], assignTo: 'department:frontdesk', when: { urgent: true }, reject: 'back', label: { de: 'Bestellen', en: 'Order' } }, null, 2);
+  }
+  return JSON.stringify({
+    key: 'finance', do: ['review'], assignTo: 'permission:nav.expensePayout',
+    when: { all: [{ total: { gt: 500 } }, { not: { 'requester.management': true } }] }, reject: 'back', label: { de: 'Prüfung Finanzen', en: 'Finance review' },
+  }, null, 2);
+}
+
+interface Units {
+  departments: { code: string | null; name: string }[];
+  teams: { code: string | null; name: string }[];
+}
+
+/** Copies a text, with a short "copied" on the button. */
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="small"
+      startIcon={<ContentCopyIcon fontSize="small" />}
+      onClick={() => void navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {})}
+    >
+      {copied ? t('workflowConfig.copied') : label ?? t('workflowConfig.copy')}
+    </Button>
+  );
+}
+
 /**
  * Admin settings -> Workflows: each configurable kind's steps as a checked JSON document (shared/workflowConfig.ts),
  * with the blocks, assignees and facts the kind offers. Admins read it; only an owner saves or goes back to the
@@ -42,6 +78,7 @@ const pretty = (config: WorkflowConfig) => JSON.stringify(config, null, 2);
 export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const t = useT();
   const [kinds, setKinds] = useState<KindInfo[]>([]);
+  const [units, setUnits] = useState<Units>({ departments: [], teams: [] });
   const [editable, setEditable] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,6 +86,7 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
     try {
       const data = await (await fetch(`${API}/organizations/${orgId}/workflow-configs`, { headers: await authHeaders() })).json();
       setKinds(Array.isArray(data?.kinds) ? data.kinds : []);
+      setUnits({ departments: data?.units?.departments ?? [], teams: data?.units?.teams ?? [] });
       setEditable(data?.editable === true);
     } catch {
       setError(t('common.cannotReachApi'));
@@ -62,17 +100,24 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {!editable && kinds.length > 0 && <Alert severity="info">{t('workflowConfig.ownerOnly')}</Alert>}
       {kinds.map((kind) => (
-        <KindEditor key={kind.id} orgId={orgId} kind={kind} editable={editable} authHeaders={authHeaders} onSaved={load} />
+        <KindEditor key={`${kind.id}:${kind.variant ?? ''}`} orgId={orgId} kind={kind} units={units} editable={editable} authHeaders={authHeaders} onSaved={load} />
       ))}
       {kinds.length === 0 && !error && <Typography color="text.secondary">{t('workflowConfig.none')}</Typography>}
     </Box>
   );
 }
 
-function KindEditor({ orgId, kind, editable, authHeaders, onSaved }: {
-  orgId: string; kind: KindInfo; editable: boolean; authHeaders: () => Promise<Record<string, string>>; onSaved: () => Promise<void>;
+function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
+  orgId: string; kind: KindInfo; units: Units; editable: boolean; authHeaders: () => Promise<Record<string, string>>; onSaved: () => Promise<void>;
 }) {
   const t = useT();
+  const { locale } = useI18n();
+  // A request type without a workflow shows the editor only once someone starts one.
+  const [opened, setOpened] = useState(!kind.optional || !!kind.config);
+  useEffect(() => { setOpened(!kind.optional || !!kind.config); }, [kind]);
+  const title = kind.variant
+    ? t('workflowConfig.variantTitle', { kind: t(`workflowConfig.kind.${kind.id}`), variant: kind.variantLabels?.[locale] ?? kind.variantLabel ?? kind.variant })
+    : t(`workflowConfig.kind.${kind.id}`);
   const [text, setText] = useState(pretty(kind.config ?? kind.defaultConfig));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ severity: 'success' | 'error'; text: string } | null>(null);
@@ -102,7 +147,8 @@ function KindEditor({ orgId, kind, editable, authHeaders, onSaved }: {
     setMessage(null);
     setServerErrors([]);
     try {
-      const res = await fetch(`${API}/organizations/${orgId}/workflow-configs/${encodeURIComponent(kind.id)}`, {
+      const variant = kind.variant ? `?variant=${encodeURIComponent(kind.variant)}` : '';
+      const res = await fetch(`${API}/organizations/${orgId}/workflow-configs/${encodeURIComponent(kind.id)}${variant}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ config }),
@@ -126,9 +172,16 @@ function KindEditor({ orgId, kind, editable, authHeaders, onSaved }: {
   return (
     <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="h6" sx={{ flex: 1 }}>{t(`workflowConfig.kind.${kind.id}`)}</Typography>
-        <Chip size="small" color={kind.config ? 'primary' : 'default'} label={t(kind.config ? 'workflowConfig.own' : 'workflowConfig.default')} />
+        <Typography variant="h6" sx={{ flex: 1 }}>{title}</Typography>
+        <Chip size="small" color={kind.config ? 'primary' : 'default'} label={t(kind.config ? 'workflowConfig.own' : kind.optional ? 'workflowConfig.noWorkflow' : 'workflowConfig.default')} />
       </Box>
+      {!opened && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{t('workflowConfig.noWorkflowHint')}</Typography>
+          {editable && <Button size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => setOpened(true)}>{t('workflowConfig.create')}</Button>}
+        </Box>
+      )}
+      {opened && (<>
       <Typography variant="body2" color="text.secondary">{t('workflowConfig.runningKeep')}</Typography>
       {message && <Alert severity={message.severity} onClose={() => setMessage(null)}>{message.text}</Alert>}
       <TextField
@@ -154,7 +207,9 @@ function KindEditor({ orgId, kind, editable, authHeaders, onSaved }: {
             {t('workflowConfig.save')}
           </Button>
           {kind.config && (
-            <Button startIcon={<RestartAltIcon />} disabled={busy} onClick={() => setConfirmReset(true)}>{t('workflowConfig.reset')}</Button>
+            <Button startIcon={kind.optional ? <DeleteIcon /> : <RestartAltIcon />} disabled={busy} onClick={() => setConfirmReset(true)}>
+              {t(kind.optional ? 'workflowConfig.remove' : 'workflowConfig.reset')}
+            </Button>
           )}
         </Box>
       )}
@@ -179,16 +234,41 @@ function KindEditor({ orgId, kind, editable, authHeaders, onSaved }: {
             {Object.entries(kind.facts).map(([name, type]) => <li key={name}><code>{name}</code> — {t(`workflowConfig.factType.${type}`)}</li>)}
           </Box>
           <Typography variant="body2">{t('workflowConfig.help.reject')}</Typography>
+          {(units.departments.length > 0 || units.teams.length > 0) && (
+            <>
+              <Typography variant="subtitle2">{t('workflowConfig.help.units')}</Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                {[...units.departments.map((d) => ({ ...d, prefix: 'department' })), ...units.teams.map((x) => ({ ...x, prefix: 'team' }))]
+                  .filter((u) => u.code)
+                  .map((u) => (
+                    <Chip
+                      key={`${u.prefix}:${u.code}`}
+                      size="small"
+                      variant="outlined"
+                      label={`${u.prefix}:${u.code} · ${u.name}`}
+                      onClick={() => void navigator.clipboard.writeText(`${u.prefix}:${u.code}`).catch(() => {})}
+                      sx={{ fontFamily: 'monospace' }}
+                    />
+                  ))}
+              </Box>
+              <Typography variant="caption" color="text.secondary">{t('workflowConfig.help.unitsCopy')}</Typography>
+            </>
+          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ flex: 1 }}>{t('workflowConfig.help.example')}</Typography>
+            <CopyButton text={exampleOf(kind)} />
+          </Box>
           <Typography variant="body2" component="pre" sx={{ m: 0, p: 1, bgcolor: 'action.hover', borderRadius: 1, overflowX: 'auto', fontSize: '0.78rem' }}>
-            {'{ "key": "finance", "do": ["review"], "assignTo": "permission:nav.expensePayout",\n  "when": { "all": [ { "total": { "gt": 500 } }, { "not": { "requester.management": true } } ] },\n  "reject": "back", "label": { "de": "Prüfung Finanzen" } }'}
+            {exampleOf(kind)}
           </Typography>
         </Box>
       </Box>
+      </>)}
       <ConfirmDialog
         open={confirmReset}
-        title={t('workflowConfig.reset')}
-        message={t('workflowConfig.resetConfirm')}
-        confirmLabel={t('workflowConfig.reset')}
+        title={t(kind.optional ? 'workflowConfig.remove' : 'workflowConfig.reset')}
+        message={t(kind.optional ? 'workflowConfig.removeConfirm' : 'workflowConfig.resetConfirm')}
+        confirmLabel={t(kind.optional ? 'workflowConfig.remove' : 'workflowConfig.reset')}
         cancelLabel={t('common.cancel')}
         confirmColor="warning"
         onClose={() => setConfirmReset(false)}

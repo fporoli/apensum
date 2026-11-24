@@ -100,13 +100,21 @@ WHERE organization_id IN ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'eeeeeeee-eeee
   AND start_date IS NULL AND joined_at IS NOT NULL;
 
 -- Acme departments, each with a default leader (only a default: the manager is set per person).
-INSERT INTO departments (id, organization_id, name, leader_user_id, sort_order) VALUES
-  ('dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Administration', '22222222-2222-2222-2222-222222222222', 1),
-  ('dddddddd-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'HR', '22222222-2222-2222-2222-222222222226', 2),
-  ('dddddddd-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Sales', '22222222-2222-2222-2222-222222222224', 3),
-  ('dddddddd-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Marketing', '22222222-2222-2222-2222-222222222222', 4),
-  ('dddddddd-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Research & Development', '22222222-2222-2222-2222-222222222223', 5)
+-- Each with its code (workflows name departments by it: `department:hr`).
+INSERT INTO departments (id, organization_id, name, leader_user_id, sort_order, code) VALUES
+  ('dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Administration', '22222222-2222-2222-2222-222222222222', 1, 'administration'),
+  ('dddddddd-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'HR', '22222222-2222-2222-2222-222222222226', 2, 'hr'),
+  ('dddddddd-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Sales', '22222222-2222-2222-2222-222222222224', 3, 'sales'),
+  ('dddddddd-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Marketing', '22222222-2222-2222-2222-222222222222', 4, 'marketing'),
+  ('dddddddd-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Research & Development', '22222222-2222-2222-2222-222222222223', 5, 'research-development')
 ON CONFLICT DO NOTHING;
+-- Databases seeded before codes existed: fill in the ones still missing.
+UPDATE departments d SET code = v.code
+FROM (VALUES ('dddddddd-0000-0000-0000-000000000001', 'administration'), ('dddddddd-0000-0000-0000-000000000002', 'hr'),
+             ('dddddddd-0000-0000-0000-000000000003', 'sales'), ('dddddddd-0000-0000-0000-000000000004', 'marketing'),
+             ('dddddddd-0000-0000-0000-000000000005', 'research-development')) AS v(id, code)
+WHERE d.id = v.id::uuid AND d.code IS NULL
+  AND NOT EXISTS (SELECT 1 FROM departments o WHERE o.organization_id = d.organization_id AND o.code = v.code);
 -- Marketing has no one yet: Alice leads it (databases seeded before had it without a leader).
 UPDATE departments SET leader_user_id = '22222222-2222-2222-2222-222222222222'
 WHERE id = 'dddddddd-0000-0000-0000-000000000004' AND leader_user_id IS NULL;
@@ -229,16 +237,21 @@ INSERT INTO membership_roles (membership_id, role_id)
 VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-111111111111', '00000000-0000-0000-0000-000000000008')
 ON CONFLICT (membership_id, role_id) DO NOTHING;
 
-INSERT INTO teams (id, organization_id, name, description, lead_user_id)
-VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Platform', 'Platform team', '22222222-2222-2222-2222-222222222222')
+INSERT INTO teams (id, organization_id, name, description, lead_user_id, code)
+VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Platform', 'Platform team', '22222222-2222-2222-2222-222222222222', 'platform')
 ON CONFLICT (organization_id, name) DO NOTHING;
 
 -- People & Culture, led by Ulla (HR), and Product Development, led by Marco (R&D).
-INSERT INTO teams (id, organization_id, name, description, lead_user_id)
+INSERT INTO teams (id, organization_id, name, description, lead_user_id, code)
 VALUES
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'People & Culture', 'HR, onboarding and internal events', '22222222-2222-2222-2222-222222222226'),
-  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbd', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Product Development', 'Builds and runs the customer projects', '22222222-2222-2222-2222-222222222225')
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbc', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'People & Culture', 'HR, onboarding and internal events', '22222222-2222-2222-2222-222222222226', 'people-culture'),
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbd', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Product Development', 'Builds and runs the customer projects', '22222222-2222-2222-2222-222222222225', 'product-development')
 ON CONFLICT (organization_id, name) DO NOTHING;
+-- Databases seeded before codes existed: fill in the ones still missing.
+UPDATE teams t SET code = v.code
+FROM (VALUES ('Platform', 'platform'), ('People & Culture', 'people-culture'), ('Product Development', 'product-development')) AS v(name, code)
+WHERE t.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND t.name = v.name AND t.code IS NULL
+  AND NOT EXISTS (SELECT 1 FROM teams o WHERE o.organization_id = t.organization_id AND o.code = v.code);
 
 -- Members by membership (see organization_memberships above); a team's lead is set on the team.
 INSERT INTO team_members (team_id, membership_id)

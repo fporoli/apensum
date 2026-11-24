@@ -69,7 +69,7 @@ export const requests = pgTable("requests", {
 		}).onDelete("cascade"),
 	check("chk_requests_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND (target_kind = 'department'::text))`),
 	check("chk_requests_subject", sql`length(btrim(subject)) > 0`),
-	check("chk_requests_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL))`),
+	check("chk_requests_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL)) OR ((target_kind = 'workflow'::text) AND (target_department_id IS NULL))`),
 	check("chk_requests_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
 	check("chk_requests_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
 ]);
@@ -489,7 +489,9 @@ export const departments = pgTable("departments", {
 	leader_user_id: uuid(),
 	is_active: boolean().default(true).notNull(),
 	sort_order: integer().default(0).notNull(),
+	code: text(),
 }, (table) => [
+	uniqueIndex("departments_org_code_key").using("btree", table.organization_id.asc().nullsLast(), table.code.asc().nullsLast()).where(sql`(code IS NOT NULL)`),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
@@ -623,7 +625,9 @@ export const teams = pgTable("teams", {
 	name: varchar({ length: 100 }).notNull(),
 	description: varchar({ length: 255 }),
 	lead_user_id: uuid(),
+	code: text(),
 }, (table) => [
+	uniqueIndex("teams_org_code_key").using("btree", table.organization_id.asc().nullsLast(), table.code.asc().nullsLast()).where(sql`(code IS NOT NULL)`),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],

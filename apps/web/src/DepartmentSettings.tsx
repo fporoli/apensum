@@ -32,6 +32,8 @@ interface Department {
   is_active: boolean;
   sort_order: number;
   members: number;
+  /** Its code: workflows name it (`department:<code>`). */
+  code: string | null;
 }
 
 interface Member {
@@ -53,7 +55,8 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState('');
   const [newLeader, setNewLeader] = useState('');
-  const [editing, setEditing] = useState<{ id: string; name: string; leader: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; leader: string; code: string } | null>(null);
+  const [newCode, setNewCode] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<Department | null>(null);
 
   async function reload() {
@@ -108,15 +111,16 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
 
   async function add() {
     const sortOrder = departments.reduce((max, d) => Math.max(max, d.sort_order), 0) + 1;
-    if (await send(`/organizations/${orgId}/departments`, 'POST', { name: newName, leaderUserId: newLeader || null, sortOrder })) {
+    if (await send(`/organizations/${orgId}/departments`, 'POST', { name: newName, leaderUserId: newLeader || null, sortOrder, code: newCode.trim() || undefined })) {
       setNewName('');
       setNewLeader('');
+      setNewCode('');
     }
   }
 
   async function saveEdit() {
     if (!editing) return;
-    if (await send(`/organizations/${orgId}/departments/${editing.id}`, 'PATCH', { name: editing.name, leaderUserId: editing.leader || null })) setEditing(null);
+    if (await send(`/organizations/${orgId}/departments/${editing.id}`, 'PATCH', { name: editing.name, leaderUserId: editing.leader || null, code: editing.code })) setEditing(null);
   }
 
   const leaderSelect = (value: string, onChange: (v: string) => void, label?: string) => (
@@ -138,6 +142,9 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
           <TableHead>
             <TableRow>
               <TableCell>{t('departments.name')}</TableCell>
+              <TableCell>
+                <Tooltip title={t('units.codeHint')}><span>{t('units.code')}</span></Tooltip>
+              </TableCell>
               <TableCell>{t('departments.leader')}</TableCell>
               <TableCell align="right">{t('departments.members')}</TableCell>
               <TableCell>{t('departments.active')}</TableCell>
@@ -146,7 +153,7 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
           </TableHead>
           <TableBody>
             {departments.length === 0 && (
-              <TableEmptyRow colSpan={canEdit ? 5 : 4} icon={<BusinessIcon fontSize="inherit" />} title={t('departments.empty')} />
+              <TableEmptyRow colSpan={canEdit ? 6 : 5} icon={<BusinessIcon fontSize="inherit" />} title={t('departments.empty')} />
             )}
             {departments.map((d) => {
               const isEditing = editing?.id === d.id;
@@ -157,6 +164,13 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
                       <TextField size="small" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} slotProps={{ htmlInput: { maxLength: 120 } }} />
                     ) : (
                       d.name
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {isEditing ? (
+                      <TextField size="small" value={editing.code} onChange={(e) => setEditing({ ...editing, code: e.target.value.toLowerCase() })} slotProps={{ htmlInput: { maxLength: 40, spellCheck: false } }} sx={{ width: 170 }} />
+                    ) : (
+                      <Typography component="code" variant="body2" sx={{ fontFamily: 'monospace' }}>{d.code ?? '—'}</Typography>
                     )}
                   </TableCell>
                   <TableCell>{isEditing ? leaderSelect(editing.leader, (v) => setEditing({ ...editing, leader: v })) : d.leader_name ?? '—'}</TableCell>
@@ -192,7 +206,7 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
                       ) : (
                         <>
                           <Tooltip title={t('common.edit')}>
-                            <IconButton size="small" aria-label={t('common.edit')} disabled={busy} onClick={() => setEditing({ id: d.id, name: d.name, leader: d.leader_user_id ?? '' })}>
+                            <IconButton size="small" aria-label={t('common.edit')} disabled={busy} onClick={() => setEditing({ id: d.id, name: d.name, leader: d.leader_user_id ?? '', code: d.code ?? '' })}>
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
@@ -215,6 +229,7 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
       {canEdit && (
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
           <TextField size="small" label={t('departments.name')} value={newName} onChange={(e) => setNewName(e.target.value)} slotProps={{ htmlInput: { maxLength: 120 } }} />
+          <TextField size="small" label={t('units.code')} helperText={t('units.codeAuto')} value={newCode} onChange={(e) => setNewCode(e.target.value.toLowerCase())} slotProps={{ htmlInput: { maxLength: 40, spellCheck: false } }} sx={{ width: 170 }} />
           {leaderSelect(newLeader, setNewLeader, t('departments.leader'))}
           <Button startIcon={<AddIcon fontSize="small" />} disabled={busy || !newName.trim()} onClick={() => void add()}>
             {t('departments.add')}

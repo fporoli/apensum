@@ -6,6 +6,9 @@ import { VersionsService } from './versions.service';
 import { callerUserId, can, canManageItem, canManageTeamMembers, isOrgMember, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { teams, team_members, organization_memberships, users, roles, projects } from './db/schema';
+import { WorkflowsService } from './workflows.service';
+import { cleanUnitCode, codeFromName } from '@worktime3/shared/workflowConfig';
+import type { Db } from './db.service';
 
 const leadUsers = alias(users, 'lead_users');
 
@@ -14,7 +17,22 @@ export class TeamsController {
   constructor(
     private readonly db: DbService,
     private readonly versions: VersionsService,
+    private readonly workflows: WorkflowsService,
   ) {}
+
+  /** Whether another team of the organization has `code`. */
+  private async codeTaken(db: Db, orgId: string, code: string, exceptId?: string): Promise<boolean> {
+    const rows = await db.select({ id: teams.id }).from(teams).where(and(eq(teams.organization_id, orgId), eq(teams.code, code)));
+    return rows.some((r) => r.id !== exceptId);
+  }
+
+  /** `base`, or `base-2`, `base-3`, ... whichever the organization doesn't use yet. */
+  private async freeCode(db: Db, orgId: string, base: string): Promise<string> {
+    for (let n = 1; ; n++) {
+      const code = n === 1 ? base : `${base.slice(0, 36)}-${n}`;
+      if (!(await this.codeTaken(db, orgId, code))) return code;
+    }
+  }
 
   @Get('organizations/:orgId/teams')
   async list(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
@@ -28,6 +46,7 @@ export class TeamsController {
         organization_id: teams.organization_id,
         name: teams.name,
         description: teams.description,
+        code: teams.code,
         lead_user_id: teams.lead_user_id,
         lead_display_name: leadUsers.display_name,
         member_count: sql<number>`count(${team_members.membership_id})::int`,
@@ -43,7 +62,7 @@ export class TeamsController {
   @Post('organizations/:orgId/teams')
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { name: string; description?: string; leadUserId?: string | null },
+    @Body() body: { name: string; description?: string; leadUserId?: string | null; code?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -67,14 +86,20 @@ export class TeamsController {
       leadUserId = callerId;
     }
     if (leadUserId && leadUserId !== callerId && !(await isOrgMember(db, orgId, leadUserId))) return { ok: false, error: 'leader-not-a-member' };
+    // Its code (workflows name it): the one given, else one made from the name.
+    const given = cleanUnitCode(body.code);
+    if (given === undefined) return { ok: false, error: 'invalid-code' };
+    if (given && (await this.codeTaken(db, orgId, given))) return { ok: false, error: 'duplicate-code' };
+    const code = given ?? (await this.freeCode(db, orgId, codeFromName(name)));
     const [team] = await db
       .insert(teams)
-      .values({ organization_id: orgId, name, description: body.description ?? null, lead_user_id: leadUserId })
+      .values({ organization_id: orgId, name, description: body.description ?? null, lead_user_id: leadUserId, code })
       .returning({
         id: teams.id,
         organization_id: teams.organization_id,
         name: teams.name,
         description: teams.description,
+        code: teams.code,
         lead_user_id: teams.lead_user_id,
       });
     void this.versions.record('teams', team.id, 'insert', callerId, team).catch(() => {});
@@ -84,13 +109,13 @@ export class TeamsController {
   @Patch('teams/:id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; description?: string; leadUserId?: string | null },
+    @Body() body: { name?: string; description?: string; leadUserId?: string | null; code?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const [team] = await db
-      .select({ organization_id: teams.organization_id, lead_user_id: teams.lead_user_id })
+      .select({ organization_id: teams.organization_id, lead_user_id: teams.lead_user_id, code: teams.code })
       .from(teams)
       .where(eq(teams.id, id));
     if (!team) return { ok: false, error: 'team-not-found' };
@@ -111,6 +136,12 @@ export class TeamsController {
       }
       patch.lead_user_id = body.leadUserId;
     }
+    if (body.code !== undefined) {
+      const code = cleanUnitCode(body.code);
+      if (!code) return { ok: false, error: 'invalid-code' };
+      if (code !== team.code && (await this.codeTaken(db, team.organization_id, code, id))) return { ok: false, error: 'duplicate-code' };
+      if (code !== team.code) patch.code = code;
+    }
     if (Object.keys(patch).length === 0) return { ok: true, noop: true };
 
     const [updated] = await db
@@ -122,8 +153,11 @@ export class TeamsController {
         organization_id: teams.organization_id,
         name: teams.name,
         description: teams.description,
+        code: teams.code,
         lead_user_id: teams.lead_user_id,
       });
+    // Workflows name teams by code: their stored configurations follow the new one.
+    if (patch.code && team.code) await this.workflows.renameUnit(db, team.organization_id, 'team', team.code, patch.code);
     void this.versions.record('teams', id, 'update_delta', callerId, patch).catch(() => {});
     return { ok: true, team: updated };
   }
@@ -133,7 +167,7 @@ export class TeamsController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const [team] = await db
-      .select({ organization_id: teams.organization_id, lead_user_id: teams.lead_user_id })
+      .select({ organization_id: teams.organization_id, lead_user_id: teams.lead_user_id, code: teams.code })
       .from(teams)
       .where(eq(teams.id, id));
     if (!team) return { ok: false, error: 'team-not-found' };
@@ -143,6 +177,7 @@ export class TeamsController {
     if (!(await canManageItem(db, team.organization_id, callerId, [team.lead_user_id]))) {
       return { ok: false, error: 'forbidden' };
     }
+    if (team.code && (await this.workflows.unitInUse(db, team.organization_id, 'team', team.code))) return { ok: false, error: 'team-in-workflow' };
 
     // A team that limits projects stays until it is removed from them (070), so no project
     // silently opens up to everyone.

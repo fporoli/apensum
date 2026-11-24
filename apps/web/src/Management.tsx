@@ -47,6 +47,8 @@ export interface TeamItem {
   lead_user_id?: string | null;
   lead_display_name?: string | null;
   member_count?: number;
+  /** Its code: workflows name it (`team:<code>`). */
+  code?: string | null;
 }
 
 export interface TeamMemberItem {
@@ -105,6 +107,12 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [teams, setTeams] = useState<TeamItem[]>([]);
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [teamCode, setTeamCode] = useState('');
+  /** The API's code errors (invalid, taken, used in a workflow) as text, else null. */
+  const unitError = (code: unknown) => {
+    const key = `units.error.${typeof code === 'string' ? code : ''}`;
+    return typeof code === 'string' && t(key) !== key ? t(key) : null;
+  };
   const [editingTeam, setEditingTeam] = useState<TeamItem | null>(null);
   const [teamName, setTeamName] = useState('');
   const [teamDesc, setTeamDesc] = useState('');
@@ -210,6 +218,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setEditingTeam(null);
     setTeamName('');
     setTeamDesc('');
+    setTeamCode('');
     setTeamLeadId('');
     setTeamDialogOpen(true);
   }
@@ -218,6 +227,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setEditingTeam(team);
     setTeamName(team.name);
     setTeamDesc(team.description ?? '');
+    setTeamCode(team.code ?? '');
     setTeamLeadId(team.lead_user_id ?? '');
     setTeamDialogOpen(true);
   }
@@ -233,11 +243,11 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
         const res = await fetch(`${API}/teams/${editingTeam.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-          body: JSON.stringify({ name: teamName.trim(), description: teamDesc.trim() || null, ...leadPatch }),
+          body: JSON.stringify({ name: teamName.trim(), description: teamDesc.trim() || null, ...(teamCode.trim() ? { code: teamCode.trim() } : {}), ...leadPatch }),
         });
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          setError(t('management.teamSaveFailed'));
+          setError(unitError(data?.error) ?? t('management.teamSaveFailed'));
           return;
         }
         setSuccess(t('management.teamUpdated', { name: teamName.trim() }));
@@ -245,11 +255,11 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
         const res = await fetch(`${API}/organizations/${orgId}/teams`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-          body: JSON.stringify({ name: teamName.trim(), description: teamDesc.trim() || null, ...leadPatch }),
+          body: JSON.stringify({ name: teamName.trim(), description: teamDesc.trim() || null, ...(teamCode.trim() ? { code: teamCode.trim() } : {}), ...leadPatch }),
         });
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          setError(t('management.teamSaveFailed'));
+          setError(unitError(data?.error) ?? t('management.teamSaveFailed'));
           return;
         }
         setSuccess(t('management.teamCreated', { name: teamName.trim() }));
@@ -268,7 +278,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
       const res = await fetch(`${API}/teams/${teamId}`, { method: 'DELETE', headers: await authHeaders() });
       const data = await res.json();
       if (!res.ok || data.ok === false) {
-        setError(data?.error === 'team-has-projects' ? t('management.teamHasProjects') : t('management.teamDeleteFailed'));
+        setError(data?.error === 'team-has-projects' ? t('management.teamHasProjects') : unitError(data?.error) ?? t('management.teamDeleteFailed'));
         return;
       }
       setTeams((prev) => prev.filter((tm) => tm.id !== teamId));
@@ -545,6 +555,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                 <TableHead>
                   <TableRow>
                     <TableCell>{t('management.teamName')}</TableCell>
+                    <TableCell>{t('units.code')}</TableCell>
                     <TableCell>{t('management.description')}</TableCell>
                     <TableCell>{t('management.lead')}</TableCell>
                     <TableCell align="center">{t('management.members')}</TableCell>
@@ -555,6 +566,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                   {teams.map((team) => (
                     <TableRow key={team.id} hover>
                       <TableCell sx={{ fontWeight: 600 }}>{team.name}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{team.code ?? '—'}</TableCell>
                       <TableCell>{team.description ?? '—'}</TableCell>
                       <TableCell>
                         {team.lead_display_name ?? '—'}
@@ -592,7 +604,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                     </TableRow>
                   ))}
                   {teams.length === 0 && !loading && (
-                    <TableEmptyRow colSpan={5} icon={<PeopleIcon fontSize="inherit" />} title={t('management.noTeams')} />
+                    <TableEmptyRow colSpan={6} icon={<PeopleIcon fontSize="inherit" />} title={t('management.noTeams')} />
                   )}
                 </TableBody>
               </Table>
@@ -810,6 +822,14 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
           <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
             <TextField label={t('management.teamName')} value={teamName} onChange={(e) => setTeamName(e.target.value)} size="small" required autoFocus sx={{ mt: 1 }} />
             <TextField label={t('management.description')} value={teamDesc} onChange={(e) => setTeamDesc(e.target.value)} size="small" multiline rows={2} />
+            <TextField
+              label={t('units.code')}
+              value={teamCode}
+              onChange={(e) => setTeamCode(e.target.value.toLowerCase())}
+              size="small"
+              helperText={editingTeam ? t('units.codeHint') : t('units.codeAuto')}
+              inputProps={{ maxLength: 40, spellCheck: false, style: { fontFamily: 'monospace' } }}
+            />
             {canEditTeamLead(editingTeam) && (
               <TextField
                 select

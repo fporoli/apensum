@@ -13,6 +13,8 @@ import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeKey
 import { REQUEST_FORM, customValuesErrors, customValuesToSave, mergeForm } from '@worktime3/shared/fields';
 import { FieldsService } from './fields.service';
 import { RequestsService, currentAssignments, noticeSubject } from './requests.service';
+import { WorkflowsService, type WorkflowStepDefinition } from './workflows.service';
+import { REQUEST_WORKFLOW_KIND } from './request-workflow';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -132,7 +134,11 @@ function handlesCondition(orgId: string, callerId: string, handlesAll: boolean):
 function ownHandlesCondition(orgId: string, callerId: string): SQL {
   return sql`((r.target_kind = 'manager' AND rc.manager_user_id = ${callerId})
           OR (r.target_kind = 'department' AND (d.leader_user_id = ${callerId}
-              OR r.target_department_id = (SELECT department_id FROM (${currentAssignments(orgId)}) me WHERE me.user_id = ${callerId}))))`;
+              OR r.target_department_id = (SELECT department_id FROM (${currentAssignments(orgId)}) me WHERE me.user_id = ${callerId})))
+          OR (r.target_kind = 'workflow' AND EXISTS (
+              SELECT 1 FROM workflows w WHERE w.source_table = 'requests' AND w.source_table_uuid = r.id
+                AND ((w.step_status = 'pending' AND w.assigned_to_user_id @> ARRAY[${callerId}]::uuid[])
+                  OR COALESCE(w.workflow_data->'history', '[]'::jsonb) @> ${JSON.stringify([{ by: callerId }])}::jsonb))))`;
 }
 
 /** A timestamptz column as an ISO string (raw queries otherwise return Postgres's text format). */
@@ -157,7 +163,7 @@ interface RequestRow {
   id: string;
   organization_id: string;
   requester_user_id: string | null;
-  target_kind: 'manager' | 'department';
+  target_kind: 'manager' | 'department' | 'workflow';
   target_department_id: string | null;
   subject: string;
   status: RequestStatus;
@@ -183,7 +189,45 @@ export class RequestsController {
     private readonly forwardMail: ForwardMailService,
     private readonly requests: RequestsService,
     private readonly fields: FieldsService,
+    private readonly workflowsSvc: WorkflowsService,
   ) {}
+
+  /** Whether requests of this type follow a workflow (its own configuration on Admin settings -> Workflows). */
+  private async typeHasWorkflow(db: Db, orgId: string, type: string | null | undefined): Promise<boolean> {
+    return !!type && !!(await this.workflowsSvc.ownConfig(db, orgId, REQUEST_WORKFLOW_KIND, type));
+  }
+
+  /**
+   * A workflow request's workflow as the page shows it: its steps, the one it waits at (and whether the caller decides
+   * it), whether it was sent back to the requester. Null for other requests.
+   */
+  private async workflowOf(db: Db, r: RequestRow, callerId: string) {
+    if (r.target_kind !== 'workflow') return null;
+    const [w] = (await db.execute(sql`
+      SELECT w.workflow_id AS id, w.step, w.step_status AS status, COALESCE(w.steps, d.steps) AS steps, w.assigned_to_user_id AS assignees
+      FROM workflows w JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
+      WHERE w.source_table = 'requests' AND w.source_table_uuid = ${r.id}::uuid
+      ORDER BY w.workflow_started DESC NULLS LAST LIMIT 1`)).rows as { id: string; step: string; status: string; steps: WorkflowStepDefinition[]; assignees: string[] | null }[];
+    if (!w) return null;
+    const steps = (Array.isArray(w.steps) ? w.steps : []).map((s) => ({ key: s.key, label: s.label, labels: s.labels ?? null }));
+    const current = (Array.isArray(w.steps) ? w.steps : []).find((s) => s.key === w.step);
+    const assignees = w.assignees ?? [];
+    const names = assignees.length
+      ? ((await db.execute(sql`SELECT coalesce(display_name, email) AS name FROM users WHERE id = ANY(${`{${assignees.join(',')}}`}::uuid[]) ORDER BY 1`)).rows as { name: string }[]).map((x) => x.name)
+      : [];
+    return {
+      id: w.id,
+      status: w.status,
+      step: w.step,
+      steps,
+      waitingFor: w.status === 'pending' ? names : [],
+      canDecide: w.status === 'pending' && assignees.includes(callerId),
+      returns: current?.reject === 'back',
+      actionKey: current?.actionKey ?? null,
+      // Sent back: the requester changes it and submits it again.
+      returned: w.status === 'rejected' && r.status !== 'resolved',
+    };
+  }
 
   /**
    * The custom values as the organization's form saves them, or an error. `given` may be a JSON string
@@ -309,7 +353,13 @@ export class RequestsController {
         sql`SELECT id, name FROM departments WHERE organization_id = ${orgId} AND is_active ORDER BY sort_order, name`,
       )
     ).rows;
-    return { ok: true, manager, departments };
+    // Request types with their own workflow: no target to choose, and the steps they will go through.
+    const workflows: Record<string, { key: string; label: string; labels: Record<string, string> | null; conditional: boolean }[]> = {};
+    for (const type of requestTypeKeys(await this.typeValues(db, orgId))) {
+      const config = await this.workflowsSvc.ownConfig(db, orgId, REQUEST_WORKFLOW_KIND, type);
+      if (config) workflows[type] = config.steps.map((s) => ({ key: s.key, label: s.label?.en ?? Object.values(s.label ?? {}).find(Boolean) ?? s.key, labels: (s.label as Record<string, string> | undefined) ?? null, conditional: !!s.when }));
+    }
+    return { ok: true, manager, departments, workflows };
   }
 
   /**
@@ -394,7 +444,7 @@ export class RequestsController {
           )
         ).rows
       : [];
-    return { ok: true, request, messages, handlers, isRequester: a.requester, isHandler: a.handler };
+    return { ok: true, request, messages, handlers, isRequester: a.requester, isHandler: a.handler, workflow: await this.workflowOf(db, a.r, callerId) };
   }
 
   /**
@@ -429,7 +479,12 @@ export class RequestsController {
     const confidential = requestTypeConfidential(types, request_type);
 
     let departmentId: string | null = null;
-    if (body.target === 'manager') {
+    // A type with its own workflow: the workflow decides who handles it, not the requester.
+    const viaWorkflow = await this.typeHasWorkflow(db, orgId, request_type);
+    const target = viaWorkflow ? 'workflow' : body.target;
+    if (viaWorkflow) {
+      // no target to check
+    } else if (body.target === 'manager') {
       if (!(await membershipManagerId(db, orgId, callerId))) return { ok: false, error: 'no-manager' };
     } else if (body.target === 'department') {
       const rows = await db.execute(
@@ -444,7 +499,7 @@ export class RequestsController {
     const [created] = (
       await db.execute(
         sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, request_type, urgent, link_url, due_date, confidential, custom)
-            VALUES (${orgId}, ${callerId}, ${body.target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date,
+            VALUES (${orgId}, ${callerId}, ${target}, ${departmentId}, ${subject}, ${request_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date,
                     ${confidential}, ${JSON.stringify(custom.value ?? {})}::jsonb)
             RETURNING ${ROW_COLUMNS}`,
       )
@@ -455,7 +510,15 @@ export class RequestsController {
     const who = await this.displayName(db, callerId);
     const named = noticeSubject({ subject, confidential });
     const title = created.urgent ? `Urgent request from ${who}: ${named}` : `New request from ${who}: ${named}`;
-    await this.notifyOthers(db, created, callerId, 'request.created', title, messagePreview(message, fileNames)).catch(() => {});
+    if (viaWorkflow) {
+      // The workflow's first step is assigned and notified by the engine.
+      await this.workflowsSvc.start(db, {
+        kind: REQUEST_WORKFLOW_KIND, variant: request_type!, organizationId: orgId, sourceTableUuid: created.id, actorUserId: callerId,
+        workflowData: {}, notification: { title, body: confidential ? undefined : messagePreview(message, fileNames) },
+      });
+    } else {
+      await this.notifyOthers(db, created, callerId, 'request.created', title, messagePreview(message, fileNames)).catch(() => {});
+    }
     return { ok: true, id: created.id };
   }
 
@@ -509,6 +572,8 @@ export class RequestsController {
     if (!a) return { ok: false, error: 'not-found' };
     const to = body.status as RequestStatus;
     if (!REQUEST_STATUSES.includes(to)) return { ok: false, error: 'invalid-status' };
+    // A workflow request's status follows its steps; the requester may only withdraw it (or submit it again).
+    if (a.r.target_kind === 'workflow') return { ok: false, error: 'workflow-request' };
     if (!canChangeStatus(a.r.status, to, { handler: a.handler, requester: a.requester }, !!a.r.archived_at)) {
       return { ok: false, error: a.r.archived_at ? 'request-archived' : 'forbidden' };
     }
@@ -574,6 +639,48 @@ export class RequestsController {
     const named = noticeSubject(notified);
     const title = changed.urgent === true ? `${who} marked "${named}" as urgent` : `${who} updated "${named}"`;
     await this.notifyOthers(db, notified, callerId, 'request.status', title).catch(() => {});
+    return { ok: true };
+  }
+
+  /** The requester submits a request that was sent back again: its workflow starts anew from the first step. */
+  @Post(':id/resubmit')
+  async resubmit(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: { note?: string }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.caller(db, orgId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const a = await this.access(db, orgId, callerId, id);
+    if (!a) return { ok: false, error: 'not-found' };
+    if (!a.requester || a.r.target_kind !== 'workflow' || a.r.archived_at) return { ok: false, error: 'forbidden' };
+    const current = await this.workflowOf(db, a.r, callerId);
+    if (!current?.returned) return { ok: false, error: 'not-returned' };
+    const note = cleanRequestText(body?.note, MAX_BODY);
+    await db.execute(sql`UPDATE requests SET status = 'open', resolved_at = NULL, last_activity_at = now() WHERE id = ${id}`);
+    await this.event(db, id, callerId, { workflow: 'resubmitted', ...(note ? { note } : {}) });
+    const who = await this.displayName(db, callerId);
+    const started = await this.workflowsSvc.start(db, {
+      kind: REQUEST_WORKFLOW_KIND, variant: a.r.request_type ?? '', organizationId: orgId, sourceTableUuid: id, actorUserId: callerId,
+      workflowData: {}, notification: { title: `${who} submitted "${noticeSubject(a.r)}" again` },
+    });
+    if (!started) return { ok: false, error: 'no-workflow' };
+    void this.versions.record('requests', id, 'update_delta', callerId, { status: 'open', resubmitted: true }).catch(() => {});
+    return { ok: true };
+  }
+
+  /** The requester withdraws a workflow request: its pending step ends, the request is resolved. */
+  @Post(':id/withdraw')
+  async withdraw(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.caller(db, orgId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const a = await this.access(db, orgId, callerId, id);
+    if (!a) return { ok: false, error: 'not-found' };
+    if (!a.requester || a.r.target_kind !== 'workflow' || a.r.archived_at || a.r.status === 'resolved') return { ok: false, error: 'forbidden' };
+    await this.workflowsSvc.withdraw(db, 'requests', id, callerId);
+    await db.execute(sql`UPDATE requests SET status = 'resolved', resolved_at = now(), last_activity_at = now() WHERE id = ${id}`);
+    await this.event(db, id, callerId, { workflow: 'withdrawn' });
+    void this.versions.record('requests', id, 'update_delta', callerId, { status: 'resolved', withdrawn: true }).catch(() => {});
     return { ok: true };
   }
 

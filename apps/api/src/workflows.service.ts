@@ -62,6 +62,13 @@ export interface WorkflowActionContext {
   sourceTableUuid: string;
   actorUserId: string;
   decisionNote: string | null;
+  /** The step being decided (configurable kinds): its key and label, e.g. for a thread event. */
+  stepKey?: string;
+  stepLabel?: string;
+  /** The step's label per language, when the configuration gives them. */
+  stepLabels?: Partial<Record<string, string>>;
+  /** The step was done without anybody (a manager's review without a manager). */
+  automatic?: boolean;
 }
 export type WorkflowActionHandler = (db: Db, ctx: WorkflowActionContext) => Promise<void>;
 /**
@@ -107,6 +114,15 @@ export interface WorkflowKind {
   description: string;
   sourceTable: string;
   facts?: (db: Db, sourceTableUuid: string) => Promise<Record<string, unknown>>;
+  /**
+   * One configuration per variant (e.g. per request type, its key): the variants an organization has. A variant's
+   * definition is `<definitionName>:<variant>`; without a stored configuration it has no workflow (start returns null).
+   */
+  variants?: (db: Db, organizationId: string) => Promise<{ key: string; label: string }[]>;
+  /** The catalogue for an organization (and variant), e.g. with facts from its form's fields; else `catalogue`. */
+  catalogueFor?: (db: Db, organizationId: string, variant?: string) => Promise<WorkflowKindCatalogue>;
+  /** Runs when a workflow of the kind finishes approved (its last step done). */
+  onFinished?: (db: Db, sourceTableUuid: string, actorUserId: string) => Promise<void>;
 }
 /**
  * Loads the records of one source table for the Workflow page (GET workflows/assigned-to-me): one
@@ -139,6 +155,23 @@ export class WorkflowsService {
   private readonly sourceRecordLoaders = new Map<string, { field: string; load: SourceRecordLoader }>();
   private readonly managerRouted = new Set<string>(MANAGER_ROUTED_WORKFLOW_NAMES);
   private readonly kindsById = new Map<string, WorkflowKind>();
+
+  /** A kind's definition name (one per variant for kinds with variants). */
+  private definitionNameOf(kind: WorkflowKind, variant?: string): string {
+    return kind.variants && variant ? `${kind.catalogue.definitionName}:${variant}` : kind.catalogue.definitionName;
+  }
+
+  /** The kind's catalogue for an organization (and variant). */
+  async catalogueOf(db: Db, organizationId: string, kindId: string, variant?: string): Promise<WorkflowKindCatalogue | null> {
+    const kind = this.kindsById.get(kindId);
+    if (!kind) return null;
+    return kind.catalogueFor ? kind.catalogueFor(db, organizationId, variant) : kind.catalogue;
+  }
+
+  /** The kind a workflow of `sourceTable` belongs to. */
+  private kindOfTable(sourceTable: string): WorkflowKind | undefined {
+    return [...this.kindsById.values()].find((k) => k.sourceTable === sourceTable);
+  }
 
   constructor(
     private readonly audit: AuditService,
@@ -193,17 +226,17 @@ export class WorkflowsService {
     return this.kindsById;
   }
 
-  /** The organization's own configuration of a kind (validated), or null when it uses the default. */
-  async ownConfig(db: Db, organizationId: string, kindId: string): Promise<WorkflowConfig | null> {
+  /** The organization's own configuration of a kind (or one of its variants), validated, or null when it has none. */
+  async ownConfig(db: Db, organizationId: string, kindId: string, variant?: string): Promise<WorkflowConfig | null> {
     const kind = this.kindsById.get(kindId);
     if (!kind) return null;
     const [row] = await db
       .select({ config: workflow_definitions.config })
       .from(workflow_definitions)
-      .where(and(eq(workflow_definitions.organization_id, organizationId), eq(workflow_definitions.name, kind.catalogue.definitionName)));
+      .where(and(eq(workflow_definitions.organization_id, organizationId), eq(workflow_definitions.name, this.definitionNameOf(kind, variant))));
     if (!row?.config) return null;
-    // A stored configuration the catalogue no longer accepts (a module changed) falls back to the default.
-    const checked = validateWorkflowConfig(kind.catalogue, row.config);
+    // A stored configuration the catalogue no longer accepts (a module or a form changed) counts as none.
+    const checked = validateWorkflowConfig((await this.catalogueOf(db, organizationId, kindId, variant))!, row.config);
     return checked.ok ? checked.value : null;
   }
 
@@ -211,11 +244,12 @@ export class WorkflowsService {
    * Stores an organization's configuration of a kind (null = back to the default). The caller validated it; new
    * workflows use it, running ones keep their steps.
    */
-  async saveConfig(db: Db, organizationId: string, kindId: string, config: WorkflowConfig | null, callerId: string): Promise<void> {
+  async saveConfig(db: Db, organizationId: string, kindId: string, config: WorkflowConfig | null, callerId: string, variant?: string): Promise<void> {
     const kind = this.kindsById.get(kindId);
     if (!kind) throw new Error(`unknown workflow kind ${kindId}`);
-    const steps = compileWorkflow(kind.catalogue, config ?? kind.catalogue.defaultConfig);
-    const definition = await this.ensureDefinition(db, organizationId, kind.catalogue.definitionName, kind.description, steps as unknown as WorkflowStepDefinition[]);
+    const catalogue = (await this.catalogueOf(db, organizationId, kindId, variant))!;
+    const steps = compileWorkflow(catalogue, config ?? catalogue.defaultConfig);
+    const definition = await this.ensureDefinition(db, organizationId, this.definitionNameOf(kind, variant), kind.description, steps as unknown as WorkflowStepDefinition[]);
     await db.update(workflow_definitions).set({ config }).where(eq(workflow_definitions.workflow_def_id, definition.workflow_def_id));
     void this.versions.record('workflow_definitions', definition.workflow_def_id, 'update_delta', callerId, { config }).catch(() => {});
   }
@@ -230,18 +264,22 @@ export class WorkflowsService {
     db: Db,
     params: {
       kind: string;
+      /** For a kind with variants: which one (without its own configuration it has no workflow: null). */
+      variant?: string;
       organizationId: string;
       sourceTableUuid: string;
       actorUserId: string;
       workflowData: Record<string, unknown>;
       notification: { title: string; body?: string };
     },
-  ): Promise<{ id: string; autoApproved: boolean; finished: boolean }> {
+  ): Promise<{ id: string; autoApproved: boolean; finished: boolean } | null> {
     const kind = this.kindsById.get(params.kind);
     if (!kind) throw new Error(`unknown workflow kind ${params.kind}`);
-    const config = (await this.ownConfig(db, params.organizationId, params.kind)) ?? kind.catalogue.defaultConfig;
-    const steps = compileWorkflow(kind.catalogue, config) as unknown as WorkflowStepDefinition[];
-    const definition = await this.ensureDefinition(db, params.organizationId, kind.catalogue.definitionName, kind.description, steps);
+    const own = await this.ownConfig(db, params.organizationId, params.kind, params.variant);
+    if (!own && kind.variants) return null;
+    const catalogue = (await this.catalogueOf(db, params.organizationId, params.kind, params.variant))!;
+    const steps = compileWorkflow(catalogue, own ?? catalogue.defaultConfig) as unknown as WorkflowStepDefinition[];
+    const definition = await this.ensureDefinition(db, params.organizationId, this.definitionNameOf(kind, params.variant), kind.description, steps);
     const now = new Date().toISOString();
     const history: WorkflowEvent[] = [{ key: 'approvals.event.submitted', by: params.actorUserId, at: now }];
     const placed = await this.place(db, {
@@ -264,6 +302,7 @@ export class WorkflowsService {
     };
     const [workflow] = await db.insert(workflows).values(values).returning({ id: workflows.workflow_id });
     void this.versions.record('workflows', workflow.id, 'insert', params.actorUserId, { id: workflow.id, ...values }).catch(() => {});
+    if (placed.index < 0) await kind.onFinished?.(db, params.sourceTableUuid, params.actorUserId);
     if (placed.index >= 0) {
       void this.notifyAssignees(db, {
         sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
@@ -286,7 +325,7 @@ export class WorkflowsService {
   ): Promise<{ index: number; assignees: string[]; history: WorkflowEvent[]; autoApproved: string[] }> {
     const history = [...p.history];
     const autoApproved: string[] = [];
-    const kind = [...this.kindsById.values()].find((k) => k.sourceTable === p.sourceTable);
+    const kind = this.kindOfTable(p.sourceTable);
     let facts: Record<string, unknown> | null = null;
     const readFacts = async () => (facts ??= kind?.facts ? await kind.facts(db, p.sourceTableUuid).catch(() => ({})) : {});
     for (let from = p.from; ;) {
@@ -298,7 +337,9 @@ export class WorkflowsService {
       const assignees = await this.stepAssignees(db, p.organizationId, step, p.submittedBy, p.actor);
       if (assignees.length) return { index, assignees, history, autoApproved };
       // Only a manager's review without a manager gets here: done at once, as submitting did before.
-      for (const action of step.actions ?? []) await this.runNamedAction(db, action, p.sourceTable, p.sourceTableUuid, p.actor, null);
+      for (const action of step.actions ?? []) {
+        await this.runNamedAction(db, action, { sourceTable: p.sourceTable, sourceTableUuid: p.sourceTableUuid, actorUserId: p.actor, decisionNote: null, stepKey: step.key, stepLabel: step.label, stepLabels: step.labels, automatic: true });
+      }
       history.push({ key: 'approvals.event.autoApproved', by: null, at });
       autoApproved.push(step.key);
       from = index + 1;
@@ -326,6 +367,39 @@ export class WorkflowsService {
     const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
     const organizationId = resolveOrg ? await resolveOrg(db, workflow.source_table_uuid) : null;
     return (await this.advance(db, workflow, organizationId, callerId, 'approved', note, false)).ok;
+  }
+
+  /**
+   * The person who submitted withdraws: the record's pending workflow ends (rejected, "withdrawn" in its history).
+   * The caller authorized it and changes the record itself.
+   */
+  async withdraw(db: Db, sourceTable: string, sourceTableUuid: string, callerId: string): Promise<boolean> {
+    const workflow = await this.loadWorkflow(
+      db,
+      and(eq(workflows.source_table, sourceTable), eq(workflows.source_table_uuid, sourceTableUuid), eq(workflows.step_status, 'pending')),
+    );
+    if (!workflow) return false;
+    const now = new Date().toISOString();
+    const history = [...workflowHistory(workflow.workflow_data, { started: workflow.started, finished: null, status: 'pending' }), { key: 'approvals.event.withdrawn', by: callerId, at: now }];
+    const patch = { step_status: 'rejected', workflow_step_finished: now, workflow_finished: now, workflow_data: { ...(workflow.workflow_data as Record<string, unknown>), history } };
+    await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
+    void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+    return true;
+  }
+
+  /** Whether an organization's stored workflow configurations name `department:<code>` or `team:<code>`. */
+  async unitInUse(db: Db, organizationId: string, unit: 'department' | 'team', code: string): Promise<boolean> {
+    const rows = await db.execute(sql`
+      SELECT 1 FROM workflow_definitions
+      WHERE organization_id = ${organizationId}::uuid AND config IS NOT NULL AND strpos(config::text, ${`"${unit}:${code}"`}) > 0 LIMIT 1`);
+    return rows.rows.length > 0;
+  }
+
+  /** A department's or team's code changed: the organization's stored configurations follow (running workflows have their assignees). */
+  async renameUnit(db: Db, organizationId: string, unit: 'department' | 'team', from: string, to: string): Promise<void> {
+    await db.execute(sql`
+      UPDATE workflow_definitions SET config = replace(config::text, ${`"${unit}:${from}"`}, ${`"${unit}:${to}"`})::jsonb
+      WHERE organization_id = ${organizationId}::uuid AND config IS NOT NULL AND strpos(config::text, ${`"${unit}:${from}"`}) > 0`);
   }
 
   /** A workflow's steps: the ones it started with, else (older workflows) its definition's. */
@@ -476,12 +550,15 @@ export class WorkflowsService {
    */
   async rerouteToCurrentManagers(db: Db): Promise<number> {
     const names = sql.join([...this.managerRouted].map((n) => sql`${n}`), sql`, `);
+    // Kinds with variants have one definition per variant (`<name>:<variant>`).
+    const prefixes = [...this.kindsById.values()].filter((k) => k.variants).map((k) => `${k.catalogue.definitionName}:`);
+    const prefixed = prefixes.length ? sql.join(prefixes.map((p) => sql` OR starts_with(d.name, ${p})`), sql``) : sql``;
     const pendingResult = await db.execute(sql`
       SELECT w.workflow_id, w.source_table, w.source_table_uuid, w.assigned_to_user_id[1] AS assignee,
              (w.workflow_data->>'submittedByUserId')::uuid AS subject
       FROM workflows w
       JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
-      WHERE w.step_status = 'pending' AND d.name IN (${names})
+      WHERE w.step_status = 'pending' AND (d.name IN (${names})${prefixed})
         AND cardinality(w.assigned_to_user_id) = 1
         -- Only steps that go to the manager (a later step, e.g. processing, has its own assignees).
         AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(w.steps, d.steps)) = 'array' THEN COALESCE(w.steps, d.steps) ELSE '[]'::jsonb END) st
@@ -690,6 +767,7 @@ export class WorkflowsService {
       : { step_status: outcome, workflow_step_finished: now, workflow_finished: now, workflow_data: workflowData };
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+    if (!next && outcome === 'approved') await this.kindOfTable(workflow.source_table)?.onFinished?.(db, workflow.source_table_uuid, callerId);
 
     if (organizationId) {
       void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflow.id).catch(() => {});
@@ -748,16 +826,28 @@ export class WorkflowsService {
     if (step.assignTo.startsWith('permission:')) {
       ids = await holders(`${step.assignTo.slice('permission:'.length)}:edit:all`);
     } else if (step.assignTo.startsWith('department:')) {
-      const departmentId = step.assignTo.slice('department:'.length);
+      // By its code (or, older configurations, its id): the leader and everyone whose assignment in force is in it.
+      const ref = step.assignTo.slice('department:'.length);
       const rows = await db.execute(sql`
-        SELECT d.leader_user_id AS user_id FROM departments d
-        WHERE d.id = ${departmentId}::uuid AND d.organization_id = ${organizationId}::uuid AND d.leader_user_id IS NOT NULL
+        WITH dep AS (SELECT id, leader_user_id FROM departments
+                     WHERE organization_id = ${organizationId}::uuid AND (code = ${ref} OR id::text = ${ref}) LIMIT 1)
+        SELECT leader_user_id AS user_id FROM dep WHERE leader_user_id IS NOT NULL
         UNION
         SELECT a.user_id FROM employee_assignments a
         JOIN organization_memberships m ON m.organization_id = a.organization_id AND m.user_id = a.user_id AND m.status = 'active'
-        WHERE a.organization_id = ${organizationId}::uuid AND a.department_id = ${departmentId}::uuid
+        WHERE a.organization_id = ${organizationId}::uuid AND a.department_id = (SELECT id FROM dep)
           AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
                               WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= CURRENT_DATE)`);
+      ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
+    } else if (step.assignTo.startsWith('team:')) {
+      // By its code: its lead and its active members.
+      const code = step.assignTo.slice('team:'.length);
+      const rows = await db.execute(sql`
+        WITH t AS (SELECT id, lead_user_id FROM teams WHERE organization_id = ${organizationId}::uuid AND code = ${code} LIMIT 1)
+        SELECT lead_user_id AS user_id FROM t WHERE lead_user_id IS NOT NULL
+        UNION
+        SELECT m.user_id FROM team_members tm JOIN organization_memberships m ON m.id = tm.membership_id
+        WHERE tm.team_id = (SELECT id FROM t) AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())`);
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     } else if (step.assignTo === 'manager' && submittedByUserId) {
       const rows = await db.execute(sql`
@@ -800,14 +890,18 @@ export class WorkflowsService {
     const names = outcome === 'approved'
       ? stepDef?.actions ?? [stepDef?.onApprove?.action]
       : stepDef?.returnActions ?? [stepDef?.onReject?.action];
-    for (const name of names) await this.runNamedAction(db, name, workflow.source_table, workflow.source_table_uuid, actorUserId, decisionNote);
+    for (const name of names) {
+      await this.runNamedAction(db, name, {
+        sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid, actorUserId, decisionNote, stepKey: stepDef?.key, stepLabel: stepDef?.label, stepLabels: stepDef?.labels,
+      });
+    }
   }
 
   /** Runs one registered action; unknown ones and "none" are no-ops. */
-  private async runNamedAction(db: Db, actionName: string | undefined, sourceTable: string, sourceTableUuid: string, actorUserId: string, decisionNote: string | null) {
+  private async runNamedAction(db: Db, actionName: string | undefined, ctx: WorkflowActionContext) {
     if (!actionName || actionName === 'none') return;
     const handler = this.actionHandlers.get(actionName);
     if (!handler) return;
-    await handler(db, { sourceTable, sourceTableUuid, actorUserId, decisionNote });
+    await handler(db, ctx);
   }
 }

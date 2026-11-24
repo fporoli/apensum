@@ -120,6 +120,8 @@
     <include file="102-static-data-radio.sql" relativeToChangelogFile="true"/>
     <include file="103-static-data-operator-keys.sql" relativeToChangelogFile="true"/>
     <include file="104-workflow-config.sql" relativeToChangelogFile="true"/>
+    <include file="105-unit-codes.sql" relativeToChangelogFile="true"/>
+    <include file="106-request-workflows.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

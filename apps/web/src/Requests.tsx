@@ -30,7 +30,7 @@ import {
 } from '@mui/material';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
-import { AddIcon, ChevronLeftIcon, EditIcon, LockIcon, MailIcon, PublicIcon } from './icons';
+import { AddIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon } from './icons';
 import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
 import { REQUEST_FORM } from '@worktime3/shared/fields';
 import { useFormTemplate, type FormTemplate } from './designMode';
@@ -51,7 +51,7 @@ interface RequestItem {
   request_type: string | null;
   urgent: boolean;
   link_url: string | null;
-  target_kind: 'manager' | 'department';
+  target_kind: 'manager' | 'department' | 'workflow';
   department_name: string | null;
   /** Null for a task a module or plugin opened (`source`). */
   requester_user_id: string | null;
@@ -85,6 +85,11 @@ interface Message {
     assignee?: string | null;
     details?: { request_type?: string | null; urgent?: boolean; link_url?: string | null; due_date?: string | null; subject?: string };
     obsolete?: boolean;
+    /** A workflow request's step (request-workflow.ts threadEvent). */
+    workflow?: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn';
+    step?: StepLabel;
+    automatic?: boolean;
+    note?: string;
   };
   posted_at: string;
   author_user_id: string | null;
@@ -92,12 +97,35 @@ interface Message {
   attachments: Attachment[];
 }
 
+/** A workflow step's name: English, and per language when the configuration gives it. */
+interface StepLabel {
+  key: string;
+  label: string;
+  labels?: Record<string, string> | null;
+}
+
+/** A workflow request's workflow (GET requests/:id `workflow`). */
+interface RequestWorkflowInfo {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  step: string;
+  steps: StepLabel[];
+  waitingFor: string[];
+  canDecide: boolean;
+  returns: boolean;
+  actionKey: string | null;
+  returned: boolean;
+}
+
+const stepName = (s: StepLabel | undefined, locale: string) => (s ? s.labels?.[locale] ?? s.label : '');
+
 interface Detail {
   request: RequestItem;
   messages: Message[];
   handlers: { id: string; name: string; email: string }[];
   isRequester: boolean;
   isHandler: boolean;
+  workflow: RequestWorkflowInfo | null;
 }
 
 /** The org's request_type static_data row (its own copy, else the global one). */
@@ -120,6 +148,8 @@ const EMPTY_DETAILS: DetailsDraft = { type: '', urgent: false, link: '', due: ''
 interface Targets {
   manager: { id: string; name: string } | null;
   departments: { id: string; name: string }[];
+  /** Request types with their own workflow, and its steps (`conditional`: only when its condition holds). */
+  workflows?: Record<string, (StepLabel & { conditional?: boolean })[]>;
 }
 
 /** A message's body: multipart when files are attached (the API reads them from `files`), else JSON. */
@@ -255,6 +285,30 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     else setDetail(null);
   }, [selectedId, loadDetail, refreshKey]);
 
+  /** Approves (or sends back) the step of a workflow request the caller decides (the Workflow page's endpoints). */
+  async function decide(workflowId: string, what: 'approve' | 'reject', note: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/workflows/${workflowId}/${what}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify(note.trim() ? { note: note.trim() } : {}),
+      });
+      const data = await res.json();
+      if (!data?.ok) setError(errorText(data?.error));
+      else {
+        if (selectedId) await loadDetail(selectedId);
+        await loadList();
+        onChanged?.();
+      }
+    } catch {
+      setError(t('common.cannotReachApi'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function post(path: string, fields: Record<string, unknown>, files: File[] = []): Promise<boolean> {
     setBusy(true);
     setError(null);
@@ -298,7 +352,8 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
 
   const r = detail?.request;
   const target = (item: RequestItem) =>
-    item.target_kind === 'manager' ? t('requests.toManager') : t('requests.toDepartment', { department: item.department_name ?? '' });
+    item.target_kind === 'workflow' ? t('requests.toWorkflow')
+      : item.target_kind === 'manager' ? t('requests.toManager') : t('requests.toDepartment', { department: item.department_name ?? '' });
   /** A module's or plugin's name (its `modules.<id>` text), for the tasks it opens. */
   const sourceLabel = (source: string | null) => {
     if (!source) return t('requests.system');
@@ -321,6 +376,13 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
 
   function eventText(m: Message): string {
     const who = authorOf(m);
+    if (m.data.workflow) {
+      const step = stepName(m.data.step, locale);
+      const text = m.data.automatic
+        ? t('requests.event.workflow.automatic', { step })
+        : t(`requests.event.workflow.${m.data.workflow}`, { who, step });
+      return m.data.note ? `${text}: ${m.data.note}` : text;
+    }
     if (m.data.obsolete) return t('requests.event.obsolete', { who });
     if (m.data.details) {
       const d = m.data.details;
@@ -469,6 +531,17 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         </Box>
       )}
 
+      {detail.workflow && !r.archived_at && (
+        <WorkflowPanel
+          workflow={detail.workflow}
+          isRequester={detail.isRequester}
+          busy={busy}
+          onDecide={(what, note) => void decide(detail.workflow!.id, what, note)}
+          onResubmit={(note) => void post(`/${r.id}/resubmit`, { note })}
+          onWithdraw={() => void post(`/${r.id}/withdraw`, {})}
+        />
+      )}
+
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         {r.assignee_name && <Typography variant="body2" color="text.secondary">{t('requests.handledBy', { name: r.assignee_name })}</Typography>}
         <Box sx={{ flex: 1 }} />
@@ -479,7 +552,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
             <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/take`, {})}>{t('requests.take')}</Button>
           )
         )}
-        {detail.isHandler && !r.archived_at && (
+        {detail.isHandler && !r.archived_at && r.target_kind !== 'workflow' && (
           <TextField
             select
             size="small"
@@ -494,7 +567,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
             ))}
           </TextField>
         )}
-        {!detail.isHandler && detail.isRequester && !r.archived_at && (
+        {!detail.isHandler && detail.isRequester && !r.archived_at && r.target_kind !== 'workflow' && (
           r.status === 'resolved' ? (
             <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'open' })}>{t('requests.reopen')}</Button>
           ) : (
@@ -877,7 +950,7 @@ function NewRequestDialog({
       try {
         const res = await fetch(`${API}/organizations/${orgId}/requests/targets`, { headers: await authHeaders() });
         const data = await res.json();
-        const next: Targets = { manager: data?.manager ?? null, departments: Array.isArray(data?.departments) ? data.departments : [] };
+        const next: Targets = { manager: data?.manager ?? null, departments: Array.isArray(data?.departments) ? data.departments : [], workflows: data?.workflows ?? {} };
         setTargets(next);
         setKind(next.manager ? 'manager' : 'department');
         // HR is the usual department to ask; preselect it when there is one.
@@ -938,10 +1011,12 @@ function NewRequestDialog({
     }
   }
 
+  // A type with its own workflow goes to its steps: no target to choose.
+  const workflowSteps = details.type ? targets.workflows?.[details.type] : undefined;
   const ready =
     subject.trim() &&
     (message.trim() || draft.files.length > 0) &&
-    (kind === 'manager' ? !!targets.manager : !!departmentId) &&
+    (workflowSteps || (kind === 'manager' ? !!targets.manager : !!departmentId)) &&
     detailsReady(details, types);
 
   return (
@@ -949,6 +1024,26 @@ function NewRequestDialog({
       <DialogTitle>{t('requests.new')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
+        {workflowSteps ? (
+          <Alert severity="info" icon={false}>
+            <Typography variant="body2" sx={{ mb: 0.75 }}>{t('requests.workflowHint')}</Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+              {workflowSteps.map((s, i) => (
+                <Box key={s.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {i > 0 && <ChevronRightIcon fontSize="small" color="action" />}
+                  {s.conditional ? (
+                    <Tooltip title={t('requests.workflowConditional')}>
+                      <Chip size="small" variant="outlined" sx={{ borderStyle: 'dashed' }} label={stepName(s, locale)} />
+                    </Tooltip>
+                  ) : (
+                    <Chip size="small" label={stepName(s, locale)} />
+                  )}
+                </Box>
+              ))}
+            </Box>
+          </Alert>
+        ) : (
+        <>
         <RadioGroup value={kind} onChange={(e) => setKind(e.target.value as 'manager' | 'department')}>
           <FormControlLabel
             value="manager"
@@ -964,6 +1059,8 @@ function NewRequestDialog({
               <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
             ))}
           </TextField>
+        )}
+        </>
         )}
         <TextField size="small" label={t('requests.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
         <DetailsFields value={details} onChange={setDetails} types={types} />
@@ -990,5 +1087,68 @@ function NewRequestDialog({
         <Button variant="contained" disabled={busy || !ready} onClick={() => void submit()}>{t('requests.send')}</Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+/**
+ * A workflow request's steps: where it stands and who it waits for; the step's assignees approve it (or send it back
+ * to the requester), the requester submits a request that was sent back again or withdraws it.
+ */
+function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw }: {
+  workflow: RequestWorkflowInfo;
+  isRequester: boolean;
+  busy: boolean;
+  onDecide: (what: 'approve' | 'reject', note: string) => void;
+  onResubmit: (note: string) => void;
+  onWithdraw: () => void;
+}) {
+  const { t, locale } = useI18n();
+  const [note, setNote] = useState('');
+  const current = workflow.steps.findIndex((s) => s.key === workflow.step);
+  const doneUpTo = workflow.status === 'approved' ? workflow.steps.length : workflow.status === 'pending' ? current : -1;
+  return (
+    <Paper variant="outlined" sx={{ p: 1.5, display: 'grid', gap: 1, bgcolor: 'action.hover' }}>
+      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+        {workflow.steps.map((s, i) => (
+          <Box key={s.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {i > 0 && <ChevronRightIcon fontSize="small" color="action" />}
+            <Chip
+              size="small"
+              icon={i < doneUpTo ? <CheckIcon fontSize="small" /> : undefined}
+              color={workflow.status === 'pending' && i === current ? 'primary' : i < doneUpTo ? 'success' : 'default'}
+              variant={workflow.status === 'pending' && i === current ? 'filled' : 'outlined'}
+              label={stepName(s, locale)}
+            />
+          </Box>
+        ))}
+      </Box>
+      {workflow.status === 'pending' && workflow.waitingFor.length > 0 && (
+        <Typography variant="body2" color="text.secondary">{t('requests.workflow.waitingFor', { names: workflow.waitingFor.join(', ') })}</Typography>
+      )}
+      {workflow.returned && <Alert severity="warning">{t(isRequester ? 'requests.workflow.returnedToYou' : 'requests.workflow.returned')}</Alert>}
+      {(workflow.canDecide || (isRequester && (workflow.returned || workflow.status === 'pending'))) && (
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          {(workflow.canDecide || workflow.returned) && (
+            <TextField size="small" label={t('requests.workflow.note')} value={note} onChange={(e) => setNote(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
+          )}
+          {workflow.canDecide && (
+            <>
+              <Button size="small" variant="contained" disabled={busy} onClick={() => { onDecide('approve', note); setNote(''); }}>
+                {t(workflow.actionKey ?? 'requests.workflow.approve')}
+              </Button>
+              {workflow.returns && (
+                <Button size="small" color="error" disabled={busy} onClick={() => { onDecide('reject', note); setNote(''); }}>{t('approvals.return')}</Button>
+              )}
+            </>
+          )}
+          {isRequester && workflow.returned && (
+            <Button size="small" variant="contained" disabled={busy} onClick={() => { onResubmit(note); setNote(''); }}>{t('requests.workflow.resubmit')}</Button>
+          )}
+          {isRequester && (workflow.returned || workflow.status === 'pending') && !workflow.canDecide && (
+            <Button size="small" disabled={busy} onClick={onWithdraw}>{t('requests.workflow.withdraw')}</Button>
+          )}
+        </Box>
+      )}
+    </Paper>
   );
 }
