@@ -625,7 +625,7 @@ export default {
   'plugins.points.approvals.title': "Approvazioni",
   'plugins.points.approvals.text': "Approvazioni proprie nel workflow, se desiderato rivolte alla persona superiore – anche quando questa cambia.",
   'plugins.points.reports.title': "Rapporti e viste del team",
-  'plugins.points.reports.text': "Rapporti propri con raggruppamento, Excel, PDF e invio pianificato, e tabelle proprie nella scheda Team per responsabili e HR.",
+  'plugins.points.reports.text': "Rapporti propri con raggruppamento, Excel, PDF e invio pianificato, e tabelle proprie nella scheda Panoramica per responsabili e HR.",
   'plugins.points.documents.title': "Documenti e salari",
   'plugins.points.documents.text': "File nella pagina Documenti della persona e importi nell’esportazione dei salari.",
   'plugins.points.ai.title': "IA con tetto ai costi",

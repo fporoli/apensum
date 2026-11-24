@@ -626,7 +626,7 @@ export default {
   'plugins.points.approvals.title': "Approvals",
   'plugins.points.approvals.text': "Its own approvals in the workflow, sent to the person’s manager if you like – even when the manager changes.",
   'plugins.points.reports.title': "Reports and team views",
-  'plugins.points.reports.text': "Its own reports with grouping, Excel, PDF and scheduled delivery, and its own tables in the Team tab for managers and HR.",
+  'plugins.points.reports.text': "Its own reports with grouping, Excel, PDF and scheduled delivery, and its own tables in the Overview tab for managers and HR.",
   'plugins.points.documents.title': "Documents and payroll",
   'plugins.points.documents.text': "Files on the person’s Documents page and amounts in the payroll export.",
   'plugins.points.ai.title': "AI with a cost cap",

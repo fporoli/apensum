@@ -6,11 +6,11 @@ import type { WorkTimeModelService } from '../../apps/api/src/work-time-model.se
 import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
 
 // Team tables list the people the caller may see (direct reports, or everyone for a grant on
-// all); a plain member has no team, so the pages show no Team tab. The absence calendar shows the
-// caller first next to their team; the other tables never list the caller.
+// all); a plain member has no team, so the pages show no Team tab. Every team table shows the
+// caller first next to their team.
 
 const MEMBER = [{ name: 'member', permission_id: 'nav.absences:edit:own' }];
-const HR = [{ name: 'hr', permission_id: 'nav.absences:see:all' }];
+const HR = [{ name: 'hr', permission_id: 'nav.absences:see:all' }, { name: 'hr', permission_id: 'nav.projectTimesheet:see:all' }];
 const ROLES: Record<string, { name: string; permission_id: string }[]> = { emp: MEMBER, boss: MEMBER, hr: HR };
 const REPORTS: Record<string, string[]> = { boss: ['emp'] };
 const MEMBERS = [
@@ -63,7 +63,7 @@ test('team overview: unknown kinds and months are rejected', async () => {
   assert.equal((await controller().overview('org', as('hr'), 'absences', 'november')).error, 'invalid-month');
 });
 
-test('team overview: a member without reports has no team; the calendar lists the caller first, the other tables never', async () => {
+test('team overview: a member without reports has no team; every table lists the caller first', async () => {
   const member = await controller('emp').overview('org', as('emp'), 'absences', '2026-11');
   assert.deepEqual(member.people, []);
   const peek = await controller('emp').overview('org', as('emp'), 'absences', undefined, '1');
@@ -75,5 +75,5 @@ test('team overview: a member without reports has no team; the calendar lists th
   // "Is there a team?" stays the team alone.
   assert.deepEqual((await controller('hr').overview('org', as('hr'), 'absences', undefined, '1')).people.map((p: { id: string }) => p.id), ['boss', 'emp']);
   const work = await controller('hr').overview('org', as('hr'), 'projectTimesheet', '2026-11');
-  assert.equal(work.people.some((p: { id: string }) => p.id === 'hr'), false);
+  assert.deepEqual(work.people.map((p: { id: string }) => p.id), ['hr', 'boss', 'emp']);
 });

@@ -625,7 +625,7 @@ export default {
   'plugins.points.approvals.title': "Genehmigungen",
   'plugins.points.approvals.text': "Eigene Genehmigungen im Workflow, auf Wunsch an die vorgesetzte Person – auch wenn diese wechselt.",
   'plugins.points.reports.title': "Berichte und Team-Ansichten",
-  'plugins.points.reports.text': "Eigene Berichte mit Gruppierung, Excel, PDF und Versand nach Plan, und eigene Tabellen im Team-Reiter für Vorgesetzte und HR.",
+  'plugins.points.reports.text': "Eigene Berichte mit Gruppierung, Excel, PDF und Versand nach Plan, und eigene Tabellen im Reiter Gesamtansicht für Vorgesetzte und HR.",
   'plugins.points.documents.title': "Dokumente und Lohn",
   'plugins.points.documents.text': "Dateien auf der Dokumente-Seite der Person und Beträge im Lohnexport.",
   'plugins.points.ai.title': "KI mit Kostendach",
