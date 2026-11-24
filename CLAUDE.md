@@ -24,7 +24,7 @@ npm run dev:status         # read-only: does the DB hold exactly this checkout's
 npm run dev:psql           # psql into the dev database; dev:down / dev:logs
 npm run dev:resetdb        # drop + recreate schema public, migrate, seed (also local:resetdb)
 npm run local:up           # whole stack in Docker (.env.local); local:down / local:seed / local:psql
-npm run stack -- <env> <push|build|reset|start|stop|all> [--reset]   # all excludes reset unless opted in
+npm run stack -- <env> <push|build|reset|start|stop|all> [--reset]   # all excludes reset unless opted in; push includes the plugin repos; VPS start+reset = one deploy-reset run
 node scripts/plugins.mjs build # build all plugins (plugins/*/api -> dist/api)
 node scripts/plugins.mjs test  # run all plugin test suites
 ```
@@ -307,7 +307,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Tests: `plugins/<id>/test` (`*.test.ts` via tsx, `*.test.mjs` via node), run by `npm test` (`scripts/plugins.mjs test`).\
   Private plugins reach the images through the repository variable `PRIVATE_PLUGINS` (`<id>=<owner>/<repo>[@<ref>]`) and secret `PLUGINS_TOKEN` (`.github/actions/private-plugins`, used by `build-push` and `vps`, not by CI); `build-push` refuses while its images are public (docs/PLUGINS.md, "Builds and deploys").\
   The core must work without plugins: CI job `core-only` (empty `APENSUM_PLUGINS_DIR`, `scripts/smoke-no-plugins.mjs`); grants on objects outside the catalogue (a missing plugin's) count for nothing (`mergePermissionRows`).\
-  Database: `plugins/<id>/changelog/db.changelog-master.xml` (same rules as the core's, author = plugin id) runs after the core's: the migrate image's entrypoint `infra/liquibase/apensum-migrate.sh` (APENSUM_CHANGELOG=core|<id> limits it), changesets recorded as `<id>/changelog/<file>`; compose and `migrate.mjs` mount `plugins/`, the Azure/VPS workflows stage them (`scripts/plugins.mjs stage-changelogs` -> `infra/liquibase/plugins`); `db:status` checks each changelog.\
+  Database: `plugins/<id>/changelog/db.changelog-master.xml` (same rules as the core's, author = plugin id) runs after the core's: the migrate image's entrypoint `infra/liquibase/apensum-migrate.sh` (an `update` is one Liquibase run over a master including the core's and every plugin's; APENSUM_CHANGELOG=core|<id> limits it and runs them one by one), changesets recorded as `<id>/changelog/<file>` either way; compose and `migrate.mjs` mount `plugins/`, the Azure/VPS workflows stage them (`scripts/plugins.mjs stage-changelogs` -> `infra/liquibase/plugins`); `db:status` checks each changelog.\
   A plugin's permission rows and default grants live there; its tables may be in `public`.\
   Tables a plugin lists in `apensum.tables` are introspected into its own `api/db/schema.ts`, not the core's (expenses: expenses, expense_reports, expense_report_items; their old changesets and the rows 035/037/049 made stay in the core's changelogs, and `LEGACY_PLUGIN_TABLES` in `apps/api/drizzle.config.ts` keeps them out of the core's schema even without the plugin, as in CI).
 - Notes (`plugins/notes`, module `notes`, default off, own schema `notes`): the open example plugin, personal notes per person and organization (`nav.notes`, own only); keep it small and complete, it is what docs/PLUGINS.md and the website's plugin page point to.\
@@ -361,7 +361,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   A VPS GitHub Environment is one instance: its name sets the container prefix, `/opt/apensum-<env>`, its own Postgres, and `DOMAIN` + `WEB_SUB/API_SUB/AUTH_SUB` (optional `MAIL_SUB` for the Mailpit inbox, `PORTAINER_SUB` for Portainer, default `portainer`) set its hostnames.\
   `VPS_HOST/USER` are variables, `VPS_SSH_KEY` a secret.\
   Never hand-edit files on the server; change `infra/vps/remote.sh` or `infra/caddy/edge/`.\
-  `deploy` does not seed: use the `vps` workflow's `seed` (additive, needs `SEED <env>`) or `reset-seed` (destructive).\
+  `deploy` does not seed: use the `vps` workflow's `seed` (additive, needs `SEED <env>`), `reset-seed` (destructive) or `deploy-reset` (both in one run, the migrations once; the demo's scheduled reset takes its image from the newest `deploy` or `deploy-reset`).\
   The `demo` instance starts over every two hours (`demo-reset.yml`: `reset-seed` with the tag of demo's last successful deploy; only prod is backed up before a reset: `RESET_BACKUP=false` is set on demo, preprod and test; unset = backup, the newest 10 kept).\
   `DEMO_RESET_EVERY_HOURS=2` (demo's Environment) makes `GET health` report the schedule; the web app (`DemoResetNotice.tsx`, times in `demoReset.ts`, a test keeps the cron in step) warns 10 minutes ahead and, while the API is away around a scheduled time, shows a waiting page that reloads when it is back.\
   The API's documents live in the `documents_data` volume (before, each deploy lost them); a reset without backup empties it.\

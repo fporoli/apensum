@@ -6,9 +6,11 @@
 //   env    dev | local            this machine (.env.dev / .env.local, scripts/with-env.mjs)
 //          prod | preprod | test  a VPS instance (any GitHub Environment except azure)
 //          azure                  Azure Container Apps
-//   steps  push   git push the current branch (commit first; uncommitted changes are not pushed)
+//   steps  push   git push the current branch, then the plugin repositories cloned into plugins/ (commit
+//                 first; uncommitted changes are not pushed)
 //          build  dev: npm run build. local: build the Docker images.
-//                 remote: wait for the GHCR images of HEAD (build-push), dispatching it off main
+//                 remote: wait for the GHCR images of HEAD (build-push), dispatching it off main; on main
+//                 the push's own build, built again only if it missed a plugin commit pushed after it
 //          reset  DESTRUCTIVE: drop the public schema, migrate, load the demo seed
 //                 (VPS: `reset-seed`, backed up first; Azure: drop and re-create the Postgres
 //                 server, which also resets Keycloak)
@@ -21,7 +23,7 @@
 //
 // Steps always run in the order push, build, reset, start (stop alone), whatever order they are
 // given in. On remote environments start comes before reset, so the reset runs the new
-// migrations and seed. Examples:
+// migrations and seed; on a VPS instance start and reset are one run (vps.yml deploy-reset). Examples:
 //
 //   npm run stack -- dev reset start       fresh demo database, then API + web
 //   npm run stack -- local all             push, rebuild images, bring the stack up
@@ -33,6 +35,8 @@
 // build-push.yml) with the gh CLI and wait for them; config stays in GitHub Environments.
 
 import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
 const shell = process.platform === 'win32';
@@ -47,7 +51,8 @@ function usage(message) {
 
 function run(command, args, { capture = false, allowFail = false } = {}) {
   if (!capture) console.log(`\n$ ${[command, ...args].join(' ')}`);
-  const result = spawnSync(command, args, { stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit', shell, encoding: 'utf8' });
+  // Captured output may be a whole run log (missedPlugins): far above Node's default 1 MB.
+  const result = spawnSync(command, args, { stdio: capture ? ['ignore', 'pipe', 'inherit'] : 'inherit', shell, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
   if (result.status !== 0 && !allowFail) {
     console.error(`\n${command} ${args[0] ?? ''} failed (exit ${result.status}).`);
     process.exit(result.status || 1);
@@ -98,10 +103,23 @@ if (remote) {
 // ---------------------------------------------------------------------------------------------
 // Steps shared by every environment
 
+/** The plugin repositories cloned into plugins/ (the private ones; the bundled example is part of this one). */
+function pluginRepos() {
+  const dir = 'plugins';
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((id) => existsSync(join(dir, id, '.git'))).map((id) => ({ id, path: join(dir, id) }));
+}
+
 function push() {
   if (git('status', '--porcelain')) console.warn('\nNote: there are uncommitted changes; they are not pushed (or deployed).');
   const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
   run('git', ['push', 'origin', branch]);
+  // The core first, then the plugins right after it, so the build the push starts already finds them.
+  for (const { id, path } of pluginRepos()) {
+    if (git('-C', path, 'status', '--porcelain')) console.warn(`\nNote: plugin ${id} has uncommitted changes; they are not pushed.`);
+    const ahead = run('git', ['-C', path, 'rev-list', '--count', '@{u}..HEAD'], { capture: true, allowFail: true });
+    if (ahead && ahead !== '0') run('git', ['-C', path, 'push']);
+  }
 }
 
 function headInfo() {
@@ -123,7 +141,7 @@ async function sleep(ms) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-/** Waits for a run to appear (newest first), then follows it until it ends; fails the script if it fails. */
+/** Waits for a run to appear (newest first), then follows it until it ends; fails the script if it fails. Returns its id. */
 async function watch(listArgs, label) {
   let id = '';
   for (let i = 0; i < 60 && !id; i++) {
@@ -135,7 +153,8 @@ async function watch(listArgs, label) {
     process.exit(1);
   }
   console.log(`\n${label}: following run ${id}`);
-  run('gh', ['run', 'watch', id, '--exit-status', '--interval', '15']);
+  run('gh', ['run', 'watch', id, '--exit-status', '--interval', '5']);
+  return id;
 }
 
 /** Dispatches a workflow and follows the run it created. */
@@ -143,7 +162,7 @@ async function dispatch(workflow, fields, label, ref) {
   const since = new Date(Date.now() - 5000).toISOString();
   const flags = Object.entries(fields).flatMap(([k, v]) => ['-f', `${k}=${v}`]);
   run('gh', ['workflow', 'run', workflow, ...(ref ? ['--ref', ref] : []), ...flags]);
-  await watch(['--workflow', workflow, '--event', 'workflow_dispatch', '--created', `>=${since}`], label);
+  return watch(['--workflow', workflow, '--event', 'workflow_dispatch', '--created', `>=${since}`], label);
 }
 
 async function confirmReset(what) {
@@ -196,12 +215,37 @@ async function remoteBuild() {
   const { sha, branch } = headInfo();
   const existing = gh('run', 'list', '--workflow', 'build-push.yml', '--commit', sha, '--limit', '1', '--json', 'databaseId', '--jq', '.[0].databaseId // empty');
   if (existing || branch === 'main') {
-    // A push to main builds by itself (sha-<commit> and latest).
-    await watch(['--workflow', 'build-push.yml', '--commit', sha], 'build-push');
+    // A push to main builds by itself (sha-<commit> and latest), cloning the private plugins' HEADs as it starts.
+    const id = await watch(['--workflow', 'build-push.yml', '--commit', sha], 'build-push');
+    const stale = missedPlugins(id);
+    if (stale.length > 0) {
+      // A plugin commit came after that build (or only plugins changed): build again, which retags sha-<commit>.
+      console.log(`\nThe build has older plugin commits (${stale.join(', ')}): building again.`);
+      const again = await dispatch('build-push.yml', { image_tag: 'latest' }, 'build-push (plugins)', 'main');
+      const still = missedPlugins(again);
+      if (still.length > 0) {
+        console.error(`\nThe images still lack plugin commits: ${still.join(', ')} (pushed?).`);
+        process.exit(1);
+      }
+    }
   } else {
     // Off main: build this branch, tagged by branch name (and sha-<commit>), leaving latest alone.
     await dispatch('build-push.yml', { image_tag: branch.replace(/[^A-Za-z0-9_.-]/g, '-') }, 'build-push', branch);
   }
+}
+
+/** The plugins whose commit in a build-push run's log (`plugin <id>: <repo>@<sha>`) is not the local HEAD. */
+function missedPlugins(runId) {
+  const log = run('gh', ['run', 'view', runId, '--log'], { capture: true, allowFail: true }) ?? '';
+  const built = Object.fromEntries([...log.matchAll(/plugin ([\w-]+): \S+@([0-9a-f]{7,})/g)].map((m) => [m[1], m[2]]));
+  if (Object.keys(built).length === 0 && pluginRepos().length > 0) {
+    console.warn(`\nCould not read the plugin commits of build ${runId}: check the images' Information screen after the deploy.`);
+  }
+  return pluginRepos().flatMap(({ id, path }) => {
+    if (!built[id]) return [];
+    const local = git('-C', path, 'rev-parse', 'HEAD');
+    return local.startsWith(built[id]) ? [] : [`${id} ${built[id]} instead of ${local.slice(0, 7)}`];
+  });
 }
 
 async function remoteStart() {
@@ -209,6 +253,13 @@ async function remoteStart() {
   const { tag, branch } = headInfo();
   if (env === 'azure') await dispatch('azure-deploy.yml', { image_tag: tag }, 'azure-deploy', branch);
   else await dispatch('vps.yml', { action: 'deploy', environment: env, image_tag: tag }, `vps deploy ${env}`, branch);
+}
+
+/** VPS: deploy and reset in one run (the migrations run once, on the emptied database). */
+async function remoteDeployReset() {
+  const { tag, branch } = headInfo();
+  await confirmReset(`This deploys ${tag} to ${env} and drops its public schema (backed up on the server first unless RESET_BACKUP=false), then loads the demo seed.`);
+  await dispatch('vps.yml', { action: 'deploy-reset', environment: env, image_tag: tag, confirmation: 'RESET worktime3 public schema' }, `vps deploy-reset ${env}`, branch);
 }
 
 async function remoteReset() {
@@ -239,8 +290,12 @@ if (!remote) {
   if (has('start')) await localStart();
 } else {
   if (has('build')) await remoteBuild();
-  // Azure's reset creates the apps with the new images itself, so it replaces the deploy.
-  if (has('start') && !(env === 'azure' && has('reset'))) await remoteStart();
-  if (has('reset')) await remoteReset();
+  if (env !== 'azure' && has('start') && has('reset')) {
+    await remoteDeployReset();
+  } else {
+    // Azure's reset creates the apps with the new images itself, so it replaces the deploy.
+    if (has('start') && !(env === 'azure' && has('reset'))) await remoteStart();
+    if (has('reset')) await remoteReset();
+  }
 }
 console.log(`\nDone: ${env} ${ORDER.filter(has).join(' ')}.`);

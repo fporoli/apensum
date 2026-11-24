@@ -1,5 +1,6 @@
 #!/bin/bash
-# The migrate image's entrypoint: runs Liquibase with the given arguments for the core's changelog
+# The migrate image's entrypoint: `update` runs the core's changelog and every plugin's in one Liquibase run
+# (below); other commands run with the given arguments for the core's changelog
 # (/liquibase/changelog), then once per plugin changelog (/liquibase/plugins/<id>/changelog/
 # db.changelog-master.xml) with the same arguments, the changelog file swapped. All of them share
 # DATABASECHANGELOG; a plugin's changesets are recorded as "<id>/changelog/<file>", so they never
@@ -15,6 +16,34 @@ if [[ $# -eq 0 || "$1" != --* ]]; then
 fi
 
 only="${APENSUM_CHANGELOG:-}"
+
+# `update` of everything runs Liquibase once (one JVM start instead of one per changelog): a master in /tmp
+# includes the core's master and each plugin's through two search paths, so every changeset is recorded under
+# the same name as when they run one by one (the core's "NNN-name.sql", a plugin's "<id>/changelog/<file>").
+if [[ -z "$only" && " $* " == *" update "* ]]; then
+  all=/tmp/apensum-all
+  mkdir -p "$all"
+  {
+    echo '<?xml version="1.0" encoding="UTF-8"?>'
+    echo '<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">'
+    echo '  <include file="db.changelog-master.xml"/>'
+    for master in /liquibase/plugins/*/changelog/db.changelog-master.xml; do
+      [[ -f "$master" ]] || continue
+      echo "  <include file=\"${master#/liquibase/plugins/}\"/>"
+      echo "Plugin changelog: ${master#/liquibase/plugins/}" >&2
+    done
+    echo '</databaseChangeLog>'
+  } > "$all/apensum-all.xml"
+  args=()
+  for a in "$@"; do
+    case "$a" in
+      --changelog-file=*|--search-path=*) ;;
+      *) args+=("$a") ;;
+    esac
+  done
+  cd /liquibase/changelog
+  exec /liquibase/docker-entrypoint.sh --search-path="$all,/liquibase/changelog,/liquibase/plugins" --changelog-file=apensum-all.xml "${args[@]}"
+fi
 
 if [[ -z "$only" || "$only" == core ]]; then
   /liquibase/docker-entrypoint.sh "$@"

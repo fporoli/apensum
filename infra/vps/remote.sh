@@ -8,6 +8,8 @@
 #   remote.sh seed          loads the demo data into the running instance, adding only what is
 #                           missing (seed.sql is additive; nothing is dropped or overwritten)
 #   remote.sh reset-seed    backs up and drops the public schema, migrates, loads the demo data
+#   remote.sh deploy-reset  deploy and reset-seed in one: the new images start on the emptied database
+#                           (migrations once), then the demo data
 #   remote.sh portainer     (re)deploys Portainer, one per server, in its own stack
 #   remote.sh destroy       removes this instance entirely (a final dump is kept in $HOME)
 #
@@ -241,70 +243,105 @@ seed() {
   echo "Demo data present: $(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM public.users") users."
 }
 
+# The steps of a reset, shared by reset-seed and deploy-reset.
+
+# Keycloak creates its auth schema on first start, which takes a while right after a deploy. Sets
+# AUTH_TABLES_BEFORE (a reset never touches that schema; verify_reset checks it).
+AUTH_TABLES_BEFORE=""
+wait_auth_schema() {
+  local i
+  for i in $(seq 1 60); do
+    AUTH_TABLES_BEFORE="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth'")"
+    [ "$AUTH_TABLES_BEFORE" -gt 0 ] && return 0
+    [ "$i" = 1 ] && echo "Waiting for Keycloak to create its auth schema..."
+    sleep 5
+  done
+  echo "Keycloak has not created its auth schema after 5 minutes: see docker logs $PREFIX-keycloak" >&2
+  exit 1
+}
+
+# Only prod is backed up: RESET_BACKUP=false (GitHub Environment variable, set on demo, preprod and test)
+# skips it. Unset means a backup, so a new instance is safe until decided; the newest 10 are kept.
+backup_before_reset() {
+  if [ "${RESET_BACKUP:-true}" = "false" ]; then
+    echo "RESET_BACKUP=false: no backup before this reset"
+    return 0
+  fi
+  local backup_dir backup_file
+  backup_dir="$HOME/$PREFIX-db-backups"
+  mkdir -p "$backup_dir"
+  backup_file="$backup_dir/public-before-reset-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  # The schemas a reset drops: everything but Keycloak's `auth` (public and the plugins' own, e.g. cases, hr).
+  docker exec "$PG" pg_dump -U worktime -d worktime --exclude-schema=auth --format=custom > "$backup_file"
+  test -s "$backup_file"
+  echo "Public-schema backup saved to $backup_file"
+  ls -1t "$backup_dir"/public-before-reset-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f --
+}
+
+# Stops the API and drops every schema but Keycloak's `auth` and the system ones: public and the plugins' own
+# schemas (apensum.dbSchema, e.g. cases, hr), whose changesets run again (Liquibase's history is in public).
+# scripts/reset-db.mjs drops the same. Without a backup the documents go as well: their rows are dropped.
+drop_schemas() {
+  if [ "${RESET_BACKUP:-true}" = "false" ]; then
+    docker exec "$PREFIX-api" sh -c "find '$DOCS_PATH' -mindepth 1 -delete" 2>/dev/null || true
+  fi
+  docker stop "$PREFIX-api" >/dev/null
+  docker exec "$PG" psql -U worktime -d worktime -v ON_ERROR_STOP=1 -c "DO \$\$ DECLARE s text; BEGIN FOR s IN SELECT nspname FROM pg_namespace WHERE nspname NOT IN ('public', 'auth', 'information_schema') AND nspname NOT LIKE 'pg\_%' LOOP EXECUTE format('DROP SCHEMA %I CASCADE', s); END LOOP; END \$\$; DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION worktime; GRANT ALL ON SCHEMA public TO public;"
+}
+
+# Sanity check, not exact counts (those change whenever seed.sql or the changelog grows): demo users, orgs and
+# logins exist, and Keycloak's auth schema was left untouched.
+verify_reset() {
+  local counts n_users n_orgs n_logins n_changesets n_auth
+  counts="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT (SELECT count(*) FROM public.users), (SELECT count(*) FROM public.organizations), (SELECT count(*) FROM public.user_identities WHERE provider = 'password'), (SELECT count(*) FROM public.databasechangelog), (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth')")"
+  echo "users|organizations|password identities|changesets|auth tables: $counts"
+  IFS='|' read -r n_users n_orgs n_logins n_changesets n_auth <<<"$counts"
+  if [ "$n_users" -eq 0 ] || [ "$n_orgs" -eq 0 ] || [ "$n_logins" -eq 0 ] || [ "$n_changesets" -eq 0 ] || [ "$n_auth" != "$AUTH_TABLES_BEFORE" ]; then
+    echo "reset verification failed" >&2
+    exit 1
+  fi
+}
+
 reset_seed() {
   install_files
   write_app_env
   ghcr_login
   docker inspect "$PG" >/dev/null
   docker inspect "$PREFIX-api" >/dev/null
-
-  local auth_tables_before backup_dir timestamp backup_file counts i
-  # Keycloak creates its auth schema on first start, which takes a while right after a deploy.
-  for i in $(seq 1 60); do
-    auth_tables_before="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth'")"
-    [ "$auth_tables_before" -gt 0 ] && break
-    [ "$i" = 1 ] && echo "Waiting for Keycloak to create its auth schema..."
-    sleep 5
-  done
-  if [ "$auth_tables_before" -eq 0 ]; then
-    echo "Keycloak has not created its auth schema after 5 minutes: see docker logs $PREFIX-keycloak" >&2
-    exit 1
-  fi
-
-  # Only prod is backed up: RESET_BACKUP=false (GitHub Environment variable, set on demo, preprod and test)
-  # skips it. Unset means a backup, so a new instance is safe until decided; the newest 10 are kept.
-  if [ "${RESET_BACKUP:-true}" = "false" ]; then
-    echo "RESET_BACKUP=false: no backup before this reset"
-  else
-    backup_dir="$HOME/$PREFIX-db-backups"
-    mkdir -p "$backup_dir"
-    timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-    backup_file="$backup_dir/public-before-reset-$timestamp.dump"
-    # The schemas a reset drops: everything but Keycloak's `auth` (public and the plugins' own, e.g. cases, hr).
-    docker exec "$PG" pg_dump -U worktime -d worktime --exclude-schema=auth --format=custom > "$backup_file"
-    test -s "$backup_file"
-    echo "Public-schema backup saved to $backup_file"
-    ls -1t "$backup_dir"/public-before-reset-*.dump 2>/dev/null | tail -n +11 | xargs -r rm -f --
-  fi
-
-  # Without a backup the files go as well: their rows are about to be dropped (only prod keeps them).
-  if [ "${RESET_BACKUP:-true}" = "false" ]; then
-    docker exec "$PREFIX-api" sh -c "find '$DOCS_PATH' -mindepth 1 -delete" 2>/dev/null || true
-  fi
-  docker stop "$PREFIX-api"
+  wait_auth_schema
+  backup_before_reset
   # Bring the API back even if a later step fails (set -e), so a failed reset never leaves it down.
   trap 'docker start "$PREFIX-api" >/dev/null || true' EXIT
-  # Every schema but Keycloak's `auth` and the system ones goes: public and the plugins' own schemas
-  # (apensum.dbSchema, e.g. cases, hr), whose changesets run again (Liquibase's history is in public).
-  # scripts/reset-db.mjs drops the same.
-  docker exec "$PG" psql -U worktime -d worktime -v ON_ERROR_STOP=1 -c "DO \$\$ DECLARE s text; BEGIN FOR s IN SELECT nspname FROM pg_namespace WHERE nspname NOT IN ('public', 'auth', 'information_schema') AND nspname NOT LIKE 'pg\_%' LOOP EXECUTE format('DROP SCHEMA %I CASCADE', s); END LOOP; END \$\$; DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION worktime; GRANT ALL ON SCHEMA public TO public;"
-
+  drop_schemas
   "${COMPOSE[@]}" run --rm --build --no-deps migrate
-
   load_seed
-
-  # Sanity check, not exact counts (those change whenever seed.sql or the changelog grows):
-  # demo users, orgs and logins exist, and Keycloak's auth schema was left untouched.
-  counts="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT (SELECT count(*) FROM public.users), (SELECT count(*) FROM public.organizations), (SELECT count(*) FROM public.user_identities WHERE provider = 'password'), (SELECT count(*) FROM public.databasechangelog), (SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth')")"
-  echo "users|organizations|password identities|changesets|auth tables: $counts"
-  IFS='|' read -r n_users n_orgs n_logins n_changesets n_auth <<<"$counts"
-  if [ "$n_users" -eq 0 ] || [ "$n_orgs" -eq 0 ] || [ "$n_logins" -eq 0 ] || [ "$n_changesets" -eq 0 ] || [ "$n_auth" != "$auth_tables_before" ]; then
-    echo "reset-seed verification failed" >&2
-    exit 1
-  fi
-
+  verify_reset
   trap - EXIT
   docker start "$PREFIX-api"
+  ensure_operator
+  close_demo_years
+}
+
+# Deploy and reset in one go (the demo's way): the new images are pulled while the old instance still runs,
+# then the schemas are dropped and the new containers start, so the migrations run once, on the empty
+# database, before the API; then the seed. An instance deployed for the first time has nothing to drop.
+deploy_reset() {
+  install_files
+  write_app_env
+  ghcr_login
+  edge_up
+  pg_up
+  "${COMPOSE[@]}" pull api web
+  if docker inspect "$PREFIX-api" >/dev/null 2>&1; then
+    wait_auth_schema
+    backup_before_reset
+    drop_schemas
+  fi
+  "${COMPOSE[@]}" up -d --build --remove-orphans
+  [ -n "$AUTH_TABLES_BEFORE" ] || wait_auth_schema
+  load_seed
+  verify_reset
+  caddy_reload
   ensure_operator
   close_demo_years
 }
@@ -363,5 +400,6 @@ case "${1:-}" in
   deploy) deploy ;;
   seed) seed ;;
   reset-seed) reset_seed ;;
-  *) echo "usage: remote.sh deploy|seed|reset-seed|destroy|portainer|portainer-remove" >&2; exit 2 ;;
+  deploy-reset) deploy_reset ;;
+  *) echo "usage: remote.sh deploy|seed|reset-seed|deploy-reset|destroy|portainer|portainer-remove" >&2; exit 2 ;;
 esac

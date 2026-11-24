@@ -10,6 +10,7 @@ run-name: 'vps: ${{ inputs.action }} on ${{ inputs.environment }} (tag ${{ input
 #   deploy      edge stack + worktime3 (migrate, api, web, Keycloak) at the given image tag
 #   seed        adds the demo data that is missing (demo users with known passwords: not for prod)
 #   reset-seed  DESTRUCTIVE: backs up, drops and re-creates the public schema, loads demo data
+#   deploy-reset DESTRUCTIVE: deploy and reset-seed in one run (the migrations run once); same confirmation
 #   portainer   (re)deploys Portainer, one per server (portainer-remove takes it down)
 #   destroy     DESTRUCTIVE: removes this instance (containers, database, files, Caddy site)
 on:
@@ -19,10 +20,10 @@ on:
         description: 'What to run'
         required: true
         type: choice
-        options: [deploy, seed, reset-seed, destroy, portainer, portainer-remove]
+        options: [deploy, seed, reset-seed, deploy-reset, destroy, portainer, portainer-remove]
       environment: { description: 'GitHub Environment = instance (prod, preprod, test, ...)', default: 'prod' }
       image_tag: { description: 'Image tag (prefer a sha-xxxxxxx tag over latest)', default: 'latest' }
-      confirmation: { description: 'seed: type SEED <environment name>. reset-seed: type RESET worktime3 public schema. destroy: type DESTROY <environment name>' }
+      confirmation: { description: 'seed: type SEED <environment name>. reset-seed, deploy-reset: type RESET worktime3 public schema. destroy: type DESTROY <environment name>' }
 permissions:
   contents: read
 concurrency:
@@ -66,7 +67,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: echo "Run this workflow from main." && exit 1
       - name: Require explicit destructive-operation confirmation
-        if: inputs.action == 'reset-seed' && inputs.confirmation != 'RESET worktime3 public schema'
+        if: (inputs.action == 'reset-seed' || inputs.action == 'deploy-reset') && inputs.confirmation != 'RESET worktime3 public schema'
         run: echo "Reset not run. Provide the exact confirmation phrase to proceed." && exit 1
       - name: Require explicit seed confirmation
         # Seeding creates demo users with known passwords; the phrase names the instance so it
@@ -162,7 +163,7 @@ jobs:
             bash /tmp/apensum-release/src/infra/vps/remote.sh "$ACTION"
             rm -rf /tmp/apensum-release
       - name: Verify seeded demo login
-        if: inputs.action == 'seed' || inputs.action == 'reset-seed'
+        if: inputs.action == 'seed' || inputs.action == 'reset-seed' || inputs.action == 'deploy-reset'
         run: |
           curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 4 \
             -X POST https://${{ vars.API_SUB }}.${{ vars.DOMAIN }}/api/v1/auth/login \

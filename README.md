@@ -269,9 +269,9 @@ Steps always run in the same order, whatever order you give them:
 
 | Step | dev / local | VPS instance / azure (through the GitHub workflows, `gh` CLI) |
 | --- | --- | --- |
-| `push` | `git push` of the current branch (commit first) | the same |
-| `build` | dev: `npm run build`; local: build the Docker images | wait for `build-push` of HEAD (dispatched off `main`) |
-| `reset` | **Destructive.** `dev:resetdb` / `local:resetdb` | **Destructive**, asks you to type the environment name: VPS `reset-seed`; Azure drops and re-creates the Postgres server (`dropdb` + `initdb` with seed) |
+| `push` | `git push` of the current branch (commit first) | the same, then the plugin repositories cloned into `plugins/` |
+| `build` | dev: `npm run build`; local: build the Docker images | wait for `build-push` of HEAD (dispatched off `main`); on `main` the push's own build, built again only when its log shows an older commit of a plugin |
+| `reset` | **Destructive.** `dev:resetdb` / `local:resetdb` | **Destructive**, asks you to type the environment name: VPS `reset-seed`, or with `start` one `deploy-reset` run (migrations once); Azure drops and re-creates the Postgres server (`dropdb` + `initdb` with seed) |
 | `start` | dev: Docker services, then API + web on the host (Ctrl-C stops both); local: `local:up` | deploy HEAD's `sha-xxxxxxx` images (`vps` deploy / `azure-deploy`), before any reset |
 | `stop` | `dev:down` / `local:down` | — |
 | `all` | `push build start` | the same |
@@ -535,6 +535,7 @@ Run the `vps` workflow from `main`, naming the environment and an `image_tag` (p
 | `destroy` | **Destructive.** Removes the instance (containers, its Postgres and volume, `/opt/apensum-<env>`, its Caddy site, and its database on a leftover `edge-pg` if there is one). A last dump stays in the deploy user's home. The shared edge stack and other instances stay. Confirmation text: `DESTROY <environment>`. |
 | `seed` | Loads the demo data into a deployed instance, adding only what is missing: nothing is dropped, and demo data changed since (passwords, reporting lines) is kept. Use it after a release adds demo rows. It creates demo users with known passwords, so not for production. Confirmation text: `SEED <environment>`. |
 | `reset-seed` | **Destructive.** Backs up and recreates the `public` schema, migrates, loads the demo data and checks a demo login. Needs the confirmation text. A new instance has no users until you run it once. |
+| `deploy-reset` | **Destructive.** `deploy` and `reset-seed` in one run: the new images are pulled, the schemas dropped (backed up unless `RESET_BACKUP=false`), the new containers started (the migrations run once, on the empty database), then the demo data. Same confirmation text as `reset-seed`. The demo's scheduled reset takes its image from the newest `deploy` or `deploy-reset`. |
 
 **What `remote.sh` does.**\
 It derives everything instance-specific from the environment name:

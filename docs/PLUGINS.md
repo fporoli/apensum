@@ -254,8 +254,9 @@ as the core's (CLAUDE.md): a new `NNN-name.sql` per change, listed in the master
 changeset. Use the plugin id as changeset author.
 
 - **Order:** the migrate image's entrypoint (`infra/liquibase/apensum-migrate.sh`) runs the core's
-  changelog, then each plugin's, in one `migrate` step. Everything shares `DATABASECHANGELOG`; a plugin's
-  changesets are recorded as `<id>/changelog/<file>`.
+  changelog, then each plugin's, in one `migrate` step: an `update` is a single Liquibase run over a master
+  that includes them all. Everything shares `DATABASECHANGELOG`; a plugin's changesets are recorded as
+  `<id>/changelog/<file>`, the same whether they run together or one by one.
 - **Where the files come from:** compose (dev, local) and `npm run dev:migrate` mount `plugins/`; the
   Azure and VPS workflows copy the changelogs into the image first (`node scripts/plugins.mjs
   stage-changelogs`, into `infra/liquibase/plugins`).

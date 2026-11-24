@@ -26,9 +26,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # The newest successful deploy, or deploy-reset (which deploys too).
           title=$(gh run list --workflow vps.yml --status success --limit 100 --json displayTitle \
-            --jq '[.[] | select(.displayTitle | startswith("vps: deploy on demo (tag "))][0].displayTitle // ""')
-          tag=$(printf '%s' "$title" | sed -nE 's/^vps: deploy on demo \(tag ([A-Za-z0-9_.-]+)\)$/\1/p')
+            --jq '[.[] | select(.displayTitle | test("^vps: deploy(-reset)? on demo \\(tag "))][0].displayTitle // ""')
+          tag=$(printf '%s' "$title" | sed -nE 's/^vps: deploy(-reset)? on demo \(tag ([A-Za-z0-9_.-]+)\)$/\2/p')
           if [ -z "$tag" ]; then echo "No successful deploy on demo found; nothing reset."; exit 1; fi
           echo "Resetting demo with $tag"
           since=$(date -u -d '-10 seconds' +%Y-%m-%dT%H:%M:%SZ)
