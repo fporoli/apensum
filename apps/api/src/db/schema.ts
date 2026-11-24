@@ -1250,6 +1250,11 @@ export const personnel_documents = pgTable("personnel_documents", {
 	document_date: date(),
 	visible_to_employee: boolean().default(false).notNull(),
 	uploaded_by_user_id: uuid(),
+	effective_date: date(),
+	follow_up_date: date(),
+	visible_to_manager: boolean().default(false).notNull(),
+	require_ack: boolean().default(false).notNull(),
+	acknowledged_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
 	index("idx_personnel_documents_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast()),
 	foreignKey({

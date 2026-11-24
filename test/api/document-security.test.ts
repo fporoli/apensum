@@ -71,11 +71,17 @@ test('the forwarded mail carries the link and who sent it, in the recipient lang
 });
 
 test('personnel document fields are validated', () => {
-  assert.deepEqual(parsePersonnelFields({ title: '', category: 'bonus' }, false), { ok: false, error: 'title-required' });
-  assert.deepEqual(parsePersonnelFields({ title: 'x', category: 'gossip' }, false), { ok: false, error: 'invalid-category' });
-  assert.deepEqual(parsePersonnelFields({ documentDate: '15.11.2026' }, true), { ok: false, error: 'invalid-date' });
-  assert.deepEqual(parsePersonnelFields({ title: ' Review 2026 ', category: 'evaluation', visibleToEmployee: 'true' }, false), {
+  const cats = ['evaluation', 'salary', 'bonus'];
+  assert.deepEqual(parsePersonnelFields({ title: '', category: 'bonus' }, false, cats), { ok: false, error: 'title-required' });
+  assert.deepEqual(parsePersonnelFields({ title: 'x', category: 'gossip' }, false, cats), { ok: false, error: 'invalid-category' });
+  assert.deepEqual(parsePersonnelFields({ documentDate: '15.11.2026' }, true, cats), { ok: false, error: 'invalid-date' });
+  assert.deepEqual(parsePersonnelFields({ effectiveDate: '2027-13' }, true, cats), { ok: false, error: 'invalid-date' });
+  assert.deepEqual(parsePersonnelFields({ title: ' Review 2026 ', category: 'evaluation', visibleToEmployee: 'true' }, false, cats), {
     ok: true,
     values: { title: 'Review 2026', category: 'evaluation', visible_to_employee: true },
   });
+  assert.deepEqual(
+    parsePersonnelFields({ effectiveDate: '2027-01-01', followUpDate: '', visibleToManager: 'true', requireAck: true }, true, cats),
+    { ok: true, values: { effective_date: '2027-01-01', follow_up_date: null, visible_to_manager: true, require_ack: true } },
+  );
 });

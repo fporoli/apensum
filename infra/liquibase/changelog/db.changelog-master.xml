@@ -123,6 +123,7 @@
     <include file="105-unit-codes.sql" relativeToChangelogFile="true"/>
     <include file="106-request-workflows.sql" relativeToChangelogFile="true"/>
     <include file="107-workflows-organization.sql" relativeToChangelogFile="true"/>
+    <include file="108-personnel-document-details.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

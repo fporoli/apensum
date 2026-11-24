@@ -56,7 +56,7 @@ interface PersonalDocument {
   date: string;
   addedAt: string;
   superseded: boolean;
-  context: Record<string, string | number | null>;
+  context: Record<string, string | number | boolean | null>;
 }
 
 const CATEGORY_COLOR: Record<Category, ChipColor> = {
@@ -83,6 +83,9 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
   const [year, setYear] = useState<string>('');
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ doc: PersonalDocument; url: string; mimeType: string } | null>(null);
+  // The caller's id (for confirming a personnel document) and the organization's personnel categories (labels).
+  const [me, setMe] = useState<string | null>(null);
+  const [personnelCats, setPersonnelCats] = useState<{ values: Record<string, unknown>; translation: Record<string, Record<string, string>> } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -95,6 +98,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
         return;
       }
       setDocs(Array.isArray(data.documents) ? data.documents : []);
+      setMe(typeof data.userId === 'string' ? data.userId : null);
     } catch {
       setError(t('common.cannotReachApi'));
       setDocs([]);
@@ -104,6 +108,45 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/organizations/${orgId}/static-data/personnel`, { headers: await authHeaders() });
+        const rows = await res.json();
+        const row = Array.isArray(rows) ? rows.find((r: { enum_name?: string }) => r.enum_name === 'document_category') : undefined;
+        if (!cancelled && row) setPersonnelCats({ values: row.values ?? {}, translation: row.translation ?? {} });
+      } catch {
+        /* the category keys' own texts stay */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, authHeaders]);
+
+  /** The person confirms a personnel document HR asked them to ("taken note"). */
+  async function acknowledge(d: PersonalDocument) {
+    if (!me) return;
+    setBusyKey(keyOf(d));
+    setError(null);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/people/${me}/personnel-documents/${d.sourceId}/acknowledge`, { method: 'POST', headers: await authHeaders() });
+      const data = await res.json();
+      if (!data?.ok) setError(t('documents.loadFailed', { error: data?.error ?? t('common.unknownError') }));
+      await load();
+    } catch {
+      setError(t('common.cannotReachApi'));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  const personnelCategory = useCallback(
+    (key: string) => (personnelCats ? staticValueLabel(personnelCats, locale, key) : t(`personnelDocs.category.${key}`)),
+    [personnelCats, locale, t],
+  );
 
   // Static data the plugins' categories describe their documents with (e.g. expense categories), per category.
   const [pluginLabels, setPluginLabels] = useState<Record<string, { values: Record<string, unknown>; translation: Record<string, Record<string, string>> }>>({});
@@ -166,7 +209,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
         case 'request':
           return [c.subject, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         case 'personnel':
-          return [c.title, c.category ? t(`personnelDocs.category.${c.category}`) : '', formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
+          return [c.title, c.category ? personnelCategory(String(c.category)) : '', formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         case 'report': {
           const from = String(c.from ?? '');
           const to = String(c.to ?? '');
@@ -178,9 +221,10 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
       if (!plugin) return formatLocaleDate(d.date, locale);
       const labels = pluginLabels[d.category];
       const staticLabel = (key: string) => staticValueLabel(labels, locale, key);
-      return plugin.describe(d, { t, locale, staticLabel });
+      // Plugins' documents carry no flags (only the personnel file's context has them).
+      return plugin.describe(d as Parameters<typeof plugin.describe>[0], { t, locale, staticLabel });
     },
-    [locale, monthLabel, translated, t, pluginLabels],
+    [locale, monthLabel, translated, t, pluginLabels, personnelCategory],
   );
 
   const years = useMemo(() => [...new Set((docs ?? []).map((d) => d.date.slice(0, 4)))].sort().reverse(), [docs]);
@@ -349,6 +393,16 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
                             <Chip size="small" label={t('documents.superseded')} />
                           </Tooltip>
                         )}
+                        {d.category === 'personnel' && d.context.effectiveDate && (
+                          <Chip size="small" variant="outlined" label={t('personnelDocs.keyDateOn', { date: formatLocaleDate(String(d.context.effectiveDate), locale) })} />
+                        )}
+                        {d.category === 'personnel' && d.context.requireAck && (d.context.acknowledgedAt ? (
+                          <Chip size="small" color="success" label={t('personnelDocs.confirmedOn', { date: formatLocaleDate(String(d.context.acknowledgedAt).slice(0, 10), locale) })} />
+                        ) : (
+                          <Button size="small" variant="contained" disabled={busy || !me} onClick={() => void acknowledge(d)}>
+                            {t('personnelDocs.confirm')}
+                          </Button>
+                        ))}
                       </Box>
                     }
                     secondary={

@@ -126,6 +126,11 @@
       "source": "./src/workflowConfig.ts",
       "types": "./dist/workflowConfig.d.ts",
       "default": "./dist/workflowConfig.js"
+    },
+    "./personnelDocs": {
+      "source": "./src/personnelDocs.ts",
+      "types": "./dist/personnelDocs.d.ts",
+      "default": "./dist/personnelDocs.js"
     }
   }
 }

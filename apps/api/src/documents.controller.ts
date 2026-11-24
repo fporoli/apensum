@@ -35,7 +35,7 @@ export class DocumentsController {
     const callerId = await this.caller(db, orgId, req);
     if (!callerId) return { ok: false, error: 'forbidden', documents: [] };
     await this.timesheetDocs.issueMissing(db, orgId, callerId, new Date().getFullYear());
-    return { ok: true, documents: await this.own(db, orgId, callerId) };
+    return { ok: true, userId: callerId, documents: await this.own(db, orgId, callerId) };
   }
 
   /** One of the caller's documents (any category). */
@@ -78,7 +78,8 @@ export class DocumentsController {
         -- The personnel file's documents HR shared with the person (personnel-documents.controller.ts).
         SELECT d.id, 'personnel', p.id::text, d.file_name, d.mime_type, d.size_bytes,
                to_char(coalesce(p.document_date, d.created_at::date), 'YYYY-MM-DD'),
-               ${iso('d.created_at')}, false, jsonb_build_object('title', p.title, 'category', p.category)
+               ${iso('d.created_at')}, false, jsonb_build_object('title', p.title, 'category', p.category, 'effectiveDate', p.effective_date,
+                 'requireAck', p.require_ack, 'acknowledgedAt', p.acknowledged_at)
         FROM personnel_documents p JOIN documents d ON d.id = p.document_id
         WHERE p.organization_id = ${orgId} AND p.user_id = ${userId} AND p.visible_to_employee
         UNION ALL
