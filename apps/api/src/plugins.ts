@@ -1,3 +1,4 @@
+import { registerPlannedMinutes } from './work-time-model.service';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Logger, type Provider, type Type } from '@nestjs/common';
@@ -131,6 +132,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       for (const report of plugin.reports ?? []) registerApiReport(report);
       for (const view of plugin.teamViews ?? []) registerTeamView(view);
       for (const item of plugin.payroll ?? []) registerPayrollItem(item);
+      if (plugin.plannedMinutes) registerPlannedMinutes(plugin.plannedMinutes);
       for (const form of plugin.forms ?? []) registerForm(form);
       for (const tool of plugin.assistantTools ?? []) registerAssistantTool(tool);
     }

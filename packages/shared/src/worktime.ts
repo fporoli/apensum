@@ -377,11 +377,26 @@ export interface WorkTimeModel {
   fallback: WorkSchedule;
   holidays: ReadonlyMap<string, Holiday>;
   absences: readonly AbsenceSpan[];
+  /**
+   * Minutes a published shift plan sets per day (a plugin's `plannedMinutes`, e.g. the roster's): such a day's target
+   * is the plan's (0 = a day off), whatever the schedule and a holiday say, since the plan decided who works it.
+   * A day with an approved absence keeps the schedule's, so vacation and sickness are credited and debited as usual.
+   */
+  planned?: ReadonlyMap<string, number>;
 }
 
 /** Day targets for `[from, toExclusive)`. */
 export function dayTargets(from: string, toExclusive: string, model: WorkTimeModel): DayTarget[] {
-  return datesBetween(from, toExclusive).map((d) => dayTarget(d, scheduleOn(d, model.schedules, model.fallback), model.holidays.get(d), model.absences));
+  return datesBetween(from, toExclusive).map((d) => {
+    const schedule = scheduleOn(d, model.schedules, model.fallback);
+    const day = dayTarget(d, schedule, model.holidays.get(d), model.absences);
+    const planned = model.planned?.get(d);
+    if (planned === undefined || day.absence > 0 || model.absences.some((a) => a.dateStart <= d && d <= a.dateEnd)) return day;
+    const minutes = Math.max(0, Math.round(planned));
+    return schedule.timeRecording === 'none'
+      ? { date: d, scheduled: minutes, holiday: 0, absence: 0, target: 0, notRecorded: true }
+      : { date: d, scheduled: minutes, holiday: 0, absence: 0, target: minutes };
+  });
 }
 
 export function sumTargets(days: readonly DayTarget[]): number {

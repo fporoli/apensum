@@ -225,3 +225,27 @@ test('defaultLegalOvertimeYearLimit: 170 h at 45 h a week, 140 h at 50 h', () =>
   assert.equal(defaultLegalOvertimeYearLimit(2700), 170 * 60);
   assert.equal(defaultLegalOvertimeYearLimit(3000), 140 * 60);
 });
+
+test('a published shift plan sets the target of its days; absence days keep the schedule', async () => {
+  const { dayTargets: targets, defaultSchedule: schedule } = await import('./worktime.ts');
+  const holidays = new Map([['2026-12-25', { key: 'christmas', name: 'Weihnachten', fraction: 1 }]]);
+  const model = {
+    schedules: [],
+    fallback: schedule(2400),
+    holidays,
+    absences: [{ dateStart: '2026-12-23', dateEnd: '2026-12-23', halfDay: false, type: 'vacation' }],
+    // Monday 21: an early shift; Tuesday 22: off; Wednesday 23: on vacation (a shift planned anyway); Friday 25: a
+    // night on Christmas; Saturday 26: not in the plan (the schedule: a Saturday, no target).
+    planned: new Map([['2026-12-21', 480], ['2026-12-22', 0], ['2026-12-23', 480], ['2026-12-25', 450]]),
+  };
+  const days = targets('2026-12-21', '2026-12-27', model);
+  const by = Object.fromEntries(days.map((d) => [d.date, d]));
+  assert.equal(by['2026-12-21'].target, 480);
+  assert.equal(by['2026-12-22'].target, 0, 'a planned day off');
+  assert.deepEqual([by['2026-12-23'].absence, by['2026-12-23'].target, by['2026-12-23'].absenceType], [480, 0, 'vacation'], 'vacation credited by the schedule');
+  assert.equal(by['2026-12-24'].target, 480, 'not in the plan: the schedule');
+  assert.deepEqual([by['2026-12-25'].holiday, by['2026-12-25'].target], [0, 450], 'a shift planned on a holiday is worked');
+  assert.equal(by['2026-12-26'].target, 0);
+  const plain = targets('2026-12-21', '2026-12-27', { ...model, planned: undefined });
+  assert.equal(plain.find((d) => d.date === '2026-12-25').target, 0, 'without a plan the holiday is off');
+});

@@ -160,6 +160,31 @@ export type ProjectTimeCheck =
  * targets, the running overtime balance and the project-time check from them. Callers
  * authorize first; nothing here checks permissions.
  */
+/**
+ * Shift plans (a plugin's `plannedMinutes`, e.g. the roster's published months): the minutes a plan sets per day for a
+ * person, which replace the schedule's as that day's target (WorkTimeModel.planned, dayTargets). A plugin that fails
+ * is left out (logged), so the targets fall back to the schedule rather than failing.
+ */
+export type PlannedMinutesSource = (db: Db, query: { orgId: string; userId: string; from: string; toExclusive: string }) => Promise<ReadonlyMap<string, number>>;
+const PLANNED_MINUTES: PlannedMinutesSource[] = [];
+
+export function registerPlannedMinutes(source: PlannedMinutesSource): void {
+  PLANNED_MINUTES.push(source);
+}
+
+async function plannedMinutesOf(db: Db, query: { orgId: string; userId: string; from: string; toExclusive: string }): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  for (const source of PLANNED_MINUTES) {
+    try {
+      for (const [date, minutes] of await source(db, query)) out.set(date, minutes);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`plannedMinutes failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return out;
+}
+
 @Injectable()
 export class WorkTimeModelService {
   async settings(db: Db, orgId: string): Promise<WorkTimeSettings> {
@@ -221,12 +246,15 @@ export class WorkTimeModelService {
 
   async model(db: Db, orgId: string, userId: string, from: string, toExclusive: string, knownSettings?: WorkTimeSettings): Promise<WorkTimeModel> {
     const settings = knownSettings ?? await this.settings(db, orgId);
-    const [schedules, holidays, spans] = await Promise.all([
+    const [schedules, holidays, spans, planned] = await Promise.all([
       this.schedules(db, orgId, userId),
       holidaysFor(db, orgId, from, toExclusive, { userId }, settings),
       this.approvedAbsences(db, orgId, userId, from, toExclusive),
+      plannedMinutesOf(db, { orgId, userId, from, toExclusive }),
     ]);
-    return { schedules, fallback: defaultSchedule(settings.fullTimeWeeklyMinutes), holidays, absences: spans };
+    const model: WorkTimeModel = { schedules, fallback: defaultSchedule(settings.fullTimeWeeklyMinutes), holidays, absences: spans };
+    if (planned.size > 0) model.planned = planned;
+    return model;
   }
 
   async targets(db: Db, orgId: string, userId: string, from: string, toExclusive: string): Promise<DayTarget[]> {

@@ -19,6 +19,7 @@ import type { VersionsService } from './versions.service';
 import type { PersonalDocumentSource } from './documents.service';
 import type { SourceOrgResolver, SourceRecordLoader, WorkflowActionContext } from './workflows.service';
 import type { AssistantTool } from './assistant-tools';
+import type { PlannedMinutesSource } from './work-time-model.service';
 
 /** Core services a plugin's declared functions get as their last argument. */
 export interface PluginCore {
@@ -61,6 +62,12 @@ export interface ApiPlugin {
   teamViews?: ApiTeamView[];
   /** Amounts on the payroll export (Import/Export), per person and month: e.g. approved expenses. */
   payroll?: ApiPayrollItem[];
+  /**
+   * A shift plan's minutes per day for a person (e.g. the roster's published months): such a day's target is the
+   * plan's instead of the work schedule's (a day off = 0); days with an approved absence keep the schedule's.
+   * Only for days the plan decides: a day left out keeps the schedule. WorkTimeModelService.model reads it.
+   */
+  plannedMinutes?: PlannedMinutesSource;
   /** @deprecated Ignored: organizations have no ZIP export or restore any more. Goes with the next PLUGIN_API_VERSION. */
   backup?: ApiBackup;
   /** Approvals: workflow actions, source tables and manager routing. */
@@ -91,6 +98,7 @@ export type { ApiTeamView } from './team-overview.controller';
 
 // Import/Export
 export type { ApiPayrollItem } from './import-export.service';
+export type { PlannedMinutesSource } from './work-time-model.service';
 /** @deprecated Ignored (see ApiPlugin.backup). */
 export interface BackupRestoreContext {
   targetOrgId: string;

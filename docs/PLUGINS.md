@@ -210,6 +210,14 @@ core's seed: fixed or md5-derived ids, `ON CONFLICT DO NOTHING`, re-runnable.
 
 The expenses plugin's `api/import-export.ts` adds the expenses (wage type 3000).
 
+## Target working time from a plan
+
+`plannedMinutes(db, { orgId, userId, from, toExclusive })` in `defineApiPlugin` returns minutes per day that a plan sets for a person (e.g. a published shift plan; 0 = a day off).\
+Such a day's target is the plan's instead of the work schedule's, and a holiday doesn't reduce it (the plan decided who works it); a day with an approved absence keeps the schedule's, so vacation and sickness are credited and debited as before.\
+Days the plugin leaves out keep the schedule.\
+The core's work-time model reads it (`WorkTimeModelService.model`, `WorkTimeModel.planned`, `dayTargets`), so balances, timesheets, reports and the day view all follow; a plugin that fails is logged and left out.\
+Split a shift that passes midnight across both days, as attendance is.
+
 ## Approvals (Workflow page)
 
 An approval a plugin owns is a workflow like the core's (`WorkflowsService`: `ensureDefinition`, `start`,
