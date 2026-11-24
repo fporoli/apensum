@@ -127,6 +127,14 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
   const [enumTranslations, setEnumTranslations] = useState<Record<string, Record<string, string>>>({});
   const [translationLocale, setTranslationLocale] = useState<Locale>('de');
   const [kvFilter, setKvFilter] = useState('');
+  // Values column: one line per list (the rest on hover) unless "show all values" is on; remembered in this browser.
+  const [showAllValues, setShowAllValues] = useState(() => {
+    try { return localStorage.getItem('apensum.staticData.showAll') === '1'; } catch { return false; }
+  });
+  const toggleShowAll = (on: boolean) => {
+    setShowAllValues(on);
+    try { localStorage.setItem('apensum.staticData.showAll', on ? '1' : '0'); } catch { /* not remembered */ }
+  };
   const declaredAttributes = propertiesFor(enumEntity, enumName);
   const attributeRow = !!declaredAttributes || enumKvList.some((kv) => kv.attrs !== null);
   const invalidAttribute = !!declaredAttributes && enumKvList.some((kv) =>
@@ -340,39 +348,41 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
   const isPropertiesList = !operator && enumEntity.trim() === PROPERTIES_LIST.entity && enumName.trim() === PROPERTIES_LIST.enumName;
   const builtInProperties = isPropertiesList ? enums.find((r) => !r.organization_id && r.entity === PROPERTIES_LIST.entity && r.enum_name === PROPERTIES_LIST.enumName) : undefined;
 
-  return (
-    <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader
-        title={t(operator ? 'staticdata.defaultsTitle' : 'staticdata.title')}
-        subtitle={operator ? t('staticdata.defaultsSubtitle', { count: enums.length }) : t('staticdata.description', { count: enums.length })}
-        end={
-          <>
-            {!operator && <Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />}
-            <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => openCreateEnum()}>
-              {t('staticdata.newEnum').replace('+ ', '')}
-            </Button>
-          </>
-        }
-      />
+  // Lists that describe other lists (static_data/...: the properties, their types) come last, apart and tinted:
+  // changing them changes how other lists are edited.
+  const isMetaRow = (row: StaticDataRow) => row.entity === PROPERTIES_LIST.entity;
+  const regularRows = enums.filter((r) => !isMetaRow(r));
+  const metaRows = enums.filter(isMetaRow);
 
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-      {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
-      {loading && <LinearProgress />}
+  /** A list's values as chips with the translated languages (the expanded cell, or the tooltip of the short one). */
+  const valuesContent = (
+    row: StaticDataRow,
+    visibleEntries: [string, unknown][],
+    hiddenCount: number,
+    total: number,
+    translatedLocales: { code: string }[],
+    clickable: boolean,
+  ) => (
+    <>
+      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+        {visibleEntries.map(([k, v]) => (
+          <Chip key={k} label={valuePreview(row, k, v)} size="small" variant="outlined" />
+        ))}
+        {hiddenCount > 0 && (
+          <Chip label={t('staticdata.moreValues', { count: hiddenCount })} size="small" onClick={clickable ? () => openEditEnum(row) : undefined} />
+        )}
+        {total === 0 && <Typography variant="caption" color="text.secondary">{t('staticdata.empty')}</Typography>}
+      </Box>
+      {translatedLocales.length > 0 && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          {t('staticdata.translatedInto', { locales: translatedLocales.map((l) => l.code.toUpperCase()).join(', ') })}
+        </Typography>
+      )}
+    </>
+  );
 
-      <Paper sx={{ p: 2 }}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('staticdata.entity')}</TableCell>
-                <TableCell>{t('staticdata.enumName')}</TableCell>
-                <TableCell>{t('staticdata.scope')}</TableCell>
-                <TableCell>{t('staticdata.values')}</TableCell>
-                <TableCell align="right">{t('staticdata.actions')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {enums.map((row) => {
+  /** One list's row in the table. */
+  const renderRow = (row: StaticDataRow) => {
                 const isGlobal = row.organization_id === null;
                 const key = rowKey(row.entity, row.enum_name);
                 const hasOrgOverride = isGlobal && orgKeys.has(key);
@@ -390,16 +400,20 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
                     key={row.id}
                     hover
                     sx={
-                      isGlobal
-                        ? { bgcolor: (theme) => alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.12 : 0.05) }
-                        : undefined
+                      isMetaRow(row)
+                        ? { bgcolor: (theme) => alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.14 : 0.08) }
+                        : isGlobal
+                          ? { bgcolor: (theme) => alpha(theme.palette.secondary.main, theme.palette.mode === 'dark' ? 0.12 : 0.05) }
+                          : undefined
                     }
                   >
                     <TableCell
                       sx={
-                        isGlobal
-                          ? { fontWeight: 600, borderLeft: 3, borderColor: 'secondary.main' }
-                          : { fontWeight: 600 }
+                        isMetaRow(row)
+                          ? { fontWeight: 600, borderLeft: 3, borderColor: 'warning.main' }
+                          : isGlobal
+                            ? { fontWeight: 600, borderLeft: 3, borderColor: 'secondary.main' }
+                            : { fontWeight: 600 }
                       }
                     >
                       {row.entity}
@@ -424,26 +438,28 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
                         </Typography>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                        {visibleEntries.map(([k, v]) => (
-                          <Chip key={k} label={valuePreview(row, k, v)} size="small" variant="outlined" />
-                        ))}
-                        {hiddenCount > 0 && (
-                          <Chip
-                            label={t('staticdata.moreValues', { count: hiddenCount })}
-                            size="small"
-                            onClick={canMutateRow ? () => openEditEnum(row) : undefined}
-                          />
-                        )}
-                        {entries.length === 0 && (
-                          <Typography variant="caption" color="text.secondary">{t('staticdata.empty')}</Typography>
-                        )}
-                      </Box>
-                      {translatedLocales.length > 0 && (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                          {t('staticdata.translatedInto', { locales: translatedLocales.map((l) => l.code.toUpperCase()).join(', ') })}
-                        </Typography>
+                    <TableCell sx={{ maxWidth: 0, width: '55%' }}>
+                      {showAllValues ? (
+                        valuesContent(row, visibleEntries, hiddenCount, entries.length, translatedLocales, canMutateRow)
+                      ) : (
+                        // One line; the whole list on hover.
+                        <Tooltip
+                          placement="bottom-start"
+                          slotProps={{ tooltip: { sx: { maxWidth: 640, bgcolor: 'background.paper', color: 'text.primary', boxShadow: 3, p: 1.5 } } }}
+                          title={valuesContent(row, visibleEntries, hiddenCount, entries.length, translatedLocales, false)}
+                        >
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'nowrap', overflow: 'hidden', alignItems: 'center', cursor: 'default' }}>
+                            {entries.length === 0 && <Typography variant="caption" color="text.secondary">{t('staticdata.empty')}</Typography>}
+                            {entries.slice(0, 8).map(([k, v]) => (
+                              <Chip key={k} label={valuePreview(row, k, v)} size="small" variant="outlined" sx={{ flexShrink: 0 }} />
+                            ))}
+                            {entries.length > 1 && (
+                              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                {t('staticdata.valueCount', { count: entries.length })}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Tooltip>
                       )}
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
@@ -473,7 +489,55 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
                     </TableCell>
                   </TableRow>
                 );
-              })}
+  };
+
+  return (
+    <Box sx={{ display: 'grid', gap: 2 }}>
+      <PageHeader
+        title={t(operator ? 'staticdata.defaultsTitle' : 'staticdata.title')}
+        subtitle={operator ? t('staticdata.defaultsSubtitle', { count: enums.length }) : t('staticdata.description', { count: enums.length })}
+        end={
+          <>
+            {!operator && <Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />}
+            <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => openCreateEnum()}>
+              {t('staticdata.newEnum').replace('+ ', '')}
+            </Button>
+          </>
+        }
+      />
+
+      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
+      {loading && <LinearProgress />}
+
+      <Paper sx={{ p: 2 }}>
+        <FormControlLabel
+          sx={{ mb: 1 }}
+          control={<Checkbox size="small" checked={showAllValues} onChange={(e) => toggleShowAll(e.target.checked)} />}
+          label={t('staticdata.showAllValues')}
+        />
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('staticdata.entity')}</TableCell>
+                <TableCell>{t('staticdata.enumName')}</TableCell>
+                <TableCell>{t('staticdata.scope')}</TableCell>
+                <TableCell>{t('staticdata.values')}</TableCell>
+                <TableCell align="right">{t('staticdata.actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {regularRows.map(renderRow)}
+              {metaRows.length > 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} sx={{ bgcolor: (theme) => alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.18 : 0.12), borderLeft: 3, borderColor: 'warning.main' }}>
+                    <Typography variant="subtitle2">{t('staticdata.metaTitle')}</Typography>
+                    <Typography variant="caption" color="text.secondary">{t('staticdata.metaHint')}</Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {metaRows.map(renderRow)}
               {enums.length === 0 && (
                 <TableEmptyRow colSpan={5} icon={<TuneIcon fontSize="inherit" />} title={t('staticdata.noneYet')} />
               )}
@@ -506,6 +570,9 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
           <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
             {operator && (
               <Alert severity="info" variant="outlined">{t('staticdata.defaultsInfo')}</Alert>
+            )}
+            {enumEntity.trim() === PROPERTIES_LIST.entity && (
+              <Alert severity="warning">{t('staticdata.metaHint')}</Alert>
             )}
             {!operator && isOverridingGlobal && (
               <Alert severity="info" variant="outlined">
