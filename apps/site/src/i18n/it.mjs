@@ -274,10 +274,10 @@ export default {
     "Una nuova organizzazione in pochi minuti: registratevi ed è pronta",
   ],
   'features.access.title': "Accesso & account",
-  'features.access.lead': "Accesso con e-mail e password o con single sign-on tramite Keycloak. Registrazione e reimpostazione della password in autonomia, senza supporto.",
+  'features.access.lead': "Accesso con e-mail e password o, su richiesta, con single sign-on tramite la vostra directory esistente. Registrazione e reimpostazione della password in autonomia, senza supporto.",
   'features.access.items': [
-    "Single sign-on (WebSSO) tramite Keycloak con OpenID Connect, incluso nell’installazione",
-    "Keycloak si può collegare alla vostra directory esistente, ad es. Microsoft Entra ID, Google Workspace o LDAP",
+    "Single sign-on (WebSSO) con OpenID Connect, configurato su richiesta per la vostra installazione",
+    "Collegamento alla vostra directory esistente, ad es. Microsoft Entra ID, Google Workspace o LDAP",
     "Al primo accesso via SSO l’account viene creato automaticamente",
     "Registrazione autonoma: account e organizzazione in un solo passo, con tutti i diritti",
     "I collaboratori entrano con un link d’invito, con il ruolo previsto",

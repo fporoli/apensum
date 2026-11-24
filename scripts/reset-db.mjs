@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Resets a local database: drops and recreates the `public` schema, applies the Liquibase
-// changelogs (db:migrate) and loads the demo seed (db:seed). Keycloak's `auth` schema is left alone.
+// changelogs (db:migrate) and loads the demo seed (db:seed). The `auth` schema (Keycloak's, where an instance uses it) is left alone.
 //
 //   npm run dev:resetdb      (= node scripts/with-env.mjs dev node scripts/reset-db.mjs)
 //   npm run local:resetdb
@@ -48,7 +48,7 @@ try {
     '--set=ON_ERROR_STOP=1',
     databaseUrl,
     '-c',
-    // Every schema but Keycloak's `auth` and the system ones: public and the plugins' own (apensum.dbSchema,
+    // Every schema but `auth` (Keycloak's) and the system ones: public and the plugins' own (apensum.dbSchema,
     // e.g. cases, hr), whose changesets run again (infra/vps/remote.sh reset-seed drops the same).
     `DO $$ DECLARE s text; BEGIN FOR s IN SELECT nspname FROM pg_namespace WHERE nspname NOT IN ('public', 'auth', 'information_schema') AND nspname NOT LIKE 'pg\\_%' LOOP EXECUTE format('DROP SCHEMA %I CASCADE', s); END LOOP; END $$; ` +
       `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public AUTHORIZATION "${owner.replace(/"/g, '""')}";`,

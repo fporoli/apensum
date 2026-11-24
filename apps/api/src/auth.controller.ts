@@ -3,8 +3,8 @@ import type { Request } from 'express';
 import { clientIp } from './client-ip';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
-import { Public, type AuthenticatedRequest } from './jwt.guard';
-import { mintLocalToken, purposeKey, TWO_FACTOR_SETUP_TOKEN_SEC } from './jwt';
+import { Public } from './jwt.guard';
+import { mintLocalToken, purposeKey, ssoPublicConfig, TWO_FACTOR_SETUP_TOKEN_SEC, verifySsoIdToken } from './jwt';
 import { sendMail } from './mailer';
 import * as bcrypt from 'bcryptjs';
 import { users, user_identities, organizations, organization_memberships, organization_invitations, roles, membership_roles, static_data } from './db/schema';
@@ -19,12 +19,12 @@ import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFacto
 export const TWO_FACTOR_ATTEMPTS_PER_HOUR = 10;
 
 /**
- * Auth: Keycloak is the IdP (same Postgres DB, `auth` schema).
+ * Auth: the API keeps the accounts and issues every session (local HS256 tokens).
  * - Password reset mails a signed one-time link (password-reset.ts); only the link sets the password.
- * - Identities are only ever created for the caller: SSO sync from the token's verified e-mail, a password
- *   by registering or by accepting an invitation as a new account.
- * - Local login/register/invite-accept below power the web login screen (dev
- *   parity with Keycloak; production should validate Keycloak JWTs instead).
+ * - Identities are only ever created for the caller: an SSO login from the ID token's verified e-mail, a
+ *   password by registering or by accepting an invitation as a new account.
+ * - SSO is optional, one identity provider per instance (SSO_PROVIDER `dex` or `keycloak`, jwt.ts): the web app
+ *   signs in there and hands the ID token to `sso/exchange` once, for a session like a password login's.
  */
 
 export const OWNER_ROLE_ID = '00000000-0000-0000-0000-000000000001';
@@ -105,7 +105,7 @@ export interface Session {
   userId: string;
   email: string;
   displayName: string;
-  /** Local API token (HS256). Keycloak SSO uses a Keycloak-issued token instead. */
+  /** Local API token (HS256), for password and SSO logins alike. */
   token: string;
   memberships: SessionMembership[];
   /** An organization requires a second step the person has not set up: `token` reaches only its setup. */
@@ -495,41 +495,52 @@ export class AuthController {
     return { ok: true, ...(await issueSession(db, { id: userId, email, display_name: displayName })) };
   }
 
+  /** Public: whether this instance offers SSO, and where the login page sends people for it. */
+  @Public()
+  @Get('sso')
+  ssoConfig() {
+    const config = ssoPublicConfig();
+    return config ? { enabled: true, ...config } : { enabled: false };
+  }
+
   /**
-   * SSO sync: upserts the caller from their validated token (Keycloak `sub`
-   * -> `oidc` identity, or the local user id) and returns the session.
-   * The web app calls this right after the Keycloak redirect; the session
-   * keeps the Keycloak access token for subsequent API calls.
+   * Public: an SSO login. The ID token the web app got from the instance's identity provider (verified
+   * against its keys, at most 10 minutes old) gives a session like a password login: the account linked to
+   * its `sub`, else the one of its verified e-mail (created if there is none). Nothing in the body but the
+   * token picks the account. The provider's own second step stands in for two-step login.
    */
-  @Post('sso/sync')
-  async ssoSync(@Req() req: AuthenticatedRequest, @Body() body: { displayName?: string }) {
+  @Public()
+  @Post('sso/exchange')
+  async ssoExchange(@Body() body: { idToken?: unknown }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
-    const principal = req.user;
-    if (!principal) return { ok: false, error: 'unauthenticated' };
-    const userId = principal.kind === 'local' ? principal.sub : await this.resolveSsoUserId(db, principal, body ?? {});
+    if (!ssoPublicConfig()) return { ok: false, error: 'sso-off' };
+    const principal = typeof body?.idToken === 'string' ? await verifySsoIdToken(body.idToken) : null;
+    if (!principal) return { ok: false, error: 'sso-invalid' };
+    const userId = await this.resolveSsoUserId(db, principal);
     if (!userId) return { ok: false, error: 'email-not-verified' };
     const [user] = await db
       .select({ id: users.id, email: users.email, display_name: users.display_name })
       .from(users)
       .where(eq(users.id, userId));
-    const session = {
+    if (!user) return { ok: false, error: 'sso-invalid' };
+    return {
+      ok: true,
       userId: user.id,
       email: user.email,
       displayName: user.display_name,
-      memberships: await membershipsOf(db, userId),
+      token: await mintLocalToken(user.id, user.email),
+      memberships: await membershipsOf(db, user.id),
     };
-    return { ok: true, ...session };
   }
 
   /**
-   * The account of a Keycloak login: the one it is linked to, else the one of the token's verified e-mail
+   * The account of an SSO login: the one it is linked to, else the one of the token's verified e-mail
    * (created if there is none). Nothing in the request body picks the account. Null = no verified e-mail.
    */
   private async resolveSsoUserId(
     db: Db,
-    principal: { sub: string; email?: string; emailVerified?: boolean },
-    body: { displayName?: string },
+    principal: { sub: string; email?: string; emailVerified?: boolean; name?: string },
   ): Promise<string | null> {
     const [found] = await db
       .select({ user_id: user_identities.user_id })
@@ -541,7 +552,7 @@ export class AuthController {
     const email = (principal.email as string).toLowerCase();
     const [created] = await db
       .insert(users)
-      .values({ email, display_name: body.displayName ?? email })
+      .values({ email, display_name: principal.name?.trim().slice(0, 100) || email })
       .onConflictDoUpdate({ target: users.email, set: { email } })
       .returning({ id: users.id });
     const userId = created.id;

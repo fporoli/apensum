@@ -98,6 +98,15 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           source: release.tgz
           target: /tmp/apensum-release
+      # Dex's connectors (secret DEX_CONNECTORS, a YAML list, used with SSO_PROVIDER=dex) span several lines: they
+      # travel base64-encoded and masked, and remote.sh writes them into the instance's Dex config.
+      - name: SSO connectors
+        env:
+          DEX_CONNECTORS: ${{ secrets.DEX_CONNECTORS }}
+        run: |
+          b64="$(printf '%s' "$DEX_CONNECTORS" | base64 -w0)"
+          if [ -n "$b64" ]; then echo "::add-mask::$b64"; fi
+          echo "DEX_CONNECTORS_B64=$b64" >> "$GITHUB_ENV"
       - name: Run on VPS
         uses: appleboy/ssh-action@v1
         env:
@@ -113,6 +122,9 @@ jobs:
           WEB_SUB: ${{ vars.WEB_SUB }}
           API_SUB: ${{ vars.API_SUB }}
           AUTH_SUB: ${{ vars.AUTH_SUB }}
+          # Single sign-on of this instance: none (default), dex or keycloak (README "Single sign-on").
+          SSO_PROVIDER: ${{ vars.SSO_PROVIDER }}
+          DEX_CONNECTORS_B64: ${{ env.DEX_CONNECTORS_B64 }}
           SHOW_DEMO_ACCOUNTS: ${{ vars.SHOW_DEMO_ACCOUNTS }}
           # reset-seed: false skips the backup (set on demo, preprod and test; only prod is backed up).
           RESET_BACKUP: ${{ vars.RESET_BACKUP }}
@@ -154,7 +166,7 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           # The default is 10 min; a deploy pulls images and waits for migrations.
           command_timeout: 25m
-          envs: ACTION,ENVIRONMENT,DOMAIN,MAIL_SUB,PORTAINER_SUB,OPERATOR_EMAIL,OPERATOR_PASSWORD,WEB_SUB,API_SUB,AUTH_SUB,SHOW_DEMO_ACCOUNTS,RESET_BACKUP,DEMO_RESET_EVERY_HOURS,TWO_FACTOR,GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG,REPO,POSTGRES_PASSWORD,KEYCLOAK_ADMIN,KEYCLOAK_ADMIN_PASSWORD,API_JWT_SECRET,DOCUMENTS_KEY,DOCUMENTS_KEY_PREVIOUS,PG_PORT,MAILPIT_ADMIN_PASSWORD,SMTP_HOST,SMTP_PORT,SMTP_FROM,SMTP_USER,SMTP_PASSWORD,SMTP_SECURE,CONTACT_SITE_ORIGINS,CONTACT_EMAIL,AZURE_OPENAI_KEY,AZURE_OPENAI_ENDPOINT,AZURE_OPENAI_DEPLOYMENT,AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT,AI_MONTHLY_BUDGET_CHF,AI_AZURE_ENABLED,AZURE_TRANSCRIBE_CHF_PER_HOUR,AZURE_OPENAI_CHF_PER_1M_INPUT,AZURE_OPENAI_CHF_PER_1M_OUTPUT
+          envs: ACTION,ENVIRONMENT,DOMAIN,MAIL_SUB,PORTAINER_SUB,OPERATOR_EMAIL,OPERATOR_PASSWORD,WEB_SUB,API_SUB,AUTH_SUB,SSO_PROVIDER,DEX_CONNECTORS_B64,SHOW_DEMO_ACCOUNTS,RESET_BACKUP,DEMO_RESET_EVERY_HOURS,TWO_FACTOR,GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG,REPO,POSTGRES_PASSWORD,KEYCLOAK_ADMIN,KEYCLOAK_ADMIN_PASSWORD,API_JWT_SECRET,DOCUMENTS_KEY,DOCUMENTS_KEY_PREVIOUS,PG_PORT,MAILPIT_ADMIN_PASSWORD,SMTP_HOST,SMTP_PORT,SMTP_FROM,SMTP_USER,SMTP_PASSWORD,SMTP_SECURE,CONTACT_SITE_ORIGINS,CONTACT_EMAIL,AZURE_OPENAI_KEY,AZURE_OPENAI_ENDPOINT,AZURE_OPENAI_DEPLOYMENT,AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT,AI_MONTHLY_BUDGET_CHF,AI_AZURE_ENABLED,AZURE_TRANSCRIBE_CHF_PER_HOUR,AZURE_OPENAI_CHF_PER_1M_INPUT,AZURE_OPENAI_CHF_PER_1M_OUTPUT
           script: |
             set -eu
             echo "remote.sh $ACTION, environment $ENVIRONMENT, image tag $IMAGE_TAG"

@@ -7,10 +7,13 @@ import {
   authenticateToken,
   LOCAL_ISSUER,
   mintLocalToken,
-  verifyKeycloakJwt,
+  ssoProvider,
+  ssoPublicConfig,
+  verifySsoIdToken,
   verifyLocalToken,
 } from '../../apps/api/src/jwt';
 
+process.env.SSO_PROVIDER = 'keycloak';
 process.env.JWT_ISSUER = 'http://kc-test/realms/worktime';
 process.env.JWT_AUDIENCE = 'worktime-web';
 process.env.API_JWT_SECRET = 'test-secret';
@@ -57,30 +60,48 @@ test('local token rejects tampering, expiry and wrong secret', async () => {
   process.env.API_JWT_SECRET = 'test-secret';
 });
 
-test('keycloak token verifies against JWKS', async () => {
-  const token = signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload(), privateKey);
-  const principal = await verifyKeycloakJwt(token, [publicJwk]);
-  assert.deepEqual(principal, { kind: 'keycloak', sub: 'kc-user-1', email: 'kc@example.com', emailVerified: false });
-  const verified = await verifyKeycloakJwt(signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload({ email_verified: true }), privateKey), [publicJwk]);
+test('SSO ID token verifies against JWKS', async () => {
+  const token = signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload({ name: 'K C' }), privateKey);
+  const principal = await verifySsoIdToken(token, [publicJwk]);
+  assert.deepEqual(principal, { kind: 'sso', sub: 'kc-user-1', email: 'kc@example.com', emailVerified: false, name: 'K C' });
+  const verified = await verifySsoIdToken(signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload({ email_verified: true }), privateKey), [publicJwk]);
   assert.equal(verified?.emailVerified, true);
 });
 
-test('keycloak token rejects wrong issuer, audience, expiry and signature', async () => {
+test('SSO ID token rejects wrong issuer, audience, expiry, age and signature, and SSO off', async () => {
   const good = (over: Record<string, unknown> = {}) => signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload(over), privateKey);
-  assert.equal(await verifyKeycloakJwt(good({ iss: 'http://evil/realms/x' }), [publicJwk]), null);
-  assert.equal(await verifyKeycloakJwt(good({ aud: 'other-client' }), [publicJwk]), null);
-  assert.equal(await verifyKeycloakJwt(good({ exp: now - 10 }), [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good({ iss: 'http://evil/realms/x' }), [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good({ aud: 'other-client' }), [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good({ exp: now - 10 }), [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good({ exp: undefined }), [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good({ iat: now - 11 * 60 }), [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good({ iat: undefined }), [publicJwk]), null);
   const token = good();
   const broken = token.slice(0, -2) + (token.endsWith('AA') ? 'BB' : 'AA');
-  assert.equal(await verifyKeycloakJwt(broken, [publicJwk]), null);
-  assert.equal(await verifyKeycloakJwt(good(), []), null);
+  assert.equal(await verifySsoIdToken(broken, [publicJwk]), null);
+  assert.equal(await verifySsoIdToken(good(), []), null);
+  process.env.SSO_PROVIDER = 'none';
+  try {
+    assert.equal(await verifySsoIdToken(good(), [publicJwk]), null);
+  } finally {
+    process.env.SSO_PROVIDER = 'keycloak';
+  }
 });
 
-test('authenticateToken tries local first, then keycloak', async () => {
+test('authenticateToken takes local session tokens only, never an SSO token', async () => {
   const local = await mintLocalToken('user-9', 'b@example.com');
   assert.equal((await authenticateToken(local))?.kind, 'local');
-  const kc = signRs256({ alg: 'RS256', kid: 'other-key' }, kcPayload(), privateKey);
-  assert.equal(await authenticateToken(kc), null);
+  const sso = signRs256({ alg: 'RS256', kid: 'test-key' }, kcPayload(), privateKey);
+  assert.equal(await authenticateToken(sso), null);
+});
+
+test('ssoProvider / ssoPublicConfig: none unless dex or keycloak with an issuer', () => {
+  assert.equal(ssoProvider({}), 'none');
+  assert.equal(ssoProvider({ SSO_PROVIDER: 'Dex' }), 'dex');
+  assert.equal(ssoProvider({ SSO_PROVIDER: 'okta' }), 'none');
+  assert.equal(ssoPublicConfig({ SSO_PROVIDER: 'dex' }), null);
+  assert.equal(ssoPublicConfig({ SSO_PROVIDER: 'none', JWT_ISSUER: 'https://auth.x' }), null);
+  assert.deepEqual(ssoPublicConfig({ SSO_PROVIDER: 'dex', JWT_ISSUER: 'https://auth.x/' }), { provider: 'dex', issuer: 'https://auth.x', clientId: 'worktime-web' });
 });
 
 function fakeContext(isPublic: boolean, headers: Record<string, string> = {}) {
@@ -133,19 +154,5 @@ test('localSecret throws in production if API_JWT_SECRET is unset', async () => 
     if (origEnv !== undefined) process.env.NODE_ENV = origEnv;
     else delete process.env.NODE_ENV;
     if (origSecret !== undefined) process.env.API_JWT_SECRET = origSecret;
-  }
-});
-
-test('keycloakJwksUrl: JWT_JWKS_URL overrides the issuer certs endpoint', async () => {
-  const { keycloakJwksUrl } = await import('../../apps/api/src/jwt');
-  const saved = process.env.JWT_JWKS_URL;
-  try {
-    delete process.env.JWT_JWKS_URL;
-    assert.equal(keycloakJwksUrl(), `${process.env.JWT_ISSUER}/protocol/openid-connect/certs`);
-    process.env.JWT_JWKS_URL = 'http://keycloak:8080/realms/worktime/protocol/openid-connect/certs';
-    assert.equal(keycloakJwksUrl(), 'http://keycloak:8080/realms/worktime/protocol/openid-connect/certs');
-  } finally {
-    if (saved === undefined) delete process.env.JWT_JWKS_URL;
-    else process.env.JWT_JWKS_URL = saved;
   }
 });

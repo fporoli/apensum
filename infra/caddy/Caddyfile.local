@@ -1,4 +1,4 @@
-# Caddy (local, ENV_NUMBER=2): routes :3002 -> web, :8002 -> api, :8092 -> keycloak
+# Caddy (local, ENV_NUMBER=2): routes :3002 -> web, :8002 -> api, :8092 -> dex (only with COMPOSE_PROFILES=dex)
 :3002 {
   reverse_proxy web:80
 }
@@ -6,5 +6,5 @@
   reverse_proxy api:8000
 }
 :8092 {
-  reverse_proxy keycloak:8080
+  reverse_proxy dex:5556
 }

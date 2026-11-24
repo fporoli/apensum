@@ -18,13 +18,12 @@ import { OPERATOR_ORG_ID, OPERATOR_PERMISSION } from '@worktime3/shared/operator
 /** The slice of Db these helpers need — easy to fake in tests, satisfied by any real Db. */
 export type Executor = Pick<Db, 'execute'>;
 
-/** Resolve the caller's app user id from a validated token principal. */
-export async function callerUserId(db: Executor, principal: AuthenticatedPrincipal): Promise<string | null> {
-  if (principal.kind === 'local') return principal.sub;
-  const found = await db.execute(
-    sql`SELECT user_id FROM user_identities WHERE provider_user_id = ${principal.sub} LIMIT 1`,
-  );
-  return (found.rows[0]?.user_id as string) ?? null;
+/**
+ * Resolve the caller's app user id from a validated token principal. Sessions are local tokens only (an SSO
+ * login is exchanged for one), so `sub` is the user id; the database argument stays for the callers.
+ */
+export async function callerUserId(_db: Executor, principal: AuthenticatedPrincipal): Promise<string | null> {
+  return principal.kind === 'local' ? principal.sub : null;
 }
 
 /** Highest privilege first — used to pick a single "display" role out of a membership's role set. */

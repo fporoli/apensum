@@ -1,5 +1,5 @@
 # Keep the build context to source only: host node_modules/dist would otherwise be copied over the
-# image's lockfile install by `COPY . .`, and the data-* dirs hold live Postgres/Keycloak files.
+# image's lockfile install by `COPY . .`, and the data-* dirs hold live Postgres files.
 **/node_modules
 **/dist
 data-local

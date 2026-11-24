@@ -3,7 +3,7 @@
 **Apensum** is a modular enterprise business framework and application suite engineered specifically for Swiss labor law (ArG) and enterprise requirements.\
 It combines a robust time-tracking and organizational core with an extensible plugin architecture, business modules as plugins (Spesen/Expenses, Gutachten/Assessments and HR processes in private repositories; Notes, an open example plugin, bundled), and a high-performance marketing website.
 
-Built with **NestJS** (API), **React 18 + MUI + Vite** (Web & PWA), **Postgres**, **Keycloak** (OIDC IdP in `auth` schema), and **Caddy** (edge reverse proxy).\
+Built with **NestJS** (API), **React 18 + MUI + Vite** (Web & PWA), **Postgres**, optional single sign-on through **Dex** or **Keycloak** (OIDC), and **Caddy** (edge reverse proxy).\
 Schema is strictly versioned with **Liquibase** and typed against **Drizzle ORM**.
 
 ## Key Highlights
@@ -31,16 +31,14 @@ Experience Apensum as a native-like Progressive Web App (PWA) on your smartphone
 
 ```
 apps/web  (React + MUI, Vite)  --HTTP-->  apps/api  (NestJS)  --Drizzle-->  Postgres
-                                               |                                ^
-                                               |  validates JWTs                |
-                                               v                                |
-                                          Keycloak  ------------------------------
-                                          (IdP; stores its own tables in the
-                                           `auth` schema of the same database)
+    |                                          |
+    | optional SSO (OIDC code flow + PKCE)     | verifies the ID token once,
+    v                                          v issues its own session token
+  Dex or Keycloak (one per instance, SSO_PROVIDER; none by default)
 
-Caddy fronts web, API, and Keycloak in the `local` Compose
-environments. The VPS stack uses the shared edge Caddy; `dev` accesses its
-host-run API and web app directly.
+Caddy fronts web, API (and Dex) in the `local` Compose environments. The VPS
+stack uses the shared edge Caddy; `dev` accesses its host-run API and web app
+directly.
 ```
 
 ### Components
@@ -56,7 +54,8 @@ host-run API and web app directly.
 | `plugins/notes` | Bundled example plugin: personal notes, the smallest complete plugin to start a new module from (see its README). |
 | `infra/liquibase` | The database schema's source of truth (see below). |
 | `infra/postgres/seeds` | `seed.sql`: demo orgs/users/projects/project times/expenses. Run manually, separate from schema migrations. |
-| `infra/keycloak` | Realm export (`realm-worktime.json`) imported on Keycloak startup. |
+| `infra/keycloak` | Realm export (`realm-worktime.json`) imported on Keycloak startup (VPS instances with `SSO_PROVIDER=keycloak`, Azure). |
+| `infra/dex` | Dex configs for trying single sign-on on dev and local (Dex's test login); VPS instances get theirs from `remote.sh`. |
 | `infra/caddy` | Environment-specific Caddyfiles plus the shared VPS edge proxy configuration. |
 | `infra/vps` | `remote.sh`, the script the `vps` workflow runs on the server. |
 | `infra/azure` | `provision.sh`, the Azure Container Apps provisioning phases. |
@@ -66,15 +65,15 @@ host-run API and web app directly.
 
 | File | What runs in Docker |
 | --- | --- |
-| `dev` | Postgres, migrations, Keycloak and Mailpit. API and web run on the host. |
+| `dev` | Postgres, migrations and Mailpit (Dex with the `dex` profile). API and web run on the host. |
 | `local` | The full stack, including Caddy. |
-| `vps` | One stack per instance (own Postgres, Keycloak, API, web) that joins the server's shared edge proxy network. |
+| `vps` | One stack per instance (own Postgres, API, web, Dex or Keycloak if chosen) that joins the server's shared edge proxy network. |
 
 #### Web (`apps/web/src`)
 
 | Area | Files |
 | --- | --- |
-| Session and shell | `App.tsx` (session, org switcher, branding), `corePages.tsx` (pages and nav groups), `Login.tsx` (local + Keycloak SSO + invite-accept), `Home`, `NotificationBell`, `UserMenu` |
+| Session and shell | `App.tsx` (session, org switcher, branding), `corePages.tsx` (pages and nav groups), `Login.tsx` (password, single sign-on, invite-accept), `Home`, `NotificationBell`, `UserMenu` |
 | My work | `WorkTime` (check-in/out), `Absences` (requests, approvals, calendar, RFC 5545 iCal/WebCal subscriptions), `Timesheet` (monthly working-time timesheet for the line manager), `MyData` (`BasicDataPanel`), `BalancesPanel` (overtime/vacation by month) |
 | Projects | `ProjectTime` (hours per project), `ProjectTimesheet` (monthly submission to each project's owner) |
 | Expenses | `Expenses`, `ExpenseReports`, `ExpenseProcessing` |
@@ -82,7 +81,7 @@ host-run API and web app directly.
 | Admin | `AdminSettings` (static-data enums), `RolesPermissions`, `FormDesigner`, `AuditLog` |
 | Form fields | `ConfigField`, `designMode.tsx` (configurable forms, see `docs/FIELD_CONFIG.md`) |
 | AI | `Assistant` (chat) |
-| Support modules | `auth.ts` (Keycloak client + token refresh), `aggregate.ts` (daily/weekly/monthly bucketing), `i18n.tsx` (en/de/fr/it) |
+| Support modules | `auth.ts` (single sign-on: OIDC code flow with PKCE, `oidc-client-ts`), `aggregate.ts` (daily/weekly/monthly bucketing), `i18n.tsx` (en/de/fr/it) |
 
 #### API (`apps/api/src`)
 
@@ -98,15 +97,15 @@ host-run API and web app directly.
 | --- | --- |
 | `access.ts` | Authorization helpers every controller calls (`callerUserId`, `can`, `canSeeUserData`, period locks, …), resolved from the caller's validated JWT, never trusted from the request body. |
 | `work-time-model.service.ts`, `balances.service.ts` | Daily targets (schedules, holidays, absences) and the monthly overtime/vacation balances. |
-| `jwt.ts` / `jwt.guard.ts` | Validate local HS256 tokens and Keycloak-issued tokens (JWKS) behind one global guard. Routes opt out with `@Public()`. |
+| `jwt.ts` / `jwt.guard.ts` | Session tokens are local HS256 tokens, checked by one global guard (routes opt out with `@Public()`); `jwt.ts` also verifies an SSO provider's ID token (JWKS) for the one-time exchange. |
 | `db.service.ts` | Wraps a single `pg.Pool` and exposes a typed Drizzle client via `getDb()`. |
 | `db/schema.ts`, `relations.ts` | **Generated, not hand-written** (see Database below). |
 
 ### Request flow
 
-1. The web app obtains a token (local HS256 login or Keycloak SSO, see `auth.ts`) and sends it as a bearer token on every call.\
+1. The web app obtains a token (a local HS256 token from the password login, or from `auth/sso/exchange` after single sign-on, see `auth.ts`) and sends it as a bearer token on every call.\
    Each page calls the API directly under the global prefix `/api/v1`; there is no shared client layer or state store.
-2. The global `JwtAuthGuard` validates the token (local secret or Keycloak JWKS) and attaches `req.user`.\
+2. The global `JwtAuthGuard` validates the token (local secret) and attaches `req.user`.\
    Routes marked `@Public()` skip the guard.
 3. The handler gets the Drizzle client from `DbService.getDb()`, resolves the caller's user id from the validated token (`callerUserId`), and checks access with the helpers in `access.ts`.\
    Every org-scoped handler does this itself; there is no central policy layer.
@@ -209,7 +208,7 @@ Details are in the next section.
 Liquibase tracks exactly which changesets have run inside the database itself (`databasechangelog` table), so applying the changelog is always safe to repeat — this is what makes environments stay in sync instead of quietly drifting from whatever `schema.sql` happened to look like when a given database was first created.
 
 Applying it uses the official `liquibase/liquibase` Docker image with the Postgres JDBC driver baked in (`infra/liquibase/Dockerfile` — the base image ships without a driver):
-- **Compose environments**: the `migrate` service in every `compose/docker-compose.*.yml` runs it automatically before `api`/Keycloak start (`depends_on: migrate: condition: service_completed_successfully`).
+- **Compose environments**: the `migrate` service in every `compose/docker-compose.*.yml` runs it automatically before `api` (and Keycloak) start (`depends_on: migrate: condition: service_completed_successfully`).
 - **Outside compose** (a host-run API, or CI): `npm run db:migrate` — a thin Node wrapper (`infra/liquibase/migrate.mjs`) that builds the image and points it at `$DATABASE_URL`.
 
 **Drizzle owns the query layer**, typed against whatever Liquibase has applied.\
@@ -228,16 +227,16 @@ Seed data (`infra/postgres/seeds/seed.sql`) is separate from schema migrations a
 It is additive and safe to re-run: it adds missing demo rows and keeps demo data changed since.\
 A deployed instance is never seeded by `deploy`: use the `vps` workflow's `seed` (additive) or `reset-seed` (clean slate), or the `azure` workflow's `seed` / `initdb`.
 
-## Host ports (8090+N keycloak, 5430+N pg, 3000+N web, 8000+N api)
+## Host ports (8090+N single sign-on, 5430+N pg, 3000+N web, 8000+N api)
 
-| Env | N | pg | keycloak | web | api |
+| Env | N | pg | Dex (profile `dex`) | web | api |
 |---|---|----|----------|-----|-----|
-| dev (pg+kc in containers, api+web local) | 1 | 5431 | 8091 | 3001 | 8001 |
+| dev (pg in a container, api+web local) | 1 | 5431 | 8091 | 3001 | 8001 |
 | local (all dockerized) | 2 | 5432 | 8092 | 3002 | 8002 |
 | VPS instances (one stack each; only `pg` is published, on `127.0.0.1:PG_PORT`, reachable via SSH tunnel) | — | 5436 production, 5434 preprod, 5437 demo (configured per server) | edge | edge | edge |
 
 Azure uses Container Apps ingress, not host ports.\
-On the VPS the shared edge proxy routes each instance's three hostnames (`WEB_SUB`, `API_SUB`, `AUTH_SUB` under `DOMAIN`; production uses `app`, `api`, `auth` under `apensum.ch`, the demo `appdemo`, `apidemo`, `authdemo`) to its web, API and Keycloak containers.
+On the VPS the shared edge proxy routes each instance's three hostnames (`WEB_SUB`, `API_SUB`, `AUTH_SUB` under `DOMAIN`; production uses `app`, `api`, `auth` under `apensum.ch`, the demo `appdemo`, `apidemo`, `authdemo`) to its web and API containers and, when it has single sign-on, to Dex or Keycloak.
 
 ## Dev and Local deployment
 
@@ -248,14 +247,14 @@ The base scripts underneath (`db:migrate`, `db:seed`, `start`, …) read only th
 
 | Script | Does |
 | --- | --- |
-| `dev:up` / `dev:down` / `dev:logs` | pg + migrate + Keycloak + Mailpit in Docker |
+| `dev:up` / `dev:down` / `dev:logs` | pg + migrate + Mailpit in Docker (Dex with `COMPOSE_PROFILES=dex`) |
 | `dev:api` | build and start the API (http://localhost:8001) |
 | `dev:web` | Vite (http://localhost:3001) |
 | `dev:migrate` / `dev:seed` / `dev:introspect` | database tasks against the dev database |
 | `dev:checkschema` / `local:checkschema` | check that the committed `schema.ts` / `relations.ts` match that database (`resetdb` and CI run it after migrating) |
 | `dev:status` / `local:status` | read-only Liquibase check: changesets pending, applied but missing from this checkout (database ahead or on another branch), or edited after they ran (checksum); exit 1 on any. `db:status` takes `DATABASE_URL`, so it works against any reachable database |
 | `dev:psql` | psql into the dev database |
-| `dev:resetdb` | **Destructive.** Drop and recreate the dev database's `public` schema, migrate, seed (Keycloak's `auth` schema is kept) |
+| `dev:resetdb` | **Destructive.** Drop and recreate the dev database's `public` schema, migrate, seed (an `auth` schema, Keycloak's, is kept) |
 | `local:up` / `local:down` / `local:logs` | the whole stack in Docker behind Caddy |
 | `local:migrate` / `local:seed` / `local:introspect` / `local:psql` | database tasks against the local database |
 | `local:resetdb` | **Destructive.** The same reset for the local database |
@@ -290,12 +289,12 @@ npm run stack -- preprod all --reset     # also reset-seed (asks first; --yes sk
 
 The remote steps only trigger and follow the workflows; their config stays in GitHub Environments.
 
-**dev** (pg + Keycloak + Mailpit in Docker, API + web on the host):
+**dev** (pg + Mailpit in Docker, API + web on the host):
 
 ```sh
 cp env.example.dev.cfg .env.dev        # once; Windows: copy
 npm install
-npm run dev:up                         # pg + migrate + keycloak + mailpit
+npm run dev:up                         # pg + migrate + mailpit
 npm run dev:seed
 npm run build
 npm test
@@ -323,7 +322,7 @@ Each seeded `<name>@acme.com` user's password is `<name>` (e.g. `admin@acme.com`
 Its entries are global static data (entity `login`, enum `demo_accounts`; each value a JSON string `{"name","user","password"}`), served by the public `GET /api/v1/auth/demo-accounts`.\
 On the VPS the dropdown is controlled per instance by the `SHOW_DEMO_ACCOUNTS` variable (default `false`); the Azure image always shows them.\
 The accounts exist only after a seed (`reset-seed` on the VPS).\
-Otherwise provision real Keycloak accounts; the realm import does not create users.\
+Otherwise accounts come from registering, invitations or single sign-on.\
 Cases is on for Acme with one encrypted demo case (KESB-2026-0142).\
 Admin, Marta, Marco and Ulla open it with the Cases passphrase `<name>-cases-demo` (e.g. `marta-cases-demo`); `plugins/cases/seed.sql` is generated by `npx tsx plugins/cases/scripts/generate-demo-seed.mts`.\
 Someone who set up their own Cases passphrase before keeps it, and the case stays locked for them until `reset-seed`.\
@@ -341,7 +340,28 @@ Default grants of the global roles (organizations can change them, see Multi-ten
 
 ## Auth
 
-Keycloak realm `worktime` (see `infra/keycloak/realm-worktime.json`).
+The API keeps the accounts and issues every session: password login (with optional two-step login), registration, invitations and password reset are its own.
+
+### Single sign-on
+
+Optional, one identity provider per instance, chosen by the GitHub Environment variable `SSO_PROVIDER`:
+
+| Value | What runs |
+| --- | --- |
+| `none` (default, also when unset) | Nothing: no SSO button, nothing at `AUTH_SUB`. |
+| `dex` | [Dex](https://dexidp.io) (about 10 MB of memory), a broker to the customers' own directories (Microsoft Entra ID, Google, LDAP, ...). |
+| `keycloak` | Keycloak 25 with the realm `worktime` (`infra/keycloak/realm-worktime.json`, its data in the `auth` schema), about 0.6-1 GB of memory. |
+
+The web app asks `GET auth/sso` whether there is one and signs in there (OIDC code flow with PKCE, client `worktime-web`), then hands the ID token to `POST auth/sso/exchange` once.\
+The API checks it (signature against the provider's keys, issuer, audience, at most 10 minutes old) and returns a session like a password login's: the account linked to the token's `sub`, else the one of its verified e-mail (created if there is none).\
+The provider's own second step stands in for two-step login.
+
+Dex's configuration is written by `remote.sh` on every deploy: issuer `https://<AUTH_SUB>.<DOMAIN>`, the web host as the only client, and the connectors of the secret `DEX_CONNECTORS` (a YAML list as in [Dex's connector docs](https://dexidp.io/docs/connectors/), e.g. Microsoft Entra ID through the `oidc` connector).\
+Without `DEX_CONNECTORS` Dex offers only its test login (no password; it signs in as `kilgore@kilgore.trout`, a new account without organizations).\
+A connector Dex cannot open (wrong tenant, secret or address) stops Dex from starting: check `docker logs apensum-<env>-dex` after changing them.\
+Switching away from Keycloak removes its container; its `auth` schema stays in the database.
+
+On dev and local, `COMPOSE_PROFILES=dex` and `SSO_PROVIDER=dex` in `.env.dev` / `.env.local` start Dex with its test login (`infra/dex/dev.yaml`, `local.yaml`; on dev also `JWT_ISSUER=http://localhost:8091`).
 
 ## Email
 
@@ -501,7 +521,8 @@ The app supports year-end snapshots starting in 2000; earlier attendance and mon
 | --- | --- |
 | `VPS_SSH_KEY` | Private key, no passphrase |
 | `POSTGRES_PASSWORD` | Hex only, it goes into a URL |
-| `KEYCLOAK_ADMIN_PASSWORD` | |
+| `KEYCLOAK_ADMIN_PASSWORD` | Only with `SSO_PROVIDER=keycloak` |
+| `DEX_CONNECTORS` | Optional, with `SSO_PROVIDER=dex`: Dex's connectors, a YAML list (see Single sign-on) |
 | `API_JWT_SECRET` | |
 | `SMTP_PASSWORD` | Optional |
 | `GHCR_TOKEN` | Optional, `read:packages`, only for private images |
@@ -514,7 +535,8 @@ The app supports year-end snapshots starting in 2000; earlier attendance and mon
 | `PG_PORT` | This instance's Postgres loopback port; unique per server, e.g. 5434/5435/5436 |
 | `DOMAIN` | e.g. `apensum.ch` |
 | `WEB_SUB`, `API_SUB`, `AUTH_SUB` | e.g. `apppp`, `apipp`, `authpp` |
-| `KEYCLOAK_ADMIN` | |
+| `SSO_PROVIDER` | Optional, `none` (default), `dex` or `keycloak` (see Single sign-on) |
+| `KEYCLOAK_ADMIN` | Only with `SSO_PROVIDER=keycloak` |
 | `SHOW_DEMO_ACCOUNTS` | Optional, `true`/`false` |
 | `TWO_FACTOR` | Optional, `off` turns two-step login off on the instance (set on demo and test; never on prod or preprod) |
 | `RESET_BACKUP` | Optional, `false` skips the backup before `reset-seed` (set on demo, preprod, test; only prod is backed up) |
@@ -544,12 +566,12 @@ It derives everything instance-specific from the environment name:
 - Containers (`apensum-<env>-api`, ...), Compose project and `/opt/apensum-<env>`.
 - Its own Postgres (`apensum-<env>-pg`, role and database `worktime`, volume per Compose project), bound to `127.0.0.1:PG_PORT` on the server.
 - Its own Caddy site at the three hostnames.
-- Writes `compose/.env` and `/opt/edge/.env`, creates the `edge` network if missing and brings up the edge stack (`infra/caddy/edge`: just the Caddy shared by all instances) before the instance's `pg`, `mailpit`, `migrate`, `api` and Keycloak.
+- Writes `compose/.env` and `/opt/edge/.env`, creates the `edge` network if missing and brings up the edge stack (`infra/caddy/edge`: just the Caddy shared by all instances) before the instance's `pg`, `mailpit`, `migrate`, `api` and its single sign-on (Dex or Keycloak, if any).
 
 Other things to know:
 
 - The server keeps no git checkout and no hand-edited config.
-- One web image serves every instance: its API and Keycloak URLs are filled in when the container starts.
+- One web image serves every instance: its API URL is filled in when the container starts; the single sign-on comes from the API.
 - Values must not contain a single quote.
 - A leftover `edge-pg` (the old shared Postgres) is not used any more: remove it with `docker rm -f edge-pg`.
 
@@ -600,7 +622,7 @@ Images built before any tag exists show as untagged; host builds as local.
 
 The apps run as Container Apps in a plain Consumption environment (no custom VNet, which would add an always-on load balancer): `worktime3-auth` (Keycloak), `worktime3-api`, `worktime3-web`, plus the `worktime3-migrate` and `worktime3-seed` jobs.\
 Postgres is an Azure Database for PostgreSQL Flexible Server (Burstable B1ms, public endpoint open only to Azure services, TLS required, `citext`/`uuid-ossp` allowlisted via `azure.extensions`).\
-`build-push` publishes the extra `migrate`, `seed`, `dbtools` and `web-azure` images; `web-azure` has the Azure hostnames baked in from the repo variables `AZURE_API_URL` / `AZURE_KEYCLOAK_URL`.
+`build-push` publishes the extra `migrate`, `seed`, `dbtools` and `web-azure` images; `web-azure` has the API hostname baked in from the repo variable `AZURE_API_URL` (the single sign-on comes from the API).
 
 First deploy, from Git Bash with the Azure CLI logged into the target tenant:
 

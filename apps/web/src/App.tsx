@@ -28,7 +28,6 @@ import { useBranding } from './theme';
 import Login, { clearSession, loadSession, saveSession, type Session } from './Login';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { TwoFactorRequired } from './TwoFactor';
-import { keycloak, refreshSsoToken, ssoLogout } from './auth';
 import UserMenu from './UserMenu';
 import { ScreenSharer, ScreenViewer, type ShareRequest } from './ScreenShare';
 import { DesignModeNotice, DesignModeProvider, useDesignAccess } from './designMode';
@@ -179,16 +178,7 @@ export default function App() {
 
   const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     if (!session) return {};
-    let token = session.token;
-    if (session.sso) {
-      await refreshSsoToken();
-      token = keycloak.token ?? token;
-      if (token !== session.token) {
-        const updated = { ...session, token };
-        setSession(updated);
-        saveSession(updated);
-      }
-    }
+    const token = session.token;
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [session]);
 
@@ -208,7 +198,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-    // authHeaders changes when the SSO token refreshes; that must not drop and refetch permissions.
+    // authHeaders changes with the session object; only a new person or organization refetches permissions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.userId, orgId, permissionsVersion]);
 
@@ -370,11 +360,6 @@ export default function App() {
 
 
   async function logout() {
-    if (session?.sso) {
-      try {
-        await ssoLogout();
-      } catch { /* fall through */ }
-    }
     clearSession();
     setSession(null);
   }

@@ -275,10 +275,10 @@ export default {
     "A new organization in a few minutes: sign up and it is ready",
   ],
   'features.access.title': "Sign-in & accounts",
-  'features.access.lead': "Sign in with e-mail and password or with single sign-on through Keycloak. People register and reset their passwords themselves, without support.",
+  'features.access.lead': "Sign in with e-mail and password or, if you wish, with single sign-on through your existing directory. People register and reset their passwords themselves, without support.",
   'features.access.items': [
-    "Single sign-on (WebSSO) through Keycloak with OpenID Connect, part of the installation",
-    "Keycloak can connect to your existing directory, e.g. Microsoft Entra ID, Google Workspace or LDAP",
+    "Single sign-on (WebSSO) with OpenID Connect, set up for your installation on request",
+    "Connects to your existing directory, e.g. Microsoft Entra ID, Google Workspace or LDAP",
     "The first SSO sign-in creates the account automatically",
     "Self-registration: account and your own organization in one step, with full rights",
     "Employees join through an invitation link, with the role you chose",

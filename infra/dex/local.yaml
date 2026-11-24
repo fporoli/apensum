@@ -1,0 +1,21 @@
+# Dex for the local stack (compose/docker-compose.local.yml, profile `dex`): single sign-on to try the SSO login.
+# Its only connector is Dex's test login (mockCallback): no password, it signs in as kilgore@kilgore.trout
+# (verified e-mail), a new account without organizations. Never use this file on a server: there remote.sh
+# writes the instance's own config (infra/vps/remote.sh, `dex_config`).
+issuer: http://localhost:8092
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+  allowedOrigins: ['http://localhost:3002']
+oauth2:
+  skipApprovalScreen: true
+staticClients:
+  - id: worktime-web
+    name: Apensum
+    public: true
+    redirectURIs: ['http://localhost:3002/']
+connectors:
+  - type: mockCallback
+    id: mock
+    name: Test login

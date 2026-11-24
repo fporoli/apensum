@@ -13,6 +13,4 @@ __WEB_HOST__ {
 __API_HOST__ {
   reverse_proxy __PREFIX__-api:8000
 }
-__AUTH_HOST__ {
-  reverse_proxy __PREFIX__-keycloak:8080
-}
+# The single sign-on host (AUTH_SUB) is appended by remote.sh when the instance has one (SSO_PROVIDER).

@@ -36,13 +36,9 @@ test('invite email carries org, link and token', () => {
   assert.match(mail.text, /tok-123/);
 });
 
-test('callerUserId resolves local sub and keycloak identity', async () => {
+test('callerUserId: a local session is the user; an SSO principal is never a session', async () => {
   assert.equal(await callerUserId(fakeDb([]), { kind: 'local', sub: 'user-1' }), 'user-1');
-  assert.equal(
-    await callerUserId(fakeDb([{ user_id: 'user-2' }]), { kind: 'keycloak', sub: 'kc-sub' }),
-    'user-2',
-  );
-  assert.equal(await callerUserId(fakeDb([]), { kind: 'keycloak', sub: 'unknown' }), null);
+  assert.equal(await callerUserId(fakeDb([{ user_id: 'user-2' }]), { kind: 'sso', sub: 'kc-sub' }), null);
 });
 
 test('isOrgAdmin only allows active owner/admin', async () => {

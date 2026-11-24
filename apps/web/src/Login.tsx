@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Container, Divider, IconButton, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
-import { ensureSsoInit, keycloak, startSsoLogin } from './auth';
+import { completeSsoLogin, isSsoCallback, ssoConfig, startSsoLogin } from './auth';
 import { LOCALES, useI18n } from './i18n';
 import { DarkModeIcon, LightModeIcon } from './icons';
 import { infoUrl } from './infoUrl';
@@ -26,7 +26,7 @@ export interface Session {
   displayName: string;
   /** Local API token; sent as `Authorization: Bearer` on API calls. */
   token?: string;
-  /** True when the token is a Keycloak access token from the SSO redirect. */
+  /** Signed in by single sign-on (shown in About; the token is a local one all the same). */
   sso?: boolean;
   /** An organization requires two-step login and it is not set up: the token reaches only its setup. */
   twoFactorSetupRequired?: true;
@@ -137,7 +137,8 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ssoChecking, setSsoChecking] = useState(true);
+  const [ssoChecking, setSsoChecking] = useState(() => isSsoCallback());
+  const [ssoOffered, setSsoOffered] = useState(false);
   const [demoAccounts, setDemoAccounts] = useState<DemoAccount[]>([]);
 
   // Demo accounts come from the API (seeded databases only); none configured -> no section.
@@ -155,45 +156,34 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
     };
   }, []);
 
-  // After a Keycloak redirect back to us, finish the login: sync the user, keep the SSO token.
+  // SSO only when the instance has an identity provider; after its redirect back, the ID token becomes a session.
   useEffect(() => {
     let cancelled = false;
-    ensureSsoInit()
-      .then(async (authenticated) => {
+    void ssoConfig().then((config) => { if (!cancelled) setSsoOffered(!!config); });
+    if (!isSsoCallback()) return () => { cancelled = true; };
+    void (async () => {
+      try {
+        const idToken = await completeSsoLogin();
+        const res = await fetch(`${API}/auth/sso/exchange`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken }),
+        });
+        const data = await res.json();
         if (cancelled) return;
-        try {
-          if (authenticated && keycloak.token) {
-            const profile = keycloak.tokenParsed as Record<string, unknown> | undefined;
-            const email = typeof profile?.email === 'string' ? profile.email : undefined;
-            const displayName =
-              typeof profile?.name === 'string'
-                ? profile.name
-                : typeof profile?.preferred_username === 'string'
-                  ? profile.preferred_username
-                  : email;
-            const res = await fetch(`${API}/auth/sso/sync`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${keycloak.token}` },
-              body: JSON.stringify({ displayName }),
-            });
-            const data = await res.json();
-            if (!cancelled && data.ok) {
-              const session = { ...(data as Session), token: keycloak.token, sso: true };
-              saveSession(session);
-              onLoggedIn(session);
-              return;
-            }
-            if (!cancelled && data.error === 'email-not-verified') setError(t('login.error.email-not-verified'));
-          }
-        } catch {
-          // SSO unavailable (Keycloak down?) — fall through to the local form.
-        } finally {
-          if (!cancelled) setSsoChecking(false);
+        if (data.ok && typeof data.token === 'string') {
+          const session = { ...(data as Session), sso: true };
+          saveSession(session);
+          onLoggedIn(session);
+          return;
         }
-      })
-      .catch(() => {
+        setError(t(data.error === 'email-not-verified' ? 'login.error.email-not-verified' : 'login.error.sso-failed'));
+      } catch {
+        if (!cancelled) setError(t('login.error.sso-failed'));
+      } finally {
         if (!cancelled) setSsoChecking(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -284,7 +274,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
                   fail(data.error ?? 'two-factor-invalid');
                 }
                 setChallenge(null);
-                const session = data as Session;
+                const session = { ...(data as Session), sso: true };
                 saveSession(session);
                 onLoggedIn(session);
               });
@@ -315,12 +305,20 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
             }}
             sx={{ display: 'grid', gap: 2 }}
           >
-            <Button variant="outlined" disabled={busy || ssoChecking} onClick={() => startSsoLogin()}>
-              {ssoChecking ? t('login.ssoChecking') : t('login.ssoButton')}
-            </Button>
-            <Divider sx={{ '&::before, &::after': { borderColor: 'divider' } }}>
-              <Typography variant="caption" color="text.secondary">{t('login.orLocal')}</Typography>
-            </Divider>
+            {(ssoOffered || ssoChecking) && (
+              <>
+                <Button
+                  variant="outlined"
+                  disabled={busy || ssoChecking}
+                  onClick={() => void startSsoLogin().catch(() => setError(t('login.error.sso-failed')))}
+                >
+                  {ssoChecking ? t('login.ssoChecking') : t('login.ssoButton')}
+                </Button>
+                <Divider sx={{ '&::before, &::after': { borderColor: 'divider' } }}>
+                  <Typography variant="caption" color="text.secondary">{t('login.orLocal')}</Typography>
+                </Divider>
+              </>
+            )}
             <TextField label={t('common.email')} value={email} onChange={(e) => setEmail(e.target.value)} size="small" autoComplete="email" />
             <TextField label={t('login.password')} type="password" value={password} onChange={(e) => setPassword(e.target.value)} size="small" autoComplete="current-password" />
             <Button type="submit" variant="contained" disabled={busy}>{t('login.submit')}</Button>
@@ -359,7 +357,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
               void run(async () => {
                 const data = await post('/auth/register', { email, displayName, password });
                 if (!data.ok) fail(data.error ?? 'request-failed');
-                const session = data as Session;
+                const session = { ...(data as Session), sso: true };
                 saveSession(session);
                 onLoggedIn(session);
               });
@@ -392,7 +390,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
                   setNotice(t('login.inviteSignIn'));
                   return;
                 }
-                const session = data as Session;
+                const session = { ...(data as Session), sso: true };
                 saveSession(session);
                 onLoggedIn(session);
               });

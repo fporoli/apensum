@@ -4,7 +4,7 @@
 # Nothing on the server is edited by hand and there is no git checkout there.
 #
 #   remote.sh deploy        edge stack (Caddy), then this instance
-#                           (own Postgres and Mailpit, migrate, api, web, Keycloak), then reload Caddy
+#                           (own Postgres and Mailpit, migrate, api, web, single sign-on if any), then reload Caddy
 #   remote.sh seed          loads the demo data into the running instance, adding only what is
 #                           missing (seed.sql is additive; nothing is dropped or overwritten)
 #   remote.sh reset-seed    backs up and drops the public schema, migrates, loads the demo data
@@ -18,6 +18,11 @@
 # (PG_PORT), so several instances (production, preprod, test, ...) can share a server: each
 # gets its own containers (apensum-<env>-*), Compose project, /opt/apensum-<env>,
 # Postgres and Caddy site.
+#
+# Single sign-on: SSO_PROVIDER (GitHub Environment variable) is none (default), dex or keycloak. Only the chosen
+# one runs (a Compose profile), at AUTH_SUB.DOMAIN; the other's container is removed. Dex gets its config from
+# here (dex_config: the instance's issuer and web host, the connectors of the secret DEX_CONNECTORS, else Dex's
+# test login); Keycloak its realm file and KEYCLOAK_ADMIN(_PASSWORD).
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"   # the files just shipped
@@ -32,6 +37,17 @@ WEB_HOST="${WEB_SUB:?required}.${DOMAIN:?required}"
 API_HOST="${API_SUB:?required}.$DOMAIN"
 AUTH_HOST="${AUTH_SUB:?required}.$DOMAIN"
 : "${PG_PORT:?required}"
+SSO_PROVIDER="$(printf '%s' "${SSO_PROVIDER:-none}" | tr 'A-Z' 'a-z')"
+case "$SSO_PROVIDER" in
+  ''|none) SSO_PROVIDER=none; SSO_ISSUER=""; SSO_JWKS_URL="" ;;
+  dex) SSO_ISSUER="https://$AUTH_HOST"; SSO_JWKS_URL="http://$PREFIX-dex:5556/keys" ;;
+  keycloak)
+    SSO_ISSUER="https://$AUTH_HOST/realms/worktime"
+    SSO_JWKS_URL="http://$PREFIX-keycloak:8080/realms/worktime/protocol/openid-connect/certs"
+    : "${KEYCLOAK_ADMIN:?required with SSO_PROVIDER=keycloak}" "${KEYCLOAK_ADMIN_PASSWORD:?required with SSO_PROVIDER=keycloak}" ;;
+  *) echo "SSO_PROVIDER must be none, dex or keycloak, not '$SSO_PROVIDER'" >&2; exit 2 ;;
+esac
+COMPOSE_PROFILES="$([ "$SSO_PROVIDER" = none ] || echo "$SSO_PROVIDER")"
 COMPOSE=(docker compose -p "$PREFIX" -f "$ROOT/compose/docker-compose.vps.yml")
 
 # Creates a directory owned by the deploy user. /opt belongs to root, so a new instance's
@@ -54,19 +70,54 @@ install_files() {
   # Keycloak redirect URIs follow this instance's web host.
   sed "s#https://wt\.turbotapir\.com#https://$WEB_HOST#g" \
     "$ROOT/infra/keycloak/realm-worktime.json" > "$ROOT/rendered/realm-worktime.json"
+  dex_config
+}
+
+# Dex's config for this instance (rendered even when Dex is not chosen: the compose file names it). Its clients'
+# tokens are exchanged once by the API, so its state is small (sqlite in the dex_data volume). Connectors: the
+# secret DEX_CONNECTORS (a YAML list, e.g. Microsoft Entra ID through Dex's `oidc` connector), else Dex's test
+# login (mockCallback: no password, a new account kilgore@kilgore.trout without organizations).
+dex_config() {
+  local file="$ROOT/rendered/dex.yaml" connectors
+  connectors="$(printf '%s' "${DEX_CONNECTORS_B64:-}" | base64 -d 2>/dev/null || true)"
+  if [ -z "$connectors" ]; then
+    connectors="- type: mockCallback
+  id: mock
+  name: Test login"
+    if [ "$SSO_PROVIDER" = dex ]; then echo "WARNING: SSO_PROVIDER=dex without DEX_CONNECTORS: Dex offers only its test login."; fi
+  fi
+  (
+    umask 022
+    {
+      printf 'issuer: https://%s\n' "$AUTH_HOST"
+      printf 'storage:\n  type: sqlite3\n  config:\n    file: /var/dex/dex.db\n'
+      printf "web:\n  http: 0.0.0.0:5556\n  allowedOrigins: ['https://%s']\n" "$WEB_HOST"
+      printf 'oauth2:\n  skipApprovalScreen: true\n'
+      printf "staticClients:\n  - id: worktime-web\n    name: Apensum\n    public: true\n    redirectURIs: ['https://%s/']\n" "$WEB_HOST"
+      printf 'connectors:\n'
+      printf '%s\n' "$connectors" | sed 's/^/  /'
+    } > "$file"
+  )
+}
+
+# Removes the single sign-on containers this instance does not use (Compose leaves a service of an inactive
+# profile running). Keycloak's auth schema stays in the database.
+sso_prune() {
+  [ "$SSO_PROVIDER" = dex ] || docker rm -f "$PREFIX-dex" >/dev/null 2>&1 || true
+  [ "$SSO_PROVIDER" = keycloak ] || docker rm -f "$PREFIX-keycloak" >/dev/null 2>&1 || true
 }
 
 # Values are single-quoted so compose does not interpolate `$`; they must not contain a
 # single quote. SMTP_* may be empty: the compose file falls back to the instance's Mailpit.
 write_app_env() {
-  export REALM_FILE="$ROOT/rendered/realm-worktime.json" CONTAINER_PREFIX="$PREFIX" \
-    PG_PORT WEB_HOST API_HOST AUTH_HOST
+  export REALM_FILE="$ROOT/rendered/realm-worktime.json" DEX_CONFIG="$ROOT/rendered/dex.yaml" CONTAINER_PREFIX="$PREFIX" \
+    PG_PORT WEB_HOST API_HOST AUTH_HOST SSO_PROVIDER SSO_ISSUER SSO_JWKS_URL COMPOSE_PROFILES
   (
     umask 077
     for name in POSTGRES_PASSWORD KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS \
       SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS DEMO_RESET_EVERY_HOURS TWO_FACTOR \
       CONTACT_SITE_ORIGINS CONTACT_EMAIL \
-      REALM_FILE CONTAINER_PREFIX PG_PORT WEB_HOST API_HOST AUTH_HOST; do
+      REALM_FILE DEX_CONFIG CONTAINER_PREFIX PG_PORT WEB_HOST API_HOST AUTH_HOST SSO_PROVIDER SSO_ISSUER SSO_JWKS_URL COMPOSE_PROFILES; do
       printf "%s='%s'\n" "$name" "$(printenv "$name" || true)"
     done > "$ROOT/compose/.env"
   )
@@ -82,9 +133,13 @@ edge_up() {
   # Tools that moved into each instance (Adminer, Mailpit): drop what older deploys left.
   rm -f "$EDGE/sites/db.caddy" "$EDGE/sites/mail.caddy"
   docker rm -f edge-adminer mailpit >/dev/null 2>&1 || true
-  sed -e "s/__WEB_HOST__/$WEB_HOST/g" -e "s/__API_HOST__/$API_HOST/g" \
-      -e "s/__AUTH_HOST__/$AUTH_HOST/g" -e "s/__PREFIX__/$PREFIX/g" \
+  sed -e "s/__WEB_HOST__/$WEB_HOST/g" -e "s/__API_HOST__/$API_HOST/g" -e "s/__PREFIX__/$PREFIX/g" \
     "$ROOT/infra/caddy/edge/sites/worktime3.caddy.tpl" > "$EDGE/sites/$PREFIX.caddy"
+  # The single sign-on host only when the instance has one.
+  case "$SSO_PROVIDER" in
+    dex) printf '%s {\n  reverse_proxy %s-dex:5556\n}\n' "$AUTH_HOST" "$PREFIX" >> "$EDGE/sites/$PREFIX.caddy" ;;
+    keycloak) printf '%s {\n  reverse_proxy %s-keycloak:8080\n}\n' "$AUTH_HOST" "$PREFIX" >> "$EDGE/sites/$PREFIX.caddy" ;;
+  esac
   # Optional inbox UI of this instance's Mailpit, at MAIL_SUB.DOMAIN (needs a DNS record).
   if [ -n "${MAIL_SUB:-}" ]; then
     local mail_pw="${MAILPIT_ADMIN_PASSWORD:-${ADMIN_PASSWORD:-admin}}"
@@ -170,6 +225,7 @@ deploy() {
   "${COMPOSE[@]}" pull api web
   carry_documents_out
   "${COMPOSE[@]}" up -d --build --remove-orphans
+  sso_prune
   carry_documents_in
   caddy_reload
   ensure_operator
@@ -246,12 +302,13 @@ seed() {
 # The steps of a reset, shared by reset-seed and deploy-reset.
 
 # Keycloak creates its auth schema on first start, which takes a while right after a deploy. Sets
-# AUTH_TABLES_BEFORE (a reset never touches that schema; verify_reset checks it).
+# AUTH_TABLES_BEFORE (a reset never touches that schema; verify_reset checks it). Without Keycloak it only counts.
 AUTH_TABLES_BEFORE=""
 wait_auth_schema() {
   local i
   for i in $(seq 1 60); do
     AUTH_TABLES_BEFORE="$(docker exec "$PG" psql -U worktime -d worktime -Atqc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'auth'")"
+    [ "$SSO_PROVIDER" != keycloak ] && return 0
     [ "$AUTH_TABLES_BEFORE" -gt 0 ] && return 0
     [ "$i" = 1 ] && echo "Waiting for Keycloak to create its auth schema..."
     sleep 5
@@ -338,6 +395,7 @@ deploy_reset() {
     drop_schemas
   fi
   "${COMPOSE[@]}" up -d --build --remove-orphans
+  sso_prune
   [ -n "$AUTH_TABLES_BEFORE" ] || wait_auth_schema
   load_seed
   verify_reset
@@ -374,9 +432,9 @@ destroy() {
   # every variable in it (API_IMAGE, ...), which destroy has no use for and a half-removed instance lacks.
   local project="label=com.docker.compose.project=$PREFIX"
   docker ps -aq --filter "$project" | xargs -r docker rm -f -v >/dev/null
-  for n in web api keycloak mailpit pg; do docker rm -f "$PREFIX-$n" >/dev/null 2>&1 || true; done
+  for n in web api dex keycloak mailpit pg; do docker rm -f "$PREFIX-$n" >/dev/null 2>&1 || true; done
   docker volume ls -q --filter "$project" | xargs -r docker volume rm >/dev/null
-  docker volume rm "${PREFIX}_pg_data" "${PREFIX}_mailpit_data" "${PREFIX}_documents_data" >/dev/null 2>&1 || true
+  docker volume rm "${PREFIX}_pg_data" "${PREFIX}_mailpit_data" "${PREFIX}_documents_data" "${PREFIX}_dex_data" >/dev/null 2>&1 || true
   docker network ls -q --filter "$project" | xargs -r docker network rm >/dev/null
   if [ "$legacy" = 1 ]; then
     docker exec edge-pg psql -U postgres -v ON_ERROR_STOP=1 \

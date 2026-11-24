@@ -275,10 +275,10 @@ export default {
     "Une nouvelle organisation en quelques minutes : inscrivez-vous, elle est prête",
   ],
   'features.access.title': "Connexion & comptes",
-  'features.access.lead': "Connexion par e-mail et mot de passe ou par authentification unique via Keycloak. Inscription et réinitialisation du mot de passe se font en libre-service, sans support.",
+  'features.access.lead': "Connexion par e-mail et mot de passe ou, sur demande, par authentification unique via votre annuaire existant. Inscription et réinitialisation du mot de passe se font en libre-service, sans support.",
   'features.access.items': [
-    "Authentification unique (WebSSO) via Keycloak avec OpenID Connect, inclus dans l’installation",
-    "Keycloak peut se connecter à votre annuaire existant, p. ex. Microsoft Entra ID, Google Workspace ou LDAP",
+    "Authentification unique (WebSSO) avec OpenID Connect, mise en place sur demande pour votre installation",
+    "Raccordement à votre annuaire existant, p. ex. Microsoft Entra ID, Google Workspace ou LDAP",
     "Lors de la première connexion SSO, le compte est créé automatiquement",
     "Inscription en libre-service : compte et organisation en une étape, avec tous les droits",
     "Les collaborateurs rejoignent l’organisation par un lien d’invitation, avec le rôle prévu",

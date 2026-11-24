@@ -15,7 +15,7 @@ export class UsersController {
     private readonly versions: VersionsService,
   ) {}
 
-  /** Resolve the caller from the validated JWT (local user id, or Keycloak sub -> user_identities). */
+  /** Resolve the caller from the validated session token (the local user id). */
   @Get('me')
   async me(@Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();

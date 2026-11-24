@@ -274,10 +274,10 @@ export default {
     "Neue Organisation in wenigen Minuten: registrieren, und sie steht",
   ],
   'features.access.title': "Anmeldung & Konten",
-  'features.access.lead': "Anmelden mit E-Mail und Passwort oder per Single Sign-on über Keycloak. Registrierung und Passwort-Reset erledigen Ihre Leute selbst, ohne Support.",
+  'features.access.lead': "Anmelden mit E-Mail und Passwort oder auf Wunsch per Single Sign-on über Ihr bestehendes Verzeichnis. Registrierung und Passwort-Reset erledigen Ihre Leute selbst, ohne Support.",
   'features.access.items': [
-    "Single Sign-on (WebSSO) über Keycloak mit OpenID Connect, als Teil der Installation",
-    "Keycloak lässt sich an Ihr bestehendes Verzeichnis anbinden, z. B. Microsoft Entra ID, Google Workspace oder LDAP",
+    "Single Sign-on (WebSSO) mit OpenID Connect, auf Wunsch für Ihre Installation eingerichtet",
+    "Anbindung an Ihr bestehendes Verzeichnis, z. B. Microsoft Entra ID, Google Workspace oder LDAP",
     "Beim ersten Login per SSO wird das Konto automatisch angelegt",
     "Selbstregistrierung: Konto und eigene Organisation in einem Schritt, mit allen Rechten",
     "Mitarbeitende kommen per Einladungslink dazu, mit der vorgesehenen Rolle",

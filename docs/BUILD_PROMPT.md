@@ -17,10 +17,10 @@ several organizations and switch between them.
   migrations — pick one path and enforce it.
 - **Web**: React + MUI + Vite. Left nav drawer for sections, role-gated;
   an organization switcher top-right when the user has more than one.
-- **Auth**: Keycloak (SSO) as the primary IdP, same Postgres instance
-  (`auth` schema), plus a local username/password + HS256-JWT fallback for
-  dev parity. Every request resolves to one caller id regardless of which
-  path authenticated it.
+- **Auth**: the API owns accounts and sessions (password login, HS256 JWTs).
+  Single sign-on is optional, one OIDC provider per instance (Dex or
+  Keycloak, `SSO_PROVIDER`), whose ID token is exchanged once for the API's
+  own session. Every request resolves to one caller id.
 - **Email**: nodemailer, unauthenticated against a local Mailpit catcher in
   dev, switches to a real relay purely via env vars (`SMTP_USER`/`PASSWORD`
   set → auth kicks in; nothing else changes).
@@ -31,7 +31,7 @@ several organizations and switch between them.
   (`baseURL`, `apiKey`, `model`), not a rewrite.
 - **Infra**: Docker Compose, four environments (local/dev/vps/azure) at
   fixed port offsets. `local` runs only its dependencies (Postgres,
-  Keycloak, Mailpit, a one-shot migration runner) in containers — `api`/
+  Mailpit, a one-shot migration runner) in containers — `api`/
   `web` run natively on the host for fast reload. `dev`/`vps`/`azure`
   containerize everything, fronted by Caddy.
 

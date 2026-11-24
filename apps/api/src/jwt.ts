@@ -2,22 +2,25 @@ import { createHmac, createPublicKey, createVerify, timingSafeEqual, type JsonWe
 
 /**
  * Token verification for the API (zero extra dependencies).
- * Accepts two issuers:
- * - Keycloak (RS256, verified against the realm JWKS): the SSO path.
- * - Local logins (HS256, `worktime-api` issuer): minted by AuthController
- *   for the web login screen, so the UI works without a browser SSO roundtrip.
+ * - Local tokens (HS256, `worktime-api` issuer) are the only session tokens: minted by AuthController for the
+ *   password login and for an SSO login alike.
+ * - An SSO login (optional, one identity provider per instance: SSO_PROVIDER `dex` or `keycloak`, else none)
+ *   hands its ID token to `auth/sso/exchange` once; it is verified here (RS256 against the provider's JWKS) and
+ *   never used as a session.
  */
 
 export const LOCAL_ISSUER = 'worktime-api';
 export const LOCAL_ALG = 'HS256';
 
 export interface AuthenticatedPrincipal {
-  kind: 'keycloak' | 'local';
-  /** Keycloak `sub`, or the local user id. */
+  kind: 'sso' | 'local';
+  /** The identity provider's `sub`, or the local user id. */
   sub: string;
   email?: string;
-  /** Keycloak vouches for `email` (claim `email_verified`); only such an address finds or creates an account. */
+  /** The provider vouches for `email` (claim `email_verified`); only such an address finds or creates an account. */
   emailVerified?: boolean;
+  /** The provider's display name (`name`, else `preferred_username`). */
+  name?: string;
   /**
    * A restricted local token: `two-factor-setup` reaches only the two-step login setup (jwt.guard.ts
    * `TwoFactorSetup`), for someone an organization requires it of who has not set it up yet.
@@ -33,21 +36,30 @@ interface JwtHeader {
   kid?: string;
 }
 
-export function keycloakIssuer(): string {
-  return process.env.JWT_ISSUER ?? 'http://localhost:8091/realms/worktime';
+export type SsoProvider = 'none' | 'dex' | 'keycloak';
+
+/** The instance's identity provider (SSO_PROVIDER, set per GitHub Environment); anything else is none. */
+export function ssoProvider(env: NodeJS.ProcessEnv = process.env): SsoProvider {
+  const value = (env.SSO_PROVIDER ?? '').trim().toLowerCase();
+  return value === 'dex' || value === 'keycloak' ? value : 'none';
 }
 
-/**
- * Where to download the realm's signing keys. Defaults to the issuer's certs endpoint;
- * JWT_JWKS_URL overrides it when the API reaches Keycloak at another address than browsers do
- * (e.g. `http://keycloak:8080/...` inside Docker, while tokens say `http://localhost:8092/...`).
- */
-export function keycloakJwksUrl(): string {
-  return process.env.JWT_JWKS_URL || `${keycloakIssuer()}/protocol/openid-connect/certs`;
+/** The provider's issuer as browsers see it (`iss` of its tokens, base of its discovery document). */
+export function ssoIssuer(env: NodeJS.ProcessEnv = process.env): string {
+  return (env.JWT_ISSUER ?? '').trim().replace(/\/+$/, '');
 }
 
-export function keycloakAudience(): string {
-  return process.env.JWT_AUDIENCE ?? 'worktime-web';
+/** The client the web app signs in with, the audience of its ID tokens. */
+export function ssoClientId(env: NodeJS.ProcessEnv = process.env): string {
+  return env.JWT_AUDIENCE || 'worktime-web';
+}
+
+/** What the login page needs to offer SSO; null when the instance has none (or no issuer). */
+export function ssoPublicConfig(env: NodeJS.ProcessEnv = process.env): { provider: Exclude<SsoProvider, 'none'>; issuer: string; clientId: string } | null {
+  const provider = ssoProvider(env);
+  const issuer = ssoIssuer(env);
+  if (provider === 'none' || !issuer) return null;
+  return { provider, issuer, clientId: ssoClientId(env) };
 }
 
 function localSecret(): Buffer {
@@ -112,30 +124,53 @@ interface Jwk {
 
 let jwksCache: { keys: Jwk[]; fetchedAt: number } | null = null;
 const JWKS_TTL_MS = 10 * 60 * 1000;
+/** An ID token is exchanged right after the login: an older one is refused, whatever its own expiry says. */
+export const SSO_TOKEN_MAX_AGE_SEC = 10 * 60;
 
 /** For tests: reset the cached remote JWKS. */
 export function resetJwksCache() {
   jwksCache = null;
 }
 
+/**
+ * Where to download the provider's signing keys: JWT_JWKS_URL when the API reaches the provider at another
+ * address than browsers do (inside Docker), else the `jwks_uri` of its discovery document.
+ */
+async function jwksUrl(): Promise<string> {
+  if (process.env.JWT_JWKS_URL) return process.env.JWT_JWKS_URL;
+  const res = await fetch(`${ssoIssuer()}/.well-known/openid-configuration`);
+  if (!res.ok) throw new Error(`discovery-failed:${res.status}`);
+  const doc = (await res.json()) as { jwks_uri?: unknown };
+  if (typeof doc.jwks_uri !== 'string') throw new Error('discovery-without-jwks');
+  return doc.jwks_uri;
+}
+
 async function getJwks(): Promise<Jwk[]> {
   if (jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS) return jwksCache.keys;
-  const res = await fetch(keycloakJwksUrl());
+  const res = await fetch(await jwksUrl());
   if (!res.ok) throw new Error(`jwks-fetch-failed:${res.status}`);
   const data = (await res.json()) as { keys?: Jwk[] };
   jwksCache = { keys: data.keys ?? [], fetchedAt: Date.now() };
   return jwksCache.keys;
 }
 
-export async function verifyKeycloakJwt(
+/**
+ * Verifies an ID token of the instance's identity provider: RS256 signature against its JWKS, issuer, audience
+ * (the web client), expiry and age. Null when SSO is off or anything does not hold.
+ */
+export async function verifySsoIdToken(
   token: string,
   keys?: Jwk[],
+  nowSec = Math.floor(Date.now() / 1000),
 ): Promise<AuthenticatedPrincipal | null> {
+  if (!ssoPublicConfig()) return null;
   const parsed = parseToken(token);
   if (!parsed || parsed.header.alg !== 'RS256') return null;
-  if (parsed.payload.iss !== keycloakIssuer()) return null;
-  if (!checkTimeClaims(parsed.payload)) return null;
-  if (!checkAudience(parsed.payload, keycloakAudience())) return null;
+  if (parsed.payload.iss !== ssoIssuer()) return null;
+  if (!checkTimeClaims(parsed.payload, nowSec)) return null;
+  if (typeof parsed.payload.exp !== 'number') return null;
+  if (typeof parsed.payload.iat !== 'number' || parsed.payload.iat < nowSec - SSO_TOKEN_MAX_AGE_SEC || parsed.payload.iat > nowSec + 60) return null;
+  if (!checkAudience(parsed.payload, ssoClientId())) return null;
   let jwks = keys ?? null;
   try {
     jwks = jwks ?? (await getJwks());
@@ -149,12 +184,15 @@ export async function verifyKeycloakJwt(
       const verifier = createVerify('RSA-SHA256');
       verifier.update(parsed.signingInput);
       if (!verifier.verify(key, parsed.signature)) continue;
-      if (typeof parsed.payload.sub !== 'string') return null;
+      if (typeof parsed.payload.sub !== 'string' || !parsed.payload.sub) return null;
+      const name = typeof parsed.payload.name === 'string' ? parsed.payload.name
+        : typeof parsed.payload.preferred_username === 'string' ? parsed.payload.preferred_username : undefined;
       return {
-        kind: 'keycloak',
+        kind: 'sso',
         sub: parsed.payload.sub,
         email: typeof parsed.payload.email === 'string' ? parsed.payload.email : undefined,
         emailVerified: parsed.payload.email_verified === true,
+        ...(name ? { name } : {}),
       };
     } catch {
       continue;
@@ -191,7 +229,7 @@ export async function verifyLocalToken(token: string): Promise<AuthenticatedPrin
   };
 }
 
-/** Try local first (cheap, no network), then Keycloak. */
+/** A session token: local only (an SSO login is exchanged for one, `auth/sso/exchange`). */
 export async function authenticateToken(token: string): Promise<AuthenticatedPrincipal | null> {
-  return (await verifyLocalToken(token)) ?? (await verifyKeycloakJwt(token));
+  return verifyLocalToken(token);
 }

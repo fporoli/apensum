@@ -148,7 +148,6 @@ Environment ready. The apps will live at:
 
 Next, give build-push the Azure hostnames for the web-azure image and build all images:
   gh variable set AZURE_API_URL --body "https://$API_APP.$domain/api/v1"
-  gh variable set AZURE_KEYCLOAK_URL --body "https://$AUTH_APP.$domain"
   gh variable set AZURE_RESOURCE_GROUP --body "$RESOURCE_GROUP"
   gh workflow run build-push.yml --ref $(git -C "$REPO" branch --show-current)
 Then, once it has finished: infra/azure/provision.sh apps
@@ -355,6 +354,8 @@ $ai_secret
           - { name: API_PORT, value: "8000" }
           - { name: DATABASE_URL, secretRef: database-url }
           - { name: API_JWT_SECRET, secretRef: api-jwt-secret }
+          # Azure keeps its Keycloak container app as the single sign-on (VPS instances choose with SSO_PROVIDER).
+          - { name: SSO_PROVIDER, value: keycloak }
           - { name: JWT_ISSUER, value: "$AUTH_URL/realms/worktime" }
           - { name: JWT_AUDIENCE, value: worktime-web }
           - { name: APP_BASE_URL, value: "$WEB_URL" }

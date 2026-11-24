@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "api: prepare",
-      "detail": "Postgres/Keycloak/Mailpit up, stop a leftover API on 8001, build the API (one terminal).",
+      "detail": "Postgres/Mailpit up, stop a leftover API on 8001, build the API (one terminal).",
       "type": "shell",
       "command": "npm run dev:up && node scripts/free-port.mjs 8001 && npm run build --workspace=@worktime3/api",
       "problemMatcher": [

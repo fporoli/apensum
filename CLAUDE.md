@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Modular Swiss Business Framework & Enterprise Suite: NestJS API (`apps/api`), React 18 + MUI + Vite web (`apps/web`), static marketing site (`apps/site`), extensible plugins (`plugins/<id>`, e.g. `cases`, `expenses`), Postgres, Keycloak (same DB, `auth` schema), Caddy edge proxy. npm workspaces, Node >= 24.\
+Modular Swiss Business Framework & Enterprise Suite: NestJS API (`apps/api`), React 18 + MUI + Vite web (`apps/web`), static marketing site (`apps/site`), extensible plugins (`plugins/<id>`, e.g. `cases`, `expenses`), Postgres, optional single sign-on through Dex or Keycloak (`SSO_PROVIDER`, none by default), Caddy edge proxy. npm workspaces, Node >= 24.\
 `README.md` covers architecture, ports and deploy; `docs/PLUGINS.md` covers plugin authoring; `docs/BUILD_PROMPT.md` holds the product spec and architectural rules; `docs/DATABASE_SCHEMA.md` describes the tables; `docs/CASES_ENCRYPTION.md` details the zero-knowledge dossier envelope encryption.
 
 ## Commands
@@ -10,7 +10,7 @@ Run from the repo root unless noted.
 ```sh
 cp env.example.dev.cfg .env.dev   # once; Windows: copy
 npm install
-npm run dev:up             # Docker: pg + migrate + keycloak + mailpit
+npm run dev:up             # Docker: pg + migrate + mailpit (+ dex with COMPOSE_PROFILES=dex)
 npm run dev:seed           # demo data (infra/postgres/seeds/seed.sql)
 npm run build              # all workspaces (api: tsc; web: tsc --noEmit + vite build)
 npm test                   # all workspaces
@@ -34,9 +34,9 @@ node scripts/plugins.mjs test  # run all plugin test suites
 
 Single API test file: `cd apps/api && NODE_PATH=./node_modules npx tsx --conditions=source --test ../../test/api/orgs.test.ts` (`--conditions=source` makes `@worktime3/shared` resolve to its TypeScript sources).
 
-Environments: **dev** (N=1, `.env.dev`, `compose/docker-compose.dev.yml`) runs only pg/Keycloak/Mailpit in Docker, with the API and web on the host: pg 5431, Keycloak 8091, web 3001, API 8001, Mailpit SMTP 1025 / inbox UI 8025.\
+Environments: **dev** (N=1, `.env.dev`, `compose/docker-compose.dev.yml`) runs only pg/Mailpit in Docker (Dex on 8091 with the `dex` profile), with the API and web on the host: pg 5431, web 3001, API 8001, Mailpit SMTP 1025 / inbox UI 8025.\
 This is the day-to-day setup.\
-**local** (N=2, `.env.local`) runs everything in Docker behind Caddy on 5432/8092/3002/8002.\
+**local** (N=2, `.env.local`) runs everything in Docker behind Caddy on 5432/8092 (Dex, profile `dex`)/3002/8002.\
 The VS Code "Development …" launch configs debug the host-run API and web against `.env.dev` (the API launch first stops a leftover Node API on 8001, `scripts/free-port.mjs`; Chrome waits for the fresh API, `scripts/wait-for-api.mjs`); "Local Full Stack: Docker + Chrome" brings up the local compose stack (task `local: stack up`) and opens Chrome on 3002.\
 Host processes must not run on local's ports, which Caddy holds.
 
@@ -86,7 +86,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Insert parents before children (e.g. `users` before `organizations`, which references them), and use `ON CONFLICT DO NOTHING` for rows that migrations already insert (system roles, permissions, some `static_data`).
 - To reset a database, drop and recreate the `public` schema, then `db:migrate` and `db:seed` (`npm run dev:resetdb` / `local:resetdb` does all three, localhost only).\
   Don't just truncate: that deletes the reference data the migrations insert.\
-  Keycloak's tables live in the `auth` schema; leave it alone.
+  Keycloak's tables (instances with `SSO_PROVIDER=keycloak`) live in the `auth` schema; leave it alone.
 - Regular tables have no `created_at`/`updated_at` columns.\
   Record history through `VersionsService.record(table, id, action, actorUserId, row)` after writes (fire-and-forget with `.catch(() => {})`), not with timestamp columns.
 
@@ -94,7 +94,8 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
 
 - Flat layout: `name.controller.ts` / `name.service.ts`, one controller per resource, all registered in `app.module.ts` (add new controllers and providers there).\
   Global prefix `api/v1`.
-- Auth: global `JwtAuthGuard` (`jwt.guard.ts`) accepts local HS256 tokens (`API_JWT_SECRET`) and Keycloak JWKS tokens.\
+- Auth: global `JwtAuthGuard` (`jwt.guard.ts`) accepts local HS256 tokens (`API_JWT_SECRET`) only.\
+  Single sign-on (README "Single sign-on"): one provider per instance, `SSO_PROVIDER` `none` (default) / `dex` / `keycloak` (Compose profiles; `remote.sh` writes Dex's config, connectors from the secret `DEX_CONNECTORS`, else Dex's test login); the web app (`auth.ts`, `oidc-client-ts`, code flow + PKCE) asks public `GET auth/sso` and hands the ID token once to `POST auth/sso/exchange`, which checks it (`verifySsoIdToken`: JWKS, issuer, audience, at most 10 minutes old) and returns a local session; an SSO token is never a session.\
   Use `@Public()` to opt a route out.\
   Forgot password (`password-reset.ts`): `auth/reset` mails a signed link (30 min, bound to the current password hash, so one use; key from `purposeKey`), `#/reset/<token>` (`ResetPassword.tsx`, no login) sends it to `auth/reset/confirm`.\
   No public endpoint may set a password from an e-mail address alone.\
@@ -390,9 +391,9 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   `seed.sql` must stay re-runnable: fixed keys on every row, `ON CONFLICT DO NOTHING`, and UPDATEs that only fill in unset values.\
   Each VPS instance has its own Postgres container (`PG_PORT`, role/db `worktime`) and Mailpit; only Caddy is shared (`infra/caddy/edge`).\
   Portainer is its own per-server stack (`infra/portainer`, `vps` workflow action `portainer`).\
-  Ports follow `8090+N` (Keycloak), `5430+N` (pg), `3000+N` (web), `8000+N` (API).\
-  Each compose file has a one-shot `migrate` service that runs before the API and Keycloak start.
-- Keycloak realm config: `infra/keycloak/realm-worktime.json`.
+  Ports follow `8090+N` (single sign-on: Dex on dev/local), `5430+N` (pg), `3000+N` (web), `8000+N` (API).\
+  Each compose file has a one-shot `migrate` service that runs before the API (and Keycloak) start.
+- Keycloak realm config (`SSO_PROVIDER=keycloak`, Azure): `infra/keycloak/realm-worktime.json`; Dex on dev/local: `infra/dex/`.
 - Website (`apps/site`, apensum.ch): static marketing pages in de/fr/it/en, built by `build.mjs` with no dependencies (no framework, nothing loaded from third parties; the only scripts are `assets/reveal.js`, which shows the phone number on click so it is not in the HTML, `assets/contact.js` on the contact page: topic from `?topic=`, time trap, `assets/news.js` on the News page: the posts from the API, and `assets/zoom.js` on pages with screenshots and on News: a picture enlarges in a dialog closed by Esc, × or a click beside it).\
   No `mailto:` links (they do nothing without a mail program): buttons open the contact form with a topic (`ctx.contactLink`), the address is plain text (`ctx.email`).\
   Texts are in `src/i18n/<lang>.mjs`, all four with the same keys, list lengths and `{{placeholders}}` (`test/site.test.mjs`); German is Swiss (no ß).\

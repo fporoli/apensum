@@ -5,7 +5,7 @@
 # one from this directory ("compose") and instances would clobber each other's containers.
 name: ${CONTAINER_PREFIX:?required}
 services:
-  # This instance's own Postgres (role and database `worktime`; Keycloak shares it in the
+  # This instance's own Postgres (role and database `worktime`; Keycloak, where chosen, shares it in the
   # `auth` schema). Others reach it by its container name, never by `pg`: keycloak and api are
   # also on the shared `edge` network, where another `pg` (the legacy edge-pg) may exist.
   # Published on the server's loopback only (127.0.0.1:PG_PORT), so it is reachable solely through
@@ -57,8 +57,23 @@ services:
       - update
     depends_on:
       pg: { condition: service_healthy }
+  # Single sign-on, one per instance or none: SSO_PROVIDER (GitHub Environment variable) picks the profile
+  # (remote.sh sets COMPOSE_PROFILES and removes the other's container). Default none: neither runs.
+  dex:
+    image: ghcr.io/dexidp/dex:v2.46.1
+    profiles: [dex]
+    # No host port here — the shared edge Caddy proxies AUTH_HOST to this container over the edge network.
+    container_name: ${CONTAINER_PREFIX:?required}-dex
+    networks: [default, edge]
+    volumes:
+      # Rendered per instance by infra/vps/remote.sh (issuer, web host, connectors from DEX_CONNECTORS).
+      - ${DEX_CONFIG:?required}:/etc/dex/apensum.yaml:ro
+      - dex_data:/var/dex
+    command: ["dex", "serve", "/etc/dex/apensum.yaml"]
+    restart: unless-stopped
   keycloak:
     image: quay.io/keycloak/keycloak:25.0
+    profiles: [keycloak]
     # No host port here — the shared edge Caddy (see infra/caddy/edge/) is the single
     # entrypoint, proxying AUTH_HOST to this container over the edge network.
     container_name: ${CONTAINER_PREFIX:?required}-keycloak
@@ -68,8 +83,11 @@ services:
       KC_DB_URL: jdbc:postgresql://${CONTAINER_PREFIX:?required}-pg:5432/worktime?currentSchema=auth
       KC_DB_USERNAME: worktime
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?required}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:?required}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?required}
+      # Required by remote.sh when SSO_PROVIDER=keycloak only.
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+      # A fixed heap instead of Java's share of the server's memory.
+      JAVA_OPTS_KC_HEAP: -Xms256m -Xmx512m
       # Standard "behind a TLS-terminating reverse proxy" recipe: without KC_HOSTNAME,
       # Keycloak's issuer/redirect URLs come out wrong; KC_HTTP_ENABLED lets Caddy reach
       # it over plain HTTP internally since Caddy itself is the one terminating TLS.
@@ -80,6 +98,7 @@ services:
       # Rendered per instance by infra/vps/remote.sh (redirect URIs follow WEB_HOST).
       - ${REALM_FILE:?required}:/opt/keycloak/data/import/realm-worktime.json:ro
     command: ["start", "--import-realm"]
+    restart: unless-stopped
     depends_on:
       migrate: { condition: service_completed_successfully }
   api:
@@ -98,7 +117,11 @@ services:
       # main.ts defaults to 8001 when unset; the Dockerfile's EXPOSE and the edge
       # Caddy's reverse_proxy both assume 8000, so this must be set explicitly.
       API_PORT: "8000"
-      JWT_ISSUER: https://${AUTH_HOST:?required}/realms/worktime
+      # Single sign-on (remote.sh derives these from SSO_PROVIDER; empty = none): the provider's issuer as
+      # browsers see it, and its signing keys at its container's address.
+      SSO_PROVIDER: ${SSO_PROVIDER:-}
+      JWT_ISSUER: ${SSO_ISSUER:-}
+      JWT_JWKS_URL: ${SSO_JWKS_URL:-}
       JWT_AUDIENCE: worktime-web
       # NODE_ENV=production makes jwt.ts refuse to boot without this instead of silently
       # falling back to the insecure hardcoded dev secret — set a real random value.
@@ -148,14 +171,13 @@ services:
     # One image for every instance: these replace the build-time placeholders at start.
     environment:
       WT_API_URL: https://${API_HOST:?required}/api/v1
-      WT_KEYCLOAK_URL: https://${AUTH_HOST:?required}
       WT_SHOW_DEMO_ACCOUNTS: ${SHOW_DEMO_ACCOUNTS:-false}
 networks:
-  # Private to this instance: pg, migrate, keycloak and api talk over it.
+  # Private to this instance: pg, migrate, dex or keycloak, and api talk over it.
   default: {}
   # Pre-existing network owned by the shared edge stack (infra/caddy/edge/): the one Caddy
   # that fronts every instance on this server (and other projects, e.g. worktime2) reaches
-  # keycloak, api and web by container name over it. Created once via
+  # dex or keycloak, api and web by container name over it. Created once via
   # `docker network create edge` (remote.sh does it), not by this project.
   edge:
     external: true
@@ -163,3 +185,4 @@ volumes:
   pg_data:
   mailpit_data:
   documents_data:
+  dex_data:

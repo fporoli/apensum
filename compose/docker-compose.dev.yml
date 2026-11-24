@@ -1,4 +1,4 @@
-# `dev` profile: pg + Keycloak + Mailpit in Docker, API and web on the host. Data lives under
+# `dev` profile: pg + Mailpit in Docker (Dex too with COMPOSE_PROFILES=dex), API and web on the host. Data lives under
 # ../data-dev (the `local` profile uses ../data-local).
 name: worktime-dev
 services:
@@ -44,20 +44,12 @@ services:
       # Newer Mailpit refuses AUTH over a plaintext connection unless told this is
       # intentional. Fine here — this catcher never leaves localhost, no real mail.
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
-  keycloak:
-    image: quay.io/keycloak/keycloak:25.0
-    ports: ["8091:8080"]
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://pg:5432/worktime?currentSchema=auth
-      KC_DB_USERNAME: worktime
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-worktime_dev_only}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_only}
+  # Optional single sign-on to try the SSO login (infra/dex/dev.yaml, a test login without a password):
+  # COMPOSE_PROFILES=dex and SSO_PROVIDER=dex in .env.dev. Off by default.
+  dex:
+    image: ghcr.io/dexidp/dex:v2.46.1
+    profiles: [dex]
+    ports: ["8091:5556"]
     volumes:
-      - ../data-dev/kc:/opt/keycloak/data
-      - ../infra/keycloak/realm-worktime.json:/opt/keycloak/data/import/realm-worktime.json:ro
-    command: ["start-dev", "--import-realm"]
-    depends_on:
-      # Needs the `auth` schema, which migrate's first changeset creates.
-      migrate: { condition: service_completed_successfully }
+      - ../infra/dex/dev.yaml:/etc/dex/apensum.yaml:ro
+    command: ["dex", "serve", "/etc/dex/apensum.yaml"]

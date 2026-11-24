@@ -1,4 +1,5 @@
 import { strict as assert } from 'node:assert';
+import { createSign, generateKeyPairSync } from 'node:crypto';
 import { test } from 'node:test';
 import { getTableName } from 'drizzle-orm';
 import * as bcrypt from 'bcryptjs';
@@ -58,12 +59,41 @@ test('auth: there is no endpoint that links or unlinks an identity of a given us
   for (const name of ['linkAzure', 'unlinkAzure', 'setAzure']) assert.equal(name in AuthController.prototype, false, name);
 });
 
-test('auth: SSO takes no account from the body, only from a verified e-mail in the token', async () => {
+/** An ID token of a test identity provider whose keys the API reads from a data: URL. */
+function ssoProviderForTest() {
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const jwk = { ...(publicKey.export({ format: 'jwk' }) as Record<string, unknown>), kid: 'k1' };
+  process.env.SSO_PROVIDER = 'dex';
+  process.env.JWT_ISSUER = 'https://auth.example.ch';
+  process.env.JWT_AUDIENCE = 'worktime-web';
+  process.env.JWT_JWKS_URL = `data:application/json,${encodeURIComponent(JSON.stringify({ keys: [jwk] }))}`;
+  const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  return (claims: Record<string, unknown>) => {
+    const now = Math.floor(Date.now() / 1000);
+    const input = `${b64({ alg: 'RS256', kid: 'k1' })}.${b64({ iss: 'https://auth.example.ch', aud: 'worktime-web', iat: now, exp: now + 300, ...claims })}`;
+    return `${input}.${createSign('RSA-SHA256').update(input).sign(privateKey).toString('base64url')}`;
+  };
+}
+
+test('auth: SSO takes no account from the body, only from a verified e-mail in the ID token', async () => {
   const { service, writes } = ownerDb();
   const auth = new AuthController(service, quiet as any);
-  const req = { user: { kind: 'keycloak' as const, sub: 'kc-1', email: 'me@example.ch', emailVerified: false } };
-  assert.deepEqual(await auth.ssoSync(req, { email: 'other@example.ch' } as any), { ok: false, error: 'email-not-verified' });
-  assert.deepEqual(writes, []);
+  const saved = { ...process.env };
+  try {
+    delete process.env.SSO_PROVIDER;
+    assert.deepEqual(await auth.ssoExchange({ idToken: 'x' }), { ok: false, error: 'sso-off' });
+    const sign = ssoProviderForTest();
+    assert.deepEqual(await auth.ssoExchange({ idToken: 'not-a-token', email: 'other@example.ch' } as any), { ok: false, error: 'sso-invalid' });
+    assert.deepEqual(await auth.ssoExchange({ idToken: sign({ sub: 's1', email: 'me@example.ch', aud: 'other' }) }), { ok: false, error: 'sso-invalid' });
+    assert.deepEqual(await auth.ssoExchange({ idToken: sign({ sub: 's1', email: 'me@example.ch', iat: Math.floor(Date.now() / 1000) - 3600 }) }), { ok: false, error: 'sso-invalid' });
+    assert.deepEqual(await auth.ssoExchange({ idToken: sign({ sub: 's1', email: 'me@example.ch', email_verified: false }) }), { ok: false, error: 'email-not-verified' });
+    assert.deepEqual(writes, []);
+  } finally {
+    for (const k of ['SSO_PROVIDER', 'JWT_ISSUER', 'JWT_AUDIENCE', 'JWT_JWKS_URL']) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  }
 });
 
 const invitation = { id: 'i', organization_id: ORG, email: 'other@example.ch', role_id: 'r', status: 'pending', expires_at: '2999-01-01T00:00:00Z' };

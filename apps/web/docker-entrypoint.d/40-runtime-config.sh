@@ -11,5 +11,4 @@ replace() {
   find "$dir" -name '*.js' -exec sed -i "s|$1|$2|g" {} +
 }
 replace __WT_API_URL__ "${WT_API_URL:-}"
-replace __WT_KEYCLOAK_URL__ "${WT_KEYCLOAK_URL:-}"
 replace __WT_SHOW_DEMO_ACCOUNTS__ "${WT_SHOW_DEMO_ACCOUNTS:-}"

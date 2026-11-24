@@ -184,7 +184,7 @@ function localBuild() {
 }
 
 function localReset() {
-  // The database container must run (and, for local, Keycloak shares it; it is left alone).
+  // The database container must run.
   if (env === 'dev') npm('run', 'dev:up');
   else compose('local', 'up', '-d', 'pg');
   npm('run', `${env}:resetdb`);
@@ -193,7 +193,7 @@ function localReset() {
 async function localStart() {
   if (env === 'local') {
     npm('run', 'local:up');
-    console.log('\nLocal stack: web http://localhost:3002, API http://localhost:8002, Keycloak http://localhost:8092');
+    console.log('\nLocal stack: web http://localhost:3002, API http://localhost:8002');
     return;
   }
   npm('run', 'dev:up');

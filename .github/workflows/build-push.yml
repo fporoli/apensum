@@ -105,12 +105,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           # Vite inlines these at build time (see apps/web/Dockerfile). They are placeholders on
-          # purpose: the container swaps in its own WT_API_URL / WT_KEYCLOAK_URL /
+          # purpose: the container swaps in its own WT_API_URL /
           # WT_SHOW_DEMO_ACCOUNTS at start (apps/web/docker-entrypoint.d), so one image serves
           # every VPS instance. The web-azure image below still bakes real URLs.
           build-args: |
             VITE_API_URL=__WT_API_URL__
-            VITE_KEYCLOAK_URL=__WT_KEYCLOAK_URL__
             VITE_SHOW_DEMO_ACCOUNTS=__WT_SHOW_DEMO_ACCOUNTS__
             VITE_BUILD_RELEASE=${{ steps.release.outputs.release }}
             VITE_BUILD_COMMIT=${{ steps.release.outputs.commit }}
@@ -198,7 +197,6 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             VITE_API_URL=${{ vars.AZURE_API_URL }}
-            VITE_KEYCLOAK_URL=${{ vars.AZURE_KEYCLOAK_URL }}
             VITE_SHOW_DEMO_ACCOUNTS=true
             VITE_BUILD_RELEASE=${{ steps.release.outputs.release }}
             VITE_BUILD_COMMIT=${{ steps.release.outputs.commit }}

@@ -1,7 +1,7 @@
 # `local` profile: the whole stack in Docker behind Caddy. Distinct project name so it never
 # collides with docker-compose.dev.yml (same directory => same default project name => Compose
-# would treat their same-named services, e.g. pg/keycloak/mailpit, as one and recreate them).
-# pg/Keycloak data lives on the host under ../data-local (dev uses ../data-dev) so it survives
+# would treat their same-named services, e.g. pg/mailpit, as one and recreate them).
+# pg data lives on the host under ../data-local (dev uses ../data-dev) so it survives
 # `docker compose down` and can be inspected directly.
 name: worktime-local
 services:
@@ -42,22 +42,15 @@ services:
       # Newer Mailpit refuses AUTH over a plaintext connection unless told this is
       # intentional. Fine here — this catcher never leaves the compose network.
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
-  keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+  # Optional single sign-on to try the SSO login (infra/dex/local.yaml, a test login without a password):
+  # COMPOSE_PROFILES=dex and SSO_PROVIDER=dex in .env.local. Off by default.
+  dex:
+    image: ghcr.io/dexidp/dex:v2.46.1
+    profiles: [dex]
     # No host port here — caddy is the single entrypoint, proxying :8092 to this container.
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://pg:5432/worktime?currentSchema=auth
-      KC_DB_USERNAME: worktime
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-worktime_dev_only}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_dev_only}
     volumes:
-      - ../data-local/kc:/opt/keycloak/data
-      - ../infra/keycloak/realm-worktime.json:/opt/keycloak/data/import/realm-worktime.json:ro
-    command: ["start-dev", "--import-realm"]
-    depends_on:
-      migrate: { condition: service_completed_successfully }
+      - ../infra/dex/local.yaml:/etc/dex/apensum.yaml:ro
+    command: ["dex", "serve", "/etc/dex/apensum.yaml"]
   api:
     build: { context: .., dockerfile: apps/api/Dockerfile }
     # No host port here — caddy is the single entrypoint, proxying :8002 to this container.
@@ -69,11 +62,13 @@ services:
       # Encryption of stored documents (empty = unencrypted, warned at startup).
       DOCUMENTS_KEY: ${DOCUMENTS_KEY:-}
       DOCUMENTS_KEY_PREVIOUS: ${DOCUMENTS_KEY_PREVIOUS:-}
-      # Keycloak tokens carry the browser's address (via caddy :8092); the API fetches the
-      # signing keys from the keycloak container directly, since localhost here is the API itself.
-      JWT_ISSUER: ${JWT_ISSUER:-http://localhost:8092/realms/worktime}
-      JWT_AUDIENCE: ${JWT_AUDIENCE:-worktime-web}
-      JWT_JWKS_URL: http://keycloak:8080/realms/worktime/protocol/openid-connect/certs
+      # Single sign-on (optional): SSO_PROVIDER=dex with the dex profile. Its tokens carry the browser's
+      # address (via caddy :8092); the API fetches the signing keys from the dex container directly,
+      # since localhost here is the API itself.
+      SSO_PROVIDER: ${SSO_PROVIDER:-}
+      JWT_ISSUER: http://localhost:8092
+      JWT_AUDIENCE: worktime-web
+      JWT_JWKS_URL: http://dex:5556/keys
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3002}
       # AI (assistant, Cases, receipts) on Azure OpenAI in Switzerland (optional, paid; see env.example.*.cfg).
       # Off unless keys, budget and prices are set.
@@ -107,7 +102,6 @@ services:
       # (caddy's), not the internal `api:8000` service address.
       args:
         VITE_API_URL: http://localhost:8002/api/v1
-        VITE_KEYCLOAK_URL: http://localhost:8092
     # No host port here — caddy is the single entrypoint, proxying :3002 to this container.
     depends_on: [api]
   caddy:
@@ -115,6 +109,6 @@ services:
     ports: ["3002:3002", "8002:8002", "8092:8092"]
     volumes:
       - ../infra/caddy/Caddyfile.local:/etc/caddy/Caddyfile:ro
-    depends_on: [api, web, keycloak]
+    depends_on: [api, web]
 volumes:
   api-documents:
