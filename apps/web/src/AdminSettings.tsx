@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import { LOCALES, useT, type Locale } from './i18n';
 import RolesPermissions from './RolesPermissions';
+import { attributeTextValid, attributeValue, staticAttributesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, ContentCopyIcon, DeleteIcon, EditIcon, PublicIcon, SearchIcon, TuneIcon } from './icons';
 
@@ -59,14 +60,12 @@ function isAttributes(value: unknown): value is Attributes {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Absence types map each key to attributes; their labels live in the translations. */
-function isAbsenceTypes(entity: string, enumName: string): boolean {
-  return entity.trim() === 'absences' && enumName.trim() === 'absence_type';
-}
-
-/** Request types map each key to attributes (`sort`, `confidential`); their labels live in the translations. */
-function isRequestTypes(entity: string, enumName: string): boolean {
-  return entity.trim() === 'requests' && enumName.trim() === 'request_type';
+/**
+ * Lists whose owner declared properties (`@worktime3/shared/staticData`: absence types, request types, a plugin's
+ * lists) map each key to those properties; their labels live in the translations.
+ */
+function hasDeclaredAttributes(entity: string, enumName: string): boolean {
+  return staticAttributesOf(entity, enumName) !== null;
 }
 
 /** `attributeRow`: every value is an attribute object; otherwise each value is its label. */
@@ -118,9 +117,10 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   const [enumTranslations, setEnumTranslations] = useState<Record<string, Record<string, string>>>({});
   const [translationLocale, setTranslationLocale] = useState<Locale>('de');
   const [kvFilter, setKvFilter] = useState('');
-  const absenceTypesRow = isAbsenceTypes(enumEntity, enumName);
-  const requestTypesRow = isRequestTypes(enumEntity, enumName);
-  const attributeRow = absenceTypesRow || requestTypesRow || enumKvList.some((kv) => kv.attrs !== null);
+  const declaredAttributes = staticAttributesOf(enumEntity, enumName);
+  const attributeRow = !!declaredAttributes || enumKvList.some((kv) => kv.attrs !== null);
+  const invalidAttribute = !!declaredAttributes && enumKvList.some((kv) =>
+    declaredAttributes.some((a) => a.type === 'text' && !attributeTextValid(a, String(attributeValue(kv.attrs, a)))));
 
   function makeKv(key = '', value: unknown = '', attributeRow = false): KV {
     nextRowId.current += 1;
@@ -157,7 +157,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setEditingEnum(row);
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
-    const attributeRow = isAbsenceTypes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
+    const attributeRow = hasDeclaredAttributes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
     const list = Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
     setEnumTranslations(row.translation ?? {});
@@ -170,7 +170,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setEditingEnum(null);
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
-    const attributeRow = isAbsenceTypes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
+    const attributeRow = hasDeclaredAttributes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
     const list = Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
     setEnumTranslations(row.translation ?? {});
@@ -183,37 +183,9 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setEnumKvList((prev) => prev.map((kv) => (kv.rowId === rowId ? { ...kv, [field]: value } : kv)));
   }
 
-  /** Absence types: `approval: false` is stored only when the type needs no approval. */
-  function updateApproval(rowId: number, needsApproval: boolean) {
-    setEnumKvList((prev) =>
-      prev.map((kv) => {
-        if (kv.rowId !== rowId) return kv;
-        const { approval: _approval, ...rest } = kv.attrs ?? {};
-        return { ...kv, attrs: needsApproval ? rest : { ...rest, approval: false } };
-      }),
-    );
-  }
-
-  /** Absence types: `unpaid: true` is stored only when the type is unpaid leave. */
-  function updateUnpaid(rowId: number, unpaid: boolean) {
-    setEnumKvList((prev) =>
-      prev.map((kv) => {
-        if (kv.rowId !== rowId) return kv;
-        const { unpaid: _unpaid, ...rest } = kv.attrs ?? {};
-        return { ...kv, attrs: unpaid ? { ...rest, unpaid: true } : rest };
-      }),
-    );
-  }
-
-  /** Request types: `confidential: true` is stored only when the type is confidential. */
-  function updateConfidential(rowId: number, confidential: boolean) {
-    setEnumKvList((prev) =>
-      prev.map((kv) => {
-        if (kv.rowId !== rowId) return kv;
-        const { confidential: _confidential, ...rest } = kv.attrs ?? {};
-        return { ...kv, attrs: confidential ? { ...rest, confidential: true } : rest };
-      }),
-    );
+  /** A declared property of one value (a checkbox at its default and an empty field are not stored). */
+  function updateAttribute(rowId: number, attribute: StaticAttribute, value: unknown) {
+    setEnumKvList((prev) => prev.map((kv) => (kv.rowId === rowId ? { ...kv, attrs: withAttribute(kv.attrs, attribute, value) } : kv)));
   }
 
   function addKvRow() {
@@ -244,6 +216,10 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
 
   async function handleSaveEnum() {
     if (!enumEntity.trim() || !enumName.trim()) return;
+    if (invalidAttribute) {
+      setDialogError(t('staticdata.invalidAttribute'));
+      return;
+    }
     setError(null);
     setSuccess(null);
     setDialogError(null);
@@ -309,10 +285,18 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   /** A table chip: `key: label`, or for attribute values the key plus what is set. */
   function valuePreview(row: StaticDataRow, key: string, value: unknown): string {
     if (!isAttributes(value)) return `${key}: ${value}`;
-    if (isAbsenceTypes(row.entity, row.enum_name)) {
-      return [key, ...(value.approval === false ? [t('staticdata.noApproval')] : []), ...(value.unpaid === true ? [t('staticdata.unpaid')] : [])].join(' · ');
+    const declared = staticAttributesOf(row.entity, row.enum_name);
+    if (declared) {
+      // The key plus what differs from the defaults: a checkbox by its label (crossed when switched off), the rest with their value.
+      const set = declared.flatMap((a) => {
+        if (!(a.key in value)) return [];
+        const v = attributeValue(value, a);
+        if (a.type === 'checkbox') return [v ? t(a.label) : `${t(a.label)} ✗`];
+        if (a.type === 'select') return [`${t(a.label)}: ${t(a.options.find((o) => o.value === v)?.label ?? String(v))}`];
+        return [`${t(a.label)}: ${v}`];
+      });
+      return [key, ...set].join(' · ');
     }
-    if (isRequestTypes(row.entity, row.enum_name)) return value.confidential === true ? `${key} · ${t('requests.confidential')}` : key;
     return Object.keys(value).length > 0 ? `${key}: ${JSON.stringify(value)}` : key;
   }
 
@@ -532,25 +516,43 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
             {visibleKvList.map((kv) => (
               <Box key={kv.rowId} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                 <TextField label={t('staticdata.key')} value={kv.key} onChange={(e) => updateKv(kv.rowId, 'key', e.target.value)} size="small" sx={{ flex: 1 }} />
-                {absenceTypesRow ? (
-                  <Box sx={{ flex: 1, display: 'flex', flexWrap: 'wrap' }}>
-                    <FormControlLabel
-                      sx={{ m: 0, mr: 1 }}
-                      control={<Checkbox size="small" checked={kv.attrs?.approval !== false} onChange={(e) => updateApproval(kv.rowId, e.target.checked)} />}
-                      label={t('staticdata.needsApproval')}
-                    />
-                    <FormControlLabel
-                      sx={{ m: 0 }}
-                      control={<Checkbox size="small" checked={kv.attrs?.unpaid === true} onChange={(e) => updateUnpaid(kv.rowId, e.target.checked)} />}
-                      label={t('staticdata.unpaid')}
-                    />
+                {declaredAttributes ? (
+                  <Box sx={{ flex: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+                    {declaredAttributes.map((a) => {
+                      const v = attributeValue(kv.attrs, a);
+                      if (a.type === 'checkbox') {
+                        return (
+                          <FormControlLabel
+                            key={a.key}
+                            sx={{ m: 0, mr: 1 }}
+                            control={<Checkbox size="small" checked={v === true} onChange={(e) => updateAttribute(kv.rowId, a, e.target.checked)} />}
+                            label={t(a.label)}
+                          />
+                        );
+                      }
+                      if (a.type === 'select') {
+                        return (
+                          <TextField key={a.key} select size="small" label={t(a.label)} value={v} onChange={(e) => updateAttribute(kv.rowId, a, e.target.value)} sx={{ minWidth: 170 }}>
+                            <MenuItem value=""><em>—</em></MenuItem>
+                            {a.options.map((o) => <MenuItem key={o.value} value={o.value}>{t(o.label)}</MenuItem>)}
+                          </TextField>
+                        );
+                      }
+                      return (
+                        <TextField
+                          key={a.key}
+                          size="small"
+                          label={t(a.label)}
+                          value={v}
+                          error={!attributeTextValid(a, String(v))}
+                          onChange={(e) => setEnumKvList((prev) => prev.map((x) => (x.rowId === kv.rowId ? { ...x, attrs: { ...(x.attrs ?? {}), [a.key]: e.target.value } } : x)))}
+                          onBlur={(e) => updateAttribute(kv.rowId, a, e.target.value)}
+                          inputProps={{ maxLength: a.maxLength }}
+                          sx={{ width: 140 }}
+                        />
+                      );
+                    })}
                   </Box>
-                ) : requestTypesRow ? (
-                  <FormControlLabel
-                    sx={{ flex: 1, m: 0 }}
-                    control={<Checkbox size="small" checked={kv.attrs?.confidential === true} onChange={(e) => updateConfidential(kv.rowId, e.target.checked)} />}
-                    label={t('requests.confidential')}
-                  />
                 ) : attributeRow ? (
                   <TextField label={t('staticdata.attributes')} value={JSON.stringify(kv.attrs ?? {})} size="small" disabled sx={{ flex: 1 }} />
                 ) : (

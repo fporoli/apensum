@@ -39,7 +39,8 @@ export function presetRange(preset: Exclude<Preset, 'custom'>, today: Date | str
 /** Translations from static data: `{ <language>: { <key>: <label> } }`, plus plain values as a fallback. */
 export interface StaticLabels {
   translation: Record<string, Record<string, string>>;
-  values?: Record<string, string>;
+  /** Labels, or properties (a list whose labels are in the translations only). */
+  values?: Record<string, unknown>;
 }
 
 export interface LabelSources {
@@ -84,7 +85,11 @@ export function dateLabel(date: string, locale: string): string {
 
 /** How a dimension value of `def` reads in the language: built in, else as the report's `labels` say. */
 export function labelFor(def: { labels?: ReportDefinition['labels'] }, locale: string, t: Texts, sources: LabelSources): (dim: string, row: ReportRow) => string {
-  const fromStatic = (s: StaticLabels | undefined, v: string) => s?.translation[locale]?.[v] ?? s?.values?.[v] ?? s?.translation.en?.[v];
+  // Lists of properties (e.g. expense categories with their VAT type) have their labels in the translations only.
+  const fromStatic = (s: StaticLabels | undefined, v: string) => {
+    const value = s?.values?.[v];
+    return s?.translation[locale]?.[v] ?? (typeof value === 'string' && value ? value : undefined) ?? s?.translation.en?.[v];
+  };
   return (dim, row) => {
     const v = String(row[dim] ?? '');
     switch (dim) {

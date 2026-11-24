@@ -37,6 +37,11 @@
       "types": "./dist/exchangeRates.d.ts",
       "default": "./dist/exchangeRates.js"
     },
+    "./staticData": {
+      "source": "./src/staticData.ts",
+      "types": "./dist/staticData.d.ts",
+      "default": "./dist/staticData.js"
+    },
     "./twoFactor": {
       "source": "./src/twoFactor.ts",
       "types": "./dist/twoFactor.d.ts",

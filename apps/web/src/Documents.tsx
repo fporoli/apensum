@@ -1,3 +1,4 @@
+import { staticValueLabel } from '@worktime3/shared/staticData';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -105,7 +106,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
   }, [load]);
 
   // Static data the plugins' categories describe their documents with (e.g. expense categories), per category.
-  const [pluginLabels, setPluginLabels] = useState<Record<string, { values: Record<string, string>; translation: Record<string, Record<string, string>> }>>({});
+  const [pluginLabels, setPluginLabels] = useState<Record<string, { values: Record<string, unknown>; translation: Record<string, Record<string, string>> }>>({});
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -176,7 +177,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
       const plugin = PLUGIN_DOCUMENT_CATEGORIES.find((p) => p.category === d.category);
       if (!plugin) return formatLocaleDate(d.date, locale);
       const labels = pluginLabels[d.category];
-      const staticLabel = (key: string) => labels?.translation[locale]?.[key] ?? labels?.values[key] ?? key;
+      const staticLabel = (key: string) => staticValueLabel(labels, locale, key);
       return plugin.describe(d, { t, locale, staticLabel });
     },
     [locale, monthLabel, translated, t, pluginLabels],

@@ -147,6 +147,14 @@ A plugin's files that belong to a person (expenses: receipts) appear on that per
 - Web: `documentCategories: [{ category, color, after, staticData?, describe }]`; `describe` turns the
   context into the line under the file name; its name is the text `documents.category.<category>`.
 
+## Static data properties
+
+A plugin's static data lists may map each key to properties instead of a label (labels then in the list's translations), as the expenses plugin's categories do (their expense account and default VAT type):
+
+- Web: `staticDataAttributes: [{ entity, enumName, attributes }]` in `defineWebPlugin`; each attribute is a `checkbox` (stored only when it differs from its `default`), a `select` (`options`) or a `text` (`pattern`, `maxLength`), its label a text key (`@worktime3/shared/staticData`).\
+  Admin settings → static data shows a control for each, with no code of its own per list; the core declares absence and request types the same way.
+- Read labels with `staticValueLabel` (a property object is never a label) and the properties from the values; check them where they are used, since an organization's copy holds whatever its admin saved.
+
 ## Notifications, mail and balances
 
 A plugin's providers and controllers may inject the core's `NotificationsService` (`notifyMany`: one row per recipient, pushed live; the web part's `notificationSections` maps the source table to the section a click opens) and `BalancesService` (a person's `year` and `closings`, the year-end closings of the Time balances page).\

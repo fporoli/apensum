@@ -2,6 +2,7 @@ import PLUGINS, { manifests as PLUGIN_MANIFESTS, permissions as PLUGIN_PERMISSIO
 import { namespaceMismatch, type PluginName } from '@worktime3/shared/pluginApi';
 import { registerPermissionObjects } from '@worktime3/shared/permissions';
 import { registerReport } from '@worktime3/shared/reports';
+import { registerStaticAttributes } from '@worktime3/shared/staticData';
 import { DICTIONARIES, type Locale } from './dictionaries';
 import type { PluginDocumentCategory, PluginTeamView, PluginNavGroup, PluginPage, PluginPublicRoute, PluginSettingsSection, PluginWorkflowKind, WebPlugin } from './plugin';
 
@@ -47,6 +48,8 @@ mergePluginTexts(WEB_PLUGINS, DICTIONARIES);
 registerPermissionObjects(PLUGIN_PERMISSIONS);
 // Their reports join the Reports page's tabs (the API registers the same definitions with their rows).
 for (const report of WEB_PLUGINS.flatMap((p) => p.reports ?? [])) registerReport(report.definition);
+// The properties of their static data lists join the static data editor's.
+for (const list of WEB_PLUGINS.flatMap((p) => p.staticDataAttributes ?? [])) registerStaticAttributes(list);
 
 export const PLUGIN_PAGES: readonly PluginPage[] = WEB_PLUGINS.flatMap((p) => p.pages ?? []);
 export const PLUGIN_NAV_GROUPS: readonly PluginNavGroup[] = WEB_PLUGINS.flatMap((p) => p.navGroups ?? []);
