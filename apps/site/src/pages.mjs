@@ -1025,8 +1025,9 @@ ${ctaBand(ctx)}`;
  * an introduction, numbered steps and notes (`support.<id>.*`); its texts must stay true to the app.
  */
 export const SUPPORT_ARTICLES = [
-  ['staticData', 'sliders'],
-  ['roster', 'calendar'],
+  ['staticData', 'sliders', ['support-staticdata-1', 'support-staticdata-2']],
+  ['roster', 'calendar', ['support-roster-1', 'support-roster-2']],
+  ['operator', 'key', ['support-operator-1', 'support-operator-2', 'support-operator-3']],
 ];
 
 export function support(ctx) {
@@ -1036,10 +1037,17 @@ export function support(ctx) {
         <h3>${t(`support.${id}.title`)}</h3>
         <p>${t(`support.${id}.summary`)}</p>
       </a>`).join('\n    ');
-  const articles = SUPPORT_ARTICLES.map(([id, ic]) => `<article class="support-article" id="${id}">
+  // The article's screenshots (feature-<shot>-<lang>.jpg, videos/screens.mjs), after its introduction; none = no block.
+  const pictures = (ids) => {
+    const shown = ids.map((s) => shot(ctx, s, t(`support.shot.${s}`))).filter(Boolean);
+    // One per row: the articles' column is narrow, two side by side would be too small to read.
+    return shown.length ? `<div class="shots">${shown.join('')}</div>` : '';
+  };
+  const articles = SUPPORT_ARTICLES.map(([id, ic, shots]) => `<article class="support-article" id="${id}">
     <p class="eyebrow">${icon(ic)}${t('support.eyebrow')}</p>
     <h2>${t(`support.${id}.title`)}</h2>
     <p class="lead">${t(`support.${id}.intro`)}</p>
+    ${pictures(shots)}
     <h3>${t('support.steps')}</h3>
     <ol class="support-steps">${t.list(`support.${id}.steps`).map((x) => `<li>${x}</li>`).join('')}</ol>
     <h3>${t('support.notes')}</h3>

@@ -8,6 +8,8 @@
 // Before the shots it creates what the pages should show and the seed lacks: a pending vacation
 // request and a request thread between Ueli and Marco (once; reruns find them). The shot ids are
 // the ones src/pages.mjs FEATURE_SHOTS names; each one is the app's content area (no navbar).
+import { createHmac } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +46,44 @@ function nextMonthWeek() {
   const fri = new Date(d);
   fri.setUTCDate(d.getUTCDate() + 4);
   return [d.toISOString().slice(0, 10), fri.toISOString().slice(0, 10)];
+}
+
+// ---------------------------------------------------------------------------------------------
+// The operator shots (Support): a local operator account, made with the operator CLI, signs in with two-step login.
+const OPERATOR = 'operator@dev.local';
+/** Only for the local dev stack: the account exists for these screenshots. */
+const OPERATOR_PASSWORD = 'operator-screens';
+
+/** RFC 6238 code (SHA-1, 30 s, 6 digits) of a base32 secret. */
+function totp(secret, now = Date.now()) {
+  let bits = '';
+  for (const c of secret.replace(/=+$/, '').toUpperCase()) bits += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.indexOf(c).toString(2).padStart(5, '0');
+  const key = Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(now / 30000)));
+  const h = createHmac('sha1', key).update(counter).digest();
+  const o = h[h.length - 1] & 15;
+  return String(((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000)).padStart(6, '0');
+}
+
+/** The operator CLI on the dev database (scripts/with-env.mjs loads .env.dev). */
+function operatorCli(...args) {
+  const r = spawnSync('node', ['scripts/with-env.mjs', 'dev', 'node', 'apps/api/dist/cli/operator.js', ...args], {
+    cwd: join(ROOT, '..', '..', '..'), encoding: 'utf8', env: { ...process.env, OPERATOR_PASSWORD },
+  });
+  if (r.status !== 0) throw new Error(`operator ${args.join(' ')}: ${r.stderr || r.stdout}`);
+}
+
+/** A session of the operator: the account ensured, its two-step login set up anew (the secret is not kept). */
+async function operatorSession() {
+  operatorCli('operators', 'ensure', OPERATOR);
+  operatorCli('twofactor', 'reset', OPERATOR);
+  const first = await api(null, 'POST', '/auth/login', { email: OPERATOR, password: OPERATOR_PASSWORD });
+  if (!first.ok) throw new Error(`operator login: ${first.error}`);
+  const { secret } = await api(first.token, 'POST', '/users/me/two-factor/setup');
+  const on = await api(first.token, 'POST', '/users/me/two-factor/enable', { code: totp(secret) });
+  if (!on.ok) throw new Error(`operator two-step login: ${on.error}`);
+  return { ok: true, ...on.session };
 }
 
 async function prepare() {
@@ -112,6 +152,26 @@ const SHOTS = {
     // down to the receipt: its drop zone, with the camera button
     await p.evaluate(() => document.querySelector('main input[type=file]')?.parentElement?.scrollIntoView({ block: 'center' }));
   } },
+  // Support: static data (the list, then a list's editor with its properties).
+  'support-staticdata-1': { user: 'admin', hash: '#/admin' },
+  'support-staticdata-2': { user: 'admin', hash: '#/admin', dialog: true, async go(p) {
+    const row = p.locator('main tbody tr').filter({ hasText: 'absence_type' }).first();
+    await row.getByRole('button').first().click();
+    await p.getByRole('dialog').waitFor();
+  } },
+  // Support: shift planning (shift types and demand, then a person's planning data).
+  'support-roster-1': { user: 'ulla', hash: '#/roster', tab: 1 },
+  'support-roster-2': { user: 'ulla', hash: '#/roster', dialog: true, async go(p) {
+    await p.locator('main').getByRole('tab').first().click(); // back to the plan (the shot before left the settings tab open)
+    await sleep(1200);
+    const row = p.getByRole('row').filter({ hasText: 'Marta' }).first();
+    await row.getByRole('button', { name: /^(Planungsdaten|Données de planification|Dati di pianificazione|Planning data)$/ }).click();
+    await p.getByRole('dialog').waitFor();
+  } },
+  // Support: the operator's Super Admin pages (home with the red frame, licenses, instance).
+  'support-operator-1': { user: 'operator', hash: '#/home', full: true },
+  'support-operator-2': { user: 'operator', hash: '#/super-admin/licenses' },
+  'support-operator-3': { user: 'operator', hash: '#/super-admin/instance' },
   // The login screen itself (nobody signed in): its first tab, then Register.
   'access-1': { signedOut: 0 },
   'access-2': { signedOut: 1 },
@@ -140,6 +200,7 @@ async function shootSignedOut(browser, lang, tab, file) {
   }
 }
 
+let operator = null;
 async function login(browser, user, lang, phone = false) {
   const context = await browser.newContext(phone ? PHONE : CONTEXT);
   const page = await context.newPage();
@@ -154,6 +215,15 @@ async function login(browser, user, lang, phone = false) {
     }
     await route.fulfill({ response: res, json: body ?? undefined });
   });
+  if (user === 'operator') {
+    // Signed in with the session from the two-step login (the app keeps it in localStorage).
+    operator ??= await operatorSession();
+    await context.addInitScript(([s, l]) => { localStorage.setItem('worktime.session', s); localStorage.setItem('worktime.locale', l); }, [JSON.stringify({ ...operator, user: { ...operator.user, locale: lang } }), lang]);
+    await page.goto(BASE);
+    await page.locator('header').first().waitFor();
+    await sleep(1500);
+    return { context, page };
+  }
   await page.goto(BASE);
   await page.getByRole('textbox').first().fill(`${user}@acme.com`);
   await page.locator('input[type=password]').first().fill(user);
