@@ -537,6 +537,7 @@ export function SuperAdminHome({ onNavigate }: { onNavigate: (section: string) =
     { section: 'superAdminLicenses', title: 'superAdmin.licenses.title', text: 'superAdmin.licenses.subtitle' },
     { section: 'superAdminAi', title: 'superAdmin.ai.title', text: 'superAdmin.ai.subtitle' },
     { section: 'superAdminNews', title: 'operator.news.title', text: 'operator.news.subtitle' },
+    { section: 'superAdminStaticData', title: 'staticdata.defaultsTitle', text: 'staticdata.defaultsHome' },
     { section: 'superAdminUsers', title: 'superAdmin.users.title', text: 'superAdmin.users.subtitle' },
   ];
   return (

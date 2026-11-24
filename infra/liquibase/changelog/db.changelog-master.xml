@@ -118,6 +118,7 @@
     <include file="100-exchange-rates.sql" relativeToChangelogFile="true"/>
     <include file="101-static-data-properties.sql" relativeToChangelogFile="true"/>
     <include file="102-static-data-radio.sql" relativeToChangelogFile="true"/>
+    <include file="103-static-data-operator-keys.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

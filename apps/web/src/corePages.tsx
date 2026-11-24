@@ -59,6 +59,7 @@ const SuperAdminLicenses = lazy(() => import('./SuperAdmin').then((m) => ({ defa
 const SuperAdminAi = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminAi })));
 const SuperAdminInstance = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminInstance })));
 const SuperAdminNews = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminNews })));
+const DefaultLists = lazy(() => import('./AdminSettings').then((m) => ({ default: m.StaticDataSettings })));
 const SuperAdminUsers = lazy(() => import('./SuperAdmin').then((m) => ({ default: m.SuperAdminUsers })));
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -458,6 +459,16 @@ export const CORE_PAGES: AppPage[] = [
     allowedByRole: () => false,
     nav: { group: 'superAdmin', label: 'nav.superAdminNews', icon: <CampaignIcon fontSize="small" /> },
     render: (c) => <SuperAdminNews authHeaders={c.authHeaders} />,
+  },
+  {
+    // The static data every organization starts from (global rows): operators add values and lists, change
+    // translations; what migrations put there stays (operator-static-data.controller.ts).
+    section: 'superAdminStaticData',
+    hash: '#/super-admin/default-lists',
+    object: 'nav.operator',
+    allowedByRole: () => false,
+    nav: { group: 'superAdmin', label: 'nav.superAdminStaticData', icon: <TuneIcon fontSize="small" /> },
+    render: (c) => <DefaultLists orgId={c.orgId} authHeaders={c.authHeaders} operator />,
   },
   {
     section: 'superAdminUsers',

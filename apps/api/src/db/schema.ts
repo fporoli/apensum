@@ -602,7 +602,7 @@ export const roles = pgTable("roles", {
 	is_system_role: boolean().default(false).notNull(),
 	settings: jsonb().default({}).notNull(),
 	translations: jsonb().default({}).notNull(),
-	admin_user_ids: uuid().array().default([""]).notNull(),
+	admin_user_ids: uuid().array().default(sql`'{}'`).notNull(),
 }, (table) => [
 	foreignKey({
 			columns: [table.organization_id],
@@ -863,6 +863,7 @@ export const static_data = pgTable("static_data", {
 	values: jsonb().default({}).notNull(),
 	translation: jsonb().default({}).notNull(),
 	organization_id: uuid(),
+	operator_keys: text().array().default(sql`'{}'`).notNull(),
 }, (table) => [
 	index("idx_static_data_global_entity").using("btree", table.entity.asc().nullsLast(), table.enum_name.asc().nullsLast()).where(sql`(organization_id IS NULL)`),
 	index("idx_static_data_org_entity").using("btree", table.organization_id.asc().nullsLast(), table.entity.asc().nullsLast(), table.enum_name.asc().nullsLast()),
@@ -920,9 +921,9 @@ export const organizations = pgTable("organizations", {
 	settings: jsonb().default({}).notNull(),
 	enforce_sso: boolean().default(false).notNull(),
 	enforce_mfa: boolean().default(false).notNull(),
-	allowed_email_domains: text().array().default([""]).notNull(),
+	allowed_email_domains: text().array().default(sql`'{}'`).notNull(),
 	session_duration_minutes: integer().default(1440).notNull(),
-	ip_allowlist: inet().array().default([""]).notNull(),
+	ip_allowlist: inet().array().default(sql`'{}'`).notNull(),
 	sso_config: jsonb().default({}).notNull(),
 }, (table) => [
 	index("idx_organizations_parent").using("btree", table.parent_organization_id.asc().nullsLast()),
@@ -1204,7 +1205,7 @@ export const report_schedules = pgTable("report_schedules", {
 	hour: integer().default(6).notNull(),
 	time_zone: text().notNull(),
 	format: text().default('pdf').notNull(),
-	recipient_user_ids: uuid().array().default([""]).notNull(),
+	recipient_user_ids: uuid().array().default(sql`'{}'`).notNull(),
 	is_active: boolean().default(true).notNull(),
 	next_run_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 	last_run_at: timestamp({ withTimezone: true, mode: 'string' }),
@@ -1270,7 +1271,7 @@ export const saved_reports = pgTable("saved_reports", {
 	name: text().notNull(),
 	report_id: text().notNull(),
 	settings: jsonb().default({}).notNull(),
-	shared_roles: text().array().default([""]).notNull(),
+	shared_roles: text().array().default(sql`'{}'`).notNull(),
 }, (table) => [
 	index("idx_saved_reports_org").using("btree", table.organization_id.asc().nullsLast(), table.owner_user_id.asc().nullsLast()),
 	foreignKey({
@@ -1529,7 +1530,7 @@ export const user_two_factor = pgTable("user_two_factor", {
 	user_id: uuid().primaryKey().notNull(),
 	secret_enc: text().notNull(),
 	enabled: boolean().default(false).notNull(),
-	recovery_hashes: text().array().default([""]).notNull(),
+	recovery_hashes: text().array().default(sql`'{}'`).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	last_step: bigint({ mode: "number" }).default(0).notNull(),
 }, (table) => [

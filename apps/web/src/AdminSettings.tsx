@@ -40,6 +40,8 @@ const MAX_PREVIEW_VALUES = 15;
 interface StaticDataRow {
   id: string;
   organization_id: string | null;
+  /** Default lists: the keys operators added (the others came from migrations, 103). */
+  operator_keys?: string[];
   entity: string;
   entity_uuid: string | null;
   enum_name: string;
@@ -53,6 +55,8 @@ interface KV {
   label: string;
   /** Set when the value is an attribute object (e.g. absence types: `{"approval": false}`) instead of a label. */
   attrs: Record<string, unknown> | null;
+  /** Default lists (operators): a value from a migration, which stays as it is. */
+  builtIn?: boolean;
 }
 
 type Attributes = Record<string, unknown>;
@@ -93,9 +97,15 @@ export default function AdminSettings({ orgId, authHeaders, tab }: AdminSettings
   );
 }
 
-function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'tab'>) {
+/**
+ * The static data editor: an organization's lists (Admin settings), or with `operator` the default lists every
+ * organization starts from (Super Admin -> Default lists, `operator/static-data`): operators add values and lists and
+ * change translations, while the values migrations put there stay as they are.
+ */
+export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omit<AdminSettingsProps, 'tab'> & { operator?: boolean }) {
   const t = useT();
   const { locale } = useI18n();
+  const base = operator ? `${API}/operator/static-data` : `${API}/organizations/${orgId}/static-data`;
   /**
    * The properties of a list's values, as the list static_data/properties describes them (`@worktime3/shared/staticData`:
    * absence and request types, a plugin's lists, the description itself); such a list's labels live in the translations.
@@ -131,7 +141,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   async function reloadEnums() {
     try {
       const headers = await authHeaders();
-      const data = await (await fetch(`${API}/organizations/${orgId}/static-data`, { headers })).json();
+      const data = await (await fetch(base, { headers })).json();
       if (Array.isArray(data)) setEnums(data);
     } catch { /* offline fallback */ }
   }
@@ -158,7 +168,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
     const attributeRow = propertiesFor(row.entity, row.enum_name) !== null || Object.values(row.values).some(isAttributes);
-    const list = Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
+    const operatorKeys = new Set(row.operator_keys ?? []);
+    const list = Object.entries(row.values).map(([k, v]) => ({ ...makeKv(k, v, attributeRow), builtIn: operator && !operatorKeys.has(k) }));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
     setEnumTranslations(row.translation ?? {});
     setKvFilter('');
@@ -219,6 +230,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   function apiErrorText(errCode: string | undefined, fallbackKey: string): string {
     if (errCode === 'forbidden') return t('staticdata.forbidden');
     if (errCode === 'duplicate-enum') return t('staticdata.duplicateEnum');
+    if (errCode === 'built-in-value') return t('staticdata.builtInValue');
+    if (errCode === 'built-in-list') return t('staticdata.builtInList');
     return t(fallbackKey);
   }
 
@@ -236,7 +249,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     const translation = attributeRow ? keepLabels(Object.fromEntries(enumKvList.map((kv) => [kv.key.trim(), kv.label])), enumTranslations) : enumTranslations;
     try {
       if (editingEnum) {
-        const res = await fetch(`${API}/organizations/${orgId}/static-data/${editingEnum.id}`, {
+        const res = await fetch(`${base}/${editingEnum.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
           body: JSON.stringify({ enumName: enumName.trim(), values, translation }),
@@ -248,7 +261,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
         }
         setSuccess(t('staticdata.updated', { name: enumName }));
       } else {
-        const res = await fetch(`${API}/organizations/${orgId}/static-data`, {
+        const res = await fetch(base, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
           body: JSON.stringify({
@@ -276,7 +289,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setError(null);
     setSuccess(null);
     try {
-      const res = await fetch(`${API}/organizations/${orgId}/static-data/${row.id}`, { method: 'DELETE', headers: await authHeaders() });
+      const res = await fetch(`${base}/${row.id}`, { method: 'DELETE', headers: await authHeaders() });
       const data = await res.json();
       if (data.ok === false) {
         setError(apiErrorText(data.error, 'staticdata.deleteFailed'));
@@ -324,17 +337,17 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
 
   const isOverridingGlobal = globalKeys.has(rowKey(enumEntity.trim(), enumName.trim()));
   // The property descriptions: an organization's copy holds only its own, the built-in (global) ones are shown read-only.
-  const isPropertiesList = enumEntity.trim() === PROPERTIES_LIST.entity && enumName.trim() === PROPERTIES_LIST.enumName;
+  const isPropertiesList = !operator && enumEntity.trim() === PROPERTIES_LIST.entity && enumName.trim() === PROPERTIES_LIST.enumName;
   const builtInProperties = isPropertiesList ? enums.find((r) => !r.organization_id && r.entity === PROPERTIES_LIST.entity && r.enum_name === PROPERTIES_LIST.enumName) : undefined;
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader
-        title={t('staticdata.title')}
-        subtitle={t('staticdata.description', { count: enums.length })}
+        title={t(operator ? 'staticdata.defaultsTitle' : 'staticdata.title')}
+        subtitle={operator ? t('staticdata.defaultsSubtitle', { count: enums.length }) : t('staticdata.description', { count: enums.length })}
         end={
           <>
-            <Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />
+            {!operator && <Chip label={t('staticdata.adminAccess')} color="secondary" size="small" variant="outlined" />}
             <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => openCreateEnum()}>
               {t('staticdata.newEnum').replace('+ ', '')}
             </Button>
@@ -364,8 +377,10 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                 const key = rowKey(row.entity, row.enum_name);
                 const hasOrgOverride = isGlobal && orgKeys.has(key);
                 const overridesGlobal = !isGlobal && globalKeys.has(key);
-                // Rows for all organizations are read-only; an org copies one and edits its copy.
-                const canMutateRow = !isGlobal;
+                // Rows for all organizations are read-only; an org copies one and edits its copy. Operators edit them
+                // (Default lists) and delete only a list without values from migrations.
+                const canMutateRow = operator || !isGlobal;
+                const canDeleteRow = !operator || Object.keys(row.values).every((k) => (row.operator_keys ?? []).includes(k));
                 const translatedLocales = LOCALES.filter((l) => Object.keys(row.translation?.[l.code] ?? {}).length > 0);
                 const entries = Object.entries(row.values);
                 const visibleEntries = entries.slice(0, MAX_PREVIEW_VALUES);
@@ -432,7 +447,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                       )}
                     </TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                      {isGlobal && !hasOrgOverride && (
+                      {!operator && isGlobal && !hasOrgOverride && (
                         <Tooltip title={t('staticdata.overrideForOrg')}>
                           <IconButton size="small" color="primary" aria-label={t('staticdata.overrideForOrg')} onClick={() => openOverrideEnum(row)}>
                             <ContentCopyIcon fontSize="small" />
@@ -446,11 +461,13 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title={t('staticdata.delete')}>
-                            <IconButton size="small" color="error" aria-label={t('staticdata.delete')} onClick={() => setDeletingEnum(row)}>
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {canDeleteRow && (
+                            <Tooltip title={t('staticdata.delete')}>
+                              <IconButton size="small" color="error" aria-label={t('staticdata.delete')} onClick={() => setDeletingEnum(row)}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                         </>
                       )}
                     </TableCell>
@@ -480,10 +497,17 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
         >
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
             <span>{editingEnum ? t('staticdata.editEnum') : t('staticdata.newEnumTitle')}</span>
-            <Chip size="small" icon={<BusinessIcon fontSize="small" />} label={t('staticdata.scope.org')} color="primary" variant="outlined" />
+            {operator ? (
+              <Chip size="small" icon={<PublicIcon fontSize="small" />} label={t('staticdata.scope.global')} color="secondary" />
+            ) : (
+              <Chip size="small" icon={<BusinessIcon fontSize="small" />} label={t('staticdata.scope.org')} color="primary" variant="outlined" />
+            )}
           </DialogTitle>
           <DialogContent sx={{ display: 'grid', gap: 2, pt: 1 }}>
-            {isOverridingGlobal && (
+            {operator && (
+              <Alert severity="info" variant="outlined">{t('staticdata.defaultsInfo')}</Alert>
+            )}
+            {!operator && isOverridingGlobal && (
               <Alert severity="info" variant="outlined">
                 {t(isPropertiesList ? 'staticdata.propertiesOwnInfo' : 'staticdata.orgOverrideInfo')}
               </Alert>
@@ -542,7 +566,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
             )}
             {visibleKvList.map((kv) => (
               <Box key={kv.rowId} sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: declaredAttributes && declaredAttributes.length > 2 ? 'wrap' : 'nowrap', pb: declaredAttributes && declaredAttributes.length > 2 ? 1 : 0, borderBottom: declaredAttributes && declaredAttributes.length > 2 ? 1 : 0, borderColor: 'divider' }}>
-                <TextField label={t('staticdata.key')} value={kv.key} onChange={(e) => updateKv(kv.rowId, 'key', e.target.value)} size="small" sx={{ flex: declaredAttributes && declaredAttributes.length > 2 ? '1 1 100%' : 1 }} />
+                <TextField label={t('staticdata.key')} value={kv.key} disabled={kv.builtIn} helperText={kv.builtIn ? t('staticdata.builtInValueShort') : undefined} onChange={(e) => updateKv(kv.rowId, 'key', e.target.value)} size="small" sx={{ flex: declaredAttributes && declaredAttributes.length > 2 ? '1 1 100%' : 1 }} />
                 {declaredAttributes ? (
                   <Box sx={{ flex: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                     {declaredAttributes.map((a) => {
@@ -552,7 +576,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                           <FormControlLabel
                             key={a.key}
                             sx={{ m: 0, mr: 1 }}
-                            control={<Radio size="small" checked={v === true} onClick={() => updateAttribute(kv.rowId, a, v !== true)} />}
+                            control={<Radio size="small" checked={v === true} disabled={kv.builtIn} onClick={() => updateAttribute(kv.rowId, a, v !== true)} />}
                             label={a.label}
                           />
                         );
@@ -562,14 +586,14 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                           <FormControlLabel
                             key={a.key}
                             sx={{ m: 0, mr: 1 }}
-                            control={<Checkbox size="small" checked={v === true} onChange={(e) => updateAttribute(kv.rowId, a, e.target.checked)} />}
+                            control={<Checkbox size="small" checked={v === true} disabled={kv.builtIn} onChange={(e) => updateAttribute(kv.rowId, a, e.target.checked)} />}
                             label={a.label}
                           />
                         );
                       }
                       if (a.type === 'select') {
                         return (
-                          <TextField key={a.key} select size="small" label={a.label} value={v} onChange={(e) => updateAttribute(kv.rowId, a, e.target.value)} sx={{ minWidth: 170 }}>
+                          <TextField key={a.key} select size="small" label={a.label} value={v} disabled={kv.builtIn} onChange={(e) => updateAttribute(kv.rowId, a, e.target.value)} sx={{ minWidth: 170 }}>
                             <MenuItem value=""><em>—</em></MenuItem>
                             {(a.options ?? []).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
                           </TextField>
@@ -582,6 +606,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                           label={a.label}
                           value={v}
                           error={!attributeTextValid(a, String(v))}
+                          disabled={kv.builtIn}
                           onChange={(e) => setEnumKvList((prev) => prev.map((x) => (x.rowId === kv.rowId ? { ...x, attrs: { ...(x.attrs ?? {}), [a.key]: e.target.value } } : x)))}
                           onBlur={(e) => updateAttribute(kv.rowId, a, e.target.value)}
                           sx={{ width: 140 }}
@@ -592,9 +617,9 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                 ) : attributeRow ? (
                   <TextField label={t('staticdata.attributes')} value={JSON.stringify(kv.attrs ?? {})} size="small" disabled sx={{ flex: 1 }} />
                 ) : (
-                  <TextField label={t('staticdata.label')} value={kv.label} onChange={(e) => updateKv(kv.rowId, 'label', e.target.value)} size="small" sx={{ flex: 1 }} />
+                  <TextField label={t('staticdata.label')} value={kv.label} disabled={kv.builtIn} onChange={(e) => updateKv(kv.rowId, 'label', e.target.value)} size="small" sx={{ flex: 1 }} />
                 )}
-                <IconButton size="small" color="error" onClick={() => removeKvRow(kv.rowId)} disabled={enumKvList.length === 1} aria-label={t('staticdata.removeValue')}>
+                <IconButton size="small" color="error" onClick={() => removeKvRow(kv.rowId)} disabled={enumKvList.length === 1 || kv.builtIn} aria-label={t('staticdata.removeValue')}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
