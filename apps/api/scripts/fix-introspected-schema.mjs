@@ -14,6 +14,7 @@
 //    Liquibase owns the indexes, so they are dropped: `.op("uuid_ops")` and the like.
 //  - drizzle-kit reads an empty array default (`DEFAULT '{}'`, static_data.operator_keys) as `[""]`, an array
 //    holding one empty string, which drizzle would then insert; it becomes the SQL `'{}'`.
+//  - drizzle-kit writes an empty text default (`DEFAULT ''`) as `.default(')`, which does not compile; it becomes `''`.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -44,7 +45,11 @@ const afterOps = src;
 src = src.replace(/\.array\(\)\.default\(\[""\]\)/g, ".array().default(sql`'{}'`)");
 const patchedArrays = src !== afterOps;
 
-if (!patchedCitext && !patchedCoalesce && !patchedOps && !patchedArrays) {
+const afterArrays = src;
+src = src.replace(/\.default\('\)/g, ".default('')");
+const patchedEmptyText = src !== afterArrays;
+
+if (!patchedCitext && !patchedCoalesce && !patchedOps && !patchedArrays && !patchedEmptyText) {
   console.log('fix-introspected-schema: nothing to patch.');
   process.exit(0);
 }
@@ -65,4 +70,5 @@ writeFileSync(schemaPath, src);
 if (patchedCitext) console.log('fix-introspected-schema: patched citext columns (users.email, organizations.slug, and others).');
 if (patchedCoalesce) console.log('fix-introspected-schema: repaired truncated COALESCE(..., zero uuid) index expressions.');
 if (patchedArrays) console.log('fix-introspected-schema: empty array defaults as SQL.');
+if (patchedEmptyText) console.log('fix-introspected-schema: empty text defaults.');
 if (patchedOps) console.log('fix-introspected-schema: dropped index operator classes (drizzle-kit pairs them with the wrong columns).');
