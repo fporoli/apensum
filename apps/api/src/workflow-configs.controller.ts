@@ -51,7 +51,7 @@ export class WorkflowConfigsController {
       // A kind with variants (request types) is listed once per variant; without its own configuration it has none.
       const variants: ({ key: string; label: string; labels?: Record<string, string> } | null)[] = kind.variants ? await kind.variants(db, orgId) : [null];
       for (const variant of variants) {
-        const { blocks, facts, rejectModes, defaultConfig } = (await this.workflowsSvc.catalogueOf(db, orgId, id, variant?.key))!;
+        const { blocks, facts, rejectModes, defaultConfig, firstStepDecides } = (await this.workflowsSvc.catalogueOf(db, orgId, id, variant?.key))!;
         kinds.push({
           id,
           variant: variant?.key ?? null,
@@ -61,6 +61,7 @@ export class WorkflowConfigsController {
           blocks: Object.fromEntries(Object.entries(blocks).map(([name, b]) => [name, { assignees: b.assignees, label: b.label, once: !!b.once, last: !!b.last, after: b.after ?? [], canReturn: !!b.returnAction, required: !!b.required }])),
           facts,
           rejectModes,
+          firstStepDecides: firstStepDecides !== false,
           defaultConfig,
           config: await this.workflowsSvc.ownConfig(db, orgId, id, variant?.key),
         });

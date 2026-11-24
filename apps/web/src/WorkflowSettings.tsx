@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, Paper, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Paper, Tab, Tabs, TextField, Typography } from '@mui/material';
+import { WorkflowDesigner } from './WorkflowDesigner';
 import {
   validateWorkflowConfig, type FactType, type RejectMode, type WorkflowConfig, type WorkflowConfigError, type WorkflowKindCatalogue,
 } from '@worktime3/shared/workflowConfig';
@@ -19,6 +20,8 @@ interface KindInfo {
   blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
+  /** false: the first step may be work and have a condition (a payment run). */
+  firstStepDecides?: boolean;
   defaultConfig: WorkflowConfig;
   config: WorkflowConfig | null;
 }
@@ -30,6 +33,7 @@ function catalogueOf(kind: KindInfo): WorkflowKindCatalogue {
     definitionName: kind.id,
     facts: kind.facts,
     rejectModes: kind.rejectModes,
+    firstStepDecides: kind.firstStepDecides !== false,
     defaultConfig: kind.defaultConfig,
     blocks: Object.fromEntries(Object.entries(kind.blocks).map(([name, b]) => [name, {
       label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, required: b.required, action: name, ...(b.canReturn ? { returnAction: name } : {}),
@@ -119,6 +123,8 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
     ? t('workflowConfig.variantTitle', { kind: t(`workflowConfig.kind.${kind.id}`), variant: kind.variantLabels?.[locale] ?? kind.variantLabel ?? kind.variant })
     : t(`workflowConfig.kind.${kind.id}`);
   const [text, setText] = useState(pretty(kind.config ?? kind.defaultConfig));
+  // The designer and the JSON edit the same text: the designer reads it and writes it back.
+  const [mode, setMode] = useState<'visual' | 'json'>('visual');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ severity: 'success' | 'error'; text: string } | null>(null);
   const [serverErrors, setServerErrors] = useState<WorkflowConfigError[]>([]);
@@ -169,6 +175,12 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
   }
 
   const changed = text !== pretty(kind.config ?? kind.defaultConfig);
+  // What the designer can show: a parsed object with a list of steps (anything else is fixed in the JSON first).
+  const designable = (() => {
+    const p = checked.parsed as Partial<WorkflowConfig> | null;
+    return p && typeof p === 'object' && Array.isArray(p.steps) && p.steps.every((x) => x && typeof x === 'object' && Array.isArray((x as { do?: unknown }).do))
+      ? (p as WorkflowConfig) : null;
+  })();
   return (
     <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -184,18 +196,35 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
       {opened && (<>
       <Typography variant="body2" color="text.secondary">{t('workflowConfig.runningKeep')}</Typography>
       {message && <Alert severity={message.severity} onClose={() => setMessage(null)}>{message.text}</Alert>}
-      <TextField
-        multiline
-        minRows={8}
-        maxRows={28}
-        value={text}
-        onChange={(e) => { setText(e.target.value); setServerErrors([]); }}
-        InputProps={{ readOnly: !editable, sx: { fontFamily: 'monospace', fontSize: '0.82rem' } }}
-        inputProps={{ spellCheck: false, 'aria-label': t(`workflowConfig.kind.${kind.id}`) }}
-        error={!!checked.jsonError || errors.length > 0}
-      />
+      <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}>
+        <Tab value="visual" label={t('workflowDesigner.visual')} />
+        <Tab value="json" label="JSON" />
+      </Tabs>
+      {mode === 'visual' && designable && (
+        <WorkflowDesigner
+          kind={kind}
+          units={units}
+          config={designable}
+          errors={errors}
+          editable={editable}
+          onChange={(next) => { setText(pretty(next)); setServerErrors([]); }}
+        />
+      )}
+      {mode === 'visual' && !designable && <Alert severity="warning">{t('workflowDesigner.fixJsonFirst')}</Alert>}
+      {mode === 'json' && (
+        <TextField
+          multiline
+          minRows={8}
+          maxRows={28}
+          value={text}
+          onChange={(e) => { setText(e.target.value); setServerErrors([]); }}
+          InputProps={{ readOnly: !editable, sx: { fontFamily: 'monospace', fontSize: '0.82rem' } }}
+          inputProps={{ spellCheck: false, 'aria-label': t(`workflowConfig.kind.${kind.id}`) }}
+          error={!!checked.jsonError || errors.length > 0}
+        />
+      )}
       {checked.jsonError && <Alert severity="error">{t('workflowConfig.invalidJson', { message: checked.jsonError })}</Alert>}
-      {errors.length > 0 && (
+      {mode === 'json' && errors.length > 0 && (
         <Alert severity="error">
           <Box component="ul" sx={{ m: 0, pl: 2.5 }}>{errors.map((e, i) => <li key={i}>{errorText(e)}</li>)}</Box>
         </Alert>
