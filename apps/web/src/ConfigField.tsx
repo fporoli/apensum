@@ -358,3 +358,31 @@ export function ConfigFieldGroup({ form, group, values, editing, onChange, optio
     </Box>
   );
 }
+
+/**
+ * A date field with the app's date picker (Swiss formats, from DatePickerLocalization): value and onChange are ISO
+ * dates (`YYYY-MM-DD`), '' when empty. For hand-written forms; configured forms use ConfigField.
+ */
+export function DateInput({ label, value, onChange, required, helperText, error, disabled, clearable = true, fullWidth, sx }: {
+  label: string;
+  value: string | null | undefined;
+  onChange: (iso: string) => void;
+  required?: boolean;
+  helperText?: ReactNode;
+  error?: boolean;
+  disabled?: boolean;
+  /** Offer the clear (×) button; off for a date that must always have a value. */
+  clearable?: boolean;
+  fullWidth?: boolean;
+  sx?: object;
+}) {
+  return (
+    <DatePicker
+      label={label}
+      disabled={disabled}
+      value={value ? dayjs(value) : null}
+      onChange={(d: Dayjs | null) => onChange(d && d.isValid() ? d.format('YYYY-MM-DD') : '')}
+      slotProps={{ field: { clearable }, textField: { size: 'small', required, error, helperText, fullWidth, sx } }}
+    />
+  );
+}

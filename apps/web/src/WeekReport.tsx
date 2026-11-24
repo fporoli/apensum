@@ -87,6 +87,7 @@ export default function WeekReport({
   authHeaders,
   onPick,
   compact = false,
+  hideTitle = false,
 }: {
   orgId: string;
   personId: string;
@@ -99,6 +100,8 @@ export default function WeekReport({
   onPick?: (date: string, projectId: string | null, subprojectId: string | null) => void;
   /** Without the side panel (the day's sessions and the balances), e.g. where the balances show anyway. */
   compact?: boolean;
+  /** Without its own heading, where the surrounding card shows it. */
+  hideTitle?: boolean;
 }) {
   const { t, locale } = useI18n();
   const [report, setReport] = useState<Report | null>(null);
@@ -255,9 +258,11 @@ export default function WeekReport({
       <Box sx={{ minWidth: 0 }}>
         {loading && <LinearProgress />}
         {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
-          {t('weekReport.title')} · {t('weekReport.week', { week: String(report.week) })}
-        </Typography>
+        {!hideTitle && (
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+            {t('weekReport.title')} · {t('weekReport.week', { week: String(report.week) })}
+          </Typography>
+        )}
         <TableContainer>
           {/* Figures stay on one line; the first column (names) wraps. */}
           <Table size="small" sx={{ '& td, & th': { whiteSpace: 'nowrap' }, '& td:first-of-type': { whiteSpace: 'normal', minWidth: 160 } }}>

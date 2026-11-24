@@ -14,8 +14,13 @@ import {
   Typography,
   alpha,
   useTheme,
+  Collapse,
+  IconButton,
+  Paper,
+  Stack,
 } from '@mui/material';
 import { useT } from './i18n';
+import { ExpandLessIcon, ExpandMoreIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -240,5 +245,65 @@ export function PersonPicker({
         </MenuItem>
       ))}
     </TextField>
+  );
+}
+
+/** The folded cards of one page (`storageKey`), in this browser only; nothing breaks without storage. */
+function readFolded(storageKey: string): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * A card with a title that folds to its title line when `collapseId` is given (chevron or a click on the title),
+ * remembered per browser under `storageKey` (one key per page). `end` (actions) hides while folded.
+ */
+export function CollapsibleCard({ title, end, collapseId, storageKey = 'cards.collapsed', children }: {
+  title?: ReactNode;
+  end?: ReactNode;
+  collapseId?: string;
+  storageKey?: string;
+  children: ReactNode;
+}) {
+  const t = useT();
+  const [collapsed, setCollapsed] = useState(() => (collapseId ? readFolded(storageKey).includes(collapseId) : false));
+  const toggle = () => {
+    if (!collapseId) return;
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      const rest = readFolded(storageKey).filter((x) => x !== collapseId);
+      localStorage.setItem(storageKey, JSON.stringify(next ? [...rest, collapseId] : rest));
+    } catch {
+      /* remembered for this visit only */
+    }
+  };
+  return (
+    <Paper sx={{ p: 2, minWidth: 0 }}>
+      {(title || end) && (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: collapsed ? 0 : 1 }}>
+          {title && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+              {collapseId && (
+                <IconButton size="small" sx={{ ml: -0.75 }} aria-expanded={!collapsed} aria-label={collapsed ? t('common.expand') : t('common.collapse')} onClick={toggle}>
+                  {collapsed ? <ExpandMoreIcon fontSize="small" /> : <ExpandLessIcon fontSize="small" />}
+                </IconButton>
+              )}
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, cursor: collapseId ? 'pointer' : undefined }} onClick={collapseId ? toggle : undefined}>
+                {title}
+              </Typography>
+            </Box>
+          )}
+          {!collapsed && end}
+        </Box>
+      )}
+      <Collapse in={!collapsed}>
+        <Stack spacing={0}>{children}</Stack>
+      </Collapse>
+    </Paper>
   );
 }

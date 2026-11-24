@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Box, Paper, Tooltip, Typography } from '@mui/material';
+import { CollapsibleCard } from './components';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes } from './localeFormat';
 import { formatDays } from './BalancesPanel';
@@ -34,7 +35,8 @@ function Line({ label, value, strong, negative, hint }: { label: string; value: 
   );
 }
 
-function Card({ title, children }: { title: string; children: ReactNode }) {
+function Card({ title, children, collapse }: { title: string; children: ReactNode; collapse?: { id: string; storageKey: string } }) {
+  if (collapse) return <CollapsibleCard title={title} collapseId={collapse.id} storageKey={collapse.storageKey}>{children}</CollapsibleCard>;
   return (
     <Paper sx={{ p: 2 }}>
       <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{title}</Typography>
@@ -55,6 +57,7 @@ export default function BalanceOverview({
   layout = 'row',
   userId,
   showToday = true,
+  collapseKey,
 }: {
   orgId: string;
   authHeaders: () => Promise<Record<string, string>>;
@@ -64,6 +67,8 @@ export default function BalanceOverview({
   userId?: string;
   /** The "today" card (work time against the target). */
   showToday?: boolean;
+  /** The cards fold (CollapsibleCard), remembered under this page's storage key (e.g. the HR dashboard's). */
+  collapseKey?: string;
 }) {
   const { t, locale } = useI18n();
   const [data, setData] = useState<Overview | null>(null);
@@ -118,7 +123,7 @@ export default function BalanceOverview({
 
   return (
     <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: layout === 'row' ? { xs: '1fr', md: `repeat(${showToday ? 3 : 2}, 1fr)` } : '1fr', alignItems: 'start' }}>
-      {showToday && <Card title={t('overview.today')}>
+      {showToday && <Card title={t('overview.today')} collapse={collapseKey ? { id: 'today', storageKey: collapseKey } : undefined}>
         <Line label={t('overview.worked')} value={formatDurationMinutes(today?.worked ?? 0)} />
         <Line label={t('overview.target')} value={formatDurationMinutes(today?.target ?? 0)} />
         <Line
@@ -129,7 +134,7 @@ export default function BalanceOverview({
         />
       </Card>}
 
-      <Card title={t('overview.balance')}>
+      <Card title={t('overview.balance')} collapse={collapseKey ? { id: 'balance', storageKey: collapseKey } : undefined}>
         <Line label={t('balances.type.overtime')} value={formatSignedMinutes(regular)} negative={regular < 0} />
         <Line
           label={t('balances.type.legal_overtime')}
@@ -158,7 +163,7 @@ export default function BalanceOverview({
         />
       </Card>
 
-      <Card title={t('overview.vacation')}>
+      <Card title={t('overview.vacation')} collapse={collapseKey ? { id: 'vacation', storageKey: collapseKey } : undefined}>
         <Line
           label={t('overview.entitlement', { year: String(data.year) })}
           value={formatDays(allowance, locale)}

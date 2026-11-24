@@ -246,10 +246,10 @@ export {
   formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatMoney, formatSignedMinutes, parseLocaleNumber,
   swissLocale,
 } from './localeFormat';
-export { ConfigFieldGroup, useGroupTitle, type FieldOption } from './ConfigField';
+export { ConfigFieldGroup, DateInput, useGroupTitle, type FieldOption } from './ConfigField';
 export { FieldDesignScope, useFormTemplate, type FormTemplate } from './designMode';
 export { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
-export { ConfirmDialog, EmptyState, PageHeader, PersonPicker, TableEmptyRow } from './components';
+export { CollapsibleCard, ConfirmDialog, EmptyState, PageHeader, PersonPicker, TableEmptyRow } from './components';
 export * from './icons';
 export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, type Attachment } from './attachments';
 export { currencyOptions, type CurrencyOption } from './currencyOptions';

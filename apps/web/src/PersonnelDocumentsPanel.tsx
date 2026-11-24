@@ -28,6 +28,7 @@ import { ConfirmDialog, EmptyState } from './components';
 import { DeleteIcon, DescriptionIcon, DownloadIcon, EditIcon, VisibilityIcon } from './icons';
 import { DropZone, useAttachmentDraft } from './attachments';
 import { formatFileSize, formatLocaleDate } from './localeFormat';
+import { DateInput } from './ConfigField';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -88,12 +89,14 @@ function draftFor(category: string, categories: CategoryRow, base?: Partial<Draf
  * The categories and what each asks for are static data (personnel/document_category). The manager sees what was
  * shared with them, read only.
  */
-export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, onChanged }: {
+export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, onChanged, hideTitle = false }: {
   orgId: string;
   userId: string;
   authHeaders: () => Promise<Record<string, string>>;
   /** After a document was added, changed or deleted (e.g. the HR dashboard's timeline). */
   onChanged?: () => void;
+  /** Without its own heading, where the surrounding card shows it (the subtitle stays). */
+  hideTitle?: boolean;
 }) {
   const { t, locale } = useI18n();
   const base = `${API}/organizations/${orgId}/people/${userId}/personnel-documents`;
@@ -279,31 +282,26 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, on
           </TextField>
         </Box>
         <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' } }}>
-          <TextField size="small" type="date" label={t('personnelDocs.date')} value={x.documentDate} onChange={(e) => set({ ...x, documentDate: e.target.value })} slotProps={{ inputLabel: { shrink: true } }} />
-          <TextField
-            size="small"
-            type="date"
+          <DateInput fullWidth label={t('personnelDocs.date')} value={x.documentDate} onChange={(documentDate) => set({ ...x, documentDate })} />
+          <DateInput
+            fullWidth
             required={rules.keyDate}
             label={t('personnelDocs.keyDate')}
             helperText={t('personnelDocs.keyDateHint')}
             value={x.effectiveDate}
-            onChange={(e) => {
-              const effectiveDate = e.target.value;
+            onChange={(effectiveDate) => {
               // A suggested follow-up moves with the key date.
               const suggested = rules.followUpMonths ? addMonthsIso(x.effectiveDate || x.documentDate || today(), rules.followUpMonths) : '';
               const followUpDate = rules.followUpMonths && (!x.followUpDate || x.followUpDate === suggested) ? addMonthsIso(effectiveDate || today(), rules.followUpMonths) : x.followUpDate;
               set({ ...x, effectiveDate, followUpDate });
             }}
-            slotProps={{ inputLabel: { shrink: true } }}
           />
-          <TextField
-            size="small"
-            type="date"
+          <DateInput
+            fullWidth
             label={t('personnelDocs.followUp')}
             helperText={t('personnelDocs.followUpHint')}
             value={x.followUpDate}
-            onChange={(e) => set({ ...x, followUpDate: e.target.value })}
-            slotProps={{ inputLabel: { shrink: true } }}
+            onChange={(followUpDate) => set({ ...x, followUpDate })}
           />
         </Box>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -324,7 +322,7 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, on
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('personnelDocs.title')}</Typography>
+        {!hideTitle && <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('personnelDocs.title')}</Typography>}
         <Typography variant="body2" color="text.secondary">{asManager ? t('personnelDocs.managerSubtitle') : t('personnelDocs.subtitle')}</Typography>
       </Box>
       {error && (
