@@ -40,9 +40,17 @@ export function nestOrgKeys(patch: Record<string, unknown>, orgKeys: readonly st
  * in. Other orgs' sections are dropped, so one org's custom data never reaches another.
  */
 export function scopeToOrg(data: Record<string, unknown>, orgId: string): Record<string, unknown> {
-  const { orgs, ...rest } = data;
+  // The employee import's sections (`personalien`, the account's older one and the org's) are shown as fields, so HR
+  // sees and edits what payroll reads (payrollPersonalien, same order); an edit then goes to the org's own keys.
+  const { orgs, personalien, ...rest } = data;
   const own = isPlainObject(orgs) ? orgs[orgId] : undefined;
-  return isPlainObject(own) ? { ...rest, ...own } : rest;
+  const { personalien: ownPersonalien, ...ownRest } = isPlainObject(own) ? own : {};
+  return {
+    ...(isPlainObject(personalien) ? personalien : {}),
+    ...rest,
+    ...(isPlainObject(ownPersonalien) ? ownPersonalien : {}),
+    ...ownRest,
+  };
 }
 
 /** Keeps only `orgId`'s section of a stored patch, e.g. when that org's HR approves a request. */

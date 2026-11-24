@@ -166,6 +166,20 @@ FROM (VALUES
 WHERE u.id = v.id::uuid AND NOT u.basicdata ? 'birthDate'
   AND NOT COALESCE(u.basicdata -> 'orgs' -> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '{}'::jsonb) ? 'birthDate';
 
+-- Personnel numbers (Acme's own, as HR's form stores them: basicdata.orgs.<org>.personnelNumber), 1001 onwards in a
+-- fixed order; expense processing and the payroll export need one. Only where Acme has none yet.
+UPDATE users u
+SET basicdata = jsonb_set(COALESCE(u.basicdata, '{}'::jsonb), '{orgs}', COALESCE(u.basicdata -> 'orgs', '{}'::jsonb) || jsonb_build_object(
+      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      COALESCE(u.basicdata -> 'orgs' -> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '{}'::jsonb) || jsonb_build_object('personnelNumber', (1000 + m.n)::text)))
+FROM (
+  SELECT user_id, row_number() OVER (ORDER BY user_id) AS n
+  FROM organization_memberships WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+) AS m
+WHERE u.id = m.user_id
+  AND NOT COALESCE(u.basicdata -> 'orgs' -> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '{}'::jsonb) ? 'personnelNumber'
+  AND NOT COALESCE(u.basicdata -> 'orgs' -> 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' -> 'personalien', '{}'::jsonb) ? 'personnelNumber';
+
 UPDATE organizations
 SET settings = settings || jsonb_build_object('vacation', '{"probationMonths": 1}'::jsonb || COALESCE(settings -> 'vacation', '{}'::jsonb)
       || '{"rules": [{"validFrom": "2000-01-01", "baseDays": 25, "managementDays": 28, "ageSteps": [{"age": 60, "days": 5}]}]}'::jsonb)

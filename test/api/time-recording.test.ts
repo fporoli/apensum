@@ -73,3 +73,12 @@ test('the birth date is kept per organization', () => {
   assert.equal(scopeToOrg({ birthDate: '1970-01-01', ...patch }, 'org-1').birthDate, '1964-03-15');
   assert.equal(scopeToOrg({ birthDate: '1970-01-01', ...patch }, 'org-2').birthDate, '1970-01-01');
 });
+
+test('the personnel number is kept per organization, and an imported one is shown', () => {
+  const patch = nestOrgKeys({ personnelNumber: '1042' }, orgOwnedKeys({ fields: [] } as any), 'org-1');
+  assert.deepEqual(patch, { orgs: { 'org-1': { personnelNumber: '1042' } } });
+  const imported = { orgs: { 'org-1': { personalien: { personnelNumber: '7', socialSecurityNumber: 'AHV' } } } };
+  assert.deepEqual(scopeToOrg(imported, 'org-1'), { personnelNumber: '7', socialSecurityNumber: 'AHV' });
+  assert.deepEqual(scopeToOrg({ orgs: { 'org-1': { ...imported.orgs['org-1'], personnelNumber: '1042' } } }, 'org-1'), { personnelNumber: '1042', socialSecurityNumber: 'AHV' });
+  assert.deepEqual(scopeToOrg(imported, 'org-2'), {});
+});

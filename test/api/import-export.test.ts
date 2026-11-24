@@ -102,6 +102,15 @@ test("payroll details: this organization's import over the account's older one, 
   assert.deepEqual(payrollPersonalien(null, 'a'), {});
 });
 
+test("payroll details: HR's form (the org's own personnel number, the account's AHV number) counts as well", () => {
+  const data = {
+    socialSecurityNumber: '756.1234.5678.97', children: [{ name: 'X' }],
+    orgs: { a: { personnelNumber: '1042', personalien: { personnelNumber: 'IMPORTED' } }, b: { personnelNumber: '7' } },
+  };
+  assert.deepEqual(payrollPersonalien(data, 'a'), { socialSecurityNumber: '756.1234.5678.97', personnelNumber: '1042' });
+  assert.deepEqual(payrollPersonalien(data, 'c'), { socialSecurityNumber: '756.1234.5678.97' });
+});
+
 /** Imports one row for a member `u1` who belongs to `otherOrgs` too; returns the result and what was written. */
 async function importMember(otherOrgs: string[]) {
   const { getTableName } = require('drizzle-orm');

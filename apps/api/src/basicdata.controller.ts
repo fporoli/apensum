@@ -32,11 +32,12 @@ export function allowedKeys(form: ResolvedForm, editor: 'hr' | 'self'): string[]
 }
 
 /**
- * The keys stored in the organization's own section: its custom fields and the birth date, which its
- * vacation rules count with, so that no other organization's edit changes an entitlement here.
+ * The keys stored in the organization's own section: its custom fields, the birth date, which its
+ * vacation rules count with, so that no other organization's edit changes an entitlement here, and the
+ * personnel number, which each employer assigns (payroll and expense processing read it, payrollPersonalien).
  */
 export function orgOwnedKeys(form: ResolvedForm): string[] {
-  return [...orgCustomKeys(form), 'birthDate'];
+  return [...orgCustomKeys(form), 'birthDate', 'personnelNumber'];
 }
 
 /**
