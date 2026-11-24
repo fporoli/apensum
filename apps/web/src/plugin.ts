@@ -4,7 +4,6 @@
  * default export has. A plugin imports the core only from here; plugins.ts registers what the
  * plugins declare, App.tsx, main.tsx and OrganizationSettings.tsx show it. docs/PLUGINS.md.
  */
-import type { StaticAttributeList } from '@worktime3/shared/staticData';
 import type { ComponentType, ReactNode } from 'react';
 import type { ReportDefinition } from '@worktime3/shared/reports';
 import type { Locale, TFunction } from './i18n';
@@ -233,11 +232,6 @@ export interface WebPlugin {
   reports?: PluginReport[];
   /** A notification's source_table -> the section its click opens. */
   notificationSections?: Record<string, string>;
-  /**
-   * Properties of the values of the plugin's static data lists (e.g. an expense category's VAT type and account),
-   * shown as controls in Admin settings -> static data (`@worktime3/shared/staticData`); labels are text keys.
-   */
-  staticDataAttributes?: StaticAttributeList[];
 }
 
 export function defineWebPlugin(plugin: WebPlugin): WebPlugin {

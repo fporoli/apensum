@@ -26,9 +26,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { LOCALES, useT, type Locale } from './i18n';
+import { LOCALES, useI18n, useT, type Locale } from './i18n';
 import RolesPermissions from './RolesPermissions';
-import { attributeTextValid, attributeValue, staticAttributesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
+import { PROPERTIES_LIST, attributeTextValid, attributeValue, propertiesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, ContentCopyIcon, DeleteIcon, EditIcon, PublicIcon, SearchIcon, TuneIcon } from './icons';
 
@@ -60,13 +60,6 @@ function isAttributes(value: unknown): value is Attributes {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/**
- * Lists whose owner declared properties (`@worktime3/shared/staticData`: absence types, request types, a plugin's
- * lists) map each key to those properties; their labels live in the translations.
- */
-function hasDeclaredAttributes(entity: string, enumName: string): boolean {
-  return staticAttributesOf(entity, enumName) !== null;
-}
 
 /** `attributeRow`: every value is an attribute object; otherwise each value is its label. */
 function kvListToValues(list: KV[], attributeRow: boolean): Record<string, unknown> {
@@ -101,6 +94,12 @@ export default function AdminSettings({ orgId, authHeaders, tab }: AdminSettings
 
 function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'tab'>) {
   const t = useT();
+  const { locale } = useI18n();
+  /**
+   * The properties of a list's values, as the list static_data/properties describes them (`@worktime3/shared/staticData`:
+   * absence and request types, a plugin's lists, the description itself); such a list's labels live in the translations.
+   */
+  const propertiesFor = (entity: string, name: string) => propertiesOf(enums, entity, name, locale);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
@@ -117,7 +116,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   const [enumTranslations, setEnumTranslations] = useState<Record<string, Record<string, string>>>({});
   const [translationLocale, setTranslationLocale] = useState<Locale>('de');
   const [kvFilter, setKvFilter] = useState('');
-  const declaredAttributes = staticAttributesOf(enumEntity, enumName);
+  const declaredAttributes = propertiesFor(enumEntity, enumName);
   const attributeRow = !!declaredAttributes || enumKvList.some((kv) => kv.attrs !== null);
   const invalidAttribute = !!declaredAttributes && enumKvList.some((kv) =>
     declaredAttributes.some((a) => a.type === 'text' && !attributeTextValid(a, String(attributeValue(kv.attrs, a)))));
@@ -157,7 +156,7 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setEditingEnum(row);
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
-    const attributeRow = hasDeclaredAttributes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
+    const attributeRow = propertiesFor(row.entity, row.enum_name) !== null || Object.values(row.values).some(isAttributes);
     const list = Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
     setEnumTranslations(row.translation ?? {});
@@ -170,10 +169,12 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
     setEditingEnum(null);
     setEnumEntity(row.entity);
     setEnumName(row.enum_name);
-    const attributeRow = hasDeclaredAttributes(row.entity, row.enum_name) || Object.values(row.values).some(isAttributes);
-    const list = Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
+    const attributeRow = propertiesFor(row.entity, row.enum_name) !== null || Object.values(row.values).some(isAttributes);
+    // The organization's copy of the property descriptions holds only its own: the global ones apply anyway.
+    const ownOnly = row.entity === PROPERTIES_LIST.entity && row.enum_name === PROPERTIES_LIST.enumName;
+    const list = ownOnly ? [] : Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
-    setEnumTranslations(row.translation ?? {});
+    setEnumTranslations(ownOnly ? {} : row.translation ?? {});
     setKvFilter('');
     setDialogError(null);
     setEnumDialogOpen(true);
@@ -285,15 +286,15 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
   /** A table chip: `key: label`, or for attribute values the key plus what is set. */
   function valuePreview(row: StaticDataRow, key: string, value: unknown): string {
     if (!isAttributes(value)) return `${key}: ${value}`;
-    const declared = staticAttributesOf(row.entity, row.enum_name);
+    const declared = propertiesFor(row.entity, row.enum_name);
     if (declared) {
       // The key plus what differs from the defaults: a checkbox by its label (crossed when switched off), the rest with their value.
       const set = declared.flatMap((a) => {
         if (!(a.key in value)) return [];
         const v = attributeValue(value, a);
-        if (a.type === 'checkbox') return [v ? t(a.label) : `${t(a.label)} ✗`];
-        if (a.type === 'select') return [`${t(a.label)}: ${t(a.options.find((o) => o.value === v)?.label ?? String(v))}`];
-        return [`${t(a.label)}: ${v}`];
+        if (a.type === 'checkbox') return [v ? a.label : `${a.label} ✗`];
+        if (a.type === 'select') return [`${a.label}: ${a.options?.find((o) => o.value === v)?.label ?? String(v)}`];
+        return [`${a.label}: ${v}`];
       });
       return [key, ...set].join(' · ');
     }
@@ -514,8 +515,8 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
               />
             )}
             {visibleKvList.map((kv) => (
-              <Box key={kv.rowId} sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                <TextField label={t('staticdata.key')} value={kv.key} onChange={(e) => updateKv(kv.rowId, 'key', e.target.value)} size="small" sx={{ flex: 1 }} />
+              <Box key={kv.rowId} sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: declaredAttributes && declaredAttributes.length > 2 ? 'wrap' : 'nowrap', pb: declaredAttributes && declaredAttributes.length > 2 ? 1 : 0, borderBottom: declaredAttributes && declaredAttributes.length > 2 ? 1 : 0, borderColor: 'divider' }}>
+                <TextField label={t('staticdata.key')} value={kv.key} onChange={(e) => updateKv(kv.rowId, 'key', e.target.value)} size="small" sx={{ flex: declaredAttributes && declaredAttributes.length > 2 ? '1 1 100%' : 1 }} />
                 {declaredAttributes ? (
                   <Box sx={{ flex: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
                     {declaredAttributes.map((a) => {
@@ -526,15 +527,15 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                             key={a.key}
                             sx={{ m: 0, mr: 1 }}
                             control={<Checkbox size="small" checked={v === true} onChange={(e) => updateAttribute(kv.rowId, a, e.target.checked)} />}
-                            label={t(a.label)}
+                            label={a.label}
                           />
                         );
                       }
                       if (a.type === 'select') {
                         return (
-                          <TextField key={a.key} select size="small" label={t(a.label)} value={v} onChange={(e) => updateAttribute(kv.rowId, a, e.target.value)} sx={{ minWidth: 170 }}>
+                          <TextField key={a.key} select size="small" label={a.label} value={v} onChange={(e) => updateAttribute(kv.rowId, a, e.target.value)} sx={{ minWidth: 170 }}>
                             <MenuItem value=""><em>—</em></MenuItem>
-                            {a.options.map((o) => <MenuItem key={o.value} value={o.value}>{t(o.label)}</MenuItem>)}
+                            {(a.options ?? []).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
                           </TextField>
                         );
                       }
@@ -542,12 +543,11 @@ function StaticDataSettings({ orgId, authHeaders }: Omit<AdminSettingsProps, 'ta
                         <TextField
                           key={a.key}
                           size="small"
-                          label={t(a.label)}
+                          label={a.label}
                           value={v}
                           error={!attributeTextValid(a, String(v))}
                           onChange={(e) => setEnumKvList((prev) => prev.map((x) => (x.rowId === kv.rowId ? { ...x, attrs: { ...(x.attrs ?? {}), [a.key]: e.target.value } } : x)))}
                           onBlur={(e) => updateAttribute(kv.rowId, a, e.target.value)}
-                          inputProps={{ maxLength: a.maxLength }}
                           sx={{ width: 140 }}
                         />
                       );

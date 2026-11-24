@@ -116,6 +116,7 @@
     <include file="098-operator.sql" relativeToChangelogFile="true"/>
     <include file="099-two-factor.sql" relativeToChangelogFile="true"/>
     <include file="100-exchange-rates.sql" relativeToChangelogFile="true"/>
+    <include file="101-static-data-properties.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 
