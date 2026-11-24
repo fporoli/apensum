@@ -15,6 +15,7 @@ test("PluginRegistrar registers a plugin's workflows and documents with the core
   const documents = { registerPersonalDocuments: (category: string) => calls.push(`documents ${category}`) };
   const versions = { tag: 'versions' };
   const audit = { tag: 'audit' };
+  const notifications = { tag: 'notifications' };
   let coreSeen: unknown;
   const plugin: ApiPlugin = {
     id: 'demo',
@@ -28,7 +29,7 @@ test("PluginRegistrar registers a plugin's workflows and documents with the core
     },
     documents: { demo: async () => [] },
   };
-  new PluginRegistrar([plugin], workflows as never, documents as never, versions as never, audit as never).onModuleInit();
+  new PluginRegistrar([plugin], workflows as never, documents as never, versions as never, audit as never, notifications as never).onModuleInit();
   assert.deepEqual(calls, [
     'action demo.approve',
     'org demo_things',
@@ -38,5 +39,5 @@ test("PluginRegistrar registers a plugin's workflows and documents with the core
     'documents demo',
   ]);
   await actions.get('demo.approve')!({} as never, {} as never);
-  assert.deepEqual(coreSeen, { versions, audit }, 'actions get the core services');
+  assert.deepEqual(coreSeen, { versions, audit, notifications }, 'actions get the core services');
 });
