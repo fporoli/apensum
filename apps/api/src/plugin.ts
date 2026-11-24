@@ -152,6 +152,9 @@ export { RequestsService, type SystemTaskInput, type SystemTaskResult } from './
 
 // Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
 export { BalancesService, type YearBalances, type YearClosing } from './balances.service';
+// The work-time model: a person's schedules, holidays (their location's canton) and approved absences per day
+// (`model`, `targets`; with packages/shared/src/worktime.ts `dayTargets`). Callers authorize first.
+export { WorkTimeModelService } from './work-time-model.service';
 
 // A person's Personalien as the payroll export reads them (the organization's section over the shared one).
 export { payrollPersonalien } from './payroll-personalien';
