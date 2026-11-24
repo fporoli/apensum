@@ -95,3 +95,23 @@ test('codes of departments and teams; team assignees only where a block allows t
   assert.deepEqual(codes(validateWorkflowConfig(KIND, steps('team:it-support'))), ['steps[0].assignTo assignee-not-allowed']);
   assert.deepEqual(codes(validateWorkflowConfig(KIND, steps('department:Front Desk'))), ['steps[0].assignTo invalid-assignee']);
 });
+
+test('a kind whose first step may be work (a payment run)', () => {
+  const run = { ...KIND, firstStepDecides: false };
+  const config = { version: 1, steps: [{ key: 'pay', do: ['pay'], assignTo: 'permission:nav.expensePayout' }] };
+  assert.deepEqual(codes(validateWorkflowConfig(KIND, config)), ['steps[0].do[0] block-order', 'steps[0].reject first-step-decides']);
+  assert.deepEqual(codes(validateWorkflowConfig({ ...run, blocks: { ...KIND.blocks, pay: { ...KIND.blocks.pay, after: [] } } }, config)), []);
+});
+
+test('a run may start with a condition; the step with the last block never has one; decisions are flagged', () => {
+  const run = { ...KIND, firstStepDecides: false, blocks: { review: { ...KIND.blocks.review, decides: true }, pay: { ...KIND.blocks.pay, after: [] } } };
+  const r = validateWorkflowConfig(run, { version: 1, steps: [
+    { key: 'approval', do: ['review'], assignTo: 'permission:nav.expensePayout', when: { total: { gt: 100 } } },
+    { key: 'pay', do: ['pay'], assignTo: 'permission:nav.expensePayout' },
+  ] });
+  assert.deepEqual(codes(r), []);
+  assert.deepEqual(compileWorkflow(run, r.value).map((s) => !!s.decides), [true, false]);
+  assert.deepEqual(codes(validateWorkflowConfig(run, { version: 1, steps: [
+    { key: 'pay', do: ['pay'], assignTo: 'permission:nav.expensePayout', when: { total: { gt: 100 } } },
+  ] })), ['steps[0].when last-step-condition']);
+});

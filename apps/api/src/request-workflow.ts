@@ -30,10 +30,13 @@ export const REQUEST_CATALOGUE: WorkflowKindCatalogue = {
   rejectModes: ['none', 'back'],
   facts: { urgent: 'boolean', type: 'string', 'requester.department': 'string', 'requester.management': 'boolean' },
   blocks: {
-    review: { label: 'Approval', action: 'request.reviewed', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.approve' },
+    review: { label: 'Approval', action: 'request.reviewed', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.approve', decides: true },
     task: { label: 'Task', action: 'request.done', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.done' },
   },
-  defaultConfig: { version: 1, steps: [{ key: 'handle', do: ['task'], assignTo: 'manager', reject: 'back' }] },
+  defaultConfig: {
+    version: 1,
+    steps: [{ key: 'handle', do: ['task'], assignTo: 'manager', reject: 'back', label: { de: 'Erledigen', fr: 'Traiter', it: 'Evadere', en: 'Handle' } }],
+  },
   source: 'Request',
   source_name: 'getRequestTitle',
 };

@@ -77,8 +77,10 @@ export interface WorkflowBlock {
   once?: boolean;
   /** Blocks that must be done before it (in an earlier step or earlier in the same step). */
   after?: string[];
-  /** Only in the last step, as its last block. */
+  /** Only in the last step, as its last block (such a step has no condition: it always comes). */
   last?: boolean;
+  /** A decision about someone's submission (approve or not): whoever submitted never decides it (four eyes). */
+  decides?: boolean;
   /** Done in the kind's dialog on the Workflow page (it shows what the step needs). */
   inDialog?: boolean;
   /** Text keys: the history entry when done, the Workflow page's button. */
@@ -97,6 +99,11 @@ export interface WorkflowKindCatalogue {
   facts: Record<string, FactType>;
   /** Which reject modes the kind supports. */
   rejectModes: RejectMode[];
+  /**
+   * false: the first step may be work instead of a decision (e.g. a payment run, made by someone who checked it);
+   * default: a submission is always looked at first (the first step can be sent back).
+   */
+  firstStepDecides?: boolean;
   /** The configuration an organization without its own uses. */
   defaultConfig: WorkflowConfig;
   /** Shown with the steps on the Workflow page (`source`/`source_name` of the engine's step). */
@@ -203,10 +210,11 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     if (!REJECT_MODES.includes(reject as RejectMode) || !kind.rejectModes.includes(reject as RejectMode)) errors.push({ path: `${at}.reject`, code: 'invalid-reject' });
     else if (reject === 'back' && !blocks.every((b: string) => kind.blocks[b]?.returnAction)) errors.push({ path: `${at}.reject`, code: 'not-rejectable' });
     if (s.when !== undefined) {
-      if (i === 0) errors.push({ path: `${at}.when`, code: 'first-step-condition' });
+      if (i === 0 && kind.firstStepDecides !== false) errors.push({ path: `${at}.when`, code: 'first-step-condition' });
+      else if (blocks.some((b: string) => kind.blocks[b]?.last)) errors.push({ path: `${at}.when`, code: 'last-step-condition' });
       else errors.push(...conditionErrors(s.when, kind.facts, `${at}.when`));
     }
-    if (i === 0 && reject !== 'back') errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
+    if (i === 0 && reject !== 'back' && kind.firstStepDecides !== false) errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
     let label: WorkflowStepConfig['label'];
     if (s.label !== undefined) {
       if (!isObject(s.label) || Object.entries(s.label).some(([l, v]) => !(LANGS as readonly string[]).includes(l) || typeof v !== 'string' || v.length > 60)) {
@@ -259,6 +267,8 @@ export interface CompiledWorkflowStep {
   when?: Condition;
   /** Whether nobody to assign means the step is done without anybody (a review whose manager is missing). */
   review?: boolean;
+  /** A decision about the submission: the submitter is never among its assignees (four eyes). */
+  decides?: boolean;
   source?: string;
   source_name?: string;
 }
@@ -285,6 +295,7 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       ...(blocks[0].actionKey ? { actionKey: blocks[0].actionKey } : {}),
       ...(s.when ? { when: s.when } : {}),
       ...(s.do.length === 1 && s.do[0] === 'review' ? { review: true } : {}),
+      ...(blocks.some((b) => b.decides) ? { decides: true } : {}),
       ...(kind.source ? { source: kind.source } : {}),
       ...(kind.source_name ? { source_name: kind.source_name } : {}),
     };

@@ -673,6 +673,10 @@ export class WorkflowsService {
     const isOverride = organizationId ? await reachesAll(db, organizationId, callerId, 'nav.approvals', 'edit') : false;
     if (!isDirectAssignee && !isTeamAssignee && !isOverride) return { ok: false, error: 'forbidden' };
     if (workflow.step_status !== 'pending') return { ok: false, error: 'not-pending' };
+    // Four eyes: nobody decides their own submission, not even with a grant reaching every workflow.
+    const step = this.stepsOf(workflow).find((s) => s.key === workflow.step);
+    const submittedBy = (workflow.workflow_data as Record<string, unknown> | null)?.submittedByUserId;
+    if (step?.decides && submittedBy === callerId) return { ok: false, error: 'own-submission' };
     return this.advance(db, workflow, organizationId, callerId, outcome, note?.trim() || null, true);
   }
 
@@ -821,7 +825,8 @@ export class WorkflowsService {
           AND (m.exit_at IS NULL OR m.exit_at > now()) AND rp.permission_id = ${permissionId}`);
       return (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     };
-    const others = (ids: string[]) => [...new Set(ids)].filter((id) => id !== submittedByUserId);
+    // Four eyes on decisions: the submitter never decides their own submission (work steps they may do).
+    const others = (ids: string[]) => [...new Set(ids)].filter((id) => !step.decides || id !== submittedByUserId);
     let ids: string[] = [];
     if (step.assignTo.startsWith('permission:')) {
       ids = await holders(`${step.assignTo.slice('permission:'.length)}:edit:all`);
