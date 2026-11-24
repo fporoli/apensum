@@ -115,3 +115,8 @@ test('a run may start with a condition; the step with the last block never has o
     { key: 'pay', do: ['pay'], assignTo: 'permission:nav.expensePayout', when: { total: { gt: 100 } } },
   ] })), ['steps[0].when last-step-condition']);
 });
+
+test('a required block must be in every configuration', () => {
+  const run = { ...KIND, firstStepDecides: false, blocks: { review: { ...KIND.blocks.review }, pay: { ...KIND.blocks.pay, after: [], required: true } } };
+  assert.deepEqual(codes(validateWorkflowConfig(run, { version: 1, steps: [{ key: 'a', do: ['review'], assignTo: 'permission:nav.expensePayout' }] })), ['steps block-required']);
+});

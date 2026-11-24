@@ -79,6 +79,8 @@ export interface WorkflowBlock {
   after?: string[];
   /** Only in the last step, as its last block (such a step has no condition: it always comes). */
   last?: boolean;
+  /** Every configuration has it (e.g. a payment run's "paid": without it a run would never be paid). */
+  required?: boolean;
   /** A decision about someone's submission (approve or not): whoever submitted never decides it (four eyes). */
   decides?: boolean;
   /** Done in the kind's dialog on the Workflow page (it shows what the step needs). */
@@ -223,6 +225,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     }
     out.push({ key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}) });
   });
+  for (const [name, block] of Object.entries(kind.blocks)) if (block.required && !done.has(name)) errors.push({ path: 'steps', code: 'block-required' });
   return errors.length ? { ok: false, errors } : { ok: true, value: { version: WORKFLOW_CONFIG_VERSION, steps: out } };
 }
 

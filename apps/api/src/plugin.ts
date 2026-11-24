@@ -16,6 +16,7 @@ import type { FormDef } from '@worktime3/shared/fields';
 import type { Db } from './db.service';
 import type { AuditService } from './audit.service';
 import type { VersionsService } from './versions.service';
+import type { NotificationsService } from './notifications.service';
 import type { PersonalDocumentSource } from './documents.service';
 import type { SourceOrgResolver, SourceRecordLoader, WorkflowActionContext, WorkflowKind } from './workflows.service';
 import type { AssistantTool } from './assistant-tools';
@@ -25,6 +26,8 @@ import type { PlannedMinutesSource } from './work-time-model.service';
 export interface PluginCore {
   versions: VersionsService;
   audit: AuditService;
+  /** The bell (and its live push): e.g. telling people what a workflow step did to their records. */
+  notifications: NotificationsService;
 }
 
 /**

@@ -16,7 +16,7 @@ interface KindInfo {
   variantLabel: string | null;
   variantLabels: Record<string, string> | null;
   optional: boolean;
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
   defaultConfig: WorkflowConfig;
@@ -32,7 +32,7 @@ function catalogueOf(kind: KindInfo): WorkflowKindCatalogue {
     rejectModes: kind.rejectModes,
     defaultConfig: kind.defaultConfig,
     blocks: Object.fromEntries(Object.entries(kind.blocks).map(([name, b]) => [name, {
-      label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, action: name, ...(b.canReturn ? { returnAction: name } : {}),
+      label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, required: b.required, action: name, ...(b.canReturn ? { returnAction: name } : {}),
     }])),
   };
 }
@@ -225,6 +225,7 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
                 {b.after.length > 0 && <> · {t('workflowConfig.help.after', { blocks: b.after.join(', ') })}</>}
                 {b.once && <> · {t('workflowConfig.help.once')}</>}
                 {b.last && <> · {t('workflowConfig.help.last')}</>}
+                {b.required && <> · {t('workflowConfig.help.required')}</>}
                 {b.canReturn && <> · {t('workflowConfig.help.canReturn')}</>}
               </li>
             ))}

@@ -3,6 +3,7 @@ import { AuditService } from './audit.service';
 import { DocumentsService } from './documents.service';
 import type { ApiPlugin, PluginCore } from './plugin';
 import { VersionsService } from './versions.service';
+import { NotificationsService } from './notifications.service';
 import { WorkflowsService } from './workflows.service';
 
 /** The loaded plugins (plugins.ts), for providers that register what they declare. */
@@ -22,10 +23,11 @@ export class PluginRegistrar implements OnModuleInit {
     private readonly documents: DocumentsService,
     private readonly versions: VersionsService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   onModuleInit(): void {
-    const core: PluginCore = { versions: this.versions, audit: this.audit };
+    const core: PluginCore = { versions: this.versions, audit: this.audit, notifications: this.notifications };
     for (const plugin of this.plugins) {
       const wf = plugin.workflows;
       for (const [name, action] of Object.entries(wf?.actions ?? {})) {

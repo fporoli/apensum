@@ -58,7 +58,7 @@ export class WorkflowConfigsController {
           variantLabel: variant?.label ?? null,
           variantLabels: variant?.labels ?? null,
           optional: !!kind.variants,
-          blocks: Object.fromEntries(Object.entries(blocks).map(([name, b]) => [name, { assignees: b.assignees, label: b.label, once: !!b.once, last: !!b.last, after: b.after ?? [], canReturn: !!b.returnAction }])),
+          blocks: Object.fromEntries(Object.entries(blocks).map(([name, b]) => [name, { assignees: b.assignees, label: b.label, once: !!b.once, last: !!b.last, after: b.after ?? [], canReturn: !!b.returnAction, required: !!b.required }])),
           facts,
           rejectModes,
           defaultConfig,
