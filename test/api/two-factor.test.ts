@@ -4,7 +4,7 @@ import { isPrivileged, membershipRequires, parseTwoFactorPolicy } from '@worktim
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { mintLocalToken, verifyLocalToken } from '../../apps/api/src/jwt';
 import { JwtAuthGuard, TWO_FACTOR_SETUP_KEY } from '../../apps/api/src/jwt.guard';
-import { twoFactorRequired } from '../../apps/api/src/two-factor';
+import { twoFactorOff, twoFactorRequired } from '../../apps/api/src/two-factor';
 
 // Two-step login: who must use it, and what a setup-only token reaches.
 
@@ -70,4 +70,21 @@ test('a setup-only token reaches the two-step setup and nothing else; a normal t
   const full = await mintLocalToken('u1', 'u1@example.ch');
   assert.equal(await guardFor(false).canActivate(context(full).ctx), true);
   assert.equal((await verifyLocalToken(full))?.scope, undefined);
+});
+
+test('TWO_FACTOR=off: nobody is required, not even an operator; unset or anything else = on', async () => {
+  const db = { execute: async () => ({ rows: [{ id: OPERATOR_ORG_ID, policy: null }] }) } as any;
+  const before = process.env.TWO_FACTOR;
+  try {
+    delete process.env.TWO_FACTOR;
+    assert.equal(twoFactorOff(), false);
+    assert.equal(await twoFactorRequired(db, 'u1'), true);
+    process.env.TWO_FACTOR = 'no';
+    assert.equal(twoFactorOff(), false);
+    process.env.TWO_FACTOR = ' OFF ';
+    assert.equal(twoFactorOff(), true);
+    assert.equal(await twoFactorRequired(db, 'u1'), false);
+  } finally {
+    if (before === undefined) delete process.env.TWO_FACTOR; else process.env.TWO_FACTOR = before;
+  }
 });

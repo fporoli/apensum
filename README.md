@@ -516,6 +516,7 @@ The app supports year-end snapshots starting in 2000; earlier attendance and mon
 | `WEB_SUB`, `API_SUB`, `AUTH_SUB` | e.g. `apppp`, `apipp`, `authpp` |
 | `KEYCLOAK_ADMIN` | |
 | `SHOW_DEMO_ACCOUNTS` | Optional, `true`/`false` |
+| `TWO_FACTOR` | Optional, `off` turns two-step login off on the instance (set on demo and test; never on prod or preprod) |
 | `RESET_BACKUP` | Optional, `false` skips the backup before `reset-seed` (set on demo, preprod, test; only prod is backed up) |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_REGION`, `BACKUP_PATH`, `BACKUP_AGE_RECIPIENT` | Optional, the nightly backup (see Backups); secrets `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, `BACKUP_AGE_KEY` |
 | `DEMO_RESET_EVERY_HOURS` | Optional, demo only (`2`): the app warns before `demo-reset.yml` resets it and waits through the reset |

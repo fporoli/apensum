@@ -13,7 +13,7 @@ import { VersionsService } from './versions.service';
 import { NotificationsService } from './notifications.service';
 import { noticeRegistration } from './registration-notice';
 import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
-import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
+import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
 
 /** Second-step attempts per account within an hour (in memory, per API process). */
 export const TWO_FACTOR_ATTEMPTS_PER_HOUR = 10;
@@ -278,7 +278,7 @@ export class AuthController {
     const match = row.password_hash ? await bcrypt.compare(body.password, row.password_hash) : false;
     if (!match) return { ok: false, error: 'invalid-credentials' };
     // Two-step login on: the password only earns a short token for the second step (bound to this password).
-    if ((await twoFactorRow(db, row.id))?.enabled) {
+    if (!twoFactorOff() && (await twoFactorRow(db, row.id))?.enabled) {
       const challenge = mintResetToken(twoFactorChallengeKey(), row.id, row.password_hash, Math.floor(Date.now() / 1000), TWO_FACTOR_CHALLENGE_SEC);
       return { ok: false, error: 'two-factor-code', challenge };
     }
@@ -491,7 +491,7 @@ export class AuthController {
     void this.versions.record('organization_invitations', invitation.id, 'update_delta', userId, { status: 'accepted' }).catch(() => {});
 
     // An existing account with two-step login: joined, but it signs in itself (password and code).
-    if (!wasNewUser && (await twoFactorRow(db, userId))?.enabled) return { ok: true, signInRequired: true };
+    if (!wasNewUser && !twoFactorOff() && (await twoFactorRow(db, userId))?.enabled) return { ok: true, signInRequired: true };
     return { ok: true, ...(await issueSession(db, { id: userId, email, display_name: displayName })) };
   }
 

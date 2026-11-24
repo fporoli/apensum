@@ -161,7 +161,7 @@ export function TwoFactorSetup({ authHeaders, onDone, onCancel }: {
 export function TwoFactorPanel({ authHeaders }: { authHeaders: AuthHeaders }) {
   const t = useT();
   const errorText = useErrorText();
-  const [status, setStatus] = useState<{ available: boolean; enabled: boolean; required: boolean; recoveryCodesLeft: number } | null>(null);
+  const [status, setStatus] = useState<{ available: boolean; instanceOff?: boolean; enabled: boolean; required: boolean; recoveryCodesLeft: number } | null>(null);
   const [mode, setMode] = useState<'idle' | 'setup' | 'disable' | 'codes'>('idle');
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -198,7 +198,7 @@ export function TwoFactorPanel({ authHeaders }: { authHeaders: AuthHeaders }) {
         {status.available && <Chip size="small" color={status.enabled ? 'success' : 'default'} label={t(status.enabled ? 'twoFactor.on' : 'twoFactor.off')} />}
       </Box>
       {!status.available ? (
-        <Typography variant="body2" color="text.secondary">{t('twoFactor.sso')}</Typography>
+        <Typography variant="body2" color="text.secondary">{t(status.instanceOff ? 'twoFactor.instanceOff' : 'twoFactor.sso')}</Typography>
       ) : mode === 'setup' ? (
         <TwoFactorSetup authHeaders={authHeaders} onCancel={() => setMode('idle')} onDone={() => { setMode('idle'); void load(); }} />
       ) : (

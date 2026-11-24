@@ -31,10 +31,17 @@ export async function twoFactorRow(db: Executor, userId: string): Promise<TwoFac
 }
 
 /**
+ * `TWO_FACTOR=off` turns the second step off on this instance (demo and test instances, set per GitHub
+ * Environment; never on production): nobody is asked for it or required to set it up. Unset = on.
+ */
+export const twoFactorOff = (): boolean => (process.env.TWO_FACTOR ?? '').trim().toLowerCase() === 'off';
+
+/**
  * Whether any organization the person is an active member of requires a second step of them: the
  * Admin organization always, others by their rule (everyone, or admins and HR).
  */
 export async function twoFactorRequired(db: Executor, userId: string): Promise<boolean> {
+  if (twoFactorOff()) return false;
   const rows = (
     await db.execute(
       sql`SELECT o.id, o.settings->>'twoFactor' AS policy FROM organization_memberships m JOIN organizations o ON o.id = m.organization_id

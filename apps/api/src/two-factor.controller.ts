@@ -9,7 +9,7 @@ import { DbService, type Db } from './db.service';
 import { TwoFactorSetup, type AuthenticatedRequest } from './jwt.guard';
 import { HourlyLimiter } from './password-reset';
 import { newRecoveryCodes, newTotpSecret, openSecret, otpauthUri, recoveryHash, sealSecret, verifyTotp } from './totp';
-import { twoFactorKey, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
+import { twoFactorKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
 import { VersionsService } from './versions.service';
 
 /**
@@ -48,6 +48,7 @@ export class TwoFactorController {
   async status(@Req() req: AuthenticatedRequest) {
     const db = this.dbService.getDb();
     if (!db) return { ok: true, offline: true };
+    if (twoFactorOff()) return { ok: true, available: false, instanceOff: true };
     const me = await this.me(db, req);
     if (!me) return { ok: true, available: false };
     const row = await twoFactorRow(db, me.id);
@@ -66,6 +67,7 @@ export class TwoFactorController {
   async setup(@Req() req: AuthenticatedRequest) {
     const db = this.dbService.getDb();
     if (!db) return { ok: true, offline: true };
+    if (twoFactorOff()) return { ok: false, error: 'two-factor-off' };
     const me = await this.me(db, req);
     if (!me) return { ok: false, error: 'two-factor-unavailable' };
     if ((await twoFactorRow(db, me.id))?.enabled) return { ok: false, error: 'two-factor-enabled' };
