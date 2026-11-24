@@ -44,11 +44,12 @@ restore_into() {
   local counts
   counts="$(docker exec "$PG" psql -U worktime -d "$db" -Atqc "SELECT (SELECT count(*) FROM public.users), (SELECT count(*) FROM public.organizations), (SELECT count(*) FROM public.databasechangelog)")"
   IFS='|' read -r users orgs changesets <<<"$counts"
-  if [ "$users" -eq 0 ] || [ "$orgs" -eq 0 ] || [ "$changesets" -eq 0 ]; then
-    log "The restored database is empty or incomplete."
+  # A new instance may have no one yet: the schema (Liquibase's history) is what must be there.
+  if [ "$changesets" -eq 0 ]; then
+    log "The restored database has no schema."
     exit 1
   fi
-  log "Database restored and readable ($changesets changesets)."
+  log "Database restored and readable ($changesets changesets; users: $([ "$users" -gt 0 ] && echo yes || echo none), organizations: $([ "$orgs" -gt 0 ] && echo yes || echo none))."
 }
 
 case "$action" in
