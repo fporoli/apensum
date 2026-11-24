@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { FORMS, GROUPS_KEY, mergeForm, type CustomFieldDef, type FormLayer, type GroupOverride, type FieldOverride, type ResolvedForm } from '@worktime3/shared/fields';
+import { formById, GROUPS_KEY, mergeForm, type CustomFieldDef, type FormLayer, type GroupOverride, type FieldOverride, type ResolvedForm } from '@worktime3/shared/fields';
 import { DbService, type Db } from './db.service';
 import type { Executor } from './access';
 
@@ -43,7 +43,7 @@ export class FieldsService {
 
   /** The merged form for an org; the code defaults when offline. Null for an unknown form. */
   async resolved(organizationId: string, formId: string): Promise<ResolvedForm | null> {
-    const form = FORMS[formId];
+    const form = formById(formId);
     if (!form) return null;
     const cacheKey = `${organizationId}/${formId}`;
     const cached = this.cache.get(cacheKey);

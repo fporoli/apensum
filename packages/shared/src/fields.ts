@@ -213,6 +213,24 @@ export const FORMS: Record<string, FormDef> = {
   [REQUEST_FORM.id]: REQUEST_FORM,
 };
 
+/** A request type's key as a form id may carry it (static data keys). */
+const REQUEST_TYPE_KEY = /^[A-Za-z0-9_-]{1,40}$/;
+
+/**
+ * A request type's own form (`request.<type>`, e.g. `request.material`): its fields come after the ones every request
+ * has (`request`) and are stored with them (`requests.custom`). Designed per type on the Requests page.
+ */
+export function requestTypeForm(type: string): FormDef | null {
+  if (!REQUEST_TYPE_KEY.test(type)) return null;
+  return { ...REQUEST_FORM, id: `request.${type}`, groups: [{ key: 'custom', caption: 'requests.typeFields', order: 20 }] };
+}
+
+/** A configurable form by its id: a registered one, or a request type's own (`request.<type>`). */
+export function formById(id: string): FormDef | undefined {
+  if (FORMS[id]) return FORMS[id];
+  return id.startsWith('request.') ? requestTypeForm(id.slice('request.'.length)) ?? undefined : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Forms made of custom fields only (requests, the Cases plugin's cases and assessments): their values
 // are one JSON object, checked as a whole.

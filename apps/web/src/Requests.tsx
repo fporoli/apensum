@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -32,9 +32,9 @@ import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { AddIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon } from './icons';
 import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
-import { REQUEST_FORM } from '@worktime3/shared/fields';
+import { REQUEST_FORM, requestTypeForm } from '@worktime3/shared/fields';
 import { useFormTemplate, type FormTemplate } from './designMode';
-import { RequestCustomFields, checkRequestCustom, hasCustomValues } from './RequestCustomFields';
+import { RequestCustomFields, checkRequestCustomAll, hasCustomValues } from './RequestCustomFields';
 import ForwardMailDialog, { type Recipient } from './ForwardMailDialog';
 import { formatLocaleDate, formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
@@ -119,6 +119,12 @@ interface RequestWorkflowInfo {
 
 const stepName = (s: StepLabel | undefined, locale: string) => (s ? s.labels?.[locale] ?? s.label : '');
 
+/** A request type's own form (`request.<type>`): its fields come after every request's. */
+function useRequestTypeTemplate(orgId: string, type: string | null | undefined, authHeaders: () => Promise<Record<string, string>>): FormTemplate {
+  const def = useMemo(() => requestTypeForm(type || '_none') ?? requestTypeForm('_none')!, [type]);
+  return useFormTemplate(orgId, def, authHeaders);
+}
+
 interface Detail {
   request: RequestItem;
   messages: Message[];
@@ -201,6 +207,9 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const [types, setTypes] = useState<TypeRow>({ values: {}, translation: {} });
   const replyFiles = useAttachmentDraft(setError);
   const template = useFormTemplate(orgId, REQUEST_FORM, authHeaders);
+  // The shown request's type's own fields, and in design mode the form chosen to design (every request's or a type's).
+  const [designType, setDesignType] = useState('');
+  const designTypeTemplate = useRequestTypeTemplate(orgId, designType, authHeaders);
 
   useEffect(() => {
     let cancelled = false;
@@ -511,6 +520,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       {hasCustomValues(template, r.custom) && (
         <RequestCustomFields template={{ ...template, designer: null }} values={r.custom ?? {}} editing={false} />
       )}
+      {r.request_type && <RequestTypeFields orgId={orgId} type={r.request_type} authHeaders={authHeaders} values={r.custom ?? {}} />}
 
       {r.link_url && (
         <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', minWidth: 0 }}>
@@ -682,12 +692,17 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
       {template.designer && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <RequestCustomFields template={template} values={{}} withPanel>
+        <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
+          {/* Which form to design: every request's fields, or a type's own. */}
+          <TextField select size="small" label={t('requests.designForm')} value={designType} onChange={(e) => setDesignType(e.target.value)} sx={{ maxWidth: 360 }}>
+            <MenuItem value="">{t('requests.designFormAll')}</MenuItem>
+            {requestTypeOptions(types.values, types.translation, locale).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+          </TextField>
+          <RequestCustomFields key={designType || 'all'} template={designType ? designTypeTemplate : template} values={{}} withPanel>
             {(fields, title) => (
               <Box sx={{ display: 'grid', gap: 1 }}>
                 <Typography variant="subtitle2">{title}</Typography>
-                <Typography variant="body2" color="text.secondary">{t('requests.customFieldsDesign')}</Typography>
+                <Typography variant="body2" color="text.secondary">{t(designType ? 'requests.typeFieldsDesign' : 'requests.customFieldsDesign')}</Typography>
                 {fields}
               </Box>
             )}
@@ -747,6 +762,8 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           request={r}
           types={types}
           template={template}
+          orgId={orgId}
+          authHeaders={authHeaders}
           busy={busy}
           onClose={() => setEditingDetails(false)}
           onSave={async (d, custom) => {
@@ -856,6 +873,8 @@ function EditDetailsDialog({
   request,
   types,
   template,
+  orgId,
+  authHeaders,
   busy,
   onClose,
   onSave,
@@ -864,6 +883,8 @@ function EditDetailsDialog({
   request: RequestItem;
   types: TypeRow;
   template: FormTemplate;
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
   busy: boolean;
   onClose: () => void;
   onSave: (d: DetailsDraft, custom: Record<string, unknown>) => void | Promise<void>;
@@ -878,8 +899,9 @@ function EditDetailsDialog({
     setCustom(request.custom ?? {});
     setCustomErrors({});
   }, [open, request]);
+  const typeTemplate = useRequestTypeTemplate(orgId, draft.type, authHeaders);
   function save() {
-    const checked = checkRequestCustom(template, custom);
+    const checked = checkRequestCustomAll([template, typeTemplate], custom);
     if (!checked.ok) {
       setCustomErrors(checked.errors);
       return;
@@ -894,6 +916,7 @@ function EditDetailsDialog({
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         <DetailsFields value={draft} onChange={setDraft} types={types} keepType={request.request_type} />
         <RequestCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
+        <RequestCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
@@ -934,6 +957,7 @@ function NewRequestDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = useAttachmentDraft(setError);
+  const typeTemplate = useRequestTypeTemplate(orgId, details.type, authHeaders);
   // The first type in the org's order (Service request by default) is preselected.
   const firstType = requestTypeOptions(types.values, types.translation, locale)[0]?.value ?? '';
 
@@ -969,7 +993,7 @@ function NewRequestDialog({
   }, [open, firstType]);
 
   async function submit() {
-    const checked = checkRequestCustom(template, custom);
+    const checked = checkRequestCustomAll([template, typeTemplate], custom);
     if (!checked.ok) {
       setCustomErrors(checked.errors);
       return;
@@ -1065,6 +1089,7 @@ function NewRequestDialog({
         <TextField size="small" label={t('requests.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
         <DetailsFields value={details} onChange={setDetails} types={types} />
         <RequestCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
+        <RequestCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
         <DropZone dragging={draft.dragging} dropProps={draft.dropProps}>
           <Box sx={{ display: 'grid', gap: 1 }}>
             <TextField
@@ -1151,4 +1176,10 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
       )}
     </Paper>
   );
+}
+
+/** A request's values in its type's own fields (read only; nothing when there are none). */
+function RequestTypeFields({ orgId, type, authHeaders, values }: { orgId: string; type: string; authHeaders: () => Promise<Record<string, string>>; values: Record<string, unknown> }) {
+  const template = useRequestTypeTemplate(orgId, type, authHeaders);
+  return hasCustomValues(template, values) ? <RequestCustomFields template={{ ...template, designer: null }} values={values} editing={false} /> : null;
 }

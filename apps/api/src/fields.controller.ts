@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Put, Req } from '@nestjs/common';
-import { FORMS, GROUPS_KEY, checkCustomField, checkCustomKey, checkFieldOverride, checkGroupsOverride, formWithCustom, mergeForm } from '@worktime3/shared/fields';
+import { formById, GROUPS_KEY, checkCustomField, checkCustomKey, checkFieldOverride, checkGroupsOverride, formWithCustom, mergeForm } from '@worktime3/shared/fields';
 import { DbService, type Db } from './db.service';
 import { callerUserId, isOrgDeveloper, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
@@ -33,7 +33,7 @@ export class FieldsController {
 
   @Get('organizations/:orgId/forms/:formId')
   async get(@Param('orgId') orgId: string, @Param('formId') formId: string, @Req() req: AuthenticatedRequest) {
-    const form = FORMS[formId];
+    const form = formById(formId);
     if (!form) return { ok: false, error: 'unknown-form' };
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, form: mergeForm(form) };
@@ -45,7 +45,7 @@ export class FieldsController {
   /** The code defaults and both layers separately, so the design panel can show where each value comes from. */
   @Get('organizations/:orgId/forms/:formId/layers')
   async layers(@Param('orgId') orgId: string, @Param('formId') formId: string, @Req() req: AuthenticatedRequest) {
-    const form = FORMS[formId];
+    const form = formById(formId);
     if (!form) return { ok: false, error: 'unknown-form' };
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, code: form, global: { fields: {}, groups: {} }, org: { fields: {}, groups: {} } };
@@ -94,7 +94,7 @@ export class FieldsController {
    * definition instead: a new key must be free in the code and both layers.
    */
   private async save(db: Db, orgId: string, formId: string, fieldKey: string, config: unknown, callerId: string, custom = false) {
-    const form = FORMS[formId];
+    const form = formById(formId);
     if (!form) return { ok: false, error: 'unknown-form' };
     const invalid = (reason: string, property?: string) => ({ ok: false, error: 'field-config-invalid', reason, property });
 
@@ -136,7 +136,7 @@ export class FieldsController {
 
   /** Resets a field to inherited. A custom field is retired instead: its key stays taken and stored values stay. */
   private async remove(db: Db, orgId: string, formId: string, fieldKey: string, callerId: string) {
-    if (!FORMS[formId]) return { ok: false, error: 'unknown-form' };
+    if (!formById(formId)) return { ok: false, error: 'unknown-form' };
     if (fieldKey !== GROUPS_KEY) {
       const layers = await loadLayers(db, orgId, formId);
       const custom = layers.org.custom?.[fieldKey];

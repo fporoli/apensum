@@ -10,7 +10,7 @@ import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeKeys } from '@worktime3/shared/requests';
-import { REQUEST_FORM, customValuesErrors, customValuesToSave, mergeForm } from '@worktime3/shared/fields';
+import { REQUEST_FORM, customValuesErrors, customValuesToSave, mergeForm, requestTypeForm, type ResolvedForm } from '@worktime3/shared/fields';
 import { FieldsService } from './fields.service';
 import { RequestsService, currentAssignments, noticeSubject } from './requests.service';
 import { WorkflowsService, type WorkflowStepDefinition } from './workflows.service';
@@ -233,7 +233,19 @@ export class RequestsController {
    * The custom values as the organization's form saves them, or an error. `given` may be a JSON string
    * (multipart). Without `given` (undefined) nothing is checked.
    */
-  private async customValues(orgId: string, given: unknown): Promise<{ ok: true; value: Record<string, unknown> | undefined } | { ok: false; error: string }> {
+  /**
+   * The form a request of `type` fills: the fields every request has (`request`), then its type's own
+   * (`request.<type>`), stored together in `custom`.
+   */
+  private async requestForm(orgId: string, type: string | null | undefined): Promise<ResolvedForm> {
+    const common = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+    const typeDef = type ? requestTypeForm(type) : null;
+    if (!typeDef) return common;
+    const own = (await this.fields.resolved(orgId, typeDef.id)) ?? mergeForm(typeDef);
+    return { ...common, groups: [...common.groups, ...own.groups], fields: [...common.fields, ...own.fields.filter((f) => !common.fields.some((c) => c.key === f.key))] };
+  }
+
+  private async customValues(orgId: string, given: unknown, type?: string | null): Promise<{ ok: true; value: Record<string, unknown> | undefined } | { ok: false; error: string }> {
     if (given === undefined || given === null || given === '') return { ok: true, value: undefined };
     let values = given;
     if (typeof given === 'string') {
@@ -244,7 +256,7 @@ export class RequestsController {
       }
     }
     if (!values || typeof values !== 'object' || Array.isArray(values)) return { ok: false, error: 'invalid-custom' };
-    const form = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+    const form = await this.requestForm(orgId, type);
     const value = customValuesToSave(form, values as Record<string, unknown>);
     const unknown = Object.keys(values as Record<string, unknown>).filter((k) => !(k in value));
     if (unknown.length || customValuesErrors(form, value).length) return { ok: false, error: 'invalid-custom' };
@@ -252,8 +264,8 @@ export class RequestsController {
   }
 
   /** Whether the organization's form has a required custom field (then a new request must fill it). */
-  private async customRequired(orgId: string): Promise<boolean> {
-    const form = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+  private async customRequired(orgId: string, type?: string | null): Promise<boolean> {
+    const form = await this.requestForm(orgId, type);
     return customValuesErrors(form, {}).length > 0;
   }
 
@@ -474,7 +486,7 @@ export class RequestsController {
     const details = validateRequestDetails(body, requestTypeKeys(types));
     if (!details.ok) return details;
     const { request_type, urgent, link_url, due_date } = details.value;
-    const custom = await this.customValues(orgId, body.custom ?? (await this.customRequired(orgId) ? {} : undefined));
+    const custom = await this.customValues(orgId, body.custom ?? (await this.customRequired(orgId, request_type) ? {} : undefined), request_type);
     if (!custom.ok) return custom;
     const confidential = requestTypeConfidential(types, request_type);
 
@@ -612,7 +624,8 @@ export class RequestsController {
     const types = await this.typeValues(db, orgId);
     const details = validateRequestDetails(body ?? {}, requestTypeKeys(types), a.r);
     if (!details.ok) return details;
-    const custom = await this.customValues(orgId, body?.custom);
+    // The fields of the type the request has after this change.
+    const custom = await this.customValues(orgId, body?.custom, details.value.request_type !== undefined ? details.value.request_type : a.r.request_type);
     if (!custom.ok) return custom;
     // Only what actually changes goes into the thread and the history.
     const changed: RequestDetails = {};

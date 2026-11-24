@@ -50,6 +50,19 @@ export function hasCustomValues(template: FormTemplate, values: Record<string, u
   return activeCustomFields(template.form).some((f) => !f.hidden && values[f.key] !== undefined && values[f.key] !== null && values[f.key] !== '');
 }
 
+/** Checks the values against several templates (every request's, the type's own) and returns what to send together. */
+export function checkRequestCustomAll(templates: FormTemplate[], values: Record<string, unknown>):
+  { ok: true; value: Record<string, unknown> } | { ok: false; errors: Record<string, string> } {
+  let value: Record<string, unknown> = {};
+  let errors: Record<string, string> = {};
+  for (const template of templates) {
+    const checked = checkRequestCustom(template, values);
+    if (checked.ok) value = { ...value, ...checked.value };
+    else errors = { ...errors, ...checked.errors };
+  }
+  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, value };
+}
+
 /** Checks the values against the saved template (as the API does) and returns what to send, or the errors by field. */
 export function checkRequestCustom(template: FormTemplate, values: Record<string, unknown>):
   { ok: true; value: Record<string, unknown> } | { ok: false; errors: Record<string, string> } {

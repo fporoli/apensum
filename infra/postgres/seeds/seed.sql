@@ -741,6 +741,52 @@ FROM (VALUES
 ) AS v(id, request_type, urgent, link_url)
 WHERE r.id = v.id AND r.request_type IS NULL;
 
+-- A request type with its own fields and workflow (Admin settings -> Workflows): "Materialbestellung". Acme gets a
+-- Frontdesk department (code frontdesk, led by Admin), its own copy of the request types with "material", the type's
+-- fields (form request.material: article, quantity, amount) and its workflow: the manager approves, finance too above
+-- CHF 500, then Frontdesk orders in the web shop and hands the goods over. Only where nothing is there yet.
+INSERT INTO departments (id, organization_id, name, leader_user_id, sort_order, code)
+VALUES ('dddddddd-0000-0000-0000-000000000006', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Frontdesk', '11111111-1111-1111-1111-111111111111', 6, 'frontdesk')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO static_data (organization_id, entity, enum_name, "values", translation)
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', g.entity, g.enum_name, g."values", g.translation
+FROM static_data g
+WHERE g.organization_id IS NULL AND g.entity = 'requests' AND g.enum_name = 'request_type'
+  AND NOT EXISTS (SELECT 1 FROM static_data o WHERE o.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND o.entity = 'requests' AND o.enum_name = 'request_type');
+UPDATE static_data SET
+  "values" = "values" || '{"material": {"sort": 5}}'::jsonb,
+  translation = jsonb_build_object(
+    'de', COALESCE(translation->'de', '{}'::jsonb) || '{"material": "Materialbestellung"}'::jsonb,
+    'en', COALESCE(translation->'en', '{}'::jsonb) || '{"material": "Material order"}'::jsonb,
+    'fr', COALESCE(translation->'fr', '{}'::jsonb) || '{"material": "Commande de matériel"}'::jsonb,
+    'it', COALESCE(translation->'it', '{}'::jsonb) || '{"material": "Ordine di materiale"}'::jsonb)
+WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND entity = 'requests' AND enum_name = 'request_type'
+  AND NOT "values" ? 'material';
+
+INSERT INTO field_config (organization_id, form_id, field_key, is_custom, config) VALUES
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request.material', 'artikel', TRUE,
+   '{"type": "text", "group": "custom", "order": 10, "width": "l", "required": true, "caption": {"de": "Artikel", "en": "Article", "fr": "Article", "it": "Articolo"}}'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request.material', 'menge', TRUE,
+   '{"type": "number", "group": "custom", "order": 20, "width": "s", "min": 1, "caption": {"de": "Menge", "en": "Quantity", "fr": "Quantité", "it": "Quantità"}}'),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request.material', 'betrag', TRUE,
+   '{"type": "number", "group": "custom", "order": 30, "width": "s", "min": 0, "caption": {"de": "Betrag (CHF)", "en": "Amount (CHF)", "fr": "Montant (CHF)", "it": "Importo (CHF)"}}')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO workflow_definitions (organization_id, name, description, steps, config)
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request:material', 'A request of a type with its own workflow: its steps, one after the other.', '[]'::jsonb,
+  '{"version": 1, "steps": [
+     {"key": "manager", "do": ["review"], "assignTo": "manager", "reject": "back",
+      "label": {"de": "Freigabe Vorgesetzte", "en": "Manager approval", "fr": "Approbation du supérieur", "it": "Approvazione del superiore"}},
+     {"key": "finance", "do": ["review"], "assignTo": "permission:nav.expensePayout", "when": {"field.betrag": {"gt": 500}}, "reject": "back",
+      "label": {"de": "Freigabe Finanzen", "en": "Finance approval", "fr": "Approbation des finances", "it": "Approvazione delle finanze"}},
+     {"key": "order", "do": ["task"], "assignTo": "department:frontdesk", "reject": "back",
+      "label": {"de": "Im Webshop bestellen", "en": "Order in the web shop", "fr": "Commander en ligne", "it": "Ordinare online"}},
+     {"key": "handover", "do": ["task"], "assignTo": "department:frontdesk", "reject": "none",
+      "label": {"de": "Ware übergeben", "en": "Hand over the goods", "fr": "Remettre la marchandise", "it": "Consegnare la merce"}}
+   ]}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM workflow_definitions WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND name = 'request:material');
+
 -- Open requests on the Workflow page: a vacation request each from Ueli (to Marco) and Ulla (to Marta),
 -- about six weeks ahead, with the workflow the API creates on submit (absences.controller.ts, same
 -- steps; the definition is the one the API keeps by name). Only absences without a workflow get one.

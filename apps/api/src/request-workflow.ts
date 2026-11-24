@@ -1,6 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { REQUEST_FORM, mergeForm } from '@worktime3/shared/fields';
+import { REQUEST_FORM, mergeForm, requestTypeForm } from '@worktime3/shared/fields';
 import { requestTypeKeys } from '@worktime3/shared/requests';
 import type { FactType, WorkflowKindCatalogue } from '@worktime3/shared/workflowConfig';
 import type { Db } from './db.service';
@@ -76,7 +76,7 @@ export class RequestWorkflow implements OnModuleInit {
       sourceTable: 'requests',
       facts: (db, id) => this.facts(db, id),
       variants: (db, orgId) => this.types(db, orgId),
-      catalogueFor: (db, orgId) => this.catalogue(orgId),
+      catalogueFor: (db, orgId, variant) => this.catalogue(orgId, variant),
       onFinished: async (db, id, actorUserId) => {
         await db.execute(sql`UPDATE requests SET status = 'resolved', resolved_at = now(), last_activity_at = now() WHERE id = ${id}::uuid`);
         await threadEvent(db, { sourceTable: 'requests', sourceTableUuid: id, actorUserId, decisionNote: null }, 'finished');
@@ -124,11 +124,13 @@ export class RequestWorkflow implements OnModuleInit {
     });
   }
 
-  /** The catalogue with the organization's own request fields as facts (`field.<key>`). */
-  private async catalogue(orgId: string): Promise<WorkflowKindCatalogue> {
-    const form = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+  /** The catalogue with the request fields as facts (`field.<key>`): every request's and the type's own. */
+  private async catalogue(orgId: string, type?: string): Promise<WorkflowKindCatalogue> {
+    const common = (await this.fields.resolved(orgId, REQUEST_FORM.id)) ?? mergeForm(REQUEST_FORM);
+    const typeDef = type ? requestTypeForm(type) : null;
+    const own = typeDef ? (await this.fields.resolved(orgId, typeDef.id)) ?? mergeForm(typeDef) : null;
     const facts: Record<string, FactType> = { ...REQUEST_CATALOGUE.facts };
-    for (const f of form.fields) if (f.custom && !f.retired && FACT_OF_FIELD[f.type]) facts[`field.${f.key}`] = FACT_OF_FIELD[f.type];
+    for (const f of [...common.fields, ...(own?.fields ?? [])]) if (f.custom && !f.retired && FACT_OF_FIELD[f.type]) facts[`field.${f.key}`] = FACT_OF_FIELD[f.type];
     return { ...REQUEST_CATALOGUE, facts };
   }
 
