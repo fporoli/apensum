@@ -111,8 +111,12 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
           aws configure set default.s3.addressing_style path
-          # Also checks the endpoint, the keys and the bucket before anything is dumped.
-          aws s3api head-bucket --endpoint-url "$ENDPOINT" --bucket "$BUCKET" >/dev/null
+          # Also checks the endpoint, the keys and the bucket before anything is dumped; a missing bucket is
+          # created (e.g. Infomaniak Swiss Backup has no bucket page), wrong keys fail there too.
+          if ! aws s3api head-bucket --endpoint-url "$ENDPOINT" --bucket "$BUCKET" >/dev/null 2>&1; then
+            echo "Creating the bucket $BUCKET"
+            aws s3api create-bucket --endpoint-url "$ENDPOINT" --bucket "$BUCKET" >/dev/null
+          fi
 
       - name: Back up
         if: steps.config.outputs.skip == 'false' && env.ACTION == 'backup'
