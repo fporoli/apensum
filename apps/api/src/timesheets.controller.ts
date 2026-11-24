@@ -38,13 +38,6 @@ export class TimesheetsController implements OnModuleInit {
    * timesheet_periods row's organization — WorkflowsService only knows the names, not the behavior.
    */
   onModuleInit() {
-    this.workflowsSvc.registerSourceOrgResolver('timesheet_periods', async (db, sourceTableUuid) => {
-      const [period] = await db
-        .select({ organization_id: timesheet_periods.organization_id })
-        .from(timesheet_periods)
-        .where(eq(timesheet_periods.id, sourceTableUuid));
-      return period?.organization_id ?? null;
-    });
 
     this.workflowsSvc.registerAction('timesheet.approve', async (db, ctx) => {
       const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };

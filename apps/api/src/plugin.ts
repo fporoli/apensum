@@ -38,10 +38,10 @@ export interface ApiPluginWorkflows {
   /** What a step's `onApprove`/`onReject` action does to the record, by action name (e.g. 'expense.approve'). */
   actions?: Record<string, (db: Db, ctx: WorkflowActionContext, core: PluginCore) => Promise<void>>;
   /**
-   * Per source table of the plugin's workflows: the record's organization (admin override, audit,
-   * notifications, rerouting) and, optionally, what the Workflow page shows of it under `field`.
+   * Per source table of the plugin's workflows: what the Workflow page shows of a record under `field`.
+   * `organization` is no longer read (each workflow row holds its organization, core changeset 107).
    */
-  sources?: Record<string, { organization: SourceOrgResolver; records?: { field: string; load: SourceRecordLoader } }>;
+  sources?: Record<string, { /** @deprecated not read since core changeset 107 */ organization?: SourceOrgResolver; records?: { field: string; load: SourceRecordLoader } }>;
   /** Workflow definition names that go to the person's manager and follow them when the manager changes. */
   managerRouted?: string[];
   /**

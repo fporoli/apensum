@@ -17,14 +17,9 @@ function service() {
   return { svc, notified };
 }
 
-test('rerouting asks the owners of the source tables for the organization and moves only what it can place', async () => {
+test("rerouting takes each workflow's own organization and moves what is still with an earlier manager", async () => {
   const { svc, notified } = service();
   svc.registerManagerRoutedWorkflow('approve plugin thing');
-  const asked: string[] = [];
-  svc.registerSourceOrgResolver('plugin_things', async (_db, id) => {
-    asked.push(id);
-    return ORG;
-  });
   const queries: { sql: string; params: unknown[] }[] = [];
   const db = {
     execute: async (q: SQL) => {
@@ -32,9 +27,7 @@ test('rerouting asks the owners of the source tables for the organization and mo
       if (queries.length === 1) {
         return {
           rows: [
-            { workflow_id: 'w1', source_table: 'plugin_things', source_table_uuid: 't1', assignee: 'old', subject: 'p1' },
-            // No resolver for this table: it stays where it is.
-            { workflow_id: 'w2', source_table: 'unknown_things', source_table_uuid: 'u1', assignee: 'old', subject: 'p2' },
+            { workflow_id: 'w1', organization_id: ORG, source_table: 'plugin_things', source_table_uuid: 't1', assignee: 'old', subject: 'p1' },
           ],
         };
       }
@@ -43,11 +36,9 @@ test('rerouting asks the owners of the source tables for the organization and mo
   };
   const moved = await svc.rerouteToCurrentManagers(db as never);
   assert.equal(moved, 1);
-  assert.deepEqual(asked, ['t1']);
   assert.ok(queries[0].params.includes('approve plugin thing'), 'the registered workflow is manager-routed');
   assert.ok(queries[0].params.includes('approve timesheet'), 'so are the core ones');
   assert.deepEqual(queries[1].params.slice(0, 4), ['w1', ORG, 'p1', 'old']);
-  assert.ok(!queries[1].params.includes('w2'));
   assert.deepEqual(notified.map((n) => [n.recipientUserIds, n.sourceTable]), [[['new'], 'plugin_things']]);
 });
 

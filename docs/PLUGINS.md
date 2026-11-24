@@ -229,7 +229,6 @@ workflows: {
   actions: { 'demo.approve': async (db, ctx, core) => ..., 'demo.reject': ... },
   sources: {
     demo_things: {
-      organization: async (db, id) => orgId,     // admin override, audit, notifications, rerouting
       records: { field: 'demo_thing', load: async (db, ids) => [...] },  // GET workflows/assigned-to-me
     },
   },

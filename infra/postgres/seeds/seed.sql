@@ -806,9 +806,9 @@ FROM (VALUES
 ) AS v(person, offset_days, days, note)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO workflows (workflow_id, workflow_def_id, source_table, source_table_uuid, workflow_data, workflow_started,
+INSERT INTO workflows (workflow_id, workflow_def_id, organization_id, source_table, source_table_uuid, workflow_data, workflow_started,
                        step, step_status, workflow_step_started, assigned_to_user_id)
-SELECT DISTINCT ON (a.id) pg_temp.seed_id(a.id || ':workflow'), d.workflow_def_id, 'absences', a.id,
+SELECT DISTINCT ON (a.id) pg_temp.seed_id(a.id || ':workflow'), d.workflow_def_id, d.organization_id, 'absences', a.id,
        jsonb_build_object('note', a.note, 'submittedByUserId', a.user_id, 'history',
          jsonb_build_array(jsonb_build_object('key', 'approvals.event.submitted', 'by', a.user_id, 'at', now() - interval '1 day'))),
        now() - interval '1 day',

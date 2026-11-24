@@ -1004,8 +1004,10 @@ export const workflows = pgTable("workflows", {
 	assigned_to_team_id: uuid(),
 	notification: jsonb().default({}).notNull(),
 	steps: jsonb(),
+	organization_id: uuid().notNull(),
 }, (table) => [
 	index("idx_workflows_def").using("btree", table.workflow_def_id.asc().nullsLast()),
+	index("idx_workflows_org").using("btree", table.organization_id.asc().nullsLast(), table.step_status.asc().nullsLast()),
 	index("idx_workflows_source").using("btree", table.source_table.asc().nullsLast(), table.source_table_uuid.asc().nullsLast()),
 	index("idx_workflows_team").using("btree", table.assigned_to_team_id.asc().nullsLast()),
 	foreignKey({
@@ -1018,6 +1020,11 @@ export const workflows = pgTable("workflows", {
 			foreignColumns: [teams.id],
 			name: "workflows_assigned_to_team_id_fkey"
 		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "workflows_organization_id_fkey"
+		}).onDelete("cascade"),
 	check("chk_workflows_assignee_required", sql`(assigned_to_user_id IS NOT NULL) OR (assigned_to_team_id IS NOT NULL)`),
 ]);
 

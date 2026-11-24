@@ -95,10 +95,6 @@ export class RequestWorkflow implements OnModuleInit {
       await db.execute(sql`UPDATE requests SET status = 'open', resolved_at = NULL, last_activity_at = now() WHERE id = ${ctx.sourceTableUuid}::uuid`);
       await threadEvent(db, ctx, 'returned');
     });
-    this.workflows.registerSourceOrgResolver('requests', async (db, id) => {
-      const rows = await db.execute(sql`SELECT organization_id FROM requests WHERE id = ${id}::uuid`);
-      return (rows.rows[0] as { organization_id?: string } | undefined)?.organization_id ?? null;
-    });
     // The Workflow page's record: who asked and what (a confidential request's subject stays out).
     this.workflows.registerSourceRecords('requests', 'request', async (db, ids) => {
       if (ids.length === 0) return [];

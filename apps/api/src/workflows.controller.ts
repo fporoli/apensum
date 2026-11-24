@@ -48,7 +48,7 @@ export class WorkflowsController {
     const who = scope === 'mine' ? sql`${workflows.workflow_data} ->> 'submittedByUserId' = ${callerId}` : assignment;
     const conditions = [who];
     if (status !== 'all') conditions.push(eq(workflows.step_status, status === 'approved' || status === 'rejected' ? status : 'pending'));
-    if (orgId && /^[0-9a-f-]{36}$/i.test(orgId)) conditions.push(eq(workflow_definitions.organization_id, orgId));
+    if (orgId && /^[0-9a-f-]{36}$/i.test(orgId)) conditions.push(eq(workflows.organization_id, orgId));
     const rawRows = await db
       .select({
         id: workflows.workflow_id,

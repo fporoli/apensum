@@ -47,10 +47,6 @@ export class ProjectTimesheetsController implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.workflowsSvc.registerSourceOrgResolver('project_time_periods', async (db, id) => {
-      const [row] = await db.select({ organization_id: project_time_periods.organization_id }).from(project_time_periods).where(eq(project_time_periods.id, id));
-      return row?.organization_id ?? null;
-    });
     this.workflowsSvc.registerAction('project-timesheet.approve', async (db, ctx) => {
       const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
       await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, ctx.sourceTableUuid));

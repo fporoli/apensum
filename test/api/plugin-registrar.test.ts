@@ -8,7 +8,6 @@ test("PluginRegistrar registers a plugin's workflows and documents with the core
   const actions = new Map<string, (db: never, ctx: never) => Promise<void>>();
   const workflows = {
     registerAction: (name: string, handler: (db: never, ctx: never) => Promise<void>) => { calls.push(`action ${name}`); actions.set(name, handler); },
-    registerSourceOrgResolver: (table: string) => calls.push(`org ${table}`),
     registerSourceRecords: (table: string, field: string) => calls.push(`records ${table} ${field}`),
     registerManagerRoutedWorkflow: (name: string) => calls.push(`routed ${name}`),
   };
@@ -32,9 +31,7 @@ test("PluginRegistrar registers a plugin's workflows and documents with the core
   new PluginRegistrar([plugin], workflows as never, documents as never, versions as never, audit as never, notifications as never).onModuleInit();
   assert.deepEqual(calls, [
     'action demo.approve',
-    'org demo_things',
     'records demo_things demo_thing',
-    'org demo_other',
     'routed approve demo thing',
     'documents demo',
   ]);

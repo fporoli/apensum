@@ -180,6 +180,7 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 		references: [users.id]
 	}),
 	workflow_definitions: many(workflow_definitions),
+	workflows: many(workflows),
 	notifications: many(notifications),
 	work_times: many(work_times),
 	work_time_balance_entries: many(work_time_balance_entries),
@@ -614,6 +615,10 @@ export const workflowsRelations = relations(workflows, ({one, many}) => ({
 	team: one(teams, {
 		fields: [workflows.assigned_to_team_id],
 		references: [teams.id]
+	}),
+	organization: one(organizations, {
+		fields: [workflows.organization_id],
+		references: [organizations.id]
 	}),
 	notifications: many(notifications),
 }));

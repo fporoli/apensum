@@ -122,6 +122,7 @@
     <include file="104-workflow-config.sql" relativeToChangelogFile="true"/>
     <include file="105-unit-codes.sql" relativeToChangelogFile="true"/>
     <include file="106-request-workflows.sql" relativeToChangelogFile="true"/>
+    <include file="107-workflows-organization.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

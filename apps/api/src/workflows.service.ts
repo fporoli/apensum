@@ -145,16 +145,14 @@ export type SourceRecordLoader = (db: Db, ids: string[]) => Promise<Array<{ id: 
  *
  * This service knows nothing about timesheets or any other specific source
  * table — it only dispatches by name. A step's `onApprove`/`onReject.action`
- * (e.g. "timesheet.approve") is looked up in `actionHandlers`, and a source
- * table's owning organization is looked up in `sourceOrgResolvers`; both are
- * registered by whichever module owns that kind of record (e.g.
- * TimesheetsController registers the "timesheet.*" actions and the
- * `timesheet_periods` org resolver in its `onModuleInit`).
+ * (e.g. "timesheet.approve") is looked up in `actionHandlers`, registered by
+ * whichever module owns that kind of record (e.g. TimesheetsController
+ * registers the "timesheet.*" actions in its `onModuleInit`). Each workflow
+ * row holds its organization (`organization_id`, 107).
  */
 @Injectable()
 export class WorkflowsService {
   private readonly actionHandlers = new Map<string, WorkflowActionHandler>();
-  private readonly sourceOrgResolvers = new Map<string, SourceOrgResolver>();
   private readonly sourceRecordLoaders = new Map<string, { field: string; load: SourceRecordLoader }>();
   private readonly managerRouted = new Set<string>(MANAGER_ROUTED_WORKFLOW_NAMES);
   private readonly kindsById = new Map<string, WorkflowKind>();
@@ -185,11 +183,6 @@ export class WorkflowsService {
   /** Register what happens when a step's onApprove/onReject names this action. */
   registerAction(name: string, handler: WorkflowActionHandler): void {
     this.actionHandlers.set(name, handler);
-  }
-
-  /** Register how to resolve a source table's owning organization (for the admin-override check and audit log). */
-  registerSourceOrgResolver(sourceTable: string, resolver: SourceOrgResolver): void {
-    this.sourceOrgResolvers.set(sourceTable, resolver);
   }
 
   /** Register how the Workflow page gets a source table's records, and the item field it puts them in (e.g. `expense_report`). */
@@ -291,6 +284,7 @@ export class WorkflowsService {
     });
     const values = {
       workflow_def_id: definition.workflow_def_id,
+      organization_id: params.organizationId,
       source_table: kind.sourceTable,
       source_table_uuid: params.sourceTableUuid,
       workflow_data: { ...params.workflowData, submittedByUserId: params.actorUserId, history: placed.history },
@@ -308,7 +302,7 @@ export class WorkflowsService {
     if (placed.index < 0) await kind.onFinished?.(db, params.sourceTableUuid, params.actorUserId, { versions: this.versions });
     if (placed.index >= 0) {
       void this.notifyAssignees(db, {
-        sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
+        organizationId: params.organizationId, sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
         title: params.notification.title, body: params.notification.body, sourceTableUuid: params.sourceTableUuid, workflowId: workflow.id,
       }).catch((err) => console.error('notify-assignees-failed', err));
     }
@@ -367,9 +361,7 @@ export class WorkflowsService {
       await this.recordEvent(db, sourceTable, sourceTableUuid, { key: eventKey, by: callerId, note });
       return true;
     }
-    const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
-    const organizationId = resolveOrg ? await resolveOrg(db, workflow.source_table_uuid) : null;
-    return (await this.advance(db, workflow, organizationId, callerId, 'approved', note, false)).ok;
+    return (await this.advance(db, workflow, workflow.organization_id, callerId, 'approved', note, false)).ok;
   }
 
   /**
@@ -464,8 +456,14 @@ export class WorkflowsService {
     },
   ) {
     const now = new Date().toISOString();
+    const [definition] = await db
+      .select({ organization_id: workflow_definitions.organization_id })
+      .from(workflow_definitions)
+      .where(eq(workflow_definitions.workflow_def_id, params.workflowDefId));
+    if (!definition) throw new Error('workflow-definition-not-found');
     const values = {
       workflow_def_id: params.workflowDefId,
+      organization_id: definition.organization_id,
       source_table: params.sourceTable,
       source_table_uuid: params.sourceTableUuid,
       // Captures who to notify back on resolve() — generically, for every workflow type,
@@ -486,6 +484,7 @@ export class WorkflowsService {
     void this.versions.record('workflows', workflow.id, 'insert', params.actorUserId, { id: workflow.id, ...values }).catch(() => {});
 
     void this.notifyAssignees(db, {
+      organizationId: definition.organization_id,
       sourceTable: params.sourceTable,
       assignedToUserId: params.assignedToUserId,
       assignedToTeamId: params.assignedToTeamId,
@@ -504,6 +503,7 @@ export class WorkflowsService {
   private async notifyAssignees(
     db: Db,
     params: {
+      organizationId: string;
       sourceTable: string;
       assignedToUserId?: string[];
       assignedToTeamId?: string;
@@ -527,12 +527,8 @@ export class WorkflowsService {
     recipientIds.delete(params.excludeUserId);
     if (recipientIds.size === 0) return;
 
-    const resolveOrg = this.sourceOrgResolvers.get(params.sourceTable);
-    const organizationId = resolveOrg ? await resolveOrg(db, params.sourceTableUuid) : null;
-    if (!organizationId) return;
-
     await this.notifications.notifyMany({
-      organizationId,
+      organizationId: params.organizationId,
       recipientUserIds: [...recipientIds],
       type: params.type,
       title: params.title,
@@ -557,7 +553,7 @@ export class WorkflowsService {
     const prefixes = [...this.kindsById.values()].filter((k) => k.variants).map((k) => `${k.catalogue.definitionName}:`);
     const prefixed = prefixes.length ? sql.join(prefixes.map((p) => sql` OR starts_with(d.name, ${p})`), sql``) : sql``;
     const pendingResult = await db.execute(sql`
-      SELECT w.workflow_id, w.source_table, w.source_table_uuid, w.assigned_to_user_id[1] AS assignee,
+      SELECT w.workflow_id, w.organization_id, w.source_table, w.source_table_uuid, w.assigned_to_user_id[1] AS assignee,
              (w.workflow_data->>'submittedByUserId')::uuid AS subject
       FROM workflows w
       JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
@@ -567,13 +563,7 @@ export class WorkflowsService {
         AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(w.steps, d.steps)) = 'array' THEN COALESCE(w.steps, d.steps) ELSE '[]'::jsonb END) st
                         WHERE st->>'key' = w.step AND COALESCE(st->>'assignTo', 'manager') <> 'manager')
         AND jsonb_exists(w.workflow_data, 'submittedByUserId')`);
-    // The organization of each request, from whoever owns its source table (registerSourceOrgResolver).
-    const pending: { workflow_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string; organization_id: string }[] = [];
-    for (const r of pendingResult.rows as { workflow_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string }[]) {
-      const resolve = this.sourceOrgResolvers.get(r.source_table);
-      const organizationId = resolve ? await resolve(db, r.source_table_uuid).catch(() => null) : null;
-      if (organizationId) pending.push({ ...r, organization_id: organizationId });
-    }
+    const pending = pendingResult.rows as { workflow_id: string; organization_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string }[];
     if (pending.length === 0) return 0;
     const values = sql.join(
       pending.map((p) => sql`(${p.workflow_id}::uuid, ${p.organization_id}::uuid, ${p.subject}::uuid, ${p.assignee}::uuid)`),
@@ -639,12 +629,11 @@ export class WorkflowsService {
    */
   async actorOrganization(db: Db, workflowId: string, callerId: string): Promise<string | null> {
     const [workflow] = await db
-      .select({ source_table: workflows.source_table, source_table_uuid: workflows.source_table_uuid, assigned_to_user_id: workflows.assigned_to_user_id, assigned_to_team_id: workflows.assigned_to_team_id })
+      .select({ organization_id: workflows.organization_id, assigned_to_user_id: workflows.assigned_to_user_id, assigned_to_team_id: workflows.assigned_to_team_id })
       .from(workflows)
       .where(eq(workflows.workflow_id, workflowId));
     if (!workflow) return null;
-    const organizationId = (await this.sourceOrgResolvers.get(workflow.source_table)?.(db, workflow.source_table_uuid)) ?? null;
-    if (!organizationId) return null;
+    const organizationId = workflow.organization_id;
     if ((workflow.assigned_to_user_id ?? []).includes(callerId)) return organizationId;
     if (workflow.assigned_to_team_id && (await this.callerTeamIds(db, callerId)).includes(workflow.assigned_to_team_id)) return organizationId;
     return (await reachesAll(db, organizationId, callerId, 'nav.approvals', 'edit')) ? organizationId : null;
@@ -666,8 +655,7 @@ export class WorkflowsService {
     const workflow = await this.loadWorkflow(db, eq(workflows.workflow_id, workflowId));
     if (!workflow) return { ok: false, error: 'workflow-not-found' };
 
-    const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
-    const organizationId = resolveOrg ? await resolveOrg(db, workflow.source_table_uuid) : null;
+    const organizationId = workflow.organization_id;
     const isDirectAssignee = (workflow.assigned_to_user_id ?? []).includes(callerId);
     const isTeamAssignee = workflow.assigned_to_team_id
       ? (await this.callerTeamIds(db, callerId)).includes(workflow.assigned_to_team_id)
@@ -694,15 +682,14 @@ export class WorkflowsService {
       and(eq(workflows.source_table, sourceTable), eq(workflows.source_table_uuid, sourceTableUuid), eq(workflows.step, stepKey), eq(workflows.step_status, 'pending')),
     );
     if (!workflow) return false;
-    const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
-    const organizationId = resolveOrg ? await resolveOrg(db, workflow.source_table_uuid) : null;
-    return (await this.advance(db, workflow, organizationId, callerId, 'approved', note, false)).ok;
+    return (await this.advance(db, workflow, workflow.organization_id, callerId, 'approved', note, false)).ok;
   }
 
   private async loadWorkflow(db: Db, where: SQL | undefined) {
     const [workflow] = await db
       .select({
         id: workflows.workflow_id,
+        organization_id: workflows.organization_id,
         source_table: workflows.source_table,
         source_table_uuid: workflows.source_table_uuid,
         step: workflows.step,
@@ -780,6 +767,7 @@ export class WorkflowsService {
       void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflow.id).catch(() => {});
       if (next) {
         void this.notifyAssignees(db, {
+          organizationId,
           sourceTable: workflow.source_table,
           assignedToUserId: placed.assignees,
           excludeUserId: callerId,

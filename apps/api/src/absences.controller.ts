@@ -69,11 +69,6 @@ export class AbsencesController implements OnModuleInit {
 
   /** Absences own what "absence.*" workflow actions actually do, and how to resolve an absences row's organization. */
   onModuleInit() {
-    this.workflowsSvc.registerSourceOrgResolver('absences', async (db, sourceTableUuid) => {
-      const [row] = await db.select({ organization_id: absences.organization_id }).from(absences).where(eq(absences.id, sourceTableUuid));
-      return row?.organization_id ?? null;
-    });
-
     this.workflowsSvc.registerAction('absence.approve', async (db, ctx) => {
       const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
       await db.update(absences).set(patch).where(eq(absences.id, ctx.sourceTableUuid));
