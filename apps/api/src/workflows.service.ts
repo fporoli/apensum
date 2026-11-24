@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
 import { reachesAll } from './access';
+import {
+  compileWorkflow, nextApplicableStep, validateWorkflowConfig,
+  type CompiledWorkflowStep, type WorkflowConfig, type WorkflowKindCatalogue,
+} from '@worktime3/shared/workflowConfig';
 import { workflows, workflow_definitions, team_members, organization_memberships } from './db/schema';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
@@ -26,7 +30,12 @@ export const MANAGER_ROUTED_WORKFLOW_NAMES: readonly string[] = [
   APPROVE_ABSENCE_WORKFLOW_NAME,
 ];
 
-export interface WorkflowStepDefinition {
+/**
+ * A step as the engine runs it. Steps of a configurable kind come compiled from the organization's configuration
+ * (shared/workflowConfig.ts: `actions`, `returnActions`, `reject`, `when`, `blocks`); older definitions name one
+ * `onApprove`/`onReject` action each.
+ */
+export interface WorkflowStepDefinition extends Partial<Omit<CompiledWorkflowStep, 'key' | 'label' | 'assignTo'>> {
   key: string;
   label: string;
   /** `manager` (the submitter's manager) or `permission:<object>` (everyone holding it with edit on all). */
@@ -39,8 +48,8 @@ export interface WorkflowStepDefinition {
   rejectable?: boolean;
   /** true: the Workflow page does the step in the kind's Inspect dialog (it shows what the step needs). */
   inDialog?: boolean;
-  onApprove: { action: string };
-  onReject: { action: string };
+  onApprove?: { action: string };
+  onReject?: { action: string };
   /** Human label for the kind of record this step's workflow concerns, e.g. "Timesheet Period". */
   source?: string;
   /** Name of the frontend formatter (see Timesheet.tsx's `getSourceTitle`) that renders that record's title. */
@@ -88,6 +97,17 @@ export function workflowHistory(
 }
 
 export type SourceOrgResolver = (db: Db, sourceTableUuid: string) => Promise<string | null>;
+
+/**
+ * A configurable kind of workflow a module offers (shared/workflowConfig.ts): its catalogue of building blocks and
+ * facts, the record table it is about and how to read a record's facts for the steps' conditions.
+ */
+export interface WorkflowKind {
+  catalogue: WorkflowKindCatalogue;
+  description: string;
+  sourceTable: string;
+  facts?: (db: Db, sourceTableUuid: string) => Promise<Record<string, unknown>>;
+}
 /**
  * Loads the records of one source table for the Workflow page (GET workflows/assigned-to-me): one
  * object per id with at least `id`, `user_id`, `user_display_name`, `user_email`, plus whatever the
@@ -118,6 +138,7 @@ export class WorkflowsService {
   private readonly sourceOrgResolvers = new Map<string, SourceOrgResolver>();
   private readonly sourceRecordLoaders = new Map<string, { field: string; load: SourceRecordLoader }>();
   private readonly managerRouted = new Set<string>(MANAGER_ROUTED_WORKFLOW_NAMES);
+  private readonly kindsById = new Map<string, WorkflowKind>();
 
   constructor(
     private readonly audit: AuditService,
@@ -159,6 +180,158 @@ export class WorkflowsService {
   /** The registered record loaders (WorkflowsController adds their records to each item). */
   sourceRecords(): ReadonlyMap<string, { field: string; load: SourceRecordLoader }> {
     return this.sourceRecordLoaders;
+  }
+
+  /** Register a configurable kind of workflow (its steps then come from the organization's configuration). */
+  registerKind(kind: WorkflowKind): void {
+    this.kindsById.set(kind.catalogue.id, kind);
+    this.managerRouted.add(kind.catalogue.definitionName);
+  }
+
+  /** The configurable kinds, by id. */
+  kinds(): ReadonlyMap<string, WorkflowKind> {
+    return this.kindsById;
+  }
+
+  /** The organization's own configuration of a kind (validated), or null when it uses the default. */
+  async ownConfig(db: Db, organizationId: string, kindId: string): Promise<WorkflowConfig | null> {
+    const kind = this.kindsById.get(kindId);
+    if (!kind) return null;
+    const [row] = await db
+      .select({ config: workflow_definitions.config })
+      .from(workflow_definitions)
+      .where(and(eq(workflow_definitions.organization_id, organizationId), eq(workflow_definitions.name, kind.catalogue.definitionName)));
+    if (!row?.config) return null;
+    // A stored configuration the catalogue no longer accepts (a module changed) falls back to the default.
+    const checked = validateWorkflowConfig(kind.catalogue, row.config);
+    return checked.ok ? checked.value : null;
+  }
+
+  /**
+   * Stores an organization's configuration of a kind (null = back to the default). The caller validated it; new
+   * workflows use it, running ones keep their steps.
+   */
+  async saveConfig(db: Db, organizationId: string, kindId: string, config: WorkflowConfig | null, callerId: string): Promise<void> {
+    const kind = this.kindsById.get(kindId);
+    if (!kind) throw new Error(`unknown workflow kind ${kindId}`);
+    const steps = compileWorkflow(kind.catalogue, config ?? kind.catalogue.defaultConfig);
+    const definition = await this.ensureDefinition(db, organizationId, kind.catalogue.definitionName, kind.description, steps as unknown as WorkflowStepDefinition[]);
+    await db.update(workflow_definitions).set({ config }).where(eq(workflow_definitions.workflow_def_id, definition.workflow_def_id));
+    void this.versions.record('workflow_definitions', definition.workflow_def_id, 'update_delta', callerId, { config }).catch(() => {});
+  }
+
+  /**
+   * Starts a workflow of a configurable kind for a record: its steps from the organization's configuration (kept with
+   * the workflow), the first step that applies, its assignees notified. A review step going to a manager nobody has
+   * (the top of the chain) is done at once ("approved automatically"), as are steps whose condition doesn't hold
+   * ("skipped"); when no step is left the workflow is approved. `autoApproved`: the first step was done that way.
+   */
+  async start(
+    db: Db,
+    params: {
+      kind: string;
+      organizationId: string;
+      sourceTableUuid: string;
+      actorUserId: string;
+      workflowData: Record<string, unknown>;
+      notification: { title: string; body?: string };
+    },
+  ): Promise<{ id: string; autoApproved: boolean; finished: boolean }> {
+    const kind = this.kindsById.get(params.kind);
+    if (!kind) throw new Error(`unknown workflow kind ${params.kind}`);
+    const config = (await this.ownConfig(db, params.organizationId, params.kind)) ?? kind.catalogue.defaultConfig;
+    const steps = compileWorkflow(kind.catalogue, config) as unknown as WorkflowStepDefinition[];
+    const definition = await this.ensureDefinition(db, params.organizationId, kind.catalogue.definitionName, kind.description, steps);
+    const now = new Date().toISOString();
+    const history: WorkflowEvent[] = [{ key: 'approvals.event.submitted', by: params.actorUserId, at: now }];
+    const placed = await this.place(db, {
+      steps, from: 0, organizationId: params.organizationId, sourceTable: kind.sourceTable, sourceTableUuid: params.sourceTableUuid,
+      submittedBy: params.actorUserId, actor: params.actorUserId, history,
+    });
+    const values = {
+      workflow_def_id: definition.workflow_def_id,
+      source_table: kind.sourceTable,
+      source_table_uuid: params.sourceTableUuid,
+      workflow_data: { ...params.workflowData, submittedByUserId: params.actorUserId, history: placed.history },
+      workflow_started: now,
+      step: placed.index >= 0 ? steps[placed.index].key : steps[steps.length - 1].key,
+      step_status: placed.index >= 0 ? 'pending' : 'approved',
+      workflow_step_started: now,
+      ...(placed.index >= 0 ? {} : { workflow_step_finished: now, workflow_finished: now }),
+      assigned_to_user_id: placed.assignees,
+      assigned_to_team_id: null,
+      steps,
+    };
+    const [workflow] = await db.insert(workflows).values(values).returning({ id: workflows.workflow_id });
+    void this.versions.record('workflows', workflow.id, 'insert', params.actorUserId, { id: workflow.id, ...values }).catch(() => {});
+    if (placed.index >= 0) {
+      void this.notifyAssignees(db, {
+        sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
+        title: params.notification.title, body: params.notification.body, sourceTableUuid: params.sourceTableUuid, workflowId: workflow.id,
+      }).catch((err) => console.error('notify-assignees-failed', err));
+    }
+    return { id: workflow.id, autoApproved: placed.autoApproved.includes(steps[0].key), finished: placed.index < 0 };
+  }
+
+  /**
+   * From step `from` on: skips the steps whose condition doesn't hold, does at once a review that goes to a manager
+   * nobody has, and returns the step that waits (with its assignees and the history so far), or -1 when none is left.
+   */
+  private async place(
+    db: Db,
+    p: {
+      steps: WorkflowStepDefinition[]; from: number; organizationId: string | null; sourceTable: string; sourceTableUuid: string;
+      submittedBy: string | undefined; actor: string; history: WorkflowEvent[];
+    },
+  ): Promise<{ index: number; assignees: string[]; history: WorkflowEvent[]; autoApproved: string[] }> {
+    const history = [...p.history];
+    const autoApproved: string[] = [];
+    const kind = [...this.kindsById.values()].find((k) => k.sourceTable === p.sourceTable);
+    let facts: Record<string, unknown> | null = null;
+    const readFacts = async () => (facts ??= kind?.facts ? await kind.facts(db, p.sourceTableUuid).catch(() => ({})) : {});
+    for (let from = p.from; ;) {
+      const { index, skipped } = await nextApplicableStep(p.steps, from, readFacts);
+      const at = new Date().toISOString();
+      for (const key of skipped) history.push({ key: 'approvals.event.skipped', by: null, at, note: p.steps.find((s) => s.key === key)?.label ?? key });
+      if (index < 0) return { index, assignees: [], history, autoApproved };
+      const step = p.steps[index];
+      const assignees = await this.stepAssignees(db, p.organizationId, step, p.submittedBy, p.actor);
+      if (assignees.length) return { index, assignees, history, autoApproved };
+      // Only a manager's review without a manager gets here: done at once, as submitting did before.
+      for (const action of step.actions ?? []) await this.runNamedAction(db, action, p.sourceTable, p.sourceTableUuid, p.actor, null);
+      history.push({ key: 'approvals.event.autoApproved', by: null, at });
+      autoApproved.push(step.key);
+      from = index + 1;
+    }
+  }
+
+  /**
+   * Marks the block `block` of a record's pending step done when the module did the work on its own page (e.g.
+   * expense processing): the step's last block moves the workflow on (without running its actions again), an earlier
+   * one is recorded in the history (`eventKey`). False when the record has no pending configurable step with it.
+   */
+  async completeBlock(db: Db, sourceTable: string, sourceTableUuid: string, block: string, eventKey: string, callerId: string, note: string | null = null): Promise<boolean> {
+    const workflow = await this.loadWorkflow(
+      db,
+      and(eq(workflows.source_table, sourceTable), eq(workflows.source_table_uuid, sourceTableUuid), eq(workflows.step_status, 'pending')),
+    );
+    if (!workflow) return false;
+    const step = this.stepsOf(workflow).find((s) => s.key === workflow.step);
+    const blocks = step?.blocks ?? [];
+    if (!blocks.includes(block)) return false;
+    if (blocks[blocks.length - 1] !== block) {
+      await this.recordEvent(db, sourceTable, sourceTableUuid, { key: eventKey, by: callerId, note });
+      return true;
+    }
+    const resolveOrg = this.sourceOrgResolvers.get(workflow.source_table);
+    const organizationId = resolveOrg ? await resolveOrg(db, workflow.source_table_uuid) : null;
+    return (await this.advance(db, workflow, organizationId, callerId, 'approved', note, false)).ok;
+  }
+
+  /** A workflow's steps: the ones it started with, else (older workflows) its definition's. */
+  private stepsOf(workflow: { own_steps?: unknown; steps: unknown }): WorkflowStepDefinition[] {
+    const steps = Array.isArray(workflow.own_steps) ? workflow.own_steps : workflow.steps;
+    return Array.isArray(steps) ? (steps as WorkflowStepDefinition[]) : [];
   }
 
   /** Register a workflow (by definition name) that goes to the submitter's manager and follows it when it changes. */
@@ -311,7 +484,7 @@ export class WorkflowsService {
       WHERE w.step_status = 'pending' AND d.name IN (${names})
         AND cardinality(w.assigned_to_user_id) = 1
         -- Only steps that go to the manager (a later step, e.g. processing, has its own assignees).
-        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.steps) = 'array' THEN d.steps ELSE '[]'::jsonb END) st
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(w.steps, d.steps)) = 'array' THEN COALESCE(w.steps, d.steps) ELSE '[]'::jsonb END) st
                         WHERE st->>'key' = w.step AND COALESCE(st->>'assignTo', 'manager') <> 'manager')
         AND jsonb_exists(w.workflow_data, 'submittedByUserId')`);
     // The organization of each request, from whoever owns its source table (registerSourceOrgResolver).
@@ -456,6 +629,7 @@ export class WorkflowsService {
         started: workflows.workflow_started,
         definition_name: workflow_definitions.name,
         steps: workflow_definitions.steps,
+        own_steps: workflows.steps,
       })
       .from(workflows)
       .innerJoin(workflow_definitions, eq(workflow_definitions.workflow_def_id, workflows.workflow_def_id))
@@ -474,25 +648,34 @@ export class WorkflowsService {
     decisionNote: string | null,
     runAction: boolean,
   ): Promise<{ ok: true } | { ok: false; error: string }> {
-    const stepDefs = Array.isArray(workflow.steps) ? (workflow.steps as WorkflowStepDefinition[]) : [];
+    const stepDefs = this.stepsOf(workflow);
     const index = stepDefs.findIndex((s) => s.key === workflow.step);
     const stepDef = index >= 0 ? stepDefs[index] : undefined;
-    if (outcome === 'rejected' && stepDef?.rejectable === false) return { ok: false, error: 'not-rejectable' };
-    const next = outcome === 'approved' && index >= 0 ? stepDefs[index + 1] : undefined;
+    if (outcome === 'rejected' && (stepDef?.rejectable === false || stepDef?.reject === 'none')) return { ok: false, error: 'not-rejectable' };
     const submittedByUserId = (workflow.workflow_data as Record<string, unknown> | null)?.submittedByUserId as string | undefined;
-    const nextAssignees = next ? await this.stepAssignees(db, organizationId, next, submittedByUserId, callerId) : [];
+
+    // The step's own work first (a later step done at once may build on it).
+    if (runAction) await this.runAction(db, { ...workflow, steps: stepDefs }, outcome, callerId, decisionNote);
 
     const now = new Date().toISOString();
     const event: WorkflowEvent = {
-      key: outcome === 'rejected' ? 'approvals.event.rejected' : (stepDef?.doneKey ?? 'approvals.event.approved'),
+      key: outcome === 'rejected' ? (stepDef?.reject === 'back' ? 'approvals.event.returned' : 'approvals.event.rejected') : (stepDef?.doneKey ?? 'approvals.event.approved'),
       by: callerId,
       at: now,
       note: decisionNote,
     };
+    const soFar = [...workflowHistory(workflow.workflow_data, { started: workflow.started, finished: null, status: 'pending' }), event];
+    const placed = outcome === 'approved' && index >= 0
+      ? await this.place(db, {
+        steps: stepDefs, from: index + 1, organizationId, sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid,
+        submittedBy: submittedByUserId, actor: callerId, history: soFar,
+      })
+      : { index: -1, assignees: [], history: soFar, autoApproved: [] };
+    const next = placed.index >= 0 ? stepDefs[placed.index] : undefined;
     const workflowData = {
       ...(workflow.workflow_data as Record<string, unknown>),
       ...(index <= 0 ? { decisionNote } : {}),
-      history: [...workflowHistory(workflow.workflow_data, { started: workflow.started, finished: null, status: 'pending' }), event] satisfies WorkflowEvent[],
+      history: placed.history satisfies WorkflowEvent[],
     };
     const patch = next
       ? {
@@ -500,7 +683,7 @@ export class WorkflowsService {
           step_status: 'pending',
           workflow_step_started: now,
           workflow_step_finished: null,
-          assigned_to_user_id: nextAssignees,
+          assigned_to_user_id: placed.assignees,
           assigned_to_team_id: null,
           workflow_data: workflowData,
         }
@@ -508,14 +691,12 @@ export class WorkflowsService {
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
 
-    if (runAction) await this.runAction(db, workflow, outcome, callerId, decisionNote);
-
     if (organizationId) {
       void this.audit.record(organizationId, callerId, `workflow.${outcome}`, 'workflow', workflow.id).catch(() => {});
       if (next) {
         void this.notifyAssignees(db, {
           sourceTable: workflow.source_table,
-          assignedToUserId: nextAssignees,
+          assignedToUserId: placed.assignees,
           excludeUserId: callerId,
           type: 'workflow.assigned',
           title: `A request needs your step: ${next.label}`,
@@ -525,12 +706,13 @@ export class WorkflowsService {
       }
       // The submitter hears of the decision on the first step and of the end, not of every step between.
       if (submittedByUserId && submittedByUserId !== callerId && (outcome === 'rejected' || index <= 0 || !next)) {
+        const returned = outcome === 'rejected' && stepDef?.reject === 'back';
         void this.notifications
           .notifyMany({
             organizationId,
             recipientUserIds: [submittedByUserId],
-            type: outcome === 'approved' ? 'workflow.approved' : 'workflow.rejected',
-            title: outcome === 'approved' ? 'Your submission was approved' : 'Your submission was rejected',
+            type: outcome === 'approved' ? 'workflow.approved' : returned ? 'workflow.returned' : 'workflow.rejected',
+            title: outcome === 'approved' ? 'Your submission was approved' : returned ? 'Your submission was sent back to you' : 'Your submission was rejected',
             body: decisionNote ?? undefined,
             sourceTable: workflow.source_table,
             sourceTableUuid: workflow.source_table_uuid,
@@ -544,21 +726,38 @@ export class WorkflowsService {
   }
 
   /**
-   * Who a step goes to: `manager` = the submitter's manager today; `permission:<object>` = every active
-   * member holding `<object>:edit:all`. Nobody found: the one who completed the step before, so the
-   * request is never lost.
+   * Who a step goes to: `manager` = the submitter's manager today; `permission:<object>` = every active member
+   * holding `<object>:edit:all`; `department:<id>` = its members and its leader today. The submitter never decides
+   * their own step (four eyes). Nobody left: a manager's review of a configurable kind gets nobody (done at once by
+   * `place`, the top of the chain); any other step goes to HR (`section.people.employment` edit on everyone), then
+   * the organization's owners, then the one who completed the step before, so a request is never lost.
    */
   private async stepAssignees(db: Db, organizationId: string | null, step: WorkflowStepDefinition, submittedByUserId: string | undefined, fallback: string): Promise<string[]> {
     if (!organizationId) return [fallback];
-    let ids: string[] = [];
-    if (step.assignTo.startsWith('permission:')) {
-      const permissionId = `${step.assignTo.slice('permission:'.length)}:edit:all`;
+    const holders = async (permissionId: string) => {
       const rows = await db.execute(sql`
         SELECT DISTINCT m.user_id FROM organization_memberships m
         JOIN membership_roles mr ON mr.membership_id = m.id
         JOIN role_permissions rp ON rp.role_id = mr.role_id
         WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active'
           AND (m.exit_at IS NULL OR m.exit_at > now()) AND rp.permission_id = ${permissionId}`);
+      return (rows.rows as { user_id: string }[]).map((r) => r.user_id);
+    };
+    const others = (ids: string[]) => [...new Set(ids)].filter((id) => id !== submittedByUserId);
+    let ids: string[] = [];
+    if (step.assignTo.startsWith('permission:')) {
+      ids = await holders(`${step.assignTo.slice('permission:'.length)}:edit:all`);
+    } else if (step.assignTo.startsWith('department:')) {
+      const departmentId = step.assignTo.slice('department:'.length);
+      const rows = await db.execute(sql`
+        SELECT d.leader_user_id AS user_id FROM departments d
+        WHERE d.id = ${departmentId}::uuid AND d.organization_id = ${organizationId}::uuid AND d.leader_user_id IS NOT NULL
+        UNION
+        SELECT a.user_id FROM employee_assignments a
+        JOIN organization_memberships m ON m.organization_id = a.organization_id AND m.user_id = a.user_id AND m.status = 'active'
+        WHERE a.organization_id = ${organizationId}::uuid AND a.department_id = ${departmentId}::uuid
+          AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
+                              WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= CURRENT_DATE)`);
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     } else if (step.assignTo === 'manager' && submittedByUserId) {
       const rows = await db.execute(sql`
@@ -568,6 +767,18 @@ export class WorkflowsService {
       const manager = (rows.rows as { manager_user_id: string | null }[])[0]?.manager_user_id;
       if (manager) ids = [manager];
     }
+    ids = others(ids);
+    if (ids.length) return ids;
+    // A configurable kind's manager review without a manager: nobody (done at once); older definitions as before.
+    if (step.review && step.assignTo === 'manager') return [];
+    if (!step.blocks) return [fallback];
+    ids = others(await holders('section.people.employment:edit:all'));
+    if (ids.length) return ids;
+    const owners = await db.execute(sql`
+      SELECT DISTINCT m.user_id FROM organization_memberships m
+      JOIN membership_roles mr ON mr.membership_id = m.id JOIN roles r ON r.id = mr.role_id
+      WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active' AND r.name = 'owner'`);
+    ids = others((owners.rows as { user_id: string }[]).map((r) => r.user_id));
     return ids.length ? ids : [fallback];
   }
 
@@ -586,10 +797,17 @@ export class WorkflowsService {
   ) {
     const stepDefs = Array.isArray(workflow.steps) ? (workflow.steps as WorkflowStepDefinition[]) : [];
     const stepDef = stepDefs.find((s) => s.key === workflow.step);
-    const actionName = outcome === 'approved' ? stepDef?.onApprove?.action : stepDef?.onReject?.action;
+    const names = outcome === 'approved'
+      ? stepDef?.actions ?? [stepDef?.onApprove?.action]
+      : stepDef?.returnActions ?? [stepDef?.onReject?.action];
+    for (const name of names) await this.runNamedAction(db, name, workflow.source_table, workflow.source_table_uuid, actorUserId, decisionNote);
+  }
+
+  /** Runs one registered action; unknown ones and "none" are no-ops. */
+  private async runNamedAction(db: Db, actionName: string | undefined, sourceTable: string, sourceTableUuid: string, actorUserId: string, decisionNote: string | null) {
     if (!actionName || actionName === 'none') return;
     const handler = this.actionHandlers.get(actionName);
     if (!handler) return;
-    await handler(db, { sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid, actorUserId, decisionNote });
+    await handler(db, { sourceTable, sourceTableUuid, actorUserId, decisionNote });
   }
 }

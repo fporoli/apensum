@@ -27,6 +27,7 @@ import {
   SettingsIcon,
   TimerIcon,
   TuneIcon,
+  AccountTreeIcon,
   VerifiedUserIcon,
   WorkspacesIcon,
 } from './icons';
@@ -38,6 +39,7 @@ const ProjectTime = lazy(() => import('./ProjectTime'));
 const Management = lazy(() => import('./Management'));
 const Invitations = lazy(() => import('./Invitations'));
 const AdminSettings = lazy(() => import('./AdminSettings'));
+const WorkflowSettings = lazy(() => import('./WorkflowSettings'));
 const OrganizationSettings = lazy(() => import('./OrganizationSettings'));
 const Timesheet = lazy(() => import('./Timesheet'));
 const WorkTime = lazy(() => import('./WorkTime'));
@@ -366,6 +368,15 @@ export const CORE_PAGES: AppPage[] = [
       : { group: 'administration', parent: 'admin', label: 'roles.title', icon: <GroupIcon fontSize="small" /> },
     render: (c) => <AdminSettings orgId={c.orgId} authHeaders={c.authHeaders} tab={section === 'adminRoles' ? 'roles' : 'staticData'} />,
   })),
+  // Admin settings -> Workflows: the configurable workflows' steps (read by admins, changed by owners).
+  {
+    section: 'adminWorkflows',
+    hash: '#/admin/workflows',
+    object: 'nav.admin',
+    allowedByRole: (r) => r.isAdmin,
+    nav: { group: 'administration', parent: 'admin', label: 'workflowConfig.title', icon: <AccountTreeIcon fontSize="small" /> },
+    render: (c) => <WorkflowSettings orgId={c.orgId} authHeaders={c.authHeaders} />,
+  },
 
   {
     section: 'requests',

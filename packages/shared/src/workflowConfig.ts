@@ -1,0 +1,292 @@
+/**
+ * Configurable workflows: a module offers a kind of workflow (e.g. `expenses.report`) with building blocks (what a
+ * step does: review, process, pay, ...) and facts (what a condition may test: total, categories, ...); an
+ * organization's owner arranges them in a JSON document (which blocks, in which order, who decides, when a step
+ * applies, what rejecting does). The code decides what a block does; the JSON never runs anything else.
+ *
+ *   { "version": 1, "steps": [
+ *       { "key": "manager", "do": ["review"], "assignTo": "manager", "reject": "back" },
+ *       { "key": "finance", "do": ["review"], "assignTo": "permission:nav.expensePayout", "when": { "total": { "gt": 500 } } },
+ *       { "key": "settle", "do": ["process", "pay"], "assignTo": "permission:nav.expenseProcessing" } ] }
+ *
+ * Pure, used by the API (validation, running) and the browser (the editor's checks). Keep it erasable TypeScript.
+ */
+
+export const WORKFLOW_CONFIG_VERSION = 1;
+export const MAX_WORKFLOW_STEPS = 8;
+const KEY = /^[a-z0-9_]{1,30}$/;
+const LANGS = ['de', 'fr', 'it', 'en'] as const;
+
+/** `none` = the step can't be rejected; `back` = back to the person who submitted, to change and submit again. */
+export type RejectMode = 'none' | 'back';
+export const REJECT_MODES: readonly RejectMode[] = ['none', 'back'];
+
+/** A fact's type: what a condition may compare it with. */
+export type FactType = 'number' | 'string' | 'strings' | 'boolean';
+
+/** A condition on the facts of the record (shared `evaluateCondition`). */
+export type Condition =
+  | { all: Condition[] }
+  | { any: Condition[] }
+  | { not: Condition }
+  | Record<string, unknown>;
+
+export interface WorkflowStepConfig {
+  key: string;
+  /** The blocks done in this step, in order (one or more of the kind's). */
+  do: string[];
+  /** `manager`, `permission:<object>` or `department:<id>`. */
+  assignTo: string;
+  when?: Condition;
+  reject?: RejectMode;
+  label?: Partial<Record<(typeof LANGS)[number], string>>;
+}
+
+export interface WorkflowConfig {
+  version: number;
+  steps: WorkflowStepConfig[];
+}
+
+/** What a building block does and where it may stand; part of a kind's catalogue (code). */
+export interface WorkflowBlock {
+  /** Who may do it: `manager`, `department`, and `permission:<object>` for each object allowed. */
+  assignees: string[];
+  /** The action run when the step is approved (registered with WorkflowsService). */
+  action: string;
+  /** The action run when the step is sent back (reject `back`); none = the block can't be rejected. */
+  returnAction?: string;
+  /** At most once in a workflow. */
+  once?: boolean;
+  /** Blocks that must be done before it (in an earlier step or earlier in the same step). */
+  after?: string[];
+  /** Only in the last step, as its last block. */
+  last?: boolean;
+  /** Done in the kind's dialog on the Workflow page (it shows what the step needs). */
+  inDialog?: boolean;
+  /** Text keys: the history entry when done, the Workflow page's button. */
+  doneKey?: string;
+  actionKey?: string;
+  /** English name, the step's label when the configuration gives none. */
+  label: string;
+}
+
+/** A kind of workflow a module offers (its catalogue). */
+export interface WorkflowKindCatalogue {
+  id: string;
+  /** The workflow definition's name (`workflow_definitions.name`) of this kind. */
+  definitionName: string;
+  blocks: Record<string, WorkflowBlock>;
+  facts: Record<string, FactType>;
+  /** Which reject modes the kind supports. */
+  rejectModes: RejectMode[];
+  /** The configuration an organization without its own uses. */
+  defaultConfig: WorkflowConfig;
+  /** Shown with the steps on the Workflow page (`source`/`source_name` of the engine's step). */
+  source?: string;
+  source_name?: string;
+}
+
+export interface WorkflowConfigError {
+  /** Where: `steps[2].assignTo`, `steps[0].when.total`, ... */
+  path: string;
+  /** What: a kebab-case code (the web app's `workflowConfig.error.<code>`). */
+  code: string;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** The kind of an assignee (`manager`, `department`, `permission`), or null. */
+function assigneeKind(value: string): 'manager' | 'department' | 'permission' | null {
+  if (value === 'manager') return 'manager';
+  if (/^department:[0-9a-f-]{36}$/i.test(value)) return 'department';
+  if (/^permission:[a-zA-Z0-9.]+$/.test(value)) return 'permission';
+  return null;
+}
+
+/** Whether `block` may go to `assignTo`. */
+function assigneeAllowed(block: WorkflowBlock, assignTo: string): boolean {
+  const kind = assigneeKind(assignTo);
+  if (kind === 'manager') return block.assignees.includes('manager');
+  if (kind === 'department') return block.assignees.includes('department');
+  if (kind === 'permission') return block.assignees.includes(assignTo);
+  return false;
+}
+
+const NUMBER_OPS = ['gt', 'gte', 'lt', 'lte', 'eq'];
+const LIST_OPS = ['any', 'all', 'none'];
+
+/** The errors of a condition (empty = fine). */
+function conditionErrors(cond: unknown, facts: Record<string, FactType>, path: string, depth = 0): WorkflowConfigError[] {
+  if (depth > 4) return [{ path, code: 'condition-too-deep' }];
+  if (!isObject(cond) || Object.keys(cond).length !== 1) return [{ path, code: 'invalid-condition' }];
+  const [[name, value]] = Object.entries(cond);
+  if (name === 'all' || name === 'any') {
+    if (!Array.isArray(value) || value.length === 0) return [{ path: `${path}.${name}`, code: 'invalid-condition' }];
+    return value.flatMap((c, i) => conditionErrors(c, facts, `${path}.${name}[${i}]`, depth + 1));
+  }
+  if (name === 'not') return conditionErrors(value, facts, `${path}.not`, depth + 1);
+  const type = facts[name];
+  const at = `${path}.${name}`;
+  if (!type) return [{ path: at, code: 'unknown-fact' }];
+  if (type === 'boolean') return typeof value === 'boolean' ? [] : [{ path: at, code: 'invalid-comparison' }];
+  if (!isObject(value) || Object.keys(value).length !== 1) return [{ path: at, code: 'invalid-comparison' }];
+  const [[op, operand]] = Object.entries(value);
+  if (type === 'number') return NUMBER_OPS.includes(op) && typeof operand === 'number' && Number.isFinite(operand) ? [] : [{ path: at, code: 'invalid-comparison' }];
+  if (type === 'string') {
+    if (op === 'eq' && typeof operand === 'string') return [];
+    if (op === 'in' && Array.isArray(operand) && operand.every((x) => typeof x === 'string')) return [];
+    return [{ path: at, code: 'invalid-comparison' }];
+  }
+  return LIST_OPS.includes(op) && Array.isArray(operand) && operand.length > 0 && operand.every((x) => typeof x === 'string')
+    ? []
+    : [{ path: at, code: 'invalid-comparison' }];
+}
+
+/**
+ * Checks an organization's configuration against the kind's catalogue: known blocks and facts, allowed assignees,
+ * the blocks' order, the reject modes. The first step is always there (no `when`) and decides (its blocks may be
+ * rejected), so a submission never passes without anybody looking at it.
+ */
+export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown): { ok: true; value: WorkflowConfig } | { ok: false; errors: WorkflowConfigError[] } {
+  const errors: WorkflowConfigError[] = [];
+  if (!isObject(raw)) return { ok: false, errors: [{ path: '', code: 'not-an-object' }] };
+  if (raw.version !== WORKFLOW_CONFIG_VERSION) errors.push({ path: 'version', code: 'unknown-version' });
+  const steps = raw.steps;
+  if (!Array.isArray(steps) || steps.length === 0) return { ok: false, errors: [...errors, { path: 'steps', code: 'no-steps' }] };
+  if (steps.length > MAX_WORKFLOW_STEPS) errors.push({ path: 'steps', code: 'too-many-steps' });
+  const keys = new Set<string>();
+  const done = new Set<string>();
+  const out: WorkflowStepConfig[] = [];
+  steps.forEach((s, i) => {
+    const at = `steps[${i}]`;
+    if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
+    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    const key = typeof s.key === 'string' ? s.key : '';
+    if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
+    else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
+    keys.add(key);
+    const blocks = Array.isArray(s.do) ? s.do : [];
+    if (!Array.isArray(s.do) || blocks.length === 0 || !blocks.every((b) => typeof b === 'string')) errors.push({ path: `${at}.do`, code: 'no-blocks' });
+    const assignTo = typeof s.assignTo === 'string' ? s.assignTo : '';
+    if (!assigneeKind(assignTo)) errors.push({ path: `${at}.assignTo`, code: 'invalid-assignee' });
+    blocks.forEach((b: string, j: number) => {
+      const block = kind.blocks[b];
+      const bAt = `${at}.do[${j}]`;
+      if (!block) { errors.push({ path: bAt, code: 'unknown-block' }); return; }
+      if (block.once && done.has(b)) errors.push({ path: bAt, code: 'block-once' });
+      for (const before of block.after ?? []) if (!done.has(before)) errors.push({ path: bAt, code: 'block-order' });
+      if (block.last && (i !== steps.length - 1 || j !== blocks.length - 1)) errors.push({ path: bAt, code: 'block-last' });
+      if (assigneeKind(assignTo) && !assigneeAllowed(block, assignTo)) errors.push({ path: `${at}.assignTo`, code: 'assignee-not-allowed' });
+      done.add(b);
+    });
+    const reject = s.reject === undefined ? (blocks.every((b: string) => kind.blocks[b]?.returnAction) ? 'back' : 'none') : s.reject;
+    if (!REJECT_MODES.includes(reject as RejectMode) || !kind.rejectModes.includes(reject as RejectMode)) errors.push({ path: `${at}.reject`, code: 'invalid-reject' });
+    else if (reject === 'back' && !blocks.every((b: string) => kind.blocks[b]?.returnAction)) errors.push({ path: `${at}.reject`, code: 'not-rejectable' });
+    if (s.when !== undefined) {
+      if (i === 0) errors.push({ path: `${at}.when`, code: 'first-step-condition' });
+      else errors.push(...conditionErrors(s.when, kind.facts, `${at}.when`));
+    }
+    if (i === 0 && reject !== 'back') errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
+    let label: WorkflowStepConfig['label'];
+    if (s.label !== undefined) {
+      if (!isObject(s.label) || Object.entries(s.label).some(([l, v]) => !(LANGS as readonly string[]).includes(l) || typeof v !== 'string' || v.length > 60)) {
+        errors.push({ path: `${at}.label`, code: 'invalid-label' });
+      } else label = s.label as WorkflowStepConfig['label'];
+    }
+    out.push({ key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}) });
+  });
+  return errors.length ? { ok: false, errors } : { ok: true, value: { version: WORKFLOW_CONFIG_VERSION, steps: out } };
+}
+
+/** Whether a (validated) condition holds for the facts; a fact that is missing counts as not matching. */
+export function evaluateCondition(cond: Condition, facts: Record<string, unknown>): boolean {
+  const [[name, value]] = Object.entries(cond as Record<string, unknown>);
+  if (name === 'all') return (value as Condition[]).every((c) => evaluateCondition(c, facts));
+  if (name === 'any') return (value as Condition[]).some((c) => evaluateCondition(c, facts));
+  if (name === 'not') return !evaluateCondition(value as Condition, facts);
+  const fact = facts[name];
+  if (typeof value === 'boolean') return fact === value;
+  const [[op, operand]] = Object.entries(value as Record<string, unknown>);
+  if (typeof fact === 'number') {
+    const n = operand as number;
+    return op === 'gt' ? fact > n : op === 'gte' ? fact >= n : op === 'lt' ? fact < n : op === 'lte' ? fact <= n : fact === n;
+  }
+  if (typeof fact === 'string') return op === 'eq' ? fact === operand : (operand as string[]).includes(fact);
+  if (Array.isArray(fact)) {
+    const list = operand as string[];
+    return op === 'any' ? list.some((x) => fact.includes(x)) : op === 'all' ? list.every((x) => fact.includes(x)) : !list.some((x) => fact.includes(x));
+  }
+  return false;
+}
+
+/** One step as the engine runs it (WorkflowsService), compiled from a configuration and stored with each workflow. */
+export interface CompiledWorkflowStep {
+  key: string;
+  label: string;
+  labels?: WorkflowStepConfig['label'];
+  assignTo: string;
+  /** The blocks, in order. */
+  blocks: string[];
+  /** Run in order when the step is approved. */
+  actions: string[];
+  /** Run when the step is sent back (reject `back`). */
+  returnActions: string[];
+  reject: RejectMode;
+  rejectable: boolean;
+  inDialog?: boolean;
+  doneKey?: string;
+  actionKey?: string;
+  when?: Condition;
+  /** Whether nobody to assign means the step is done without anybody (a review whose manager is missing). */
+  review?: boolean;
+  source?: string;
+  source_name?: string;
+}
+
+/** The engine's steps of a (validated) configuration. */
+export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowConfig): CompiledWorkflowStep[] {
+  return config.steps.map((s) => {
+    const blocks = s.do.map((b) => kind.blocks[b]);
+    const reject = s.reject ?? 'none';
+    const lastBlock = blocks[blocks.length - 1];
+    return {
+      key: s.key,
+      label: s.label?.en ?? blocks.map((b) => b.label).join(' + '),
+      ...(s.label ? { labels: s.label } : {}),
+      assignTo: s.assignTo,
+      blocks: s.do,
+      actions: blocks.map((b) => b.action),
+      returnActions: reject === 'back' ? blocks.map((b) => b.returnAction!).filter(Boolean) : [],
+      reject,
+      rejectable: reject !== 'none',
+      ...(blocks.some((b) => b.inDialog) ? { inDialog: true } : {}),
+      ...(lastBlock.doneKey ? { doneKey: lastBlock.doneKey } : {}),
+      ...(blocks[0].actionKey ? { actionKey: blocks[0].actionKey } : {}),
+      ...(s.when ? { when: s.when } : {}),
+      ...(s.do.length === 1 && s.do[0] === 'review' ? { review: true } : {}),
+      ...(kind.source ? { source: kind.source } : {}),
+      ...(kind.source_name ? { source_name: kind.source_name } : {}),
+    };
+  });
+}
+
+/**
+ * The index of the first step from `from` on whose condition holds (`facts` asked only when a step has one), and the
+ * keys of the steps skipped on the way; -1 when none is left (the workflow is done).
+ */
+export async function nextApplicableStep(
+  steps: readonly { key: string; when?: Condition }[],
+  from: number,
+  facts: () => Promise<Record<string, unknown>>,
+): Promise<{ index: number; skipped: string[] }> {
+  const skipped: string[] = [];
+  let known: Record<string, unknown> | null = null;
+  for (let i = from; i < steps.length; i++) {
+    const when = steps[i].when;
+    if (!when) return { index: i, skipped };
+    known ??= await facts();
+    if (evaluateCondition(when, known)) return { index: i, skipped };
+    skipped.push(steps[i].key);
+  }
+  return { index: -1, skipped };
+}

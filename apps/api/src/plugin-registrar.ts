@@ -36,6 +36,7 @@ export class PluginRegistrar implements OnModuleInit {
         if (source.records) this.workflows.registerSourceRecords(table, source.records.field, source.records.load);
       }
       for (const name of wf?.managerRouted ?? []) this.workflows.registerManagerRoutedWorkflow(name);
+      for (const kind of wf?.kinds ?? []) this.workflows.registerKind(kind);
       for (const [category, list] of Object.entries(plugin.documents ?? {})) this.documents.registerPersonalDocuments(category, list);
     }
   }

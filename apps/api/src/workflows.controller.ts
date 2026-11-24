@@ -63,7 +63,8 @@ export class WorkflowsController {
         // Who decides (the first assignee): shown on one's own requests.
         assignee_name: sql<string | null>`(SELECT COALESCE(u.display_name, u.email) FROM users u WHERE u.id = (${workflows.assigned_to_user_id})[1])`,
         definition_name: workflow_definitions.name,
-        steps: workflow_definitions.steps,
+        // The steps the workflow started with, else (older ones) its definition's.
+        steps: sql<unknown>`COALESCE(${workflows.steps}, ${workflow_definitions.steps})`,
       })
       .from(workflows)
       .innerJoin(workflow_definitions, eq(workflow_definitions.workflow_def_id, workflows.workflow_def_id))
@@ -85,7 +86,10 @@ export class WorkflowsController {
         step_number: index >= 0 ? index + 1 : null,
         step_count: stepDefs.length,
         step_action_key: stepDef?.actionKey ?? null,
-        step_rejectable: stepDef?.rejectable !== false,
+        step_rejectable: stepDef?.rejectable !== false && stepDef?.reject !== 'none',
+        // `back`: rejecting sends the request back to the person to change (the button says so).
+        step_returns: stepDef?.reject === 'back',
+        step_labels: stepDef?.labels ?? null,
         step_in_dialog: !!stepDef?.inDialog,
       };
     });

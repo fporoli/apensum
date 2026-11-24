@@ -240,6 +240,14 @@ workflows: {
 Its web part's `workflowKinds` entry (same `recordField` as `records.field`) gives the item its label,
 title and Inspect dialog. `plugins/expenses/api/workflow.ts` and `web/ExpenseReportReview.tsx` do it.
 
+### Configurable workflows
+
+A plugin can let each organization arrange its workflow (Admin settings -> Workflows, owners only): it declares a kind in `workflows.kinds` and starts it with `WorkflowsService.start(db, { kind, organizationId, sourceTableUuid, actorUserId, workflowData, notification })` instead of `ensureDefinition` + `createWorkflow`.\
+A kind is a catalogue (`@worktime3/shared/workflowConfig`, `WorkflowKindCatalogue`): its building blocks (the action each runs, `returnAction` when it can be sent back, which assignees it allows, `once`, `after`, `last`), the facts a condition may test (with their types), the reject modes and the default configuration; plus `facts(db, id)`, which reads a record's facts when a step with a condition comes up.\
+The organization's JSON only arranges what the catalogue offers; the checker (`validateWorkflowConfig`) refuses anything else, in the editor and in the API.\
+When the plugin's own page does a block's work, it calls `completeBlock(db, table, id, block, eventKey, callerId)`.\
+`EXPENSE_REPORT_KIND` in `plugins/expenses/api/workflow.ts` is the example.
+
 ## AI assistant tools
 
 `assistantTools: [{ name, description, parameters, object?, run(args, ctx) }]` gives the assistant

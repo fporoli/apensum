@@ -114,6 +114,8 @@ interface ActionItem {
   step_count?: number;
   step_action_key?: string | null;
   step_rejectable?: boolean;
+  /** Rejecting sends it back to the person to change and submit again (a configurable workflow's `reject: back`). */
+  step_returns?: boolean;
   step_in_dialog?: boolean;
   /** The caller submitted it. */
   is_own?: boolean;
@@ -601,7 +603,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           <>
                             <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={act}>{t(item.step_action_key ?? 'approvals.approve')}</Button>
                             {item.step_rejectable !== false && (
-                              <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t('approvals.reject')}</Button>
+                              <Button size="small" color="error" onClick={() => setRejectingId(rejectingId === item.id ? null : item.id)}>{t(item.step_returns ? 'approvals.return' : 'approvals.reject')}</Button>
                             )}
                           </>
                         );
@@ -613,7 +615,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                       <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                           <TextField size="small" label={t('approvals.note')} value={note} onChange={(e) => setNote(e.target.value)} fullWidth />
-                          <Button size="small" color="error" variant="contained" onClick={() => void rejectItem(item.id)}>{t('approvals.confirmReject')}</Button>
+                          <Button size="small" color="error" variant="contained" onClick={() => void rejectItem(item.id)}>{t(item.step_returns ? 'approvals.confirmReturn' : 'approvals.confirmReject')}</Button>
                         </Box>
                       </TableCell>
                     </TableRow>

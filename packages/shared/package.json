@@ -121,6 +121,11 @@
       "source": "./src/news.ts",
       "types": "./dist/news.d.ts",
       "default": "./dist/news.js"
+    },
+    "./workflowConfig": {
+      "source": "./src/workflowConfig.ts",
+      "types": "./dist/workflowConfig.d.ts",
+      "default": "./dist/workflowConfig.js"
     }
   }
 }

@@ -972,6 +972,7 @@ export const workflow_definitions = pgTable("workflow_definitions", {
 	name: text().notNull(),
 	description: text(),
 	steps: jsonb().default([]).notNull(),
+	config: jsonb(),
 }, (table) => [
 	index("idx_workflow_definitions_org").using("btree", table.organization_id.asc().nullsLast()),
 	foreignKey({
@@ -998,6 +999,7 @@ export const workflows = pgTable("workflows", {
 	assigned_to_user_id: uuid().array(),
 	assigned_to_team_id: uuid(),
 	notification: jsonb().default({}).notNull(),
+	steps: jsonb(),
 }, (table) => [
 	index("idx_workflows_def").using("btree", table.workflow_def_id.asc().nullsLast()),
 	index("idx_workflows_source").using("btree", table.source_table.asc().nullsLast(), table.source_table_uuid.asc().nullsLast()),
