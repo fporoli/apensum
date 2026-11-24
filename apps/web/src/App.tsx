@@ -345,6 +345,8 @@ export default function App() {
     if (pluginSection) navigate(pluginSection);
     else if (n.source_table === 'timesheet_periods') navigate('timesheet');
     else if (n.source_table === 'absences') navigate('absences');
+    // One's own year closed or reopened (balances.controller.ts) opens Work time, which shows one's balances.
+    else if (n.source_table === 'balance_years') navigate('workTime');
     else if (n.source_table === 'basicdata' || n.source_table === 'users') navigate('myData');
     // Operators: a new registration (registration-notice.ts) opens the organizations under Super Admin.
     else if (n.source_table === 'organizations') navigate('superAdminLicenses');

@@ -7,6 +7,8 @@ import { organization_memberships, users } from './db/schema';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { isTimeNotRecorded } from './time-recording';
 import { isIsoDate } from '@worktime3/shared/worktime';
+import { NotificationsService } from './notifications.service';
+import { yearClosedNotice, yearReopenedNotice } from './year-closing-notice';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
 
@@ -22,6 +24,7 @@ export class BalancesController {
   constructor(
     private readonly db: DbService,
     private readonly balances: BalancesService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Headline numbers for the Home and Work time pages: overtime booked and pending, vacation left this year. */
@@ -202,7 +205,10 @@ export class BalancesController {
     if (!callerId) return { ok: false, error: 'unauthenticated' };
     if (!body.userId || !(await isOrgMember(db, orgId, body.userId)) || !(await canEditBeyondOwn(db, orgId, callerId, OBJECT, body.userId))) return { ok: false, error: 'forbidden' };
     if (!Number.isInteger(body.year)) return { ok: false, error: 'invalid-year' };
-    return this.balances.reopenYear(db, orgId, body.userId, body.year as number, callerId);
+    const res = await this.balances.reopenYear(db, orgId, body.userId, body.year as number, callerId);
+    if (!res.ok) return res;
+    void this.notifyPerson(db, orgId, body.userId, res.id, (locale) => yearReopenedNotice(locale, body.year as number)).catch(() => {});
+    return { ok: true };
   }
 
   private async yearEditors(db: Db, orgId: string, callerId: string, includeInactive: boolean) {
@@ -223,8 +229,24 @@ export class BalancesController {
       if (closed.has(y)) continue;
       const res = await this.balances.closeYear(db, orgId, userId, y, callerId, force);
       if (!res.ok) return { ...res, year: y };
+      void this.notifyPerson(db, orgId, userId, res.id, (locale) => yearClosedNotice(locale, y, res.values)).catch(() => {});
     }
     return { ok: true };
+  }
+
+  /** The person hears that their year was closed or reopened, in their language (best effort, never fails the action). */
+  private async notifyPerson(db: Db, orgId: string, userId: string, id: string, text: (locale: string | null) => { title: string; body: string }) {
+    const [person] = await db.select({ locale: users.locale }).from(users).where(eq(users.id, userId)).limit(1);
+    const { title, body } = text(person?.locale ?? null);
+    await this.notifications.notifyMany({
+      organizationId: orgId,
+      recipientUserIds: [userId],
+      type: 'balance-year',
+      title,
+      body,
+      sourceTable: 'balance_years',
+      sourceTableUuid: id,
+    });
   }
 
   /** The caller, or someone whose data they may see on the balances page (manager: their reports). */

@@ -378,7 +378,7 @@ function setup(permissions: string[], reports: string[] = [], closedYear = false
     addAdjustment: async (_db: unknown, p: unknown) => { added.push(p); return 'adj-1'; },
     report: async (_db: unknown, _org: string, ids: unknown) => ids,
   } as unknown as BalancesService;
-  const controller = new BalancesController({ getDb: () => db } as unknown as DbService, balances);
+  const controller = new BalancesController({ getDb: () => db } as unknown as DbService, balances, { notifyMany: async () => {} } as never);
   const req = { user: { kind: 'local', sub: 'caller' } } as unknown as AuthenticatedRequest;
   return { controller, req, added };
 }

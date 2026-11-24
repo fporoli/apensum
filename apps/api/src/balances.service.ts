@@ -733,7 +733,7 @@ export class BalancesService {
    * Refused for a year not ended yet, before the person's start, already closed, after an open year, or
    * (unless `force`) with months whose timesheet is not approved.
    */
-  async closeYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string, force: boolean, now: Date = new Date()): Promise<{ ok: true } | { ok: false; error: string; months?: string[] }> {
+  async closeYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string, force: boolean, now: Date = new Date()): Promise<{ ok: true; id: string; values: { overtime: number; legalOvertime: number; vacation: number } } | { ok: false; error: string; months?: string[] }> {
     const status = await this.yearStatus(db, orgId, userId, year, now);
     if (status.closing) return { ok: false, error: 'year-closed' };
     if (status.notEmployed) return { ok: false, error: 'not-employed' };
@@ -754,11 +754,11 @@ export class BalancesService {
     const [row] = await db.insert(balance_years).values(values).onConflictDoNothing().returning({ id: balance_years.id });
     if (!row) return { ok: false, error: 'year-closed' };
     void this.versions.record('balance_years', row.id, 'insert', actorUserId, { id: row.id, ...values }).catch(() => {});
-    return { ok: true };
+    return { ok: true, id: row.id, values: { overtime: values.overtime_minutes, legalOvertime: values.legal_overtime_minutes, vacation: Number(values.vacation_days) } };
   }
 
   /** Reopens a person's newest closed year: it is computed live and can be changed again. */
-  async reopenYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  async reopenYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
     const [later] = await db
       .select({ id: balance_years.id })
       .from(balance_years)
@@ -771,7 +771,7 @@ export class BalancesService {
       .returning({ id: balance_years.id });
     if (removed.length === 0) return { ok: false, error: 'year-not-closed' };
     for (const r of removed) void this.versions.record('balance_years', r.id, 'delete', actorUserId, { year }).catch(() => {});
-    return { ok: true };
+    return { ok: true, id: removed[0].id };
   }
 
   /** The balance report for a month: every person the caller may list, with alerts. */

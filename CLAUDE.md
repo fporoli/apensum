@@ -218,7 +218,8 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Others' balances and the monthly report with alerts are `nav.balances` (Time balances page); one's own are always visible.\
   Year-end closing (`balance_years` 086, Time balances → Year-end closing tab, `YearClosing.tsx`, `GET balance-years`, `POST balance-years/close|reopen`, edit beyond own on `nav.balances`): it freezes a person's overtime, Überzeit and vacation at the end of a year, and `computeYearBalances` opens later years from the newest closing (`opening`), ignoring everything before it (adjustments included).\
   A closed year is locked: `isPeriodLocked` covers it, adjustments and entitlements in it return `year-closed`, and so does reopening one of its months.\
-  Years close in order (closing one closes the open years before it), without `force` only when every month is approved, and only the newest closed year reopens.
+  Years close in order (closing one closes the open years before it), without `force` only when every month is approved, and only the newest closed year reopens.\
+  The person is notified of each closing (their numbers, in their language) and reopening (`year-closing-notice.ts`, source `balance_years`, the bell opens Work time); `db:close-years` notifies nobody.
 - Vacation rules (095, `packages/shared/src/vacation.ts`, `organizations.settings.vacation`, Employees -> Vacation and probation, HR = `section.people.employment` edit on everyone): dated rules with base days, management days instead of them, and age steps added on top, never below Art. 329a CO (20, 25 until the 20th birthday).\
   Without saved rules the old `vacationDaysPerYear` is the base.\
   Management is `employee_assignments.is_management`, a fact for these rules only: never a right, never an exemption from time recording.\
