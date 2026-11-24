@@ -44,7 +44,13 @@ interface PersonnelDocument {
  * documents with a title, category and date, and decides per document whether the person sees it
  * (it then appears on their Documents page and they are notified).
  */
-export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders }: { orgId: string; userId: string; authHeaders: () => Promise<Record<string, string>> }) {
+export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, onChanged }: {
+  orgId: string;
+  userId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  /** After a document was added, shared, hidden or deleted (e.g. the HR dashboard's timeline). */
+  onChanged?: () => void;
+}) {
   const { t, locale } = useI18n();
   const base = `${API}/organizations/${orgId}/people/${userId}/personnel-documents`;
   const [docs, setDocs] = useState<PersonnelDocument[] | null>(null);
@@ -113,6 +119,7 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders }: 
       setDate('');
       setShare(false);
       await load();
+      onChanged?.();
     } catch {
       setError(t('common.cannotReachApi'));
     } finally {
@@ -127,6 +134,7 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders }: 
       const data = await res.json();
       if (!data?.ok) fail(data?.error);
       await load();
+      onChanged?.();
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -139,6 +147,7 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders }: 
       const data = await res.json();
       if (!data?.ok) fail(data?.error);
       await load();
+      onChanged?.();
     } catch {
       setError(t('common.cannotReachApi'));
     }

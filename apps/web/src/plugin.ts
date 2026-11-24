@@ -259,3 +259,4 @@ export { totalsByCurrency } from './teamOverview';
 // A person's week (project time against attendance and target) and balances, as on the core's pages.
 export { default as WeekReport } from './WeekReport';
 export { default as BalanceOverview } from './BalanceOverview';
+export { default as PersonnelDocumentsPanel } from './PersonnelDocumentsPanel';
