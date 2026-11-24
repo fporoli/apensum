@@ -67,6 +67,9 @@ export const NAV_OBJECTS: PermissionObject[] = [
   { id: 'nav.reports', kind: 'nav', scopes: ['own'], caption: 'nav.reports' },
   { id: 'nav.users', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.users' },
   { id: 'nav.invitations', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.invitations' },
+  // The team calendar (absences and vacations per day): who appears is the reach of `nav.absences`
+  // (HR everyone, a manager the line below); this grant only shows the page. Read only.
+  { id: 'nav.calendar', kind: 'nav', scopes: ['team', 'reports', 'all'], caption: 'nav.calendar' },
   // Scope here is ownership: `own` = teams you lead and projects/subprojects you own, `all` = every one.
   { id: 'nav.management', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.management' },
   { id: 'nav.orgSettings', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.organizationSettings' },

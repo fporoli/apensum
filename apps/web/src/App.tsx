@@ -484,10 +484,10 @@ export default function App() {
                     fontWeight: 700,
                     letterSpacing: '0.06em',
                     textTransform: 'uppercase',
-                    lineHeight: '28px',
+                    lineHeight: '24px',
                     mx: 1.5,
-                    mt: 1.5,
-                    mb: 0.5,
+                    mt: 1,
+                    mb: 0.25,
                   }}
                 >
                   {group.header}
@@ -505,7 +505,7 @@ export default function App() {
                 return (
                   <li key={n.id} style={{ listStyle: 'none' }}>
                     <ListItemButton
-                      sx={{ py: '5px' }}
+                      sx={{ py: '1px', minHeight: 32 }}
                       selected={section === n.section}
                       onClick={() => {
                         if (allowed(n.section)) {
@@ -589,8 +589,8 @@ export default function App() {
                               }}
                               sx={{
                                 pl: 4,
-                                py: '3px',
-                                minHeight: 32,
+                                py: '0px',
+                                minHeight: 28,
                               }}
                             >
                               {child.icon && (

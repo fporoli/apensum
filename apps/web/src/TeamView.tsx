@@ -25,7 +25,7 @@ import {
 import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatSignedMinutes, swissLocale } from './localeFormat';
-import { TableEmptyRow } from './components';
+import { PageHeader, TableEmptyRow } from './components';
 import { ChevronLeftIcon, ChevronRightIcon, ExpandLessIcon, ExpandMoreIcon } from './icons';
 import {
   absenceDaysInMonth,
@@ -150,6 +150,18 @@ export default function TeamView({
           }
         />
       )}
+    </Box>
+  );
+}
+
+/** The team calendar page (`nav.calendar`): the Absences page's team calendar on its own, for HR and managers. */
+export function TeamCalendar({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
+  const { t } = useI18n();
+  const [month, setMonth] = useState(monthOf());
+  return (
+    <Box sx={{ display: 'grid', gap: 2 }}>
+      <PageHeader title={t('nav.calendar')} subtitle={t('team.calendarPage.subtitle')} />
+      <TeamOverview orgId={orgId} kind="absences" month={month} onMonth={setMonth} authHeaders={authHeaders} />
     </Box>
   );
 }

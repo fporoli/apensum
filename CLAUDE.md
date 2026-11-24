@@ -237,6 +237,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   Managers and HR also get a Team tab on those pages and on Absences, Expenses and Expense reports (`TeamView.tsx`, `GET organizations/:orgId/team-overview?kind=&month=`): one row per person they may see (`listableUserIds`, caller excluded), opening that person's page or their entries; Absences adds a month calendar with the org's holidays.\
   There is no Team hours page any more (091 removed `nav.teamHours`): project hours by team are Reports' project hours with the team filter (`teamId`, members and lead).\
   HR's read access to absences and expenses is 049.\
+  The Calendar page (`nav.calendar`, 109, HR `see:all`, manager `see:reports`, under Employees; `TeamCalendar` in `TeamView.tsx`) is the Absences team calendar on its own; who appears still follows `nav.absences`.\
   Plugins add team tables (`ApiPlugin.teamViews` rows, web `teamViews` columns; the expenses plugin's two).\
   There is no ZIP export or restore of an organization: don't add one, whoever downloads it reads everything, whatever their role.\
   Import/Export (`nav.importExport` alone, never `nav.users`; HR by default): payroll export and employee import; plugins add payroll items (`ApiPlugin.payroll`, e.g. Abacus wage type 3000 for expenses).\

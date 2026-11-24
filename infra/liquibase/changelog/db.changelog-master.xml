@@ -124,6 +124,7 @@
     <include file="106-request-workflows.sql" relativeToChangelogFile="true"/>
     <include file="107-workflows-organization.sql" relativeToChangelogFile="true"/>
     <include file="108-personnel-document-details.sql" relativeToChangelogFile="true"/>
+    <include file="109-permission-calendar.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

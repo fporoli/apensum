@@ -84,7 +84,9 @@ export class TeamOverviewController {
     const range = monthRange(month);
     if (!range) return { ok: false, error: 'invalid-month', people: [] };
 
-    const people = await this.team(db, orgId, callerId, object);
+    const team = await this.team(db, orgId, callerId, object);
+    // The absence calendar shows the caller too, first: one's own days next to the team's (one always sees one's own).
+    const people = kind === 'absences' && team.length > 0 ? [...(await this.self(db, callerId)), ...team] : team;
     const ids = people.map((p) => p.id);
     const base = { ok: true as const, month, people };
     if (ids.length === 0) return { ...base, rows: [] };
@@ -104,6 +106,10 @@ export class TeamOverviewController {
       default:
         return { ...base, rows: await this.projectMonths(db, orgId, ids, range.from, range.toExclusive) };
     }
+  }
+
+  private async self(db: Db, callerId: string): Promise<Person[]> {
+    return db.select({ id: users.id, name: users.display_name, email: users.email }).from(users).where(eq(users.id, callerId)).limit(1);
   }
 
   private async team(db: Db, orgId: string, callerId: string, object: string): Promise<Person[]> {

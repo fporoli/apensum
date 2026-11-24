@@ -14,6 +14,7 @@ import {
   ContactsIcon,
   DashboardIcon,
   DescriptionIcon,
+  EventIcon,
   ForumIcon,
   GroupIcon,
   HistoryIcon,
@@ -48,6 +49,7 @@ const Approvals = lazy(() => import('./Approvals'));
 const Reports = lazy(() => import('./Reports'));
 const ProjectTimesheet = lazy(() => import('./ProjectTimesheet'));
 const TeamView = lazy(() => import('./TeamView'));
+const TeamCalendar = lazy(() => import('./TeamView').then((m) => ({ default: m.TeamCalendar })));
 const BalanceReport = lazy(() => import('./BalanceReport'));
 const AuditLog = lazy(() => import('./AuditLog'));
 const Users = lazy(() => import('./Users'));
@@ -310,6 +312,15 @@ export const CORE_PAGES: AppPage[] = [
     allowedByRole: (r) => r.canManage,
     nav: { group: 'personal', parent: 'users', label: 'nav.invitations', icon: <MailIcon fontSize="small" /> },
     render: (c) => <Invitations orgId={c.orgId} authHeaders={c.authHeaders} />,
+  },
+  {
+    // Team calendar: absences and vacations of everyone the caller may see (HR, managers), one month at a time.
+    section: 'calendar',
+    hash: '#/calendar',
+    object: 'nav.calendar',
+    allowedByRole: (r) => r.isHr || r.canManage,
+    nav: { group: 'personal', label: 'nav.calendar', icon: <EventIcon fontSize="small" /> },
+    render: (c) => <TeamCalendar orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   ...(['management', 'managementProjects'] as const).map((section): AppPage => ({
     section,

@@ -6,7 +6,8 @@ import type { WorkTimeModelService } from '../../apps/api/src/work-time-model.se
 import type { AuthenticatedRequest } from '../../apps/api/src/jwt.guard';
 
 // Team tables list the people the caller may see (direct reports, or everyone for a grant on
-// all), never the caller; a plain member has no team, so the pages show no Team tab.
+// all); a plain member has no team, so the pages show no Team tab. The absence calendar shows the
+// caller first next to their team; the other tables never list the caller.
 
 const MEMBER = [{ name: 'member', permission_id: 'nav.absences:edit:own' }];
 const HR = [{ name: 'hr', permission_id: 'nav.absences:see:all' }];
@@ -25,7 +26,7 @@ function sqlParams(query: any): any[] {
   return (query.queryChunks ?? []).filter((c: any) => !Array.isArray(c?.value));
 }
 
-function controller() {
+function controller(caller = '') {
   const db: any = {
     execute: async (q: unknown) => {
       const text = sqlText(q);
@@ -42,6 +43,7 @@ function controller() {
     where: () => db,
     // Membership filtering happens in SQL; the fake returns everyone and the controller drops the caller.
     orderBy: async () => MEMBERS,
+    limit: async () => MEMBERS.filter((m) => m.id === caller),
   };
   const holidays = { holidays: async () => new Map(), locations: async () => [] } as unknown as WorkTimeModelService;
   return new TeamOverviewController({ getDb: () => db } as unknown as DbService, holidays);
@@ -61,13 +63,17 @@ test('team overview: unknown kinds and months are rejected', async () => {
   assert.equal((await controller().overview('org', as('hr'), 'absences', 'november')).error, 'invalid-month');
 });
 
-test('team overview: a member without reports has no team; the caller is never listed', async () => {
-  const member = await controller().overview('org', as('emp'), 'absences', '2026-11');
+test('team overview: a member without reports has no team; the calendar lists the caller first, the other tables never', async () => {
+  const member = await controller('emp').overview('org', as('emp'), 'absences', '2026-11');
   assert.deepEqual(member.people, []);
-  const peek = await controller().overview('org', as('emp'), 'absences', undefined, '1');
+  const peek = await controller('emp').overview('org', as('emp'), 'absences', undefined, '1');
   assert.deepEqual(peek.people, []);
 
-  const hr = await controller().overview('org', as('hr'), 'absences', '2026-11');
-  assert.deepEqual(hr.people.map((p: { id: string }) => p.id), ['boss', 'emp']);
+  const hr = await controller('hr').overview('org', as('hr'), 'absences', '2026-11');
+  assert.deepEqual(hr.people.map((p: { id: string }) => p.id), ['hr', 'boss', 'emp']);
   assert.deepEqual((hr as { absences?: unknown[] }).absences, []);
+  // "Is there a team?" stays the team alone.
+  assert.deepEqual((await controller('hr').overview('org', as('hr'), 'absences', undefined, '1')).people.map((p: { id: string }) => p.id), ['boss', 'emp']);
+  const work = await controller('hr').overview('org', as('hr'), 'projectTimesheet', '2026-11');
+  assert.equal(work.people.some((p: { id: string }) => p.id === 'hr'), false);
 });
