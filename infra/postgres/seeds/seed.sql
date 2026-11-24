@@ -16,7 +16,8 @@ VALUES
   ('22222222-2222-2222-2222-222222222225', 'marco@acme.com', 'Marco A',         'Marco',  'Manager', 'de', 'Europe/Zurich', 'active'),
   ('22222222-2222-2222-2222-222222222226', 'ulla@acme.com',  'Ulla A' ,         'Ulla',   'User',    'de', 'Europe/Zurich', 'active'),
   ('22222222-2222-2222-2222-222222222227', 'ueli@acme.com',  'Ueli A' ,         'Ueli',   'User',    'de', 'Europe/Zurich', 'active'),
-  ('22222222-2222-2222-2222-222222222228', 'uma@acme.com',   'Uma A'  ,         'Uma'  ,  'User',    'en', 'Europe/Zurich', 'active')
+  ('22222222-2222-2222-2222-222222222228', 'uma@acme.com',   'Uma A'  ,         'Uma'  ,  'User',    'en', 'Europe/Zurich', 'active'),
+  ('22222222-2222-2222-2222-222222222229', 'fido@acme.com',  'Fido A' ,         'Fido' ,  'Finance', 'de', 'Europe/Zurich', 'active')
 ON CONFLICT (email) DO NOTHING;
 
 -- Directory: the demo users' internal phone (basic data phone1) and a fantasy portrait. Avatars are
@@ -88,6 +89,7 @@ VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-333333333335', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222226', 'active', to_date('2023-01-01', 'YYYY-MM-DD')),
   ('aaaaaaaa-aaaa-aaaa-aaaa-333333333336', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222227', 'active', to_date('2024-01-01', 'YYYY-MM-DD')),
   ('aaaaaaaa-aaaa-aaaa-aaaa-444444444444', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222228', 'active', to_date('2025-01-01', 'YYYY-MM-DD')),
+  ('aaaaaaaa-aaaa-aaaa-aaaa-444444444445', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222229', 'active', to_date('2024-06-01', 'YYYY-MM-DD')),
 
   -- admin is also admin of Globex; manager is only a plain member there — same person, different role per org.
   ('eeeeeeee-eeee-eeee-eeee-111111111111', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', '11111111-1111-1111-1111-111111111111', 'active', to_date('2023-01-01', 'YYYY-MM-DD')),
@@ -106,7 +108,9 @@ INSERT INTO departments (id, organization_id, name, leader_user_id, sort_order, 
   ('dddddddd-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'HR', '22222222-2222-2222-2222-222222222226', 2, 'hr'),
   ('dddddddd-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Sales', '22222222-2222-2222-2222-222222222224', 3, 'sales'),
   ('dddddddd-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Marketing', '22222222-2222-2222-2222-222222222222', 4, 'marketing'),
-  ('dddddddd-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Research & Development', '22222222-2222-2222-2222-222222222223', 5, 'research-development')
+  ('dddddddd-0000-0000-0000-000000000005', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Research & Development', '22222222-2222-2222-2222-222222222223', 5, 'research-development'),
+  -- Finance (Fido): the expenses plugin's seed sends Acme's payment runs to it (`department:finance`).
+  ('dddddddd-0000-0000-0000-000000000007', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Finance', '22222222-2222-2222-2222-222222222229', 7, 'finance')
 ON CONFLICT DO NOTHING;
 -- Databases seeded before codes existed: fill in the ones still missing.
 UPDATE departments d SET code = v.code
@@ -147,7 +151,8 @@ FROM (VALUES
   ('22222222-2222-2222-2222-222222222228', NULL, 'dddddddd-0000-0000-0000-000000000005', 'Software Developer', '22222222-2222-2222-2222-222222222223'),   -- Uma   <- Adam
   ('22222222-2222-2222-2222-222222222226', NULL, 'dddddddd-0000-0000-0000-000000000002', 'HR Specialist', '22222222-2222-2222-2222-222222222224'),        -- Ulla  <- Marta
   ('22222222-2222-2222-2222-222222222227', NULL, 'dddddddd-0000-0000-0000-000000000003', 'Sales Assistant', '22222222-2222-2222-2222-222222222224'),      -- Ueli  <- Marta (Sales)
-  ('22222222-2222-2222-2222-222222222227', '2025-07-01', 'dddddddd-0000-0000-0000-000000000005', 'Software Developer', '22222222-2222-2222-2222-222222222225') -- Ueli  <- Marco (R&D)
+  ('22222222-2222-2222-2222-222222222227', '2025-07-01', 'dddddddd-0000-0000-0000-000000000005', 'Software Developer', '22222222-2222-2222-2222-222222222225'), -- Ueli  <- Marco (R&D)
+  ('22222222-2222-2222-2222-222222222229', NULL, 'dddddddd-0000-0000-0000-000000000007', 'Accountant', '22222222-2222-2222-2222-222222222222')          -- Fido  <- Alice (Finance)
 ) AS v(user_id, valid_from, department_id, job_function, manager_user_id)
 JOIN organization_memberships m ON m.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND m.user_id = v.user_id::uuid
 ON CONFLICT (organization_id, user_id, valid_from) DO UPDATE
@@ -225,6 +230,7 @@ VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-333333333336', '00000000-0000-0000-0000-000000000003'), -- Ueli: member
   ('aaaaaaaa-aaaa-aaaa-aaaa-444444444444', '00000000-0000-0000-0000-000000000003'), -- Uma: member
   ('aaaaaaaa-aaaa-aaaa-aaaa-444444444444', '00000000-0000-0000-0000-000000000008'), -- Uma: developer
+  ('aaaaaaaa-aaaa-aaaa-aaaa-444444444445', '00000000-0000-0000-0000-000000000003'), -- Fido: member (the expenses plugin's seed adds Acme's role finance)
   ('eeeeeeee-eeee-eeee-eeee-111111111111', '00000000-0000-0000-0000-000000000002'),
   ('eeeeeeee-eeee-eeee-eeee-111111111111', '00000000-0000-0000-0000-000000000001'), -- Globex: Admin created it and owns it
   ('eeeeeeee-eeee-eeee-eeee-222222222222', '00000000-0000-0000-0000-000000000003')
@@ -313,7 +319,8 @@ VALUES
   ('22222222-2222-2222-2222-222222222225', 'password', 'marco@acme.com', '$2a$10$PaOV5WVXSdHULNumYa/5Aulw.M542lTPczfZxSPPFRJl3dSAawTPC'),
   ('22222222-2222-2222-2222-222222222226', 'password', 'ulla@acme.com',  '$2a$10$2PPuwC7fbSihPj1JprqLteAABeVc4JbtI7FsugBNEdmoLbGYC5Him'),
   ('22222222-2222-2222-2222-222222222227', 'password', 'ueli@acme.com',  '$2a$10$JJiF5sk1UDoMJ.V4rRWDzOil.oagGttPZh9WKuSob4QsedJ7xWnyq'),
-  ('22222222-2222-2222-2222-222222222228', 'password', 'uma@acme.com',   '$2a$10$O3mA43NN4tORWX04scyVVuXR.eH1SF3KkUac5oyyBNHtUsPL537wO')
+  ('22222222-2222-2222-2222-222222222228', 'password', 'uma@acme.com',   '$2a$10$O3mA43NN4tORWX04scyVVuXR.eH1SF3KkUac5oyyBNHtUsPL537wO'),
+  ('22222222-2222-2222-2222-222222222229', 'password', 'fido@acme.com',  '$2a$10$S5aqyeKXfmuO2f3.dXAq4eTJ/kUDNrrTzo8aaylhKmmr58Zbb8ox6')
 ON CONFLICT (provider, provider_user_id) DO NOTHING;
 -- In case you need to force.... DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
@@ -334,6 +341,8 @@ ON CONFLICT DO NOTHING;
 -- Entries added since (only where the key is missing, so edits made in Admin settings stay).
 UPDATE static_data SET "values" = "values" || jsonb_build_object('05', '{"name":"Team Lead (Acme)","user":"marco@acme.com","password":"marco"}')
 WHERE organization_id IS NULL AND entity = 'login' AND enum_name = 'demo_accounts' AND NOT ("values" ? '05');
+UPDATE static_data SET "values" = "values" || jsonb_build_object('06', '{"name":"Finance (Acme)","user":"fido@acme.com","password":"fido"}')
+WHERE organization_id IS NULL AND entity = 'login' AND enum_name = 'demo_accounts' AND NOT ("values" ? '06');
 
 -- Pending invitation for the login screen's "invited user" demo (token: dev-invite-0001).
 INSERT INTO organization_invitations (organization_id, email, role_id, token, invited_by_user_id, status, expires_at)
