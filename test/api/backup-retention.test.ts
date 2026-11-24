@@ -29,8 +29,12 @@ test('backups that stopped long ago are not all deleted', () => {
   assert.deepEqual(stampsToKeep(old), ['20240102T013000Z', '20240101T013000Z']);
 });
 
-test('several backups on a day keep the newest; files go in pairs; other names stay', () => {
+test('every backup of the last 48 hours stays; before that the newest of a day; files go in pairs; other names stay', () => {
   const names = [
+    'backups/prod/20261120T013000Z-db.dump.age',
+    'backups/prod/20261120T013000Z-documents.tar.age',
+    'backups/prod/20261120T090000Z-db.dump.age',
+    'backups/prod/20261120T090000Z-documents.tar.age',
     'backups/prod/20261123T013000Z-db.dump.age',
     'backups/prod/20261123T013000Z-documents.tar.age',
     'backups/prod/20261123T090000Z-db.dump.age',
@@ -38,5 +42,15 @@ test('several backups on a day keep the newest; files go in pairs; other names s
     'backups/prod/20261123T100000Z-db.dump.age.part',
     'backups/prod/notes.txt',
   ];
-  assert.deepEqual(filesToDelete(names), ['20261123T013000Z-db.dump.age', '20261123T013000Z-documents.tar.age']);
+  assert.deepEqual(filesToDelete(names), ['20261120T013000Z-db.dump.age', '20261120T013000Z-documents.tar.age']);
+});
+
+test('hourly backups: two days of them stay, older days keep their newest', () => {
+  const stamps: string[] = [];
+  for (let day = 18; day <= 23; day++) for (let h = 4; h <= 19; h++) stamps.push(`202611${day}T${String(h).padStart(2, '0')}0000Z`);
+  const kept: string[] = stampsToKeep(stamps);
+  // 23 Nov 19:00 back to 21 Nov 19:00 (48 h): 16 + 16 + 1; then the newest of 20, 19 and 18 Nov.
+  assert.equal(kept.length, 33 + 3);
+  assert.ok(kept.includes('20261121T190000Z') && !kept.includes('20261121T180000Z'));
+  assert.ok(kept.includes('20261118T190000Z') && !kept.includes('20261118T180000Z'));
 });

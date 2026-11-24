@@ -1,4 +1,4 @@
-# Backups of an instance (README "Backups"): every night of prod, a restore test on the 1st of each month,
+# Backups of an instance (README "Backups"): every night and hourly through the day (prod), a restore test on the 1st of each month,
 # and a manual restore. On the server (infra/vps/backup.sh) the whole database (Keycloak's auth schema included)
 # and the documents volume are encrypted with the age public key BACKUP_AGE_RECIPIENT while they are read; this
 # runner only moves the ciphertext to S3-compatible storage (e.g. MinIO: BACKUP_S3_ENDPOINT, bucket BACKUP_S3_BUCKET,
@@ -13,12 +13,14 @@
 #   restore   DESTRUCTIVE: replaces the instance's database and documents with the backup `backup` (a stamp
 #             like 20261123T013000Z, or empty = the newest). The database before stays as worktime_before_<time>.
 name: backup
-run-name: 'backup: ${{ inputs.action || (github.event.schedule == ''0 4 1 * *'' && ''verify'' || ''backup'') }} on ${{ inputs.environment || ''prod'' }}'
+run-name: 'backup: ${{ inputs.action || (github.event.schedule == ''30 4 1 * *'' && ''verify'' || ''backup'') }} on ${{ inputs.environment || ''prod'' }}'
 
 on:
   schedule:
     - cron: '30 1 * * *'
-    - cron: '0 4 1 * *'
+    # hourly through the working day (04-19 UTC = 05-20 or 06-21 in Zurich), so at most an hour of work is lost
+    - cron: '0 4-19 * * *'
+    - cron: '30 4 1 * *'
   workflow_dispatch:
     inputs:
       action:
@@ -43,7 +45,7 @@ jobs:
     timeout-minutes: 60
     environment: ${{ inputs.environment || 'prod' }}
     env:
-      ACTION: ${{ inputs.action || (github.event.schedule == '0 4 1 * *' && 'verify' || 'backup') }}
+      ACTION: ${{ inputs.action || (github.event.schedule == '30 4 1 * *' && 'verify' || 'backup') }}
       ENVIRONMENT: ${{ inputs.environment || 'prod' }}
       STAMP: ${{ inputs.backup }}
       RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}

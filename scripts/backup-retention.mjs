@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Which backups to delete on the backup host (.github/workflows/backup.yml). A backup is the pair
-// <stamp>-db.dump.age and <stamp>-documents.tar.age, stamp = YYYYMMDDTHHMMSSZ (UTC). Kept: the newest
-// backup of each of the 7 newest days, of the 4 newest ISO weeks and of the 12 newest months that have one.
-// Counted over the days that have a backup, not the calendar, so backups that stop for a while are not
-// all deleted. Names that are not backups are left alone.
+// <stamp>-db.dump.age and <stamp>-documents.tar.age, stamp = YYYYMMDDTHHMMSSZ (UTC). Kept: every backup of
+// the 48 hours before the newest one (the hourly ones), and the newest backup of each of the 7 newest days,
+// of the 4 newest ISO weeks and of the 12 newest months that have one. Counted from the newest backup and over
+// the days that have one, not from today, so backups that stop for a while are not all deleted. Names that are
+// not backups are left alone.
 //
 //   node scripts/backup-retention.mjs < listing     prints the file names to delete, one per line
 import { readFileSync } from 'node:fs';
 
 const NAME = /^(\d{8}T\d{6}Z)-(db\.dump|documents\.tar)\.age$/;
-export const KEEP = { daily: 7, weekly: 4, monthly: 12 };
+export const KEEP = { recentHours: 48, daily: 7, weekly: 4, monthly: 12 };
 
 /** Monday of the stamp's ISO week, as YYYY-MM-DD. */
 function weekOf(stamp) {
@@ -22,6 +23,11 @@ function weekOf(stamp) {
 export function stampsToKeep(stamps, keep = KEEP) {
   const sorted = [...new Set(stamps)].sort().reverse();
   const kept = new Set();
+  const at = (s) => Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8), +s.slice(9, 11), +s.slice(11, 13), +s.slice(13, 15));
+  if (sorted.length) {
+    const from = at(sorted[0]) - keep.recentHours * 3600_000;
+    for (const s of sorted) if (at(s) >= from) kept.add(s);
+  }
   for (const [period, n] of [
     [(s) => s.slice(0, 8), keep.daily],
     [weekOf, keep.weekly],

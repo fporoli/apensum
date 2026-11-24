@@ -383,10 +383,11 @@ Inside: the API (`monitor.service.ts`, every hour, `MONITOR=off` disables it) re
 
 ## Backups
 
-`.github/workflows/backup.yml` backs up a VPS instance every night at 01:30 UTC (prod; an environment without `BACKUP_S3_ENDPOINT` is skipped): the whole database (`pg_dump`, Keycloak's `auth` schema included) and the documents volume, as two objects `<stamp>-db.dump.age` and `<stamp>-documents.tar.age` under `BACKUP_PATH/<environment>/` in an S3-compatible bucket (e.g. MinIO on another server).\
+`.github/workflows/backup.yml` backs up a VPS instance every night at 01:30 UTC and every hour from 04:00 to 19:00 UTC, so at most an hour of work is lost (prod; an environment without `BACKUP_S3_ENDPOINT` is skipped): the whole database (`pg_dump`, Keycloak's `auth` schema included) and the documents volume, as two objects `<stamp>-db.dump.age` and `<stamp>-documents.tar.age` under `BACKUP_PATH/<environment>/` in an S3-compatible bucket (e.g. MinIO on another server).\
 On the server (`infra/vps/backup.sh`, sent over SSH) both are encrypted with the [age](https://age-encryption.org) public key `BACKUP_AGE_RECIPIENT` while they are read: the runner and the storage see only ciphertext, and nothing on the server can decrypt it.\
 The runner moves the files (AWS CLI, path-style addressing); the server has no key for the storage, so a compromised server can't delete the backups.\
-Kept: the newest backup of each of the 7 newest days, 4 newest weeks and 12 newest months (`scripts/backup-retention.mjs`).\
+Kept: every backup of the 48 hours before the newest, then the newest of each of the 7 newest days, 4 newest weeks and 12 newest months (`scripts/backup-retention.mjs`).\
+A backup does not stop the instance: `pg_dump` reads a consistent snapshot while people work.\
 A failed run is mailed to `OPERATOR_EMAIL` (else the sender address) through the environment's SMTP.
 
 On the 1st of each month the workflow tests the newest backup (`verify`): it restores it into a scratch database on the server, checks it and drops it, and reads the documents archive through.\
