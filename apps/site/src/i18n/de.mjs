@@ -48,8 +48,8 @@ export default {
 
   'home.meta.title': "Zeiterfassung Schweiz – Arbeitszeit, Stundenrapporte, Absenzen und Spesen | Apensum",
   'home.meta.description':
-    "Zeiterfassung für Schweizer KMU nach Arbeitsgesetz: Stempeln, Projektzeit und Stundenrapporte, Absenzen und Ferien, Saldi, Spesen und Dienstplan. Auf Deutsch, Französisch, Italienisch und Englisch, aktuell kostenlos.",
-  'hero.eyebrow': "Zeiterfassung und HR-Software für Schweizer KMU",
+    "Zeiterfassung für Schweizer Unternehmen nach Arbeitsgesetz: Stempeln, Projektzeit und Stundenrapporte, Absenzen und Ferien, Saldi, Spesen und Dienstplan. Auf Deutsch, Französisch, Italienisch und Englisch, aktuell kostenlos.",
+  'hero.eyebrow': "Zeiterfassung und HR-Software für Schweizer Unternehmen",
   'hero.title': "Von der Stempeluhr bis zum Gutachten.",
   'hero.lead':
     "Apensum erfasst Arbeits- und Projektzeit nach Schweizer Arbeitsgesetz, rechnet Spesen ab und führt vertrauliche Falldossiers bis zum fertigen Gutachten – alles in einer App. Und wenn Sie mehr brauchen, bauen Sie Apensum mit eigenen Modulen zu Ihrer Lösung aus.",
@@ -940,7 +940,7 @@ export default {
   'brochure.title': "Broschüre zum Herunterladen",
   'brochure.text': "Apensum auf zwei Seiten, zum Weiterleiten oder Ausdrucken – in drei Fassungen.",
   'brochure.trustees': "Für Treuhänder",
-  'brochure.customers': "Für KMU",
+  'brochure.customers': "Für Unternehmen",
   'brochure.partners': "Für IT-Partner",
   'brochure.format': "PDF, Deutsch",
 };

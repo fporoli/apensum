@@ -48,8 +48,8 @@ export default {
 
   'home.meta.title': "Rilevazione ore di lavoro in Svizzera – timbratura, rapporti ore, assenze e spese | Apensum",
   'home.meta.description':
-    "Rilevazione del tempo di lavoro per PMI svizzere secondo la legge sul lavoro: timbratura, tempo di progetto e rapporti ore, assenze e vacanze, saldi, note spese e piano turni. In italiano, tedesco, francese e inglese, attualmente gratuito.",
-  'hero.eyebrow': "Rilevazione ore e software HR per PMI svizzere",
+    "Rilevazione del tempo di lavoro per aziende svizzere secondo la legge sul lavoro: timbratura, tempo di progetto e rapporti ore, assenze e vacanze, saldi, note spese e piano turni. In italiano, tedesco, francese e inglese, attualmente gratuito.",
+  'hero.eyebrow': "Rilevazione ore e software HR per aziende svizzere",
   'hero.title': "Dal cartellino alla perizia.",
   'hero.lead':
     "Apensum registra il tempo di lavoro e di progetto secondo la legge svizzera sul lavoro, conteggia le spese e gestisce fascicoli riservati fino alla perizia finita – tutto in un’unica app. E se vi serve di più, ampliate Apensum con moduli propri.",
@@ -940,7 +940,7 @@ export default {
   'brochure.title': "Brochure da scaricare",
   'brochure.text': "Apensum in due pagine, da inoltrare o stampare – in tre versioni.",
   'brochure.trustees': "Per le fiduciarie",
-  'brochure.customers': "Per le PMI",
+  'brochure.customers': "Per le aziende",
   'brochure.partners': "Per i partner IT",
   'brochure.format': "PDF, in tedesco",
 };

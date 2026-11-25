@@ -49,8 +49,8 @@ export default {
 
   'home.meta.title': "Saisie du temps de travail en Suisse – timbrage, rapports d’heures, absences et frais | Apensum",
   'home.meta.description':
-    "Saisie du temps de travail pour PME suisses selon la loi sur le travail : timbrage, temps de projet et rapports d’heures, absences et vacances, soldes, notes de frais et planning des services. En français, allemand, italien et anglais, actuellement gratuit.",
-  'hero.eyebrow': "Saisie du temps et logiciel RH pour PME suisses",
+    "Saisie du temps de travail pour entreprises suisses selon la loi sur le travail : timbrage, temps de projet et rapports d’heures, absences et vacances, soldes, notes de frais et planning des services. En français, allemand, italien et anglais, actuellement gratuit.",
+  'hero.eyebrow': "Saisie du temps et logiciel RH pour entreprises suisses",
   'hero.title': "De la pointeuse à l’expertise.",
   'hero.lead':
     "Apensum enregistre le temps de travail et de projet selon la loi suisse sur le travail, décompte les frais et gère des dossiers confidentiels jusqu’à l’expertise finale – le tout dans une seule application. Et si vous avez besoin de plus, vous étendez Apensum avec vos propres modules.",
@@ -941,7 +941,7 @@ export default {
   'brochure.title': "Brochure à télécharger",
   'brochure.text': "Apensum en deux pages, à transmettre ou à imprimer – en trois versions.",
   'brochure.trustees': "Pour les fiduciaires",
-  'brochure.customers': "Pour les PME",
+  'brochure.customers': "Pour les entreprises",
   'brochure.partners': "Pour les partenaires IT",
   'brochure.format': "PDF, en allemand",
 };

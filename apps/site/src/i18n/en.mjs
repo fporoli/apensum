@@ -47,10 +47,10 @@ export default {
   'notFound.text': 'The page you are looking for does not exist or has moved.',
   'notFound.home': 'Go to the English homepage',
 
-  'home.meta.title': "Time tracking for Swiss SMEs – working hours, timesheets, absences and expenses | Apensum",
+  'home.meta.title': "Time tracking for Swiss companies – working hours, timesheets, absences and expenses | Apensum",
   'home.meta.description':
-    "Time tracking for Swiss SMEs under the Working Hours Act: clocking in, project time and timesheets, absences and vacation, balances, expenses and shift planning. In German, French, Italian and English, currently free.",
-  'hero.eyebrow': "Time tracking and HR software for Swiss SMEs",
+    "Time tracking for Swiss companies under the Working Hours Act: clocking in, project time and timesheets, absences and vacation, balances, expenses and shift planning. In German, French, Italian and English, currently free.",
+  'hero.eyebrow': "Time tracking and HR software for Swiss companies",
   'hero.title': "From clocking in to the final assessment.",
   'hero.lead':
     "Apensum records working and project time under Swiss labour law, settles expenses and keeps confidential case files all the way to the finished assessment – all in one app. And when you need more, you extend Apensum with modules of your own.",
@@ -941,7 +941,7 @@ export default {
   'brochure.title': "Brochure to download",
   'brochure.text': "Apensum on two pages, to pass on or print – in three versions.",
   'brochure.trustees': "For fiduciaries",
-  'brochure.customers': "For SMEs",
+  'brochure.customers': "For companies",
   'brochure.partners': "For IT partners",
   'brochure.format': "PDF, in German",
 };
