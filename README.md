@@ -592,6 +592,66 @@ ssh -N -L 5434:127.0.0.1:<PG_PORT> <VPS_USER>@<VPS_HOST>
 
 Then connect a normal client to `localhost:5434` as role `worktime`, database `worktime`, with that environment's `POSTGRES_PASSWORD`.
 
+### Moving an instance to another server
+
+For a planned move, or when the server is lost (example: `prod`).\
+Nothing is needed from the old server: the backups are in the S3 storage, the keys and settings in the GitHub Environment (`BACKUP_AGE_KEY`, `DOCUMENTS_KEY`, `API_JWT_SECRET`, ...), the images in the container registry.\
+What was entered after the newest backup is lost (see Backups: hourly through the day, nightly at 01:30 UTC).\
+Prepared, it takes about an hour; the slowest part is DNS.
+
+**Before it is needed**
+
+- Lower the TTL of the instance's DNS records (`WEB_SUB`, `API_SUB`, ...) to 300 seconds, so a change reaches everyone within minutes instead of an hour.
+- Keep a second server ready, set up as below (it may carry another instance, e.g. `test`).
+- Practise once: deploy a scratch environment on that server, restore prod's newest backup into it and sign in (it needs the same `DOCUMENTS_KEY` and `BACKUP_*` settings as prod, and its own hostnames).
+- Keep the public key of `VPS_SSH_KEY` with the private one: GitHub shows no secret again (else make a new key pair and replace the secret).
+
+**1. Prepare the server** (20–40 minutes, skipped when it is ready).\
+The server prerequisites above, plus:
+
+- The public key of `VPS_SSH_KEY` in `~/.ssh/authorized_keys` of `VPS_USER`.
+- Ports 80 and 443 open (Caddy), SSH reachable from GitHub's runners.
+- `sudo apt-get install age` (the restore decrypts on the server).
+
+**2. Point the environment at it**
+
+```sh
+gh variable set VPS_HOST --env prod --body <new server>
+gh variable set VPS_USER --env prod --body <user>
+gh variable set PG_PORT --env prod --body <port>     # only if another instance on that server uses it
+```
+
+**3. Deploy** (about 10 minutes) the tag that ran before; the newest `vps` runs name it in their title:
+
+```sh
+gh run list --workflow vps.yml --limit 5
+gh workflow run vps.yml --ref main -f action=deploy -f environment=prod -f image_tag=sha-<tag>
+```
+
+The instance starts with an empty, migrated database.\
+Caddy cannot get its certificates until DNS points at the server (step 5); it keeps trying.
+
+**4. Restore the newest backup** (5–15 minutes; `backup` = a stamp for an older one):
+
+```sh
+gh workflow run backup.yml --ref main -f action=restore -f environment=prod -f confirmation='RESTORE prod'
+```
+
+**5. Switch DNS**: the A records of `WEB_SUB`, `API_SUB` (and `AUTH_SUB`, `MAIL_SUB`, `PORTAINER_SUB` where used) to the new server.\
+Within the TTL everyone reaches the new server; Caddy fetches the certificates by itself.
+
+**6. Check**
+
+- `https://<API_SUB>.<DOMAIN>/api/v1/health` answers, with `smtp` `ok`.
+- An operator signs in (two-step login) and a person opens a document: that proves the database and `DOCUMENTS_KEY`.
+- "Forgot password" sends a mail.
+- Run the `portainer` action once if the server should have it.
+
+**Afterwards**
+
+- The scheduled backups and `monitor.yml` follow by themselves (they use `VPS_HOST` and the public URLs).
+- If the old server comes back, stop its instance by hand (`docker compose -p apensum-<env> -f /opt/apensum-<env>/compose/docker-compose.vps.yml down`), so it sends no reminders or mails twice; the workflows reach only the new one now.
+
 ### Website (apensum.ch)
 
 The marketing website is `apps/site`: static pages in German, French, Italian and English, built by a dependency-free Node script (texts in `apps/site/src/i18n/<lang>.mjs`, templates in `src/pages.mjs`).\
