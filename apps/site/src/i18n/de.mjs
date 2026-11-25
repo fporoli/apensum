@@ -936,4 +936,11 @@ export default {
   ],
   'whistle.rights.title': "Wer bearbeitet",
   'whistle.rights.text': "Standardmässig bearbeitet HR die Meldungen. Wer eine andere Meldestelle will, etwa eine externe Ombudsperson oder Compliance, gibt das Recht unter «Rollen & Berechtigungen» einer eigenen Rolle und nimmt es HR weg. Wer selbst gemeldet hat, liest die eigene Meldung nur als meldende Person.",
+  // Brochure downloads (pages.mjs brochures, About and Pricing).
+  'brochure.title': "Broschüre zum Herunterladen",
+  'brochure.text': "Apensum auf zwei Seiten, zum Weiterleiten oder Ausdrucken – in drei Fassungen.",
+  'brochure.trustees': "Für Treuhänder",
+  'brochure.customers': "Für KMU",
+  'brochure.partners': "Für IT-Partner",
+  'brochure.format': "PDF, Deutsch",
 };

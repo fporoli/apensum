@@ -936,4 +936,11 @@ export default {
   ],
   'whistle.rights.title': "Chi tratta le segnalazioni",
   'whistle.rights.text': "Per impostazione predefinita l’HR tratta le segnalazioni. Un’organizzazione che vuole un altro servizio di segnalazione, per esempio un mediatore esterno o la compliance, dà il diritto a un proprio ruolo in «Ruoli e autorizzazioni» e lo toglie all’HR. Chi ha fatto una segnalazione la legge solo come persona segnalante.",
+  // Brochure downloads (pages.mjs brochures, About and Pricing).
+  'brochure.title': "Brochure da scaricare",
+  'brochure.text': "Apensum in due pagine, da inoltrare o stampare – in tre versioni.",
+  'brochure.trustees': "Per le fiduciarie",
+  'brochure.customers': "Per le PMI",
+  'brochure.partners': "Per i partner IT",
+  'brochure.format': "PDF, in tedesco",
 };

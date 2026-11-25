@@ -937,4 +937,11 @@ export default {
   ],
   'whistle.rights.title': "Who handles reports",
   'whistle.rights.text': "By default HR handles the reports. An organization that wants another reporting office, such as an external ombudsperson or compliance, gives the right to a role of its own under “Roles & permissions” and takes it from HR. Whoever made a report reads it only as its reporter.",
+  // Brochure downloads (pages.mjs brochures, About and Pricing).
+  'brochure.title': "Brochure to download",
+  'brochure.text': "Apensum on two pages, to pass on or print – in three versions.",
+  'brochure.trustees': "For fiduciaries",
+  'brochure.customers': "For SMEs",
+  'brochure.partners': "For IT partners",
+  'brochure.format': "PDF, in German",
 };

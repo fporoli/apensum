@@ -937,4 +937,11 @@ export default {
   ],
   'whistle.rights.title': "Qui traite les signalements",
   'whistle.rights.text': "Par défaut, les RH traitent les signalements. Une organisation qui veut un autre service de signalement, par exemple un médiateur externe ou la compliance, donne ce droit à un rôle propre sous « Rôles et autorisations » et le retire aux RH. Qui a fait un signalement ne le lit qu’en tant que personne qui signale.",
+  // Brochure downloads (pages.mjs brochures, About and Pricing).
+  'brochure.title': "Brochure à télécharger",
+  'brochure.text': "Apensum en deux pages, à transmettre ou à imprimer – en trois versions.",
+  'brochure.trustees': "Pour les fiduciaires",
+  'brochure.customers': "Pour les PME",
+  'brochure.partners': "Pour les partenaires IT",
+  'brochure.format': "PDF, en allemand",
 };

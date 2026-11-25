@@ -473,6 +473,8 @@ a:hover { color: var(--brand-strong); }
 .invest .feature-icon { flex: none; margin: 0; }
 .invest p { max-width: 70ch; color: var(--muted); }
 @media (max-width: 640px) { .invest { flex-direction: column; } }
+.brochure-links { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 10px; }
+.brochure-links .icon { transform: rotate(90deg); }
 
 /* Contact */
 .stack { display: grid; gap: 20px; }

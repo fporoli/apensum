@@ -706,8 +706,37 @@ export function pricing(ctx) {
   </div>
   <div class="wrap"><p class="muted small note-block">${t('pricing.note')}</p></div>
 </section>
+${brochures(ctx)}
 ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('pricing.meta.title'), description: t('pricing.meta.description'), body });
+}
+
+/**
+ * The brochure to download (static/downloads, PDF in German, the online version of the printed one: without the
+ * investment box and the phone number). Shown on About and Pricing.
+ */
+const BROCHURES = [
+  ['trustees', 'apensum-broschuere-treuhaender.pdf'],
+  ['customers', 'apensum-broschuere-endkunden.pdf'],
+  ['partners', 'apensum-broschuere-it-partner.pdf'],
+];
+function brochures(ctx) {
+  const { t } = ctx;
+  return `<section class="section tight">
+  <div class="wrap">
+    <div class="card invest brochure">
+      <div class="feature-icon">${icon('doc')}</div>
+      <div>
+        <h2>${t('brochure.title')}</h2>
+        <p>${t('brochure.text')}</p>
+        <div class="brochure-links">
+          ${BROCHURES.map(([k, file]) => `<a class="btn btn-ghost btn-sm" href="/downloads/${file}" download>${icon('arrow')}${t(`brochure.${k}`)}</a>`).join('\n          ')}
+        </div>
+        <p class="muted small">${t('brochure.format')}</p>
+      </div>
+    </div>
+  </div>
+</section>`;
 }
 
 export function about(ctx) {
@@ -761,7 +790,8 @@ export function about(ctx) {
       </div>
     </div>
   </div>
-</section>`;
+</section>
+${brochures(ctx)}`;
   return layout(ctx, { title: t('about.meta.title'), description: t('about.meta.description'), body, reveal: true });
 }
 
