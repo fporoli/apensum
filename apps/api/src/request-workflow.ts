@@ -8,6 +8,8 @@ import { DbService } from './db.service';
 import { FieldsService } from './fields.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService, type WorkflowActionContext, type WorkflowKind } from './workflows.service';
+import { sendMail } from './mailer';
+import { workflowMail, type MailAnswer } from './workflow-mail';
 
 /** The configurable kind of a request's workflow: one per request type (its key is the variant). */
 export const REQUEST_WORKFLOW_KIND = 'requests.request';
@@ -35,6 +37,8 @@ export const REQUEST_CATALOGUE: WorkflowKindCatalogue = {
   blocks: {
     review: { label: 'Approval', action: 'request.reviewed', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.approve', decides: true },
     task: { label: 'Task', action: 'request.done', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.done' },
+    // Sent by the system the moment the workflow gets there (its own step, nobody acts on it): to the step's assignees.
+    mail: { label: 'E-mail', action: 'request.mail', assignees: [...ASSIGNEES, 'requester'], automatic: true, message: true, doneKey: 'approvals.event.sent' },
     form: { label: 'Form', action: 'request.done', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.submitForm', fields: true },
   },
   defaultConfig: {
@@ -49,11 +53,12 @@ export const REQUEST_CATALOGUE: WorkflowKindCatalogue = {
 const FACT_OF_FIELD: Record<string, FactType> = { number: 'number', checkbox: 'boolean', text: 'string', date: 'string', datetime: 'string', select: 'string' };
 
 /** A step's event in the request's thread (Requests.tsx shows `data.workflow`). */
-async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn') {
+async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed') {
   const data = {
     workflow: what,
     ...(ctx.stepKey ? { step: { key: ctx.stepKey, label: ctx.stepLabel ?? ctx.stepKey, ...(ctx.stepLabels ? { labels: ctx.stepLabels } : {}) } } : {}),
-    ...(ctx.automatic ? { automatic: true } : {}),
+    ...(ctx.automatic && what !== 'mailed' ? { automatic: true } : {}),
+    ...(what === 'mailed' ? { recipients: ctx.recipients?.length ?? 0 } : {}),
     ...(ctx.decisionNote ? { note: ctx.decisionNote } : {}),
     // A form step's answers, with their fields' labels and types, so the thread shows them as they were asked.
     ...(ctx.values && ctx.fields?.length
@@ -99,6 +104,28 @@ export class RequestWorkflow implements OnModuleInit {
     };
     this.workflows.registerAction('request.reviewed', moveOn('approved'));
     this.workflows.registerAction('request.done', moveOn('done'));
+    // A message step: the mail to its assignees (best effort: a failed mail never stops the workflow), then the thread.
+    this.workflows.registerAction('request.mail', async (db, ctx) => {
+      const recipients = ctx.recipients ?? [];
+      if (!ctx.message || recipients.length === 0) return;
+      const [r] = (await db.execute(sql`SELECT id, organization_id, subject, confidential FROM requests WHERE id = ${ctx.sourceTableUuid}::uuid`)).rows as { id: string; organization_id: string; subject: string; confidential: boolean }[];
+      if (!r) return;
+      const answers: MailAnswer[] = ctx.message.answers && !r.confidential
+        ? ((await db.execute(sql`
+            SELECT COALESCE(u.display_name, u.email) AS name, m.data->'values' AS values FROM request_messages m LEFT JOIN users u ON u.id = m.author_user_id
+            WHERE m.request_id = ${r.id}::uuid AND m.kind = 'event' AND jsonb_typeof(m.data->'values') = 'array' ORDER BY m.posted_at`)).rows as unknown as MailAnswer[])
+        : [];
+      const users = (await db.execute(sql`
+        SELECT u.id, u.email, u.locale FROM users u
+        JOIN organization_memberships m ON m.user_id = u.id AND m.organization_id = ${r.organization_id}::uuid AND m.status = 'active'
+        WHERE u.id = ANY(${`{${recipients.join(',')}}`}::uuid[])`)).rows as { id: string; email: string | null; locale: string | null }[];
+      for (const u of users) {
+        if (!u.email) continue;
+        const mail = workflowMail({ message: ctx.message, request: { id: r.id, subject: r.subject, confidential: !!r.confidential }, answers }, u.locale);
+        await sendMail({ to: u.email, subject: mail.subject, text: mail.text }, 15_000).catch((err) => console.warn(`workflow mail for request ${r.id} failed: ${err instanceof Error ? err.message : err}`));
+      }
+      await threadEvent(db, ctx, 'mailed');
+    });
     this.workflows.registerAction('request.returned', async (db, ctx) => {
       await db.execute(sql`UPDATE requests SET status = 'open', resolved_at = NULL, last_activity_at = now() WHERE id = ${ctx.sourceTableUuid}::uuid`);
       await threadEvent(db, ctx, 'returned');

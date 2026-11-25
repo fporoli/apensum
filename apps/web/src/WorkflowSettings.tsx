@@ -17,7 +17,7 @@ interface KindInfo {
   variantLabel: string | null;
   variantLabels: Record<string, string> | null;
   optional: boolean;
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean; automatic?: boolean; message?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
   /** Its steps may go to everyone of a unit, each on their own. */
@@ -39,7 +39,7 @@ function catalogueOf(kind: KindInfo): WorkflowKindCatalogue {
     each: !!kind.each,
     defaultConfig: kind.defaultConfig,
     blocks: Object.fromEntries(Object.entries(kind.blocks).map(([name, b]) => [name, {
-      label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, required: b.required, ...(b.fields ? { fields: true } : {}), action: name, ...(b.canReturn ? { returnAction: name } : {}),
+      label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, required: b.required, ...(b.fields ? { fields: true } : {}), ...(b.automatic ? { automatic: true } : {}), ...(b.message ? { message: true } : {}), action: name, ...(b.canReturn ? { returnAction: name } : {}),
     }])),
   };
 }

@@ -4,7 +4,7 @@ import type { Db } from './db.service';
 import { reachesAll } from './access';
 import {
   compileWorkflow, nextApplicableStep, stepFieldValues, validateWorkflowConfig,
-  type CompiledWorkflowStep, type StepField, type WorkflowConfig, type WorkflowKindCatalogue,
+  type CompiledWorkflowStep, type StepField, type StepMessage, type WorkflowConfig, type WorkflowKindCatalogue,
 } from '@worktime3/shared/workflowConfig';
 import { workflows, workflow_definitions, team_members, organization_memberships } from './db/schema';
 import { AuditService } from './audit.service';
@@ -72,6 +72,9 @@ export interface WorkflowActionContext {
   /** What the actor filled in the step's fields (a block with `fields`), checked, with the fields. */
   values?: Record<string, string | number | boolean>;
   fields?: StepField[];
+  /** An automatic step (e.g. a message): who it goes to, and what it sends. */
+  recipients?: string[];
+  message?: StepMessage;
 }
 export type WorkflowActionHandler = (db: Db, ctx: WorkflowActionContext) => Promise<void>;
 /**
@@ -335,6 +338,18 @@ export class WorkflowsService {
       if (index < 0) return { index, assignees: [], history, autoApproved };
       const step = p.steps[index];
       const assignees = await this.stepAssignees(db, p.organizationId, step, p.submittedBy, p.actor);
+      // An automatic step (a message): the system does it now, to its assignees, and the workflow moves on.
+      if (step.automatic) {
+        for (const action of step.actions ?? []) {
+          await this.runNamedAction(db, action, {
+            sourceTable: p.sourceTable, sourceTableUuid: p.sourceTableUuid, actorUserId: p.actor, decisionNote: null,
+            stepKey: step.key, stepLabel: step.label, stepLabels: step.labels, automatic: true, recipients: assignees, ...(step.message ? { message: step.message } : {}),
+          }).catch((err) => console.error('workflow-automatic-step-failed', err));
+        }
+        history.push({ key: step.doneKey ?? 'approvals.event.sent', by: null, at, note: step.label });
+        from = index + 1;
+        continue;
+      }
       if (assignees.length) return { index, assignees, history, autoApproved };
       // Only a manager's review without a manager gets here: done at once, as submitting did before.
       for (const action of step.actions ?? []) {
@@ -880,6 +895,8 @@ export class WorkflowsService {
         WHERE m.organization_id = ${organizationId}::uuid AND m.user_id::text = ${step.assignTo.slice('person:'.length)}
           AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())`);
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
+    } else if (step.assignTo === 'requester' && submittedByUserId) {
+      ids = [submittedByUserId];
     } else if (step.assignTo === 'manager' && submittedByUserId) {
       const rows = await db.execute(sql`
         SELECT manager_user_id FROM employee_assignments
@@ -889,7 +906,8 @@ export class WorkflowsService {
       if (manager) ids = [manager];
     }
     ids = others(ids);
-    if (ids.length) return ids;
+    // An automatic step (a message) goes to whom it names, or to nobody: no stand-ins.
+    if (ids.length || step.automatic) return ids;
     // A configurable kind's manager review without a manager: nobody (done at once); older definitions as before.
     if (step.review && step.assignTo === 'manager') return [];
     if (!step.blocks) return [fallback];

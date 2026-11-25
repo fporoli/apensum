@@ -76,7 +76,18 @@ export interface WorkflowStepConfig {
   each?: boolean;
   /** What the step asks (only with a block that has `fields`). */
   fields?: StepField[];
+  /** What an automatic message block sends (only with a block that has `message`). */
+  message?: StepMessage;
 }
+
+/** A message step's mail: subject and text per language, and whether the form steps' answers go with it. */
+export interface StepMessage {
+  subject: Partial<Record<(typeof LANGS)[number], string>>;
+  text?: Partial<Record<(typeof LANGS)[number], string>>;
+  answers?: boolean;
+}
+export const MAX_MESSAGE_SUBJECT = 120;
+export const MAX_MESSAGE_TEXT = 2000;
 
 export interface WorkflowConfig {
   version: number;
@@ -108,6 +119,10 @@ export interface WorkflowBlock {
   actionKey?: string;
   /** The step asks its fields (`WorkflowStepConfig.fields`), filled by whoever does it. */
   fields?: boolean;
+  /** Done by the system the moment the workflow reaches it (nobody acts on it); alone in its step. */
+  automatic?: boolean;
+  /** The step sends a message (`WorkflowStepConfig.message`) to its assignees. */
+  message?: boolean;
   /** English name, the step's label when the configuration gives none. */
   label: string;
 }
@@ -146,9 +161,10 @@ const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The kind of an assignee (`manager`, `department`, `team`, `permission`, `person`), or null. */
-export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | 'person' | null {
+/** The kind of an assignee (`manager`, `department`, `team`, `permission`, `person`, `requester`), or null. */
+export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | 'person' | 'requester' | null {
   if (value === 'manager') return 'manager';
+  if (value === 'requester') return 'requester';
   if (value.startsWith('person:') && UUID.test(value.slice('person:'.length))) return 'person';
   if (value.startsWith('department:') && UNIT_CODE.test(value.slice('department:'.length))) return 'department';
   if (value.startsWith('team:') && UNIT_CODE.test(value.slice('team:'.length))) return 'team';
@@ -163,6 +179,7 @@ function assigneeAllowed(block: WorkflowBlock, assignTo: string): boolean {
   if (kind === 'department') return block.assignees.includes('department');
   if (kind === 'team') return block.assignees.includes('team');
   if (kind === 'person') return block.assignees.includes('person');
+  if (kind === 'requester') return block.assignees.includes('requester');
   if (kind === 'permission') return block.assignees.includes(assignTo);
   return false;
 }
@@ -224,6 +241,32 @@ function stepFieldsErrors(raw: unknown, path: string): { errors: WorkflowConfigE
   return { errors, fields };
 }
 
+/** A message as a configuration gives it, or null: a subject in at least one language, texts within their limits. */
+function stepMessageOf(raw: unknown): StepMessage | null {
+  if (!isObject(raw)) return null;
+  if (Object.keys(raw).some((k) => !['subject', 'text', 'answers'].includes(k))) return null;
+  const langMap = (v: unknown, max: number, required: boolean) => {
+    if (v === undefined) return required ? null : {};
+    if (!isObject(v)) return null;
+    const out: Partial<Record<(typeof LANGS)[number], string>> = {};
+    for (const [l, t] of Object.entries(v)) {
+      if (!(LANGS as readonly string[]).includes(l) || typeof t !== 'string' || t.length > max) return null;
+      if (t.trim()) out[l as (typeof LANGS)[number]] = t.trim();
+    }
+    return required && Object.keys(out).length === 0 ? null : out;
+  };
+  const subject = langMap(raw.subject, MAX_MESSAGE_SUBJECT, true);
+  const text = langMap(raw.text, MAX_MESSAGE_TEXT, false);
+  if (!subject || !text || (raw.answers !== undefined && typeof raw.answers !== 'boolean')) return null;
+  return { subject, ...(Object.keys(text).length ? { text } : {}), ...(raw.answers ? { answers: true } : {}) };
+}
+
+/** A message's text in a language (else English, else any), or ''. */
+export function messageText(map: StepMessage['subject'] | undefined, lang: string): string {
+  if (!map) return '';
+  return map[lang as (typeof LANGS)[number]] ?? map.en ?? Object.values(map).find(Boolean) ?? '';
+}
+
 /** A field's label in a language (else English, else any). */
 export function stepFieldLabel(field: StepField, lang: string): string {
   return field.label[lang as (typeof LANGS)[number]] ?? field.label.en ?? Object.values(field.label).find(Boolean) ?? field.key;
@@ -280,7 +323,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
   steps.forEach((s, i) => {
     const at = `steps[${i}]`;
     if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
-    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'message'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
     const key = typeof s.key === 'string' ? s.key : '';
     if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
     else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
@@ -319,7 +362,18 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     // Each on their own: only where a step reaches several people, and only for kinds that offer it.
     const each = s.each === true;
     if (s.each !== undefined && typeof s.each !== 'boolean') errors.push({ path: `${at}.each`, code: 'invalid-each' });
-    else if (each && (!kind.each || !['department', 'team', 'permission'].includes(assigneeKind(assignTo) ?? ''))) errors.push({ path: `${at}.each`, code: 'each-not-allowed' });
+    else if (each && (!kind.each || !['department', 'team', 'permission'].includes(assigneeKind(assignTo) ?? '') || blocks.some((b: string) => kind.blocks[b]?.automatic))) errors.push({ path: `${at}.each`, code: 'each-not-allowed' });
+    // An automatic block (nobody acts on it) stands alone in its step.
+    if (blocks.length > 1 && blocks.some((b: string) => kind.blocks[b]?.automatic)) errors.push({ path: `${at}.do`, code: 'automatic-alone' });
+    // The message a block with `message` sends: required with it, refused without.
+    const sends = blocks.some((b: string) => kind.blocks[b]?.message);
+    let message: StepMessage | undefined;
+    if (s.message !== undefined && !sends) errors.push({ path: `${at}.message`, code: 'message-not-allowed' });
+    else if (sends) {
+      const m = stepMessageOf(s.message);
+      if (!m) errors.push({ path: `${at}.message`, code: 'invalid-message' });
+      else message = m;
+    }
     // The fields a block with `fields` asks: required with it, refused without.
     const asks = blocks.some((b: string) => kind.blocks[b]?.fields);
     let fields: StepField[] | undefined;
@@ -331,7 +385,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     }
     out.push({
       key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}),
-      ...(each ? { each: true } : {}), ...(fields ? { fields } : {}),
+      ...(each ? { each: true } : {}), ...(fields ? { fields } : {}), ...(message ? { message } : {}),
     });
   });
   for (const [name, block] of Object.entries(kind.blocks)) if (block.required && !done.has(name)) errors.push({ path: 'steps', code: 'block-required' });
@@ -385,6 +439,10 @@ export interface CompiledWorkflowStep {
   each?: boolean;
   /** What it asks whoever does it. */
   fields?: StepField[];
+  /** Done by the system when reached: its actions run with the step's assignees as recipients. */
+  automatic?: boolean;
+  /** What it sends. */
+  message?: StepMessage;
   source?: string;
   source_name?: string;
 }
@@ -414,6 +472,8 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       ...(blocks.some((b) => b.decides) ? { decides: true } : {}),
       ...(s.each ? { each: true } : {}),
       ...(s.fields ? { fields: s.fields } : {}),
+      ...(blocks.some((b) => b.automatic) ? { automatic: true } : {}),
+      ...(s.message ? { message: s.message } : {}),
       ...(kind.source ? { source: kind.source } : {}),
       ...(kind.source_name ? { source_name: kind.source_name } : {}),
     };

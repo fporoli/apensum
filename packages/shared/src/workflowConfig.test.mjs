@@ -184,3 +184,40 @@ test('stepFieldValues checks what someone gives a step', () => {
   assert.deepEqual(stepFieldValues(fields, { amount: 20, on: '2026-13-45' }), { ok: false, error: 'step-field-invalid', field: 'on' });
   assert.deepEqual(stepFieldValues(fields, { amount: 20 }), { ok: true, values: { amount: 20 } });
 });
+
+// An automatic message block: alone in its step, with a subject; to the requester too.
+const MAILKIND = {
+  ...REQ,
+  blocks: {
+    ...REQ.blocks,
+    form: { ...REQ.blocks.form, assignees: [...REQ.blocks.form.assignees, 'requester'] },
+    mail: { label: 'E-mail', action: 'r.mail', assignees: ['manager', 'team', 'person', 'requester'], automatic: true, message: true },
+  },
+};
+
+test('a message step sends a subject (and text) to its assignees, the requester among them', () => {
+  const r = validateWorkflowConfig(MAILKIND, { version: 1, steps: [
+    { key: 'ok', do: ['review'], assignTo: PERSON },
+    { key: 'done', do: ['mail'], assignTo: 'requester', message: { subject: { de: ' Sammlung fertig ', en: 'Collection done' }, text: { de: 'Danke!' }, answers: true } },
+  ] });
+  assert.deepEqual(codes(r), []);
+  assert.deepEqual(r.value.steps[1].message, { subject: { de: 'Sammlung fertig', en: 'Collection done' }, text: { de: 'Danke!' }, answers: true });
+  assert.equal(r.value.steps[1].reject, 'none');
+  const steps = compileWorkflow(MAILKIND, r.value);
+  assert.equal(steps[1].automatic, true);
+  assert.equal(steps[1].message.answers, true);
+});
+
+test('a message step is refused without a subject, with other blocks, or each on their own', () => {
+  assert.deepEqual(codes(validateWorkflowConfig(MAILKIND, { version: 1, steps: [
+    { key: 'ok', do: ['review'], assignTo: PERSON, message: { subject: { de: 'x' } } },
+    { key: 'a', do: ['mail'], assignTo: 'team:gift', each: true, message: { subject: { de: '  ' } } },
+    { key: 'b', do: ['form', 'mail'], assignTo: 'manager', fields: [AMOUNT], message: { subject: { de: 'x' }, extra: 1 } },
+  ] })), [
+    'steps[0].message message-not-allowed',
+    'steps[1].each each-not-allowed',
+    'steps[1].message invalid-message',
+    'steps[2].do automatic-alone',
+    'steps[2].message invalid-message',
+  ]);
+});

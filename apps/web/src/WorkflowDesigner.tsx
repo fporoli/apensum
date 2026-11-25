@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, Box, Button, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
 import {
-  assigneeKind, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
+  assigneeKind, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type StepMessage, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
 } from '@worktime3/shared/workflowConfig';
 import { PERMISSION_OBJECTS } from '@worktime3/shared/permissions';
 import { useT } from './i18n';
@@ -9,7 +9,7 @@ import { AddIcon, ArrowDownwardIcon, ArrowUpwardIcon, ChevronRightIcon, ContentC
 
 /** What the designer knows of a kind (from GET workflow-configs). */
 export interface DesignerKind {
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean; automatic?: boolean; message?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
   /** Its steps may go to everyone of a unit, each on their own. */
@@ -161,11 +161,17 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
   // Each on their own: where the step reaches several people (a unit or a permission), for kinds that offer it.
   const canEach = !!kind.each && (who === 'department' || who === 'team' || who === 'permission');
   const asksFields = step.do.some((b) => kind.blocks[b]?.fields);
+  const sendsMessage = step.do.some((b) => kind.blocks[b]?.message);
   /** The step with its blocks changed: fields only while a block asks them, a first empty field when one starts to. */
   const withBlocks = (doBlocks: string[]): WorkflowStepConfig => {
-    const { fields, ...rest } = step;
+    const { fields, message, ...rest } = step;
     const asks = doBlocks.some((b) => kind.blocks[b]?.fields);
-    return asks ? { ...rest, do: doBlocks, fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : { ...rest, do: doBlocks };
+    const sends = doBlocks.some((b) => kind.blocks[b]?.message);
+    return {
+      ...rest, do: doBlocks,
+      ...(asks ? { fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : {}),
+      ...(sends ? { message: message ?? { subject: {} } } : {}),
+    };
   };
   /** The step with another assignee: `each` only where it fits. */
   const withAssignee = (assignTo: string): WorkflowStepConfig => {
@@ -184,6 +190,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     else if (kindOfAssignee === 'department') onChange(withAssignee(`department:${units.departments.find((d) => d.code)?.code ?? ''}`));
     else if (kindOfAssignee === 'team') onChange(withAssignee(`team:${units.teams.find((d) => d.code)?.code ?? ''}`));
     else if (kindOfAssignee === 'person') onChange(withAssignee(`person:${people[0]?.id ?? ''}`));
+    else if (kindOfAssignee === 'requester') onChange(withAssignee('requester'));
     else onChange(withAssignee(permissions[0] ?? 'manager'));
   };
   const kinds = [
@@ -191,6 +198,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     ...(allowed.includes('department') ? ['department'] : []),
     ...(allowed.includes('team') ? ['team'] : []),
     ...(allowed.includes('person') && people.length ? ['person'] : []),
+    ...(allowed.includes('requester') ? ['requester'] : []),
     ...(permissions.length ? ['permission'] : []),
   ];
 
@@ -268,6 +276,8 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
 
       {/* What a form step asks whoever does it. */}
       {asksFields && <StepFieldsEditor fields={step.fields ?? []} editable={editable} onChange={(fields) => onChange({ ...step, fields })} />}
+      {/* What a message step sends (the system sends it the moment the workflow gets there). */}
+      {sendsMessage && <StepMessageEditor message={step.message ?? { subject: {} }} editable={editable} onChange={(message) => onChange({ ...step, message })} />}
 
       {/* Rejecting: not possible, or back to the person who submitted. */}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -310,6 +320,35 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
 
       {errors.length > 0 && <Alert severity="error" sx={{ py: 0 }}>{errors.map((e) => `${e.path.replace(/^steps\[\d+\]\.?/, '') || '·'}: ${errorText(e)}`).join(' · ')}</Alert>}
     </Paper>
+  );
+}
+
+/** A message step's mail: subject and text per language, and whether the form steps' answers go with it. */
+function StepMessageEditor({ message, editable, onChange }: { message: StepMessage; editable: boolean; onChange: (m: StepMessage) => void }) {
+  const t = useT();
+  const setLang = (part: 'subject' | 'text', l: (typeof LANGS)[number], value: string) => {
+    const map = { ...(message[part] ?? {}), [l]: value };
+    if (!value) delete map[l];
+    const { [part]: _old, ...rest } = message;
+    onChange(part === 'subject' || Object.keys(map).length ? { ...rest, [part]: map } as StepMessage : rest as StepMessage);
+  };
+  return (
+    <Box sx={{ display: 'grid', gap: 1 }}>
+      <Typography variant="body2">{t('workflowDesigner.message')}</Typography>
+      <Typography variant="caption" color="text.secondary">{t('workflowDesigner.messageHint')}</Typography>
+      {LANGS.map((l) => (
+        <Box key={l} sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', pl: { sm: 2 } }}>
+          <TextField size="small" label={`${t('workflowDesigner.messageSubject')} ${l.toUpperCase()}`} value={message.subject[l] ?? ''} disabled={!editable}
+            inputProps={{ maxLength: MAX_MESSAGE_SUBJECT }} sx={{ width: 260 }} onChange={(e) => setLang('subject', l, e.target.value)} />
+          <TextField size="small" multiline minRows={1} maxRows={6} label={`${t('workflowDesigner.messageText')} ${l.toUpperCase()}`} value={message.text?.[l] ?? ''} disabled={!editable}
+            inputProps={{ maxLength: MAX_MESSAGE_TEXT }} sx={{ flex: 1, minWidth: 260 }} onChange={(e) => setLang('text', l, e.target.value)} />
+        </Box>
+      ))}
+      <Box sx={{ pl: { sm: 2 } }}>
+        <FormControlLabel control={<Checkbox size="small" checked={!!message.answers} disabled={!editable} onChange={(e) => { const { answers: _a, ...rest } = message; onChange(e.target.checked ? { ...rest, answers: true } : rest); }} />}
+          label={<Typography variant="body2">{t('workflowDesigner.messageAnswers')}</Typography>} />
+      </Box>
+    </Box>
   );
 }
 

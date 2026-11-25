@@ -89,7 +89,7 @@ interface Message {
     details?: { request_type?: string | null; urgent?: boolean; link_url?: string | null; due_date?: string | null; subject?: string };
     obsolete?: boolean;
     /** A workflow request's step (request-workflow.ts threadEvent). */
-    workflow?: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn';
+    workflow?: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed';
     step?: StepLabel;
     automatic?: boolean;
     note?: string;
