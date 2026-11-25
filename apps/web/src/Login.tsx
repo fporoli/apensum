@@ -6,6 +6,7 @@ import { DarkModeIcon, LightModeIcon } from './icons';
 import { infoUrl } from './infoUrl';
 import { ApensumMark } from './ApensumMark';
 import { useThemeMode } from './theme';
+import { demoLabel, loadDemoAccounts } from './demoAccounts';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const SHOW_DEMO_ACCOUNTS = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS !== 'false';
@@ -71,11 +72,14 @@ export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
-/** A login-screen demo button, configured in global static data (`login` / `demo_accounts`). */
+/** A demo account of the login screen: the demo instance's people (roles, department), else global static data (`login` / `demo_accounts`). */
 interface DemoAccount {
-  name: string;
   user: string;
   password: string;
+  /** The name, or the static list's role label. */
+  primary: string;
+  /** Roles and department, or the address. */
+  secondary: string;
 }
 const DEMO_INVITE_TOKEN = 'dev-invite-0001';
 
@@ -145,12 +149,12 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   useEffect(() => {
     if (!SHOW_DEMO_ACCOUNTS) return;
     let cancelled = false;
-    fetch(`${API}/auth/demo-accounts`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && Array.isArray(data?.accounts)) setDemoAccounts(data.accounts);
-      })
-      .catch(() => {});
+    void loadDemoAccounts().then(({ accounts, people }) => {
+      if (cancelled) return;
+      setDemoAccounts(people.length > 0
+        ? people.map((p) => ({ user: p.user, password: p.password, primary: p.name, secondary: demoLabel(p, t) }))
+        : accounts.map((a) => ({ user: a.user, password: a.password, primary: a.name, secondary: a.user })));
+    });
     return () => {
       cancelled = true;
     };
@@ -339,8 +343,8 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
                 >
                   {demoAccounts.map((a) => (
                     <MenuItem key={a.user} value={a.user}>
-                      {a.name}
-                      <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>{a.user}</Typography>
+                      {a.primary}
+                      <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>{a.secondary}</Typography>
                     </MenuItem>
                   ))}
                 </TextField>

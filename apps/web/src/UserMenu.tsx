@@ -18,6 +18,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { Session } from './Login';
+import { demoLabel, type DemoPerson } from './demoAccounts';
 import { LOCALES, useT, type Locale } from './i18n';
 import AboutDialog from './AboutDialog';
 import AvatarEditor from './AvatarEditor';
@@ -32,6 +33,7 @@ import {
   LightModeIcon,
   LogoutIcon,
   SettingsIcon,
+  SwapHorizIcon,
   VisibilityIcon,
 } from './icons';
 import { useThemeMode } from './theme';
@@ -49,13 +51,18 @@ interface UserMenuProps {
   /** Opens "Show my screen"; unset without an organization. */
   onShareScreen?: () => void;
   onLogout: () => void;
+  /** Demo instance only: the people to switch between (roles, department), and switching (returns an error code). */
+  demo?: {
+    people: DemoPerson[];
+    onSwitch: (person: DemoPerson) => Promise<string | null>;
+  };
   /** Called once the language change is saved, so the caller can update the session. */
   onLocaleChange: (locale: Locale) => void;
   /** Called once other settings (e.g. project time ranges) are saved, so the caller can update the session. */
   onSettingsChange: (settings: NonNullable<Session['settings']>) => void;
 }
 
-export default function UserMenu({ session, authHeaders, currentOrgId, canDesign, designMode, onDesignModeChange, onShareScreen, onLogout, onLocaleChange, onSettingsChange }: UserMenuProps) {
+export default function UserMenu({ session, authHeaders, currentOrgId, canDesign, designMode, onDesignModeChange, onShareScreen, onLogout, demo, onLocaleChange, onSettingsChange }: UserMenuProps) {
   const t = useT();
   const { mode, toggleMode } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -65,6 +72,19 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  // On the demo: the role of the demo account and the department, so visitors know whose view they see.
+  const me = demo?.people.find((p) => p.user.toLowerCase() === session.email.toLowerCase());
+  const myLabel = me ? demoLabel(me, t) : null;
+  async function switchTo(account: DemoPerson) {
+    if (!demo) return;
+    setAnchorEl(null);
+    setSwitching(true);
+    const err = await demo.onSwitch(account);
+    setSwitching(false);
+    if (err) setSwitchError(err);
+  }
 
   function openSettings() {
     setSelectedLocale((session.locale as Locale) ?? 'en');
@@ -125,9 +145,10 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
         aria-expanded={!!anchorEl}
       >
         <Avatar src={avatarUrl ?? undefined} sx={{ width: 24, height: 24, fontSize: 13, bgcolor: 'primary.dark' }}>{initial}</Avatar>
-        <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>
-          {session.displayName}
-        </Typography>
+        <Box sx={{ display: { xs: 'none', sm: 'flex' }, flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
+          <Typography variant="body2" sx={{ lineHeight: 1.2 }}>{session.displayName}</Typography>
+          {myLabel && <Typography variant="caption" sx={{ opacity: 0.8, lineHeight: 1.2 }}>{myLabel}</Typography>}
+        </Box>
         <ArrowDropDownIcon fontSize="small" sx={{ opacity: 0.85, ml: -0.5 }} />
       </Button>
 
@@ -135,8 +156,23 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
         <Box sx={{ px: 2, py: 1, minWidth: 200 }}>
           <Typography variant="body2" sx={{ fontWeight: 600 }}>{session.displayName}</Typography>
           <Typography variant="caption" color="text.secondary">{session.email}</Typography>
+          {myLabel && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{myLabel}</Typography>}
         </Box>
         <Divider />
+        {demo && demo.people.length > 1 && [
+          <Typography key="demo-title" variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, pt: 1 }}>
+            <SwapHorizIcon fontSize="small" />{t('demo.switchUser')}
+          </Typography>,
+          ...demo.people
+            .filter((p) => p.user.toLowerCase() !== session.email.toLowerCase())
+            .map((p) => (
+              <MenuItem key={p.user} disabled={switching} onClick={() => void switchTo(p)} sx={{ display: 'block', py: 0.75 }}>
+                <Typography variant="body2">{p.name}</Typography>
+                <Typography variant="caption" color="text.secondary">{demoLabel(p, t)}</Typography>
+              </MenuItem>
+            )),
+          <Divider key="demo-end" />,
+        ]}
         <MenuItem onClick={openSettings}>
           <ListItemIcon sx={{ minWidth: 32 }}><SettingsIcon fontSize="small" /></ListItemIcon>
           {t('usermenu.settings')}
@@ -170,6 +206,15 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           {t('usermenu.logout')}
         </MenuItem>
       </Menu>
+
+      <Dialog open={!!switchError} onClose={() => setSwitchError(null)}>
+        <DialogContent>
+          <Alert severity="error">{t('demo.switchFailed', { error: switchError ?? '' })}</Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSwitchError(null)}>{t('common.close')}</Button>
+        </DialogActions>
+      </Dialog>
 
       <AboutDialog
         open={aboutOpen}

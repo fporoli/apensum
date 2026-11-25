@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { demoPassword, demoPeople } from '../../apps/api/src/demo-switch';
 import { ADMIN_ROLE_ID, HR_ROLE_ID, isValidEmail, isValidPassword, OWNER_ROLE_ID, parseDemoAccounts, registrationRoleIds, slugBase } from '../../apps/api/src/auth.controller';
 
 test('rejects malformed emails', () => {
@@ -42,4 +43,15 @@ test('parseDemoAccounts reads JSON-string entries in key order and skips malform
 
 test('whoever registers is owner, admin and HR of their own workspace', () => {
   assert.deepEqual(registrationRoleIds(), [OWNER_ROLE_ID, ADMIN_ROLE_ID, HR_ROLE_ID]);
+});
+
+test('demoPassword is the demo seed convention: the local part of the address', () => {
+  assert.equal(demoPassword('ueli@acme.com'), 'ueli');
+  assert.equal(demoPassword('no-at-sign'), 'no-at-sign');
+});
+
+test('demoPeople lists nobody without DEMO_AUTO_LOGIN', async () => {
+  const db = { execute: async () => { throw new Error('no query expected'); } } as never;
+  assert.deepEqual(await demoPeople(db, undefined), []);
+  assert.deepEqual(await demoPeople(db, '  '), []);
 });

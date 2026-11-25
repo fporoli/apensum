@@ -12,6 +12,7 @@ import { invitationNeedsOwner, isOrgOwner, pickPrimaryRole } from './access';
 import { VersionsService } from './versions.service';
 import { NotificationsService } from './notifications.service';
 import { noticeRegistration } from './registration-notice';
+import { demoPeople } from './demo-switch';
 import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
 import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
 
@@ -241,7 +242,7 @@ export class AuthController {
   }
 
   /** Local login: verifies the password identity and returns the session. */
-  /** Demo accounts for the login screen dropdown. Only seeded databases define them; otherwise empty. */
+  /** Demo accounts for the login screen dropdown (seeded databases only; otherwise empty) and, on the demo instance, the people of the user menu's switcher (demo-switch.ts). */
   @Public()
   @Get('demo-accounts')
   async demoAccounts() {
@@ -252,7 +253,9 @@ export class AuthController {
       .from(static_data)
       .where(and(isNull(static_data.organization_id), eq(static_data.entity, 'login'), eq(static_data.enum_name, 'demo_accounts')))
       .limit(1);
-    return { ok: true, accounts: parseDemoAccounts(row?.values) };
+    // The demo instance (DEMO_AUTO_LOGIN): the people to switch between, and whom to sign in as without a session.
+    const people = await demoPeople(db, process.env.DEMO_AUTO_LOGIN);
+    return { ok: true, accounts: parseDemoAccounts(row?.values), people, autoLogin: people[0]?.user ?? null };
   }
 
   @Public()

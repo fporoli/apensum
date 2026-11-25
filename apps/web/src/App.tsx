@@ -29,6 +29,7 @@ import Login, { clearSession, loadSession, saveSession, type Session } from './L
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { TwoFactorRequired } from './TwoFactor';
 import UserMenu from './UserMenu';
+import { SHOW_DEMO_ACCOUNTS, demoAutoLoginOff, loadDemoAccounts, setDemoAutoLoginOff, signInAsDemo, type DemoPerson } from './demoAccounts';
 import { ScreenSharer, ScreenViewer, type ShareRequest } from './ScreenShare';
 import { DesignModeNotice, DesignModeProvider, useDesignAccess } from './designMode';
 import NotificationBell from './NotificationBell';
@@ -359,7 +360,57 @@ export default function App() {
 
 
 
+  // Demo instance (DEMO_AUTO_LOGIN): a visitor without a session is signed in as its demo account, unless they
+  // logged out in this tab; the user menu switches between the demo accounts (each an ordinary sign-in).
+  const [demoAutoLogin, setDemoAutoLogin] = useState(() => !session && SHOW_DEMO_ACCOUNTS && !demoAutoLoginOff());
+  useEffect(() => {
+    if (!demoAutoLogin) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { people, autoLogin } = await loadDemoAccounts();
+        const account = people.find((p) => p.user === autoLogin);
+        if (!account || cancelled) return;
+        const s = await signInAsDemo(account);
+        if (cancelled) return;
+        saveSession(s);
+        setSession(s);
+        setCurrentOrgId(s.memberships[0]?.organizationId ?? null);
+      } catch {
+        // The login page then.
+      } finally {
+        if (!cancelled) setDemoAutoLogin(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [demoAutoLogin]);
+  const [demoPeople, setDemoPeople] = useState<DemoPerson[]>([]);
+  useEffect(() => {
+    if (!session || !SHOW_DEMO_ACCOUNTS) return;
+    let cancelled = false;
+    void loadDemoAccounts().then((d) => { if (!cancelled) setDemoPeople(d.people); });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.userId]);
+
+  /** Signs in as another demo account and starts the app afresh, so nothing of the previous person stays in memory. */
+  async function switchDemoUser(account: DemoPerson): Promise<string | null> {
+    try {
+      const s = await signInAsDemo(account);
+      saveSession(s);
+      window.location.hash = '';
+      window.location.reload();
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : 'error';
+    }
+  }
+
   async function logout() {
+    setDemoAutoLoginOff();
     clearSession();
     setSession(null);
   }
@@ -376,6 +427,8 @@ export default function App() {
       />
     );
   }
+
+  if (!session && demoAutoLogin) return null;
 
   if (!session) {
     return (
@@ -746,6 +799,7 @@ export default function App() {
               onDesignModeChange={designAccess.setEnabled}
               onShareScreen={currentOrgId ? () => setShareRequest({ orgId: currentOrgId }) : undefined}
               onLogout={logout}
+              demo={demoPeople.length > 0 ? { people: demoPeople, onSwitch: switchDemoUser } : undefined}
               onLocaleChange={(newLocale) => {
                 const updated = { ...session, locale: newLocale };
                 setSession(updated);
