@@ -16,15 +16,16 @@ test('the warning shows in the last ten minutes, the waiting page only around a 
   assert.equal(demoResetWarning(at('2026-11-20T13:50:00Z'), 2), null);
   assert.equal(demoResetWarning(at('2026-11-20T14:00:30Z'), 2).minutes, 7);
   assert.ok(inDemoResetWindow(at('2026-11-20T14:06:30Z'), 2));
-  assert.ok(inDemoResetWindow(at('2026-11-20T14:30:00Z'), 2), 'GitHub may start the run late');
+  assert.ok(inDemoResetWindow(at('2026-11-20T14:30:00Z'), 2), 'the reset may take a while');
   assert.ok(!inDemoResetWindow(at('2026-11-20T15:00:00Z'), 2));
 });
 
-test('the minute and the hours match the workflow schedule', () => {
-  const workflow = readFileSync(new URL('../../../.github/workflows/demo-reset.yml', import.meta.url), 'utf8');
-  const cron = /cron: '(\d+) \*\/(\d+) \* \* \*'/.exec(workflow);
-  assert.ok(cron, 'demo-reset.yml has a cron like "7 */2 * * *"');
-  assert.equal(Number(cron[1]), DEMO_RESET_MINUTE_UTC);
+test('the minute matches the reset timer on the server', () => {
+  const remote = readFileSync(new URL('../../../infra/vps/remote.sh', import.meta.url), 'utf8');
+  const minute = /^DEMO_RESET_MINUTE=(\d+)$/m.exec(remote);
+  assert.ok(minute, 'remote.sh sets DEMO_RESET_MINUTE');
+  assert.equal(Number(minute[1]), DEMO_RESET_MINUTE_UTC);
+  assert.match(remote, /OnCalendar=\*-\*-\* 00\/\$DEMO_RESET_EVERY_HOURS:0\$DEMO_RESET_MINUTE:00 UTC/, 'the timer runs in UTC');
   const compose = readFileSync(new URL('../../../.github/workflows/vps.yml', import.meta.url), 'utf8');
   assert.match(compose, /DEMO_RESET_EVERY_HOURS/, 'vps.yml passes DEMO_RESET_EVERY_HOURS to the server');
 });

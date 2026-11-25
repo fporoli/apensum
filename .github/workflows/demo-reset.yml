@@ -1,13 +1,11 @@
 name: demo-reset
-# The public demo instance (GitHub Environment `demo`) starts over every two hours: this dispatches
-# vps.yml `reset-seed` on demo (without a backup: only prod is backed up, demo sets RESET_BACKUP=false), with
+# The public demo starts over on its own: a systemd timer on its server (infra/vps/remote.sh `demo_reset_timer`,
+# every DEMO_RESET_EVERY_HOURS hours at minute 7 UTC), installed by each deploy. This workflow is the manual way:
+# it dispatches vps.yml `reset-seed` on demo (without a backup: only prod is backed up, demo sets RESET_BACKUP=false), with
 # the image tag of the last successful deploy on demo, so the reset runs exactly that version's
 # migrations and seed. Run it by hand from the Actions tab as well.
-# GitHub pauses scheduled workflows of a public repository after 60 days without commits; re-enable
-# it in the Actions tab then.
+# (GitHub's schedule started it late or not at all, hence the server's timer.)
 on:
-  schedule:
-    - cron: '7 */2 * * *' # UTC; minute 7 avoids the full-hour rush (GitHub may start it a few minutes late)
   workflow_dispatch:
 permissions:
   actions: write # dispatch vps.yml (a GITHUB_TOKEN may trigger workflow_dispatch)

@@ -541,7 +541,7 @@ The app supports year-end snapshots starting in 2000; earlier attendance and mon
 | `TWO_FACTOR` | Optional, `off` turns two-step login off on the instance (set on demo and test; never on prod or preprod) |
 | `RESET_BACKUP` | Optional, `false` skips the backup before `reset-seed` (set on demo, preprod, test; only prod is backed up) |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_REGION`, `BACKUP_PATH`, `BACKUP_AGE_RECIPIENT` | Optional, the nightly backup (see Backups); secrets `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, `BACKUP_AGE_KEY` |
-| `DEMO_RESET_EVERY_HOURS` | Optional, demo only (`2`): the app warns before `demo-reset.yml` resets it and waits through the reset |
+| `DEMO_RESET_EVERY_HOURS` | Optional, demo only (`2`): each deploy installs a systemd timer on the server that resets the instance every that many hours at minute 7 UTC (`remote.sh` `demo_reset_timer`, needs passwordless sudo; without the variable the timer is removed), and the app warns before and waits through the reset; `demo-reset.yml` resets by hand |
 | `DEMO_AUTO_LOGIN` | Optional, demo only (`ueli@acme.com`): a visitor without a session is signed in as that account, and the login page and the user menu list the people of its organization (roles, department) to switch to; only accounts whose password is the demo seed's (`<name>@...` / `<name>`) are listed, and each switch is an ordinary sign-in (`demo-switch.ts`) |
 | `GHCR_USERNAME` | Optional |
 | `SMTP_HOST/PORT/FROM/USER/SECURE` | Optional |

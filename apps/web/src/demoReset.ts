@@ -1,15 +1,16 @@
 /**
- * The demo instance starts over on a schedule (.github/workflows/demo-reset.yml, cron `7 *\/2 * * *`).
+ * The demo instance starts over on a schedule (a systemd timer on its server, infra/vps/remote.sh `demo_reset_timer`:
+ * every DEMO_RESET_EVERY_HOURS hours at minute 7 UTC).
  * The API says how often (GET health `demoReset.everyHours`, env DEMO_RESET_EVERY_HOURS); the times are
  * worked out here: a warning before, and during the reset (API unreachable) a waiting page.
  * Plain TypeScript without imports, so node --test can load it (demoReset.test.mjs).
  */
 
-/** The cron's minute (UTC); demoReset.test.mjs keeps it equal to the workflow. */
+/** The timer's minute (UTC); demoReset.test.mjs keeps it equal to remote.sh. */
 export const DEMO_RESET_MINUTE_UTC = 7;
 /** Minutes before a reset that the warning shows. */
 export const DEMO_RESET_WARN_MINUTES = 10;
-/** Minutes after the scheduled time that an unreachable API is taken for the reset (GitHub may start late). */
+/** Minutes after the scheduled time that an unreachable API is taken for the reset (the reset takes a few). */
 export const DEMO_RESET_WINDOW_MINUTES = 30;
 
 const MINUTE = 60_000;

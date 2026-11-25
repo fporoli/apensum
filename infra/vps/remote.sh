@@ -10,6 +10,7 @@
 #   remote.sh reset-seed    backs up and drops the public schema, migrates, loads the demo data
 #   remote.sh deploy-reset  deploy and reset-seed in one: the new images start on the emptied database
 #                           (migrations once), then the demo data
+#   remote.sh scheduled-reset  reset-seed from the files and images already on the server (the demo's timer, below)
 #   remote.sh portainer     (re)deploys Portainer, one per server, in its own stack
 #   remote.sh destroy       removes this instance entirely (a final dump is kept in $HOME)
 #
@@ -229,6 +230,7 @@ deploy() {
   carry_documents_in
   caddy_reload
   ensure_operator
+  demo_reset_timer
 }
 
 # Documents used to live inside the API container (no volume), so each deploy lost them. The first deploy
@@ -363,6 +365,11 @@ reset_seed() {
   install_files
   write_app_env
   ghcr_login
+  reset_steps
+}
+
+# The reset itself, on an instance whose files, compose/.env and images are in place.
+reset_steps() {
   docker inspect "$PG" >/dev/null
   docker inspect "$PREFIX-api" >/dev/null
   wait_auth_schema
@@ -375,8 +382,84 @@ reset_seed() {
   verify_reset
   trap - EXIT
   docker start "$PREFIX-api"
+  mark_reset
   ensure_operator
   close_demo_years
+}
+
+# When the instance last started over (any reset: by hand, on deploy, on the timer), for the timer to skip one
+# that would come right after another.
+mark_reset() { date -u +%s > "$ROOT/last-reset"; }
+
+# The demo starts over on a schedule (GitHub Environment variable DEMO_RESET_EVERY_HOURS): a systemd timer on the
+# server, every that many hours at minute 7 UTC (apps/web/src/demoReset.ts warns ahead of the same times), runs
+# `scheduled-reset` with the files and images the last deploy left; it skips a reset when the last one (also one by
+# hand or a deploy-reset) is less than an hour old. What it needs that compose/.env lacks (the
+# instance's names, the image tag, the operator's password) is kept in demo-reset.env, readable by the deploy user
+# only, like compose/.env. Without the variable a deploy removes the timer. Needs passwordless sudo (systemd units).
+DEMO_RESET_MINUTE=7
+demo_reset_timer() {
+  local unit="$PREFIX-reset" user; user="$(id -un)"
+  if [ -z "${DEMO_RESET_EVERY_HOURS:-}" ]; then
+    if [ -f "/etc/systemd/system/$unit.timer" ]; then
+      sudo -n systemctl disable --now "$unit.timer" >/dev/null 2>&1 || true
+      sudo -n rm -f "/etc/systemd/system/$unit.timer" "/etc/systemd/system/$unit.service" && sudo -n systemctl daemon-reload || true
+    fi
+    rm -f "$ROOT/demo-reset.env"
+    return 0
+  fi
+  case "$DEMO_RESET_EVERY_HOURS" in 1|2|3|4|6|8|12) ;; *) echo "DEMO_RESET_EVERY_HOURS must divide 24 (1, 2, 3, 4, 6, 8, 12)" >&2; exit 2 ;; esac
+  (
+    umask 077
+    for name in ENVIRONMENT DOMAIN WEB_SUB API_SUB AUTH_SUB PG_PORT SSO_PROVIDER RESET_BACKUP OPERATOR_EMAIL OPERATOR_PASSWORD \
+      KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD IMAGE_TAG REPO DEMO_RESET_EVERY_HOURS; do
+      printf "%s=%q\n" "$name" "$(printenv "$name" || true)"
+    done > "$ROOT/demo-reset.env"
+  )
+  if ! sudo -n true 2>/dev/null; then
+    echo "WARNING: no passwordless sudo: the demo reset timer is not installed" >&2
+    return 0
+  fi
+  sudo -n tee "/etc/systemd/system/$unit.service" >/dev/null <<EOF
+[Unit]
+Description=Apensum $ENVIRONMENT: start over with the demo data (remote.sh scheduled-reset)
+After=docker.service
+
+[Service]
+Type=oneshot
+User=$user
+ExecStart=/bin/bash -c 'set -a; . $ROOT/demo-reset.env; set +a; exec bash $ROOT/infra/vps/remote.sh scheduled-reset'
+TimeoutStartSec=40min
+EOF
+  sudo -n tee "/etc/systemd/system/$unit.timer" >/dev/null <<EOF
+[Unit]
+Description=Apensum $ENVIRONMENT: demo reset every $DEMO_RESET_EVERY_HOURS hours at minute $DEMO_RESET_MINUTE UTC
+
+[Timer]
+OnCalendar=*-*-* 00/$DEMO_RESET_EVERY_HOURS:0$DEMO_RESET_MINUTE:00 UTC
+Persistent=false
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target
+EOF
+  sudo -n systemctl daemon-reload
+  sudo -n systemctl enable --now "$unit.timer" >/dev/null
+  echo "Demo reset timer: $(systemctl list-timers "$unit.timer" --no-legend | awk '{print $1, $2, $3, $4}')"
+}
+
+# The timer's reset: the images and files already here (no shipped files, no pull), then the demo data.
+scheduled_reset() {
+  local last=0
+  [ -f "$ROOT/last-reset" ] && last="$(cat "$ROOT/last-reset" 2>/dev/null || echo 0)"
+  if [ $(( $(date -u +%s) - ${last:-0} )) -lt 3600 ]; then
+    echo "Scheduled reset of $ENVIRONMENT skipped: the last reset was less than an hour ago ($(date -u -d "@${last}" +%H:%M 2>/dev/null || echo "$last") UTC)"
+    return 0
+  fi
+  export API_IMAGE="ghcr.io/$REPO/api:$IMAGE_TAG" WEB_IMAGE="ghcr.io/$REPO/web:$IMAGE_TAG"
+  echo "Scheduled reset of $ENVIRONMENT ($IMAGE_TAG) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  reset_steps
+  echo "Scheduled reset of $ENVIRONMENT done at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
 # Deploy and reset in one go (the demo's way): the new images are pulled while the old instance still runs,
@@ -399,9 +482,11 @@ deploy_reset() {
   [ -n "$AUTH_TABLES_BEFORE" ] || wait_auth_schema
   load_seed
   verify_reset
+  mark_reset
   caddy_reload
   ensure_operator
   close_demo_years
+  demo_reset_timer
 }
 
 # Removes this instance: containers, its Postgres and volume, /opt/<prefix>, its Caddy site,
@@ -458,6 +543,7 @@ case "${1:-}" in
   deploy) deploy ;;
   seed) seed ;;
   reset-seed) reset_seed ;;
+  scheduled-reset) scheduled_reset ;;
   deploy-reset) deploy_reset ;;
-  *) echo "usage: remote.sh deploy|seed|reset-seed|deploy-reset|destroy|portainer|portainer-remove" >&2; exit 2 ;;
+  *) echo "usage: remote.sh deploy|seed|reset-seed|deploy-reset|scheduled-reset|destroy|portainer|portainer-remove" >&2; exit 2 ;;
 esac
