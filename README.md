@@ -577,6 +577,8 @@ Other things to know:
 
 **Server prerequisites**
 
+Step by step on a fresh Ubuntu server: [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md).
+
 - Docker with the compose plugin.
 - `VPS_USER` is in the `docker` group and owns `/opt/edge` and each `/opt/apensum-*` directory.\
   `remote.sh` creates a missing one with passwordless `sudo` (as `ubuntu` has on cloud images); without it, run `sudo install -d -o "$USER" /opt/apensum-<env>` once (and `sudo chown -R "$USER": /opt/edge /opt/apensum-*` after anything root created).
@@ -606,8 +608,7 @@ Prepared, it takes about an hour; the slowest part is DNS.
 - Practise once: deploy a scratch environment on that server, restore prod's newest backup into it and sign in (it needs the same `DOCUMENTS_KEY` and `BACKUP_*` settings as prod, and its own hostnames).
 - Keep the public key of `VPS_SSH_KEY` with the private one: GitHub shows no secret again (else make a new key pair and replace the secret).
 
-**1. Prepare the server** (20–40 minutes, skipped when it is ready).\
-The server prerequisites above, plus:
+**1. Prepare the server** (20–40 minutes, skipped when it is ready): [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md), which covers the prerequisites above and:
 
 - The public key of `VPS_SSH_KEY` in `~/.ssh/authorized_keys` of `VPS_USER`.
 - Ports 80 and 443 open (Caddy), SSH reachable from GitHub's runners.
