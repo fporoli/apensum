@@ -67,6 +67,7 @@ export async function demoPeople(db: Db, autoLogin: string | undefined, now = Da
   const sorted = people.some((p) => p.user.toLowerCase() === email)
     ? [...people.filter((p) => p.user.toLowerCase() === email), ...people.filter((p) => p.user.toLowerCase() !== email)]
     : [];
-  cache = { key: email, at: now, people: sorted };
+  // An empty answer (a demo reset in progress, the database still empty) is not kept: the next call asks again.
+  cache = sorted.length ? { key: email, at: now, people: sorted } : null;
   return sorted;
 }
