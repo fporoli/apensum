@@ -222,6 +222,7 @@ VALUES
   ('aaaaaaaa-aaaa-aaaa-aaaa-111111111111', '00000000-0000-0000-0000-000000000002'), -- Admin: admin
   ('aaaaaaaa-aaaa-aaaa-aaaa-222222222222', '00000000-0000-0000-0000-000000000006'), -- Alice: manager
   ('aaaaaaaa-aaaa-aaaa-aaaa-222222222222', '00000000-0000-0000-0000-000000000001'), -- Alice: owner (decides who is admin and HR)
+  ('aaaaaaaa-aaaa-aaaa-aaaa-222222222222', '00000000-0000-0000-0000-000000000002'), -- Alice: admin too (request types and workflows by one person, as in a small firm)
   ('aaaaaaaa-aaaa-aaaa-aaaa-222222222223', '00000000-0000-0000-0000-000000000006'), -- Adam: manager
   ('aaaaaaaa-aaaa-aaaa-aaaa-333333333333', '00000000-0000-0000-0000-000000000006'), -- Marta: manager
   ('aaaaaaaa-aaaa-aaaa-aaaa-333333333334', '00000000-0000-0000-0000-000000000006'), -- Marco: manager

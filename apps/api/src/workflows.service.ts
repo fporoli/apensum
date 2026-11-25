@@ -67,6 +67,8 @@ export interface WorkflowActionContext {
   stepLabel?: string;
   /** The step's label per language, when the configuration gives them. */
   stepLabels?: Partial<Record<string, string>>;
+  /** The step's blocks (its name in the reader's language when the configuration gives none). */
+  stepBlocks?: string[];
   /** The step was done without anybody (a manager's review without a manager). */
   automatic?: boolean;
   /** What the actor filled in the step's fields (a block with `fields`), checked, with the fields. */
@@ -343,7 +345,7 @@ export class WorkflowsService {
         for (const action of step.actions ?? []) {
           await this.runNamedAction(db, action, {
             sourceTable: p.sourceTable, sourceTableUuid: p.sourceTableUuid, actorUserId: p.actor, decisionNote: null,
-            stepKey: step.key, stepLabel: step.label, stepLabels: step.labels, automatic: true, recipients: assignees, ...(step.message ? { message: step.message } : {}),
+            stepKey: step.key, stepLabel: step.label, stepLabels: step.labels, stepBlocks: step.blocks, automatic: true, recipients: assignees, ...(step.message ? { message: step.message } : {}),
           }).catch((err) => console.error('workflow-automatic-step-failed', err));
         }
         history.push({ key: step.doneKey ?? 'approvals.event.sent', by: null, at, note: step.label });
@@ -353,7 +355,7 @@ export class WorkflowsService {
       if (assignees.length) return { index, assignees, history, autoApproved };
       // Only a manager's review without a manager gets here: done at once, as submitting did before.
       for (const action of step.actions ?? []) {
-        await this.runNamedAction(db, action, { sourceTable: p.sourceTable, sourceTableUuid: p.sourceTableUuid, actorUserId: p.actor, decisionNote: null, stepKey: step.key, stepLabel: step.label, stepLabels: step.labels, automatic: true });
+        await this.runNamedAction(db, action, { sourceTable: p.sourceTable, sourceTableUuid: p.sourceTableUuid, actorUserId: p.actor, decisionNote: null, stepKey: step.key, stepLabel: step.label, stepLabels: step.labels, stepBlocks: step.blocks, automatic: true });
       }
       history.push({ key: 'approvals.event.autoApproved', by: null, at });
       autoApproved.push(step.key);
@@ -942,7 +944,7 @@ export class WorkflowsService {
       : stepDef?.returnActions ?? [stepDef?.onReject?.action];
     for (const name of names) {
       await this.runNamedAction(db, name, {
-        sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid, actorUserId, decisionNote, stepKey: stepDef?.key, stepLabel: stepDef?.label, stepLabels: stepDef?.labels,
+        sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid, actorUserId, decisionNote, stepKey: stepDef?.key, stepLabel: stepDef?.label, stepLabels: stepDef?.labels, stepBlocks: stepDef?.blocks,
         ...(values && outcome === 'approved' ? { values, fields: stepDef?.fields } : {}),
       });
     }

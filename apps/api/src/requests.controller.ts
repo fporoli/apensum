@@ -209,7 +209,7 @@ export class RequestsController {
       WHERE w.source_table = 'requests' AND w.source_table_uuid = ${r.id}::uuid
       ORDER BY w.workflow_started DESC NULLS LAST LIMIT 1`)).rows as { id: string; step: string; status: string; steps: WorkflowStepDefinition[]; assignees: string[] | null }[];
     if (!w) return null;
-    const steps = (Array.isArray(w.steps) ? w.steps : []).map((s) => ({ key: s.key, label: s.label, labels: s.labels ?? null }));
+    const steps = (Array.isArray(w.steps) ? w.steps : []).map((s) => ({ key: s.key, label: s.label, labels: s.labels ?? null, blocks: s.blocks ?? null }));
     const current = (Array.isArray(w.steps) ? w.steps : []).find((s) => s.key === w.step);
     const assignees = w.assignees ?? [];
     const names = assignees.length
@@ -369,10 +369,10 @@ export class RequestsController {
       )
     ).rows;
     // Request types with their own workflow: no target to choose, and the steps they will go through.
-    const workflows: Record<string, { key: string; label: string; labels: Record<string, string> | null; conditional: boolean }[]> = {};
+    const workflows: Record<string, { key: string; label: string; labels: Record<string, string> | null; blocks: string[]; conditional: boolean }[]> = {};
     for (const type of requestTypeKeys(await this.typeValues(db, orgId))) {
       const config = await this.workflowsSvc.ownConfig(db, orgId, REQUEST_WORKFLOW_KIND, type);
-      if (config) workflows[type] = config.steps.map((s) => ({ key: s.key, label: s.label?.en ?? Object.values(s.label ?? {}).find(Boolean) ?? s.key, labels: (s.label as Record<string, string> | undefined) ?? null, conditional: !!s.when }));
+      if (config) workflows[type] = config.steps.map((s) => ({ key: s.key, label: s.label?.en ?? Object.values(s.label ?? {}).find(Boolean) ?? s.key, labels: (s.label as Record<string, string> | undefined) ?? null, blocks: s.do, conditional: !!s.when }));
     }
     return { ok: true, manager, departments, workflows };
   }

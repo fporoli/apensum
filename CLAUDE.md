@@ -49,7 +49,7 @@ That looks like success but does nothing.
 
 Demo logins (from `seed.sql`): every `<name>@acme.com` user's password is `<name>` (`admin@acme.com` / `admin`, `marta@acme.com` / `marta`, ...).\
 Acme reporting line: Alice manages Admin, Adam and Fido (Finance, Acme's own role `finance`: payment runs; the expenses plugin's seed sends Acme's payment runs to the department `finance`); Adam manages Marta, Marco and Uma; Marta manages Ulla (also hr); Marco manages Ueli; Uma is also developer.\
-Alice owns Acme (so roles and who is admin or HR are Alice's), Admin owns Globex.\
+Alice owns Acme and is also its admin (so roles and who is admin or HR are Alice's, and she sets up request types and their workflows alone), Admin owns Globex.\
 The Login screen's demo-account dropdown (Admin, Manager = Marta, HR User = Ulla, User = Ueli, Team Lead = Marco, Finance = Fido) come from the global `static_data` row `login`/`demo_accounts` via public `GET auth/demo-accounts`; each value is a JSON string `{name, user, password}`.\
 On the demo instance (`DEMO_AUTO_LOGIN`, `demo-switch.ts`, web `demoAccounts.ts`) a visitor without a session is signed in as that account (not again after "Log out" in that tab), and the login page and the user menu list the people of its organization with roles and department instead: only accounts whose password is the seed's `<name>`, checked against the hash; switching is an ordinary sign-in and a reload, never a token of someone else's.\
 Teams: Platform (Alice), People & Culture (Ulla), Product Development (Marco).\

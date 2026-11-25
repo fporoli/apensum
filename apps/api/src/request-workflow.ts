@@ -56,7 +56,7 @@ const FACT_OF_FIELD: Record<string, FactType> = { number: 'number', checkbox: 'b
 async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed') {
   const data = {
     workflow: what,
-    ...(ctx.stepKey ? { step: { key: ctx.stepKey, label: ctx.stepLabel ?? ctx.stepKey, ...(ctx.stepLabels ? { labels: ctx.stepLabels } : {}) } } : {}),
+    ...(ctx.stepKey ? { step: { key: ctx.stepKey, label: ctx.stepLabel ?? ctx.stepKey, ...(ctx.stepLabels ? { labels: ctx.stepLabels } : {}), ...(ctx.stepBlocks?.length ? { blocks: ctx.stepBlocks } : {}) } } : {}),
     ...(ctx.automatic && what !== 'mailed' ? { automatic: true } : {}),
     ...(what === 'mailed' ? { recipients: ctx.recipients?.length ?? 0 } : {}),
     ...(ctx.decisionNote ? { note: ctx.decisionNote } : {}),

@@ -107,6 +107,8 @@ interface StepLabel {
   key: string;
   label: string;
   labels?: Record<string, string> | null;
+  /** Its blocks, for its name when it has none of its own. */
+  blocks?: string[] | null;
 }
 
 /** A workflow request's workflow (GET requests/:id `workflow`). */
@@ -126,7 +128,13 @@ interface RequestWorkflowInfo {
   each?: boolean;
 }
 
-const stepName = (s: StepLabel | undefined, locale: string) => (s ? s.labels?.[locale] ?? s.label : '');
+/** A step's name: its own in the reader's language, else (no name given) its blocks' names translated, else as stored. */
+const stepName = (s: StepLabel | undefined, locale: string, t: (key: string) => string) => {
+  if (!s) return '';
+  if (s.labels && Object.keys(s.labels).length) return s.labels[locale] ?? s.label;
+  if (s.blocks?.length) return s.blocks.map((b) => { const key = `workflowDesigner.block.${b}`; const text = t(key); return text === key ? b : text; }).join(' + ');
+  return s.label;
+};
 
 /** A request type's own form (`request.<type>`): its fields come after every request's. */
 function useRequestTypeTemplate(orgId: string, type: string | null | undefined, authHeaders: () => Promise<Record<string, string>>): FormTemplate {
@@ -407,7 +415,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   function eventText(m: Message): string {
     const who = authorOf(m);
     if (m.data.workflow) {
-      const step = stepName(m.data.step, locale);
+      const step = stepName(m.data.step, locale, t);
       const text = m.data.automatic
         ? t('requests.event.workflow.automatic', { step })
         : t(`requests.event.workflow.${m.data.workflow}`, { who, step });
@@ -1080,10 +1088,10 @@ function NewRequestDialog({
                   {i > 0 && <ChevronRightIcon fontSize="small" color="action" />}
                   {s.conditional ? (
                     <Tooltip title={t('requests.workflowConditional')}>
-                      <Chip size="small" variant="outlined" sx={{ borderStyle: 'dashed' }} label={stepName(s, locale)} />
+                      <Chip size="small" variant="outlined" sx={{ borderStyle: 'dashed' }} label={stepName(s, locale, t)} />
                     </Tooltip>
                   ) : (
-                    <Chip size="small" label={stepName(s, locale)} />
+                    <Chip size="small" label={stepName(s, locale, t)} />
                   )}
                 </Box>
               ))}
@@ -1184,7 +1192,7 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
               icon={i < doneUpTo ? <CheckIcon fontSize="small" /> : undefined}
               color={workflow.status === 'pending' && i === current ? 'primary' : i < doneUpTo ? 'success' : 'default'}
               variant={workflow.status === 'pending' && i === current ? 'filled' : 'outlined'}
-              label={stepName(s, locale)}
+              label={stepName(s, locale, t)}
             />
           </Box>
         ))}
