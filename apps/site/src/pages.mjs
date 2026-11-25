@@ -182,9 +182,9 @@ function roleVideos(ctx) {
         ${lang === 'de' ? '' : `<p class="muted small">${icon('globe')}${t('roles.videoNote')}</p>`}
       </div>
       <figure class="role-video">
-        <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} aria-label="${t('roles.videoLabel', { role: title })}" width="1440" height="900">
+        <div class="frame"><div class="window"><video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} aria-label="${t('roles.videoLabel', { role: title })}" width="1440" height="900">
           <source src="${video(key)}" type="video/mp4">
-        </video>
+        </video></div></div>
       </figure>
     </div>`;
   });
@@ -359,7 +359,7 @@ function shot(ctx, id, caption, lang = ctx.lang) {
   const size = assets.mediaSize?.[name];
   const dims = size ? ` width="${size.width}" height="${size.height}"` : '';
   return `<figure class="shot">
-          <a href="${assets.media[name]}" title="${ctx.t('features.shot.enlarge')}"><img src="${assets.media[name]}" alt="${caption}" loading="lazy" decoding="async"${dims}></a>
+          <a href="${assets.media[name]}" title="${ctx.t('features.shot.enlarge')}" class="frame"><span class="window"><img src="${assets.media[name]}" alt="${caption}" loading="lazy" decoding="async"${dims}></span></a>
           <figcaption>${caption}</figcaption>
         </figure>`;
 }
@@ -375,9 +375,9 @@ function featureMedia(ctx, group) {
     if (!video) return '';
     const poster = assets.media[`demo-${FEATURE_VIDEOS[group]}.jpg`];
     return `<figure class="shot feature-video">
-          <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t(`features.${group}.video`)}">
+          <div class="frame"><div class="window"><video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t(`features.${group}.video`)}">
             <source src="${video}" type="video/mp4">
-          </video>
+          </video></div></div>
           <figcaption>${t(`features.${group}.video`)}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
         </figure>`;
   }
@@ -780,9 +780,9 @@ export function cases(ctx) {
   const poster = assets.media?.['demo-cases.jpg'];
   const videoBlock = video
     ? `<figure class="shot feature-video">
-        <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('cases.videoTitle')}">
+        <div class="frame"><div class="window"><video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('cases.videoTitle')}">
           <source src="${video}" type="video/mp4">
-        </video>
+        </video></div></div>
         <figcaption>${t('cases.videoTitle')}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
       </figure>`
     : '';
@@ -950,9 +950,9 @@ export function roster(ctx) {
   const poster = assets.media?.['demo-roster.jpg'];
   const videoBlock = video
     ? `<figure class="shot feature-video">
-        <video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('roster.videoTitle')}">
+        <div class="frame"><div class="window"><video controls preload="none" playsinline${poster ? ` poster="${poster}"` : ''} width="1440" height="900" aria-label="${t('roster.videoTitle')}">
           <source src="${video}" type="video/mp4">
-        </video>
+        </video></div></div>
         <figcaption>${t('roster.videoTitle')}${lang === 'de' ? '' : ` · ${t('roles.videoNote')}`}</figcaption>
       </figure>`
     : '';
@@ -1019,6 +1019,85 @@ ${ctaBand(ctx)}`;
 
   return layout(ctx, { title: t('roster.meta.title'), description: t('roster.meta.description'), body });
 }
+
+/**
+ * The licensed modules without a video or guide of their own (private plugins hr, hrplus, billing, whistle): one
+ * page each, the same layout, texts `<id>.*` (hero, six cards, a checklist and who sees what). They must stay true
+ * to the plugins' READMEs.
+ */
+const LICENSED_MODULES = {
+  hr: ['briefcase', [['deadlines', 'calendar'], ['salary', 'scale'], ['dashboard', 'user'], ['reviews', 'chat'], ['monthClose', 'clock'], ['statements', 'doc']]],
+  hrplus: ['users', [['onboarding', 'handshake'], ['offboarding', 'key'], ['certificates', 'tag'], ['reminders', 'bell'], ['inventory', 'briefcase'], ['loans', 'sync']]],
+  billing: ['receipt', [['customers', 'building'], ['hours', 'clock'], ['draft', 'sliders'], ['qr', 'receipt'], ['export', 'sync'], ['once', 'lock']]],
+  whistle: ['shield', [['public', 'globe'], ['anonymous', 'lock'], ['confidential', 'user'], ['deadlines', 'clock'], ['conversation', 'chat'], ['privacy', 'shield']]],
+};
+
+function licensedModule(ctx, id) {
+  const { t } = ctx;
+  const [mainIcon, cards] = LICENSED_MODULES[id];
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${t('module.eyebrow')} · <span class="chip chip-ok"><b></b>${t('common.freeBadge')}</span></p>
+    <h1>${t(`${id}.hero.title`)}</h1>
+    <p class="lead">${t(`${id}.hero.lead`)}</p>
+    <div class="actions" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
+      <a class="btn btn-primary" href="${ctx.demo}">${t('cta.demo')}${icon('arrow')}</a>
+      <a class="btn btn-ghost" href="${ctx.contactLink('demo')}">${icon('mail')}${t('cta.contact')}</a>
+    </div>
+  </div>
+</section>
+
+<section class="section tight">
+  <div class="wrap">
+    <div class="card pricing-teaser" style="margin-bottom: 40px;">
+      <div>
+        <p class="eyebrow">${icon(mainIcon)}${t('common.includedInFramework')}</p>
+        <h2>${t('module.freeTitle')}</h2>
+        <p class="lead">${t('module.freeText', { name: t(`nav.${id}`) })}</p>
+      </div>
+      <div class="price-badge"><strong>CHF&nbsp;0</strong><span>${t('common.freeBadge')}</span></div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="section-head">
+      <h2>${t(`${id}.features.title`)}</h2>
+      <p class="lead">${t(`${id}.features.lead`)}</p>
+    </div>
+    <div class="grid grid-3">
+    ${cards.map(([k, ic]) => `<article class="card feature">
+        <div class="feature-icon">${icon(ic)}</div>
+        <h3>${t(`${id}.cards.${k}.title`)}</h3>
+        <p>${t(`${id}.cards.${k}.text`)}</p>
+      </article>`).join('\n    ')}
+    </div>
+  </div>
+</section>
+
+<section class="section band">
+  <div class="wrap split">
+    <div>
+      <p class="eyebrow">${icon(mainIcon)}${t(`nav.${id}`)}</p>
+      <h2>${t('module.glance')}</h2>
+      ${checklist(t.list(`${id}.checkItems`))}
+    </div>
+    <div class="card">
+      <div class="feature-icon">${icon('users')}</div>
+      <h3>${t(`${id}.rights.title`)}</h3>
+      <p class="muted">${t(`${id}.rights.text`)}</p>
+    </div>
+  </div>
+</section>
+${ctaBand(ctx)}`;
+
+  return layout(ctx, { title: t(`${id}.meta.title`), description: t(`${id}.meta.description`), body });
+}
+
+export const hr = (ctx) => licensedModule(ctx, 'hr');
+export const hrplus = (ctx) => licensedModule(ctx, 'hrplus');
+export const billing = (ctx) => licensedModule(ctx, 'billing');
+export const whistle = (ctx) => licensedModule(ctx, 'whistle');
 
 /**
  * Support: how-to articles, one section each (an anchor per article, `#<id>`), listed at the top. Each article has
@@ -1327,4 +1406,4 @@ export function newsResult(ctx, kind) {
   return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
 }
 
-export const RENDER = { home, features, cases, expenses, roster, plugins, support, pricing, security, law, about, references, contact, news, impressum, privacy };
+export const RENDER = { home, features, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, support, pricing, security, law, about, references, contact, news, impressum, privacy };
