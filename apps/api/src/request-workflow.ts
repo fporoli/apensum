@@ -14,24 +14,28 @@ export const REQUEST_WORKFLOW_KIND = 'requests.request';
 
 /** Who a request's step may go to. */
 const ASSIGNEES = [
-  'manager', 'department', 'team',
+  'manager', 'department', 'team', 'person',
   'permission:nav.requests', 'permission:section.people.employment', 'permission:nav.expensePayout',
 ];
 
 /**
  * A request type's workflow (Admin settings -> Workflows, one per type): the steps a request of that type goes through
  * instead of one handler. `review` approves it or sends it back to the requester; `task` is work someone does
- * ("order in the web shop"). The facts its conditions test: urgency, type, the requester's department (its code)
+ * ("order in the web shop"); `form` asks the step's own fields (an amount, a date, ...), each assignee's answers kept
+ * and shown in the thread. A step may go to one person, or to everyone of a team or department each on their own.
+ * The facts its conditions test: urgency, type, the requester's department (its code)
  * and management flag, and the organization's own request fields (`field.<key>`).
  */
 export const REQUEST_CATALOGUE: WorkflowKindCatalogue = {
   id: REQUEST_WORKFLOW_KIND,
   definitionName: 'request',
   rejectModes: ['none', 'back'],
+  each: true,
   facts: { urgent: 'boolean', type: 'string', 'requester.department': 'string', 'requester.management': 'boolean' },
   blocks: {
     review: { label: 'Approval', action: 'request.reviewed', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.approve', decides: true },
     task: { label: 'Task', action: 'request.done', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.done' },
+    form: { label: 'Form', action: 'request.done', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.submitForm', fields: true },
   },
   defaultConfig: {
     version: 1,
@@ -51,6 +55,10 @@ async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' 
     ...(ctx.stepKey ? { step: { key: ctx.stepKey, label: ctx.stepLabel ?? ctx.stepKey, ...(ctx.stepLabels ? { labels: ctx.stepLabels } : {}) } } : {}),
     ...(ctx.automatic ? { automatic: true } : {}),
     ...(ctx.decisionNote ? { note: ctx.decisionNote } : {}),
+    // A form step's answers, with their fields' labels and types, so the thread shows them as they were asked.
+    ...(ctx.values && ctx.fields?.length
+      ? { values: ctx.fields.filter((f) => ctx.values![f.key] !== undefined).map((f) => ({ key: f.key, type: f.type, label: f.label, value: ctx.values![f.key] })) }
+      : {}),
   };
   await db.execute(sql`INSERT INTO request_messages (request_id, author_user_id, kind, data)
                        VALUES (${ctx.sourceTableUuid}::uuid, ${ctx.actorUserId}::uuid, 'event', ${JSON.stringify(data)}::jsonb)`);

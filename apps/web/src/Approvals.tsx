@@ -25,6 +25,8 @@ import {
 } from '@mui/material';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
+import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shared/workflowConfig';
+import { StepFieldsForm, type StepValues } from './StepFieldsForm';
 import { formatDurationMinutes, formatFileSize, formatLocaleDate, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
 import { getSourceTitle } from './Timesheet';
 import { PLUGIN_WORKFLOW_KINDS } from './plugins';
@@ -118,6 +120,8 @@ interface ActionItem {
   /** Rejecting sends it back to the person to change and submit again (a configurable workflow's `reject: back`). */
   step_returns?: boolean;
   step_in_dialog?: boolean;
+  /** What the step asks whoever does it (a form step). */
+  step_fields?: StepField[] | null;
   /** The caller submitted it. */
   is_own?: boolean;
   /** What happened, oldest first (`key` is a text key: the core's or a plugin's). */
@@ -211,6 +215,11 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [forwardingItem, setForwardingItem] = useState<ActionItem | null>(null);
   const [note, setNote] = useState('');
+  // A form step being filled in (its item's id) and its answers.
+  const [fillingId, setFillingId] = useState<string | null>(null);
+  const [fillValues, setFillValues] = useState<StepValues>({});
+  const stepFieldError = (code: string, field: StepField | undefined) =>
+    t(`approvals.${code}`, { field: field ? stepFieldLabel(field, locale) : '' });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   /** The workflow definition shown, '' = all. */
@@ -356,13 +365,28 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, scope, statusFilter]);
 
-  async function approveItem(id: string) {
+  async function approveItem(id: string, values?: StepValues, fields?: StepField[]) {
     setError(null);
     setSuccess(null);
+    // A form step: the answers, checked here first (the API checks them again).
+    if (fields?.length) {
+      const checked = stepFieldValues(fields, values ?? {});
+      if (!checked.ok) { setError(stepFieldError(checked.error, fields.find((f) => f.key === checked.field))); return; }
+    }
     try {
-      const res = await fetch(`${API}/workflows/${id}/approve`, { method: 'POST', headers: await authHeaders() });
+      const res = await fetch(`${API}/workflows/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify(fields?.length ? { values } : {}),
+      });
       const data = await res.json();
-      if (!data.ok) { setError(t('approvals.approveFailedWith', { error: data.error ?? t('common.unknownError') })); return; }
+      if (!data.ok) {
+        const field = fields?.find((f) => f.key === data.field);
+        setError(data.error?.startsWith('step-field-') ? stepFieldError(data.error, field) : t('approvals.approveFailedWith', { error: data.error ?? t('common.unknownError') }));
+        return;
+      }
+      setFillingId(null);
+      setFillValues({});
       setSuccess(t('approvals.approved'));
       await reload();
       onChanged?.();
@@ -610,7 +634,9 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                         // A step done in the dialog (it shows what the step needs) opens it instead.
                         const act = item.step_in_dialog && plugin?.kind.Inspect
                           ? () => setInspectingPlugin({ ...plugin, actionItemId: item.id, step: item })
-                          : () => void approveItem(item.id);
+                          : item.step_fields?.length
+                            ? () => { setFillingId(fillingId === item.id ? null : item.id); setFillValues({}); }
+                            : () => void approveItem(item.id);
                         return (
                           <>
                             <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={act}>{t(item.step_action_key ?? 'approvals.approve')}</Button>
@@ -622,6 +648,16 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                       })()}
                     </TableCell>
                   </TableRow>
+                  {fillingId === item.id && item.step_fields?.length ? (
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <StepFieldsForm fields={item.step_fields} values={fillValues} onChange={setFillValues} />
+                          <Button size="small" variant="contained" onClick={() => void approveItem(item.id, fillValues, item.step_fields ?? undefined)}>{t('approvals.submitForm')}</Button>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
                   {rejectingId === item.id && (
                     <TableRow>
                       <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>

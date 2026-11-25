@@ -224,6 +224,9 @@ export class RequestsController {
       canDecide: w.status === 'pending' && assignees.includes(callerId),
       returns: current?.reject === 'back',
       actionKey: current?.actionKey ?? null,
+      // What the step asks whoever does it, and whether each assignee does it on their own.
+      fields: current?.fields ?? null,
+      each: !!current?.each,
       // Sent back: the requester changes it and submits it again.
       returned: w.status === 'rejected' && r.status !== 'resolved',
     };

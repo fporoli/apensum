@@ -91,6 +91,8 @@ export class WorkflowsController {
         step_returns: stepDef?.reject === 'back',
         step_labels: stepDef?.labels ?? null,
         step_in_dialog: !!stepDef?.inDialog,
+        // What the step asks the caller to fill in (a block with fields).
+        step_fields: stepDef?.fields ?? null,
       };
     });
 
@@ -202,12 +204,12 @@ export class WorkflowsController {
   }
 
   @Post(':id/approve')
-  async approve(@Param('id') id: string, @Body() body: { note?: string }, @Req() req: AuthenticatedRequest) {
+  async approve(@Param('id') id: string, @Body() body: { note?: string; values?: unknown }, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
-    return this.workflowsSvc.resolve(db, id, callerId, 'approved', body?.note);
+    return this.workflowsSvc.resolve(db, id, callerId, 'approved', body?.note, body?.values);
   }
 
   @Post(':id/reject')

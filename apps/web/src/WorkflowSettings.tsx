@@ -17,9 +17,11 @@ interface KindInfo {
   variantLabel: string | null;
   variantLabels: Record<string, string> | null;
   optional: boolean;
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
+  /** Its steps may go to everyone of a unit, each on their own. */
+  each?: boolean;
   /** false: the first step may be work and have a condition (a payment run). */
   firstStepDecides?: boolean;
   defaultConfig: WorkflowConfig;
@@ -34,9 +36,10 @@ function catalogueOf(kind: KindInfo): WorkflowKindCatalogue {
     facts: kind.facts,
     rejectModes: kind.rejectModes,
     firstStepDecides: kind.firstStepDecides !== false,
+    each: !!kind.each,
     defaultConfig: kind.defaultConfig,
     blocks: Object.fromEntries(Object.entries(kind.blocks).map(([name, b]) => [name, {
-      label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, required: b.required, action: name, ...(b.canReturn ? { returnAction: name } : {}),
+      label: b.label, assignees: b.assignees, once: b.once, last: b.last, after: b.after, required: b.required, ...(b.fields ? { fields: true } : {}), action: name, ...(b.canReturn ? { returnAction: name } : {}),
     }])),
   };
 }
@@ -57,6 +60,7 @@ function exampleOf(kind: KindInfo): string {
 interface Units {
   departments: { code: string | null; name: string }[];
   teams: { code: string | null; name: string }[];
+  people: { id: string; name: string | null; email: string }[];
 }
 
 /** Copies a text, with a short "copied" on the button. */
@@ -82,7 +86,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
 export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const t = useT();
   const [kinds, setKinds] = useState<KindInfo[]>([]);
-  const [units, setUnits] = useState<Units>({ departments: [], teams: [] });
+  const [units, setUnits] = useState<Units>({ departments: [], teams: [], people: [] });
   const [editable, setEditable] = useState(false);
   const [error, setError] = useState('');
 
@@ -90,7 +94,7 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
     try {
       const data = await (await fetch(`${API}/organizations/${orgId}/workflow-configs`, { headers: await authHeaders() })).json();
       setKinds(Array.isArray(data?.kinds) ? data.kinds : []);
-      setUnits({ departments: data?.units?.departments ?? [], teams: data?.units?.teams ?? [] });
+      setUnits({ departments: data?.units?.departments ?? [], teams: data?.units?.teams ?? [], people: data?.units?.people ?? [] });
       setEditable(data?.editable === true);
     } catch {
       setError(t('common.cannotReachApi'));

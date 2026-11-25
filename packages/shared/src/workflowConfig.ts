@@ -52,15 +52,30 @@ export type Condition =
   | { not: Condition }
   | Record<string, unknown>;
 
+/** A field a step asks its assignees to fill (a block with `fields`, e.g. a request's "form"). */
+export type StepFieldType = 'text' | 'number' | 'date' | 'checkbox';
+export const STEP_FIELD_TYPES: readonly StepFieldType[] = ['text', 'number', 'date', 'checkbox'];
+export const MAX_STEP_FIELDS = 8;
+export interface StepField {
+  key: string;
+  type: StepFieldType;
+  label: Partial<Record<(typeof LANGS)[number], string>>;
+  required?: boolean;
+}
+
 export interface WorkflowStepConfig {
   key: string;
   /** The blocks done in this step, in order (one or more of the kind's). */
   do: string[];
-  /** `manager`, `permission:<object>`, `department:<code>` or `team:<code>`. */
+  /** `manager`, `permission:<object>`, `department:<code>`, `team:<code>` or `person:<user id>`. */
   assignTo: string;
   when?: Condition;
   reject?: RejectMode;
   label?: Partial<Record<(typeof LANGS)[number], string>>;
+  /** Every assignee does the step, each on their own (a department, team or permission); default: one for all. */
+  each?: boolean;
+  /** What the step asks (only with a block that has `fields`). */
+  fields?: StepField[];
 }
 
 export interface WorkflowConfig {
@@ -70,7 +85,7 @@ export interface WorkflowConfig {
 
 /** What a building block does and where it may stand; part of a kind's catalogue (code). */
 export interface WorkflowBlock {
-  /** Who may do it: `manager`, `department`, `team`, and `permission:<object>` for each object allowed. */
+  /** Who may do it: `manager`, `department`, `team`, `person`, and `permission:<object>` for each object allowed. */
   assignees: string[];
   /** The action run when the step is approved (registered with WorkflowsService). */
   action: string;
@@ -91,6 +106,8 @@ export interface WorkflowBlock {
   /** Text keys: the history entry when done, the Workflow page's button. */
   doneKey?: string;
   actionKey?: string;
+  /** The step asks its fields (`WorkflowStepConfig.fields`), filled by whoever does it. */
+  fields?: boolean;
   /** English name, the step's label when the configuration gives none. */
   label: string;
 }
@@ -109,6 +126,8 @@ export interface WorkflowKindCatalogue {
    * default: a submission is always looked at first (the first step can be sent back).
    */
   firstStepDecides?: boolean;
+  /** Its steps may go to every assignee, each on their own (`each`). */
+  each?: boolean;
   /** The configuration an organization without its own uses. */
   defaultConfig: WorkflowConfig;
   /** Shown with the steps on the Workflow page (`source`/`source_name` of the engine's step). */
@@ -125,9 +144,12 @@ export interface WorkflowConfigError {
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
-/** The kind of an assignee (`manager`, `department`, `team`, `permission`), or null. */
-export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | null {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The kind of an assignee (`manager`, `department`, `team`, `permission`, `person`), or null. */
+export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | 'person' | null {
   if (value === 'manager') return 'manager';
+  if (value.startsWith('person:') && UUID.test(value.slice('person:'.length))) return 'person';
   if (value.startsWith('department:') && UNIT_CODE.test(value.slice('department:'.length))) return 'department';
   if (value.startsWith('team:') && UNIT_CODE.test(value.slice('team:'.length))) return 'team';
   if (/^permission:[a-zA-Z0-9.]+$/.test(value)) return 'permission';
@@ -140,6 +162,7 @@ function assigneeAllowed(block: WorkflowBlock, assignTo: string): boolean {
   if (kind === 'manager') return block.assignees.includes('manager');
   if (kind === 'department') return block.assignees.includes('department');
   if (kind === 'team') return block.assignees.includes('team');
+  if (kind === 'person') return block.assignees.includes('person');
   if (kind === 'permission') return block.assignees.includes(assignTo);
   return false;
 }
@@ -174,6 +197,71 @@ function conditionErrors(cond: unknown, facts: Record<string, FactType>, path: s
     : [{ path: at, code: 'invalid-comparison' }];
 }
 
+/** A step's fields as a configuration gives them: their errors, else the fields. */
+function stepFieldsErrors(raw: unknown, path: string): { errors: WorkflowConfigError[]; fields: StepField[] } {
+  if (!Array.isArray(raw) || raw.length === 0) return { errors: [{ path, code: 'no-fields' }], fields: [] };
+  if (raw.length > MAX_STEP_FIELDS) return { errors: [{ path, code: 'too-many-fields' }], fields: [] };
+  const errors: WorkflowConfigError[] = [];
+  const keys = new Set<string>();
+  const fields: StepField[] = [];
+  raw.forEach((f, i) => {
+    const at = `${path}[${i}]`;
+    if (!isObject(f)) { errors.push({ path: at, code: 'not-an-object' }); return; }
+    for (const k of Object.keys(f)) if (!['key', 'type', 'label', 'required'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    const key = typeof f.key === 'string' ? f.key : '';
+    if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
+    else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
+    keys.add(key);
+    if (!STEP_FIELD_TYPES.includes(f.type as StepFieldType)) errors.push({ path: `${at}.type`, code: 'invalid-field-type' });
+    const label = f.label;
+    if (!isObject(label) || Object.keys(label).length === 0
+      || Object.entries(label).some(([l, v]) => !(LANGS as readonly string[]).includes(l) || typeof v !== 'string' || !v.trim() || v.length > 60)) {
+      errors.push({ path: `${at}.label`, code: 'invalid-label' });
+    }
+    if (f.required !== undefined && typeof f.required !== 'boolean') errors.push({ path: `${at}.required`, code: 'invalid-required' });
+    fields.push({ key, type: f.type as StepFieldType, label: label as StepField['label'], ...(f.required ? { required: true } : {}) });
+  });
+  return { errors, fields };
+}
+
+/** A field's label in a language (else English, else any). */
+export function stepFieldLabel(field: StepField, lang: string): string {
+  return field.label[lang as (typeof LANGS)[number]] ?? field.label.en ?? Object.values(field.label).find(Boolean) ?? field.key;
+}
+
+/**
+ * The values someone gives a step's fields, checked (browser and API alike): text up to 500 characters, numbers,
+ * dates (YYYY-MM-DD), checkboxes; a required one must be given (a required checkbox ticked). Unknown keys are dropped.
+ */
+export function stepFieldValues(fields: readonly StepField[], raw: unknown): { ok: true; values: Record<string, string | number | boolean> } | { ok: false; error: string; field: string } {
+  const given = isObject(raw) ? raw : {};
+  const values: Record<string, string | number | boolean> = {};
+  for (const f of fields) {
+    let v = given[f.key];
+    if (typeof v === 'string') v = v.trim();
+    const empty = v === undefined || v === null || v === '' || (f.type === 'checkbox' && v === false);
+    if (empty) {
+      if (f.required) return { ok: false, error: 'step-field-required', field: f.key };
+      continue;
+    }
+    if (f.type === 'number') {
+      const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.replace(/['’\s]/g, '').replace(',', '.')) : NaN;
+      if (!Number.isFinite(n) || Math.abs(n) > 1e9) return { ok: false, error: 'step-field-invalid', field: f.key };
+      values[f.key] = n;
+    } else if (f.type === 'date') {
+      if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`))) return { ok: false, error: 'step-field-invalid', field: f.key };
+      values[f.key] = v;
+    } else if (f.type === 'checkbox') {
+      if (v !== true) return { ok: false, error: 'step-field-invalid', field: f.key };
+      values[f.key] = true;
+    } else {
+      if (typeof v !== 'string' || v.length > 500) return { ok: false, error: 'step-field-invalid', field: f.key };
+      values[f.key] = v;
+    }
+  }
+  return { ok: true, values };
+}
+
 /**
  * Checks an organization's configuration against the kind's catalogue: known blocks and facts, allowed assignees,
  * the blocks' order, the reject modes. The first step is always there (no `when`) and decides (its blocks may be
@@ -192,7 +280,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
   steps.forEach((s, i) => {
     const at = `steps[${i}]`;
     if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
-    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
     const key = typeof s.key === 'string' ? s.key : '';
     if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
     else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
@@ -228,7 +316,23 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
         errors.push({ path: `${at}.label`, code: 'invalid-label' });
       } else label = s.label as WorkflowStepConfig['label'];
     }
-    out.push({ key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}) });
+    // Each on their own: only where a step reaches several people, and only for kinds that offer it.
+    const each = s.each === true;
+    if (s.each !== undefined && typeof s.each !== 'boolean') errors.push({ path: `${at}.each`, code: 'invalid-each' });
+    else if (each && (!kind.each || !['department', 'team', 'permission'].includes(assigneeKind(assignTo) ?? ''))) errors.push({ path: `${at}.each`, code: 'each-not-allowed' });
+    // The fields a block with `fields` asks: required with it, refused without.
+    const asks = blocks.some((b: string) => kind.blocks[b]?.fields);
+    let fields: StepField[] | undefined;
+    if (s.fields !== undefined && !asks) errors.push({ path: `${at}.fields`, code: 'fields-not-allowed' });
+    else if (asks) {
+      const checked = stepFieldsErrors(s.fields, `${at}.fields`);
+      if (checked.errors.length) errors.push(...checked.errors);
+      else fields = checked.fields;
+    }
+    out.push({
+      key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}),
+      ...(each ? { each: true } : {}), ...(fields ? { fields } : {}),
+    });
   });
   for (const [name, block] of Object.entries(kind.blocks)) if (block.required && !done.has(name)) errors.push({ path: 'steps', code: 'block-required' });
   return errors.length ? { ok: false, errors } : { ok: true, value: { version: WORKFLOW_CONFIG_VERSION, steps: out } };
@@ -277,6 +381,10 @@ export interface CompiledWorkflowStep {
   review?: boolean;
   /** A decision about the submission: the submitter is never among its assignees (four eyes). */
   decides?: boolean;
+  /** Every assignee does it, each on their own. */
+  each?: boolean;
+  /** What it asks whoever does it. */
+  fields?: StepField[];
   source?: string;
   source_name?: string;
 }
@@ -304,6 +412,8 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       ...(s.when ? { when: s.when } : {}),
       ...(s.do.length === 1 && s.do[0] === 'review' ? { review: true } : {}),
       ...(blocks.some((b) => b.decides) ? { decides: true } : {}),
+      ...(s.each ? { each: true } : {}),
+      ...(s.fields ? { fields: s.fields } : {}),
       ...(kind.source ? { source: kind.source } : {}),
       ...(kind.source_name ? { source_name: kind.source_name } : {}),
     };

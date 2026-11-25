@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Alert, Box, Button, Chip, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Button, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
 import {
-  assigneeKind, type Condition, type FactType, type RejectMode, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
+  assigneeKind, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
 } from '@worktime3/shared/workflowConfig';
 import { PERMISSION_OBJECTS } from '@worktime3/shared/permissions';
 import { useT } from './i18n';
@@ -9,14 +9,18 @@ import { AddIcon, ArrowDownwardIcon, ArrowUpwardIcon, ChevronRightIcon, ContentC
 
 /** What the designer knows of a kind (from GET workflow-configs). */
 export interface DesignerKind {
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
+  /** Its steps may go to everyone of a unit, each on their own. */
+  each?: boolean;
 }
 
 export interface DesignerUnits {
   departments: { code: string | null; name: string }[];
   teams: { code: string | null; name: string }[];
+  /** The organization's active members, for one person as assignee. */
+  people?: { id: string; name: string | null; email: string }[];
 }
 
 const LANGS = ['de', 'fr', 'it', 'en'] as const;
@@ -152,7 +156,23 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     : [];
   const permissions = allowed.filter((a) => a.startsWith('permission:'));
   const who = assigneeKind(step.assignTo) ?? 'manager';
-  const unitCode = who === 'department' || who === 'team' ? step.assignTo.slice(who.length + 1) : '';
+  const unitCode = who === 'department' || who === 'team' || who === 'person' ? step.assignTo.slice(who.length + 1) : '';
+  const people = units.people ?? [];
+  // Each on their own: where the step reaches several people (a unit or a permission), for kinds that offer it.
+  const canEach = !!kind.each && (who === 'department' || who === 'team' || who === 'permission');
+  const asksFields = step.do.some((b) => kind.blocks[b]?.fields);
+  /** The step with its blocks changed: fields only while a block asks them, a first empty field when one starts to. */
+  const withBlocks = (doBlocks: string[]): WorkflowStepConfig => {
+    const { fields, ...rest } = step;
+    const asks = doBlocks.some((b) => kind.blocks[b]?.fields);
+    return asks ? { ...rest, do: doBlocks, fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : { ...rest, do: doBlocks };
+  };
+  /** The step with another assignee: `each` only where it fits. */
+  const withAssignee = (assignTo: string): WorkflowStepConfig => {
+    const { each, ...rest } = step;
+    const k = assigneeKind(assignTo);
+    return each && (k === 'department' || k === 'team' || k === 'permission') ? { ...rest, assignTo, each } : { ...rest, assignTo };
+  };
   const canReturn = step.do.length > 0 && step.do.every((b) => kind.blocks[b]?.canReturn);
   const permissionLabel = (p: string) => {
     const id = p.slice('permission:'.length);
@@ -160,15 +180,17 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     return caption ? `${t(caption)} (${id})` : id;
   };
   const setWho = (kindOfAssignee: string) => {
-    if (kindOfAssignee === 'manager') onChange({ ...step, assignTo: 'manager' });
-    else if (kindOfAssignee === 'department') onChange({ ...step, assignTo: `department:${units.departments.find((d) => d.code)?.code ?? ''}` });
-    else if (kindOfAssignee === 'team') onChange({ ...step, assignTo: `team:${units.teams.find((d) => d.code)?.code ?? ''}` });
-    else onChange({ ...step, assignTo: permissions[0] ?? 'manager' });
+    if (kindOfAssignee === 'manager') onChange(withAssignee('manager'));
+    else if (kindOfAssignee === 'department') onChange(withAssignee(`department:${units.departments.find((d) => d.code)?.code ?? ''}`));
+    else if (kindOfAssignee === 'team') onChange(withAssignee(`team:${units.teams.find((d) => d.code)?.code ?? ''}`));
+    else if (kindOfAssignee === 'person') onChange(withAssignee(`person:${people[0]?.id ?? ''}`));
+    else onChange(withAssignee(permissions[0] ?? 'manager'));
   };
   const kinds = [
     ...(allowed.includes('manager') ? ['manager'] : []),
     ...(allowed.includes('department') ? ['department'] : []),
     ...(allowed.includes('team') ? ['team'] : []),
+    ...(allowed.includes('person') && people.length ? ['person'] : []),
     ...(permissions.length ? ['permission'] : []),
   ];
 
@@ -197,12 +219,12 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
         {step.do.map((b, j) => (
           <Box key={`${b}-${j}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {j > 0 && <ChevronRightIcon fontSize="small" color="action" />}
-            <Chip size="small" color="primary" variant="outlined" label={blockLabel(b)} onDelete={editable && step.do.length > 1 ? () => onChange({ ...step, do: step.do.filter((_, k) => k !== j) }) : undefined} />
+            <Chip size="small" color="primary" variant="outlined" label={blockLabel(b)} onDelete={editable && step.do.length > 1 ? () => onChange(withBlocks(step.do.filter((_, k) => k !== j))) : undefined} />
           </Box>
         ))}
         {editable && (
           <TextField select size="small" value="" label={t('workflowDesigner.addBlock')} sx={{ minWidth: 150 }}
-            onChange={(e) => onChange({ ...step, do: [...step.do, e.target.value] })}>
+            onChange={(e) => onChange(withBlocks([...step.do, e.target.value]))}>
             {Object.keys(kind.blocks).map((b) => <MenuItem key={b} value={b}>{blockLabel(b)}</MenuItem>)}
           </TextField>
         )}
@@ -215,21 +237,37 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
           {kinds.map((k) => <MenuItem key={k} value={k}>{t(`workflowDesigner.assignee.${k}`)}</MenuItem>)}
         </TextField>
         {who === 'department' && (
-          <TextField select size="small" value={unitCode} disabled={!editable} onChange={(e) => onChange({ ...step, assignTo: `department:${e.target.value}` })} sx={{ minWidth: 220 }}>
+          <TextField select size="small" value={unitCode} disabled={!editable} onChange={(e) => onChange(withAssignee(`department:${e.target.value}`))} sx={{ minWidth: 220 }}>
             {units.departments.filter((d) => d.code).map((d) => <MenuItem key={d.code!} value={d.code!}>{d.name} ({d.code})</MenuItem>)}
           </TextField>
         )}
         {who === 'team' && (
-          <TextField select size="small" value={unitCode} disabled={!editable} onChange={(e) => onChange({ ...step, assignTo: `team:${e.target.value}` })} sx={{ minWidth: 220 }}>
+          <TextField select size="small" value={unitCode} disabled={!editable} onChange={(e) => onChange(withAssignee(`team:${e.target.value}`))} sx={{ minWidth: 220 }}>
             {units.teams.filter((d) => d.code).map((d) => <MenuItem key={d.code!} value={d.code!}>{d.name} ({d.code})</MenuItem>)}
           </TextField>
         )}
         {who === 'permission' && (
-          <TextField select size="small" value={permissions.includes(step.assignTo) ? step.assignTo : ''} disabled={!editable} onChange={(e) => onChange({ ...step, assignTo: e.target.value })} sx={{ minWidth: 260 }}>
+          <TextField select size="small" value={permissions.includes(step.assignTo) ? step.assignTo : ''} disabled={!editable} onChange={(e) => onChange(withAssignee(e.target.value))} sx={{ minWidth: 260 }}>
             {permissions.map((p) => <MenuItem key={p} value={p}>{permissionLabel(p)}</MenuItem>)}
           </TextField>
         )}
+        {who === 'person' && (
+          <TextField select size="small" value={people.some((p) => p.id === unitCode) ? unitCode : ''} disabled={!editable} onChange={(e) => onChange(withAssignee(`person:${e.target.value}`))} sx={{ minWidth: 260 }}>
+            {[...people].sort((a, b) => (a.name ?? a.email).localeCompare(b.name ?? b.email)).map((p) => <MenuItem key={p.id} value={p.id}>{p.name ?? p.email}</MenuItem>)}
+          </TextField>
+        )}
+        {canEach && (
+          <Tooltip title={t('workflowDesigner.eachHint')}>
+            <FormControlLabel
+              control={<Checkbox size="small" checked={!!step.each} disabled={!editable} onChange={(e) => { const { each: _old, ...rest } = step; onChange(e.target.checked ? { ...rest, each: true } : rest); }} />}
+              label={<Typography variant="body2">{t('workflowDesigner.each')}</Typography>}
+            />
+          </Tooltip>
+        )}
       </Box>
+
+      {/* What a form step asks whoever does it. */}
+      {asksFields && <StepFieldsEditor fields={step.fields ?? []} editable={editable} onChange={(fields) => onChange({ ...step, fields })} />}
 
       {/* Rejecting: not possible, or back to the person who submitted. */}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -272,6 +310,50 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
 
       {errors.length > 0 && <Alert severity="error" sx={{ py: 0 }}>{errors.map((e) => `${e.path.replace(/^steps\[\d+\]\.?/, '') || '·'}: ${errorText(e)}`).join(' · ')}</Alert>}
     </Paper>
+  );
+}
+
+/** The fields a form step asks: key, type, required, the label per language. */
+function StepFieldsEditor({ fields, editable, onChange }: { fields: StepField[]; editable: boolean; onChange: (fields: StepField[]) => void }) {
+  const t = useT();
+  const set = (i: number, f: StepField) => onChange(fields.map((x, k) => (k === i ? f : x)));
+  return (
+    <Box sx={{ display: 'grid', gap: 1 }}>
+      <Typography variant="body2">{t('workflowDesigner.fields')}</Typography>
+      {fields.map((f, i) => (
+        <Box key={i} sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center', pl: { sm: 2 } }}>
+          <TextField size="small" label={t('workflowDesigner.key')} value={f.key} disabled={!editable} sx={{ width: 130 }}
+            inputProps={{ maxLength: 30, spellCheck: false, style: { fontFamily: 'monospace' } }}
+            onChange={(e) => set(i, { ...f, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })} />
+          <TextField select size="small" label={t('workflowDesigner.fieldType')} value={f.type} disabled={!editable} sx={{ width: 140 }}
+            onChange={(e) => set(i, { ...f, type: e.target.value as StepFieldType })}>
+            {STEP_FIELD_TYPES.map((ty) => <MenuItem key={ty} value={ty}>{t(`workflowDesigner.fieldType.${ty}`)}</MenuItem>)}
+          </TextField>
+          {LANGS.map((l) => (
+            <TextField key={l} size="small" label={l.toUpperCase()} value={f.label[l] ?? ''} disabled={!editable} inputProps={{ maxLength: 60 }} sx={{ width: 130 }}
+              onChange={(e) => {
+                const label = { ...f.label, [l]: e.target.value };
+                if (!e.target.value) delete label[l];
+                set(i, { ...f, label });
+              }} />
+          ))}
+          <FormControlLabel control={<Checkbox size="small" checked={!!f.required} disabled={!editable} onChange={(e) => { const { required: _r, ...rest } = f; set(i, e.target.checked ? { ...rest, required: true } : rest); }} />}
+            label={<Typography variant="body2">{t('workflowDesigner.fieldRequired')}</Typography>} />
+          {editable && (
+            <Tooltip title={t('workflowDesigner.remove')}><span><IconButton size="small" color="error" aria-label={t('workflowDesigner.remove')} disabled={fields.length === 1} onClick={() => onChange(fields.filter((_, k) => k !== i))}><DeleteIcon fontSize="small" /></IconButton></span></Tooltip>
+          )}
+        </Box>
+      ))}
+      {editable && fields.length < MAX_STEP_FIELDS && (
+        <Box sx={{ pl: { sm: 2 } }}>
+          <Button size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => {
+            let n = fields.length + 1;
+            while (fields.some((f) => f.key === `field_${n}`)) n++;
+            onChange([...fields, { key: `field_${n}`, type: 'text', label: {} }]);
+          }}>{t('workflowDesigner.addField')}</Button>
+        </Box>
+      )}
+    </Box>
   );
 }
 

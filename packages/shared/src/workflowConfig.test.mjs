@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanUnitCode, codeFromName, compileWorkflow, evaluateCondition, nextApplicableStep, validateWorkflowConfig } from './workflowConfig.ts';
+import { cleanUnitCode, codeFromName, compileWorkflow, evaluateCondition, nextApplicableStep, stepFieldValues, validateWorkflowConfig } from './workflowConfig.ts';
 
 const KIND = {
   id: 'expenses.report',
@@ -127,4 +127,60 @@ test('reject end: rejected for good, the default where the kind has no back', ()
   assert.equal(r.value.steps[0].reject, 'end');
   assert.deepEqual(compileWorkflow(absence, r.value)[0].returnActions, ['expense.reject']);
   assert.deepEqual(codes(validateWorkflowConfig(absence, { version: 1, steps: [{ key: 'm', do: ['review'], assignTo: 'manager', reject: 'back' }] })), ['steps[0].reject invalid-reject']);
+});
+
+// A request-like kind: a form block with fields, persons as assignees, steps each one on their own.
+const REQ = {
+  id: 'requests.request',
+  definitionName: 'request',
+  rejectModes: ['none', 'back'],
+  each: true,
+  facts: {},
+  blocks: {
+    review: { label: 'Approval', action: 'r.ok', returnAction: 'r.back', assignees: ['manager', 'team', 'person'], decides: true },
+    form: { label: 'Form', action: 'r.done', returnAction: 'r.back', assignees: ['manager', 'team', 'person'], fields: true },
+  },
+  defaultConfig: { version: 1, steps: [] },
+};
+const PERSON = 'person:22222222-2222-2222-2222-222222222224';
+const AMOUNT = { key: 'amount', type: 'number', label: { de: 'Betrag', en: 'Amount' }, required: true };
+
+test('a step may go to one person, or to everyone of a team each on their own, and ask fields', () => {
+  const r = validateWorkflowConfig(REQ, { version: 1, steps: [
+    { key: 'ok', do: ['review'], assignTo: PERSON },
+    { key: 'give', do: ['form'], assignTo: 'team:gift', each: true, fields: [AMOUNT, { key: 'note', type: 'text', label: { en: 'Note' } }] },
+  ] });
+  assert.deepEqual(codes(r), []);
+  const steps = compileWorkflow(REQ, r.value);
+  assert.equal(steps[1].each, true);
+  assert.deepEqual(steps[1].fields.map((f) => f.key), ['amount', 'note']);
+});
+
+test('each, person and fields are refused where they do not belong', () => {
+  assert.deepEqual(codes(validateWorkflowConfig(REQ, { version: 1, steps: [
+    { key: 'ok', do: ['review'], assignTo: PERSON, each: true, fields: [AMOUNT] },
+    { key: 'give', do: ['form'], assignTo: 'team:gift' },
+    { key: 'more', do: ['form'], assignTo: 'manager', fields: [AMOUNT, { ...AMOUNT, type: 'money', label: {} }] },
+  ] })), [
+    'steps[0].each each-not-allowed',
+    'steps[0].fields fields-not-allowed',
+    'steps[1].fields no-fields',
+    'steps[2].fields[1].key duplicate-key',
+    'steps[2].fields[1].type invalid-field-type',
+    'steps[2].fields[1].label invalid-label',
+  ]);
+  // Kinds without persons or `each` refuse them.
+  assert.deepEqual(codes(validateWorkflowConfig(KIND, { version: 1, steps: [
+    { key: 'a', do: ['review'], assignTo: PERSON },
+    { key: 'b', do: ['review'], assignTo: 'department:sales', each: true },
+  ] })), ['steps[0].assignTo assignee-not-allowed', 'steps[1].each each-not-allowed']);
+});
+
+test('stepFieldValues checks what someone gives a step', () => {
+  const fields = [AMOUNT, { key: 'on', type: 'date', label: { en: 'On' } }, { key: 'ok', type: 'checkbox', label: { en: 'OK' } }, { key: 'note', type: 'text', label: { en: 'Note' } }];
+  assert.deepEqual(stepFieldValues(fields, { amount: "1'250.50", on: '2026-12-01', ok: true, note: '  hi ', other: 1 }), { ok: true, values: { amount: 1250.5, on: '2026-12-01', ok: true, note: 'hi' } });
+  assert.deepEqual(stepFieldValues(fields, { amount: '' }), { ok: false, error: 'step-field-required', field: 'amount' });
+  assert.deepEqual(stepFieldValues(fields, { amount: 'abc' }), { ok: false, error: 'step-field-invalid', field: 'amount' });
+  assert.deepEqual(stepFieldValues(fields, { amount: 20, on: '2026-13-45' }), { ok: false, error: 'step-field-invalid', field: 'on' });
+  assert.deepEqual(stepFieldValues(fields, { amount: 20 }), { ok: true, values: { amount: 20 } });
 });

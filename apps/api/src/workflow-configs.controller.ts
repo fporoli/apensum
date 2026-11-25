@@ -5,10 +5,10 @@ import { DbService } from './db.service';
 import { AuditService } from './audit.service';
 import { WorkflowsService } from './workflows.service';
 import { can, callerUserId, isOrgOwner } from './access';
-import { departments, teams } from './db/schema';
+import { departments, organization_memberships, teams, users } from './db/schema';
 import type { AuthenticatedRequest } from './jwt.guard';
 
-/** The errors of assignees naming a department or team (by code) this organization doesn't have. */
+/** The errors of assignees naming a department or team (by code), or a person, this organization doesn't have. */
 export async function unknownUnits(db: NonNullable<ReturnType<DbService['getDb']>>, orgId: string, assignees: string[]): Promise<WorkflowConfigError[]> {
   const codes = (prefix: string) => [...new Set(assignees.filter((a) => a.startsWith(prefix)).map((a) => a.slice(prefix.length)))];
   const depCodes = codes('department:');
@@ -20,9 +20,15 @@ export async function unknownUnits(db: NonNullable<ReturnType<DbService['getDb']
   if (teamCodes.length) {
     for (const r of await db.select({ code: teams.code }).from(teams).where(and(eq(teams.organization_id, orgId), inArray(teams.code, teamCodes)))) known.add(`team:${r.code}`);
   }
+  const personIds = codes('person:');
+  if (personIds.length) {
+    const rows = await db.select({ id: organization_memberships.user_id }).from(organization_memberships)
+      .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.status, 'active'), inArray(organization_memberships.user_id, personIds)));
+    for (const r of rows) known.add(`person:${r.id}`);
+  }
   return assignees.flatMap((a, i) =>
-    (a.startsWith('department:') || a.startsWith('team:')) && !known.has(a)
-      ? [{ path: `steps[${i}].assignTo`, code: a.startsWith('team:') ? 'unknown-team' : 'unknown-department' }]
+    (a.startsWith('department:') || a.startsWith('team:') || a.startsWith('person:')) && !known.has(a)
+      ? [{ path: `steps[${i}].assignTo`, code: a.startsWith('team:') ? 'unknown-team' : a.startsWith('person:') ? 'unknown-person' : 'unknown-department' }]
       : []);
 }
 
@@ -51,14 +57,15 @@ export class WorkflowConfigsController {
       // A kind with variants (request types) is listed once per variant; without its own configuration it has none.
       const variants: ({ key: string; label: string; labels?: Record<string, string> } | null)[] = kind.variants ? await kind.variants(db, orgId) : [null];
       for (const variant of variants) {
-        const { blocks, facts, rejectModes, defaultConfig, firstStepDecides } = (await this.workflowsSvc.catalogueOf(db, orgId, id, variant?.key))!;
+        const { blocks, facts, rejectModes, defaultConfig, firstStepDecides, each } = (await this.workflowsSvc.catalogueOf(db, orgId, id, variant?.key))!;
         kinds.push({
           id,
           variant: variant?.key ?? null,
           variantLabel: variant?.label ?? null,
           variantLabels: variant?.labels ?? null,
           optional: !!kind.variants,
-          blocks: Object.fromEntries(Object.entries(blocks).map(([name, b]) => [name, { assignees: b.assignees, label: b.label, once: !!b.once, last: !!b.last, after: b.after ?? [], canReturn: !!b.returnAction, required: !!b.required }])),
+          blocks: Object.fromEntries(Object.entries(blocks).map(([name, b]) => [name, { assignees: b.assignees, label: b.label, once: !!b.once, last: !!b.last, after: b.after ?? [], canReturn: !!b.returnAction, required: !!b.required, fields: !!b.fields }])),
+          each: !!each,
           facts,
           rejectModes,
           firstStepDecides: firstStepDecides !== false,
@@ -71,6 +78,10 @@ export class WorkflowConfigsController {
     const units = {
       departments: await db.select({ code: departments.code, name: departments.name }).from(departments).where(and(eq(departments.organization_id, orgId), eq(departments.is_active, true))),
       teams: await db.select({ code: teams.code, name: teams.name }).from(teams).where(eq(teams.organization_id, orgId)),
+      // The active members, for `person:<id>` (names only, as the directory shows them to everyone).
+      people: await db.select({ id: users.id, name: users.display_name, email: users.email }).from(organization_memberships)
+        .innerJoin(users, eq(users.id, organization_memberships.user_id))
+        .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.status, 'active'))),
     };
     return { ok: true, kinds, units, editable: await isOrgOwner(db, orgId, callerId) };
   }

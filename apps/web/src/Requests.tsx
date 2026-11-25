@@ -29,6 +29,9 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useI18n } from './i18n';
+import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shared/workflowConfig';
+import { StepAnswers, StepFieldsForm, type StepAnswer, type StepValues } from './StepFieldsForm';
+import { formatLocaleNumber } from './localeFormat';
 import { EmptyState, PageHeader } from './components';
 import { AddIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon } from './icons';
 import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
@@ -90,6 +93,8 @@ interface Message {
     step?: StepLabel;
     automatic?: boolean;
     note?: string;
+    /** A form step's answers (request-workflow.ts threadEvent). */
+    values?: StepAnswer[];
   };
   posted_at: string;
   author_user_id: string | null;
@@ -115,6 +120,10 @@ interface RequestWorkflowInfo {
   returns: boolean;
   actionKey: string | null;
   returned: boolean;
+  /** What the pending step asks whoever does it (a form step). */
+  fields?: StepField[] | null;
+  /** Every assignee does it on their own. */
+  each?: boolean;
 }
 
 const stepName = (s: StepLabel | undefined, locale: string) => (s ? s.labels?.[locale] ?? s.label : '');
@@ -295,24 +304,36 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   }, [selectedId, loadDetail, refreshKey]);
 
   /** Approves (or sends back) the step of a workflow request the caller decides (the Workflow page's endpoints). */
-  async function decide(workflowId: string, what: 'approve' | 'reject', note: string) {
+  async function decide(workflowId: string, what: 'approve' | 'reject', note: string, values?: StepValues, fields?: StepField[] | null): Promise<boolean> {
+    const stepFieldError = (code: string, key: string | undefined) => {
+      const f = fields?.find((x) => x.key === key);
+      return t(`approvals.${code}`, { field: f ? stepFieldLabel(f, locale) : '' });
+    };
+    // A form step: the answers, checked here first (the API checks them again).
+    if (what === 'approve' && fields?.length) {
+      const checked = stepFieldValues(fields, values ?? {});
+      if (!checked.ok) { setError(stepFieldError(checked.error, checked.field)); return false; }
+    }
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`${API}/workflows/${workflowId}/${what}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify(note.trim() ? { note: note.trim() } : {}),
+        body: JSON.stringify({ ...(note.trim() ? { note: note.trim() } : {}), ...(what === 'approve' && fields?.length ? { values } : {}) }),
       });
       const data = await res.json();
-      if (!data?.ok) setError(errorText(data?.error));
-      else {
-        if (selectedId) await loadDetail(selectedId);
-        await loadList();
-        onChanged?.();
+      if (!data?.ok) {
+        setError(String(data?.error ?? '').startsWith('step-field-') ? stepFieldError(data.error, data.field) : errorText(data?.error));
+        return false;
       }
+      if (selectedId) await loadDetail(selectedId);
+      await loadList();
+      onChanged?.();
+      return true;
     } catch {
       setError(t('common.cannotReachApi'));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -546,7 +567,8 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           workflow={detail.workflow}
           isRequester={detail.isRequester}
           busy={busy}
-          onDecide={(what, note) => void decide(detail.workflow!.id, what, note)}
+          onDecide={(what, note, values) => decide(detail.workflow!.id, what, note, values, detail.workflow!.fields)}
+          totals={stepTotals(detail.messages, locale)}
           onResubmit={(note) => void post(`/${r.id}/resubmit`, { note })}
           onWithdraw={() => void post(`/${r.id}/withdraw`, {})}
         />
@@ -606,6 +628,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
             return (
               <Typography key={m.id} variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
                 {eventText(m)} · {formatRelativeTime(m.posted_at, locale)}
+                {m.data.values?.length ? <StepAnswers answers={m.data.values} yes={t('common.yes')} /> : null}
               </Typography>
             );
           }
@@ -1119,16 +1142,35 @@ function NewRequestDialog({
  * A workflow request's steps: where it stands and who it waits for; the step's assignees approve it (or send it back
  * to the requester), the requester submits a request that was sent back again or withdraws it.
  */
-function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw }: {
+/** The sums of the number answers of the thread's form steps, per step and field ("Amount: 80"). */
+function stepTotals(messages: Message[], locale: string): string[] {
+  const sums = new Map<string, { label: string; total: number; count: number }>();
+  for (const m of messages) {
+    for (const a of m.data.values ?? []) {
+      if (a.type !== 'number' || typeof a.value !== 'number') continue;
+      const id = `${m.data.step?.key ?? ''}:${a.key}`;
+      const sum = sums.get(id) ?? { label: stepFieldLabel({ key: a.key, type: a.type, label: a.label }, locale), total: 0, count: 0 };
+      sum.total += a.value;
+      sum.count += 1;
+      sums.set(id, sum);
+    }
+  }
+  return [...sums.values()].filter((s) => s.count > 1).map((s) => `${s.label}: ${formatLocaleNumber(s.total, locale)}`);
+}
+
+function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw, totals }: {
   workflow: RequestWorkflowInfo;
   isRequester: boolean;
   busy: boolean;
-  onDecide: (what: 'approve' | 'reject', note: string) => void;
+  onDecide: (what: 'approve' | 'reject', note: string, values?: StepValues) => Promise<boolean>;
+  /** The sums of the form steps' number answers. */
+  totals: string[];
   onResubmit: (note: string) => void;
   onWithdraw: () => void;
 }) {
   const { t, locale } = useI18n();
   const [note, setNote] = useState('');
+  const [values, setValues] = useState<StepValues>({});
   const current = workflow.steps.findIndex((s) => s.key === workflow.step);
   const doneUpTo = workflow.status === 'approved' ? workflow.steps.length : workflow.status === 'pending' ? current : -1;
   return (
@@ -1150,7 +1192,10 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
       {workflow.status === 'pending' && workflow.waitingFor.length > 0 && (
         <Typography variant="body2" color="text.secondary">{t('requests.workflow.waitingFor', { names: workflow.waitingFor.join(', ') })}</Typography>
       )}
+      {workflow.status === 'pending' && workflow.each && <Typography variant="caption" color="text.secondary">{t('requests.workflow.each')}</Typography>}
+      {totals.length > 0 && <Typography variant="body2">{t('requests.workflow.totals', { totals: totals.join(' · ') })}</Typography>}
       {workflow.returned && <Alert severity="warning">{t(isRequester ? 'requests.workflow.returnedToYou' : 'requests.workflow.returned')}</Alert>}
+      {workflow.canDecide && workflow.fields?.length ? <StepFieldsForm fields={workflow.fields} values={values} onChange={setValues} disabled={busy} /> : null}
       {(workflow.canDecide || (isRequester && (workflow.returned || workflow.status === 'pending'))) && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {(workflow.canDecide || workflow.returned) && (
@@ -1158,11 +1203,11 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
           )}
           {workflow.canDecide && (
             <>
-              <Button size="small" variant="contained" disabled={busy} onClick={() => { onDecide('approve', note); setNote(''); }}>
+              <Button size="small" variant="contained" disabled={busy} onClick={() => { void onDecide('approve', note, values).then((ok) => { if (ok) { setNote(''); setValues({}); } }); }}>
                 {t(workflow.actionKey ?? 'requests.workflow.approve')}
               </Button>
               {workflow.returns && (
-                <Button size="small" color="error" disabled={busy} onClick={() => { onDecide('reject', note); setNote(''); }}>{t('approvals.return')}</Button>
+                <Button size="small" color="error" disabled={busy} onClick={() => { void onDecide('reject', note).then((ok) => { if (ok) setNote(''); }); }}>{t('approvals.return')}</Button>
               )}
             </>
           )}
