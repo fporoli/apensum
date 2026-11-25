@@ -1,5 +1,5 @@
 /**
- * The demo instance starts over on a schedule (a systemd timer on its server, infra/vps/remote.sh `demo_reset_timer`:
+ * The demo instance starts over on a schedule (the deploy user's crontab on its server, infra/vps/remote.sh `demo_reset_timer`:
  * every DEMO_RESET_EVERY_HOURS hours at minute 7 UTC).
  * The API says how often (GET health `demoReset.everyHours`, env DEMO_RESET_EVERY_HOURS); the times are
  * worked out here: a warning before, and during the reset (API unreachable) a waiting page.

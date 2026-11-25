@@ -1,5 +1,5 @@
 name: demo-reset
-# The public demo starts over on its own: a systemd timer on its server (infra/vps/remote.sh `demo_reset_timer`,
+# The public demo starts over on its own: an entry in the deploy user's crontab on its server (infra/vps/remote.sh `demo_reset_timer`,
 # every DEMO_RESET_EVERY_HOURS hours at minute 7 UTC), installed by each deploy. This workflow is the manual way:
 # it dispatches vps.yml `reset-seed` on demo (without a backup: only prod is backed up, demo sets RESET_BACKUP=false), with
 # the image tag of the last successful deploy on demo, so the reset runs exactly that version's

@@ -25,7 +25,7 @@ test('the minute matches the reset timer on the server', () => {
   const minute = /^DEMO_RESET_MINUTE=(\d+)$/m.exec(remote);
   assert.ok(minute, 'remote.sh sets DEMO_RESET_MINUTE');
   assert.equal(Number(minute[1]), DEMO_RESET_MINUTE_UTC);
-  assert.match(remote, /OnCalendar=\*-\*-\* 00\/\$DEMO_RESET_EVERY_HOURS:0\$DEMO_RESET_MINUTE:00 UTC/, 'the timer runs in UTC');
+  assert.match(remote, /date -u \+%H\) % \$\{DEMO_RESET_EVERY_HOURS/, 'the reset goes by the hour in UTC');
   const compose = readFileSync(new URL('../../../.github/workflows/vps.yml', import.meta.url), 'utf8');
   assert.match(compose, /DEMO_RESET_EVERY_HOURS/, 'vps.yml passes DEMO_RESET_EVERY_HOURS to the server');
 });

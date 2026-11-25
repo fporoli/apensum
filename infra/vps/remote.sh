@@ -391,20 +391,23 @@ reset_steps() {
 # that would come right after another.
 mark_reset() { date -u +%s > "$ROOT/last-reset"; }
 
-# The demo starts over on a schedule (GitHub Environment variable DEMO_RESET_EVERY_HOURS): a systemd timer on the
-# server, every that many hours at minute 7 UTC (apps/web/src/demoReset.ts warns ahead of the same times), runs
-# `scheduled-reset` with the files and images the last deploy left; it skips a reset when the last one (also one by
-# hand or a deploy-reset) is less than an hour old. What it needs that compose/.env lacks (the
+# The demo starts over on a schedule (GitHub Environment variable DEMO_RESET_EVERY_HOURS): an entry in the deploy
+# user's crontab (no sudo needed) runs `scheduled-reset` at minute 7 of every hour, which goes on only when the hour in
+# UTC is a multiple of DEMO_RESET_EVERY_HOURS (apps/web/src/demoReset.ts warns ahead of the same times), so the
+# server's time zone doesn't matter. It uses the files and images the last deploy left, and skips a reset when the
+# last one (also one by hand or a deploy-reset) is less than an hour old. What it needs that compose/.env lacks (the
 # instance's names, the image tag, the operator's password) is kept in demo-reset.env, readable by the deploy user
-# only, like compose/.env. Without the variable a deploy removes the timer. Needs passwordless sudo (systemd units).
+# only, like compose/.env. Without the variable a deploy removes the entry; output goes to demo-reset.log.
 DEMO_RESET_MINUTE=7
 demo_reset_timer() {
-  local unit="$PREFIX-reset" user; user="$(id -un)"
+  local tag="# $PREFIX-reset" current
+  if ! command -v crontab >/dev/null 2>&1; then
+    [ -n "${DEMO_RESET_EVERY_HOURS:-}" ] && echo "WARNING: no crontab on this server: the demo reset timer is not installed" >&2
+    return 0
+  fi
+  current="$(crontab -l 2>/dev/null | grep -vF "$tag" || true)"
   if [ -z "${DEMO_RESET_EVERY_HOURS:-}" ]; then
-    if [ -f "/etc/systemd/system/$unit.timer" ]; then
-      sudo -n systemctl disable --now "$unit.timer" >/dev/null 2>&1 || true
-      sudo -n rm -f "/etc/systemd/system/$unit.timer" "/etc/systemd/system/$unit.service" && sudo -n systemctl daemon-reload || true
-    fi
+    if crontab -l 2>/dev/null | grep -qF "$tag"; then printf "%s\n" "$current" | crontab -; fi
     rm -f "$ROOT/demo-reset.env"
     return 0
   fi
@@ -416,40 +419,18 @@ demo_reset_timer() {
       printf "%s=%q\n" "$name" "$(printenv "$name" || true)"
     done > "$ROOT/demo-reset.env"
   )
-  if ! sudo -n true 2>/dev/null; then
-    echo "WARNING: no passwordless sudo: the demo reset timer is not installed" >&2
-    return 0
-  fi
-  sudo -n tee "/etc/systemd/system/$unit.service" >/dev/null <<EOF
-[Unit]
-Description=Apensum $ENVIRONMENT: start over with the demo data (remote.sh scheduled-reset)
-After=docker.service
-
-[Service]
-Type=oneshot
-User=$user
-ExecStart=/bin/bash -c 'set -a; . $ROOT/demo-reset.env; set +a; exec bash $ROOT/infra/vps/remote.sh scheduled-reset'
-TimeoutStartSec=40min
-EOF
-  sudo -n tee "/etc/systemd/system/$unit.timer" >/dev/null <<EOF
-[Unit]
-Description=Apensum $ENVIRONMENT: demo reset every $DEMO_RESET_EVERY_HOURS hours at minute $DEMO_RESET_MINUTE UTC
-
-[Timer]
-OnCalendar=*-*-* 00/$DEMO_RESET_EVERY_HOURS:0$DEMO_RESET_MINUTE:00 UTC
-Persistent=false
-AccuracySec=1s
-
-[Install]
-WantedBy=timers.target
-EOF
-  sudo -n systemctl daemon-reload
-  sudo -n systemctl enable --now "$unit.timer" >/dev/null
-  echo "Demo reset timer: $(systemctl list-timers "$unit.timer" --no-legend | awk '{print $1, $2, $3, $4}')"
+  { [ -n "$current" ] && printf "%s\n" "$current"
+    echo "$DEMO_RESET_MINUTE * * * * /bin/bash -c 'set -a; . $ROOT/demo-reset.env; set +a; exec bash $ROOT/infra/vps/remote.sh scheduled-reset' >> $ROOT/demo-reset.log 2>&1 $tag"
+  } | crontab -
+  echo "Demo reset timer: every $DEMO_RESET_EVERY_HOURS hours at minute $DEMO_RESET_MINUTE UTC (crontab of $(id -un))"
 }
 
 # The timer's reset: the images and files already here (no shipped files, no pull), then the demo data.
 scheduled_reset() {
+  # Every hour at minute 7: only the hours (UTC) that are a multiple of DEMO_RESET_EVERY_HOURS reset.
+  [ $(( 10#$(date -u +%H) % ${DEMO_RESET_EVERY_HOURS:-2} )) -eq 0 ] || return 0
+  # The log keeps the last runs only.
+  [ -f "$ROOT/demo-reset.log" ] && [ "$(wc -c < "$ROOT/demo-reset.log")" -gt 1000000 ] && tail -c 200000 "$ROOT/demo-reset.log" > "$ROOT/demo-reset.log.tmp" && mv "$ROOT/demo-reset.log.tmp" "$ROOT/demo-reset.log"
   local last=0
   [ -f "$ROOT/last-reset" ] && last="$(cat "$ROOT/last-reset" 2>/dev/null || echo 0)"
   if [ $(( $(date -u +%s) - ${last:-0} )) -lt 3600 ]; then
