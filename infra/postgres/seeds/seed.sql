@@ -9,7 +9,7 @@
 
 INSERT INTO users (id, email, display_name, first_name, last_name, locale, timezone, status)
 VALUES
-  ('11111111-1111-1111-1111-111111111111', 'admin@acme.com', 'Acme Glox Admin', 'Adam',   'Admin',   'en', 'Europe/Zurich', 'active'),
+  ('11111111-1111-1111-1111-111111111111', 'admin@acme.com', 'Admin A', 'Adam',   'Admin',   'en', 'Europe/Zurich', 'active'),
   ('22222222-2222-2222-2222-222222222222', 'alice@acme.com', 'Alice A',         'Alice',  'Admin',   'en', 'Europe/Zurich', 'active'),
   ('22222222-2222-2222-2222-222222222223', 'adam@acme.com',  'Adam A' ,         'Adam',   'Admin',   'en', 'Europe/Zurich', 'active'),
   ('22222222-2222-2222-2222-222222222224', 'marta@acme.com', 'Marta A',         'Marta',  'Manager', 'en', 'Europe/Zurich', 'active'),
