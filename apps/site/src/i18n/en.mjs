@@ -47,10 +47,10 @@ export default {
   'notFound.text': 'The page you are looking for does not exist or has moved.',
   'notFound.home': 'Go to the English homepage',
 
-  'home.meta.title': "Apensum – Time tracking, expenses and assessments in one Swiss app",
+  'home.meta.title': "Time tracking for Swiss SMEs – working hours, timesheets, absences and expenses | Apensum",
   'home.meta.description':
-    'Apensum combines a legally compliant Swiss worktime foundation with flexible specialised modules like Assessments and Expenses. In German, French, Italian and English.',
-  'hero.eyebrow': "The Swiss business app that grows with you",
+    "Time tracking for Swiss SMEs under the Working Hours Act: clocking in, project time and timesheets, absences and vacation, balances, expenses and shift planning. In German, French, Italian and English, currently free.",
+  'hero.eyebrow': "Time tracking and HR software for Swiss SMEs",
   'hero.title': "From clocking in to the final assessment.",
   'hero.lead':
     "Apensum records working and project time under Swiss labour law, settles expenses and keeps confidential case files all the way to the finished assessment – all in one app. And when you need more, you extend Apensum with modules of your own.",
@@ -162,9 +162,9 @@ export default {
   'home.oss.text': "The core of Apensum is open source under the GNU AGPL-3.0, and its source code is on GitHub. Anyone can read and check it, run it themselves and adapt it – whoever offers a changed version as a service publishes their changes too. The HR processes, Assessments and Expenses modules are proprietary.",
   'home.oss.link': "Source code on GitHub",
 
-  'features.meta.title': 'Features – Apensum',
+  'features.meta.title': "Features – time tracking, timesheets, absences, vacation and expenses | Apensum",
   'features.meta.description':
-    'Attendance, project time, absences, balances, timesheets, expenses, requests and documents: everything Apensum does, in one overview.',
+    "Clocking in and attendance, project time and weekly report, monthly timesheet, absences and vacation, overtime and vacation balances, expenses, requests and documents: every Apensum feature.",
   'features.title': 'Everything your team needs. Nothing it doesn’t.',
   'features.lead': 'Apensum covers the whole cycle from recording time to closing the month – with the Swiss details built in.',
   'features.toc': 'Feature areas',
@@ -359,7 +359,7 @@ export default {
   'security.opensource.title': "Open source code",
   'security.opensource.text': "The core's source code is public on GitHub under the GNU AGPL-3.0. Anyone can check how Apensum stores and protects your data. The HR processes, Assessments and Expenses modules are proprietary.",
   'security.note': 'Questions about security or data protection? Get in touch – we are happy to answer them in detail.',
-  'pricing.meta.title': 'Pricing – Apensum',
+  'pricing.meta.title': "Pricing – time tracking currently free | Apensum",
   'pricing.meta.description': 'Apensum is free during its build-up phase. Customization work is billed by the hour.',
   'pricing.title': 'Simple, fair pricing',
   'pricing.lead': 'Apensum is in its build-up phase. That is why using it costs nothing at the moment – you only pay for work done specifically for you.',
@@ -503,7 +503,7 @@ export default {
   'privacy.changes.text': ['We may update this policy when our website or the law changes. The version published here applies.'],
   'slug.law': "security/working-hours-act",
   'nav.law': "Working Hours Act",
-  'law.meta.title': "Time recording under the Swiss Working Hours Act – Apensum",
+  'law.meta.title': "Mandatory time recording in Switzerland – Working Hours Act | Apensum",
   'law.meta.description': "What the Swiss Working Hours Act requires for time recording – rest, breaks, Überzeit, retention – and how Apensum helps.",
   'law.title': "Time recording under the Swiss Working Hours Act",
   'law.lead': "Employers must record their employees’ working and rest times and keep the records for five years. Apensum records what the law asks for and checks the recorded times for you.",
@@ -565,7 +565,7 @@ export default {
     'Currently included in Apensum at no extra cost',
   ],
 
-  'expenses.meta.title': 'Expenses & Receipts – Digital Expense Reporting | Apensum',
+  'expenses.meta.title': "Digital expense reports – expenses and receipts on your phone | Apensum",
   'expenses.meta.description': 'Capture expenses via smartphone, AI receipt OCR in Swiss data centres, multi-currency, and payroll export to Abacus and Bexio. Currently free in Apensum.',
   'expenses.hero.eyebrow': "Apensum specialised module",
   'expenses.hero.title': 'Expense reports without paper piles or manual typing.',
@@ -712,7 +712,7 @@ export default {
   // Shift planning module page (pages.mjs roster) and Support (pages.mjs support, SUPPORT_ARTICLES).
   'slug.roster': "shift-planning",
   'nav.roster': "Shift planning",
-  'roster.meta.title': "Shift planning – rosters for care and 24-hour services | Apensum",
+  'roster.meta.title': "Shift planning software – rosters for care and 24-hour services | Apensum",
   'roster.meta.description': "Plan shifts with rule checks, an automatic proposal and wishes read by an AI in Switzerland. The published plan becomes the target working time.",
   'roster.hero.eyebrow': "Apensum module",
   'roster.hero.title': "Rosters that keep the rules – and the team’s wishes.",

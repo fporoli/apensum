@@ -46,10 +46,10 @@ export default {
   'notFound.text': 'La pagina che cercate non esiste o è stata spostata.',
   'notFound.home': 'Alla pagina iniziale in italiano',
 
-  'home.meta.title': "Apensum – Tempo di lavoro, spese e perizie in un’app svizzera",
+  'home.meta.title': "Rilevazione ore di lavoro in Svizzera – timbratura, rapporti ore, assenze e spese | Apensum",
   'home.meta.description':
-    'Apensum unisce una base conforme alla legge svizzera sul lavoro con moduli specialistici flessibili come Perizie e Spese. In italiano, tedesco, francese e inglese.',
-  'hero.eyebrow': "L’app svizzera che cresce con voi",
+    "Rilevazione del tempo di lavoro per PMI svizzere secondo la legge sul lavoro: timbratura, tempo di progetto e rapporti ore, assenze e vacanze, saldi, note spese e piano turni. In italiano, tedesco, francese e inglese, attualmente gratuito.",
+  'hero.eyebrow': "Rilevazione ore e software HR per PMI svizzere",
   'hero.title': "Dal cartellino alla perizia.",
   'hero.lead':
     "Apensum registra il tempo di lavoro e di progetto secondo la legge svizzera sul lavoro, conteggia le spese e gestisce fascicoli riservati fino alla perizia finita – tutto in un’unica app. E se vi serve di più, ampliate Apensum con moduli propri.",
@@ -161,9 +161,9 @@ export default {
   'home.oss.text': "Il nucleo di Apensum è open source con licenza GNU AGPL-3.0 e il suo codice sorgente è su GitHub. Chiunque può leggerlo e verificarlo, gestirlo in proprio e adattarlo – chi offre una versione modificata come servizio ne pubblica anche le modifiche. I moduli Processi HR, Perizie e Spese sono proprietari.",
   'home.oss.link': "Codice sorgente su GitHub",
 
-  'features.meta.title': 'Funzionalità – Apensum',
+  'features.meta.title': "Funzionalità – timbratura, rapporti ore, assenze, vacanze e spese | Apensum",
   'features.meta.description':
-    'Presenze, tempo di progetto, assenze, saldi, fogli ore, spese, richieste e documenti: tutto ciò che fa Apensum, in una panoramica.',
+    "Timbratura e presenze, tempo di progetto e rapporto settimanale, rapporto mensile, assenze e vacanze, saldi di ore supplementari e vacanze, spese, richieste e documenti: tutte le funzionalità di Apensum.",
   'features.title': 'Tutto ciò che serve al vostro team. Niente di superfluo.',
   'features.lead': 'Apensum copre l’intero ciclo, dalla registrazione del tempo alla chiusura del mese – con le particolarità svizzere già integrate.',
   'features.toc': 'Aree funzionali',
@@ -358,7 +358,7 @@ export default {
   'security.opensource.title': "Codice sorgente aperto",
   'security.opensource.text': "Il codice sorgente del nucleo è pubblico su GitHub con licenza GNU AGPL-3.0. Chiunque può verificare come Apensum salva e protegge i vostri dati. I moduli Processi HR, Perizie e Spese sono proprietari.",
   'security.note': 'Domande su sicurezza o protezione dei dati? Contattateci – rispondiamo volentieri nel dettaglio.',
-  'pricing.meta.title': 'Prezzi – Apensum',
+  'pricing.meta.title': "Prezzi – rilevazione ore attualmente gratuita | Apensum",
   'pricing.meta.description': 'Apensum è gratuito durante la fase di avvio. Gli adattamenti su misura sono fatturati secondo il tempo effettivo.',
   'pricing.title': 'Prezzi semplici ed equi',
   'pricing.lead': 'Apensum è in fase di avvio. Per questo il suo utilizzo al momento non costa nulla – pagate solo il lavoro svolto appositamente per voi.',
@@ -502,7 +502,7 @@ export default {
   'privacy.changes.text': ['Possiamo aggiornare questa informativa se il nostro sito o il diritto cambiano. Fa fede la versione pubblicata qui.'],
   'slug.law': "sicurezza/legge-sul-lavoro",
   'nav.law': "Legge sul lavoro",
-  'law.meta.title': "Registrazione del tempo di lavoro secondo la legge sul lavoro – Apensum",
+  'law.meta.title': "Obbligo di registrare il tempo di lavoro in Svizzera – legge sul lavoro | Apensum",
   'law.meta.description': "Cosa chiede la legge sul lavoro per la registrazione del tempo – riposi, pause, lavoro straordinario, conservazione – e come vi aiuta Apensum.",
   'law.title': "Registrazione del tempo di lavoro secondo la legge sul lavoro",
   'law.lead': "I datori di lavoro devono registrare i tempi di lavoro e di riposo del personale e conservarli cinque anni. Apensum registra ciò che la legge chiede e verifica per voi i tempi registrati.",
@@ -564,7 +564,7 @@ export default {
     'Attualmente incluso gratuitamente e senza costi aggiuntivi in Apensum',
   ],
 
-  'expenses.meta.title': 'Spese & Giustificativi – Gestione digitale delle note spese | Apensum',
+  'expenses.meta.title': "Note spese digitali – spese e giustificativi dallo smartphone | Apensum",
   'expenses.meta.description': 'Acquisizione spese da smartphone, OCR IA in Svizzera, multivaluta ed esportazione stipendi per Abacus e Bexio. Attualmente gratuito in Apensum.',
   'expenses.hero.eyebrow': "Modulo specialistico di Apensum",
   'expenses.hero.title': 'Note spese senza scartoffie né inserimento manuale.',
@@ -711,7 +711,7 @@ export default {
   // Shift planning module page (pages.mjs roster) and Support (pages.mjs support, SUPPORT_ARTICLES).
   'slug.roster': "piano-turni",
   'nav.roster': "Piano turni",
-  'roster.meta.title': "Piano turni – pianificazione per le cure e le aziende 24 ore su 24 | Apensum",
+  'roster.meta.title': "Software per piani turni – cure e aziende 24 ore su 24 | Apensum",
   'roster.meta.description': "Pianificare i turni con controllo delle regole, proposta automatica e desideri letti da un’IA in Svizzera. Il piano pubblicato diventa il tempo previsto.",
   'roster.hero.eyebrow': "Modulo specialistico di Apensum",
   'roster.hero.title': "Piani turni che rispettano le regole – e i desideri del team.",

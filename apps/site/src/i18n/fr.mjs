@@ -47,10 +47,10 @@ export default {
   'notFound.text': 'La page que vous cherchez n’existe pas ou a été déplacée.',
   'notFound.home': 'Vers la page d’accueil en français',
 
-  'home.meta.title': "Apensum – Temps de travail, frais et expertises dans une application suisse",
+  'home.meta.title': "Saisie du temps de travail en Suisse – timbrage, rapports d’heures, absences et frais | Apensum",
   'home.meta.description':
-    'Apensum associe un socle suisse conforme à la loi sur le travail à des modules métier flexibles comme Expertises et Frais. En français, allemand, italien et anglais.',
-  'hero.eyebrow': "L’application suisse qui grandit avec vous",
+    "Saisie du temps de travail pour PME suisses selon la loi sur le travail : timbrage, temps de projet et rapports d’heures, absences et vacances, soldes, notes de frais et planning des services. En français, allemand, italien et anglais, actuellement gratuit.",
+  'hero.eyebrow': "Saisie du temps et logiciel RH pour PME suisses",
   'hero.title': "De la pointeuse à l’expertise.",
   'hero.lead':
     "Apensum enregistre le temps de travail et de projet selon la loi suisse sur le travail, décompte les frais et gère des dossiers confidentiels jusqu’à l’expertise finale – le tout dans une seule application. Et si vous avez besoin de plus, vous étendez Apensum avec vos propres modules.",
@@ -162,9 +162,9 @@ export default {
   'home.oss.text': "Le cœur d’Apensum est open source sous licence GNU AGPL-3.0 et son code source se trouve sur GitHub. Chacun peut le lire et le vérifier, l’exploiter lui-même et l’adapter – qui propose une version modifiée sous forme de service publie aussi ses modifications. Les modules Processus RH, Expertises et Frais sont propriétaires.",
   'home.oss.link': "Code source sur GitHub",
 
-  'features.meta.title': 'Fonctionnalités – Apensum',
+  'features.meta.title': "Fonctionnalités – timbrage, rapports d’heures, absences, vacances et frais | Apensum",
   'features.meta.description':
-    'Présence, temps de projet, absences, soldes, relevés d’heures, frais, demandes et documents : tout ce que fait Apensum, en un coup d’œil.',
+    "Timbrage et présence, temps de projet et rapport hebdomadaire, relevé mensuel, absences et vacances, soldes d’heures supplémentaires et de vacances, frais, demandes et documents : toutes les fonctionnalités d’Apensum.",
   'features.title': 'Tout ce dont votre équipe a besoin. Rien de superflu.',
   'features.lead': 'Apensum couvre tout le cycle, de la saisie du temps à la clôture du mois – avec les particularités suisses intégrées.',
   'features.toc': 'Domaines fonctionnels',
@@ -359,7 +359,7 @@ export default {
   'security.opensource.title': "Code source ouvert",
   'security.opensource.text': "Le code source du cœur est public sur GitHub sous licence GNU AGPL-3.0. Chacun peut vérifier comment Apensum enregistre et protège vos données. Les modules Processus RH, Expertises et Frais sont propriétaires.",
   'security.note': 'Des questions sur la sécurité ou la protection des données ? Contactez-nous – nous y répondons volontiers en détail.',
-  'pricing.meta.title': 'Tarifs – Apensum',
+  'pricing.meta.title': "Tarifs – saisie du temps actuellement gratuite | Apensum",
   'pricing.meta.description': 'Apensum est gratuit pendant sa phase de lancement. Les adaptations sur mesure sont facturées selon le temps effectif.',
   'pricing.title': 'Des tarifs simples et équitables',
   'pricing.lead': 'Apensum est en phase de lancement. C’est pourquoi son utilisation ne coûte actuellement rien – vous ne payez que le travail réalisé spécialement pour vous.',
@@ -503,7 +503,7 @@ export default {
   'privacy.changes.text': ['Nous pouvons adapter cette politique si notre site ou le droit évolue. La version publiée ici fait foi.'],
   'slug.law': "securite/loi-sur-le-travail",
   'nav.law': "Loi sur le travail",
-  'law.meta.title': "Saisie du temps de travail selon la loi sur le travail – Apensum",
+  'law.meta.title': "Obligation d’enregistrer le temps de travail en Suisse – loi sur le travail | Apensum",
   'law.meta.description': "Ce que la loi sur le travail exige pour la saisie du temps – repos, pauses, travail supplémentaire, conservation – et comment Apensum vous aide.",
   'law.title': "Saisie du temps de travail selon la loi sur le travail",
   'law.lead': "Les employeurs doivent enregistrer les durées de travail et de repos de leur personnel et les conserver cinq ans. Apensum saisit ce que la loi demande et contrôle les temps saisis pour vous.",
@@ -565,7 +565,7 @@ export default {
     'Actuellement inclus gratuitement et sans surcoût dans Apensum',
   ],
 
-  'expenses.meta.title': 'Frais & Justificatifs – Gestion numérique des notes de frais | Apensum',
+  'expenses.meta.title': "Notes de frais numériques – frais et justificatifs sur mobile | Apensum",
   'expenses.meta.description': 'Capture des frais sur smartphone, OCR IA en Suisse, multi-devises et export vers Abacus et Bexio. Actuellement gratuit dans Apensum.',
   'expenses.hero.eyebrow': "Module métier d’Apensum",
   'expenses.hero.title': 'Gestion des notes de frais sans papier ni saisie manuelle.',
@@ -712,7 +712,7 @@ export default {
   // Shift planning module page (pages.mjs roster) and Support (pages.mjs support, SUPPORT_ARTICLES).
   'slug.roster': "planning-des-services",
   'nav.roster': "Planning des services",
-  'roster.meta.title': "Planning des services – pour les soins et les exploitations 24 h/24 | Apensum",
+  'roster.meta.title': "Logiciel de planning des services – soins et exploitations 24 h/24 | Apensum",
   'roster.meta.description': "Planifier les services avec contrôle des règles, proposition automatique et souhaits lus par une IA en Suisse. Le planning publié devient le temps de travail prévu.",
   'roster.hero.eyebrow': "Module métier d’Apensum",
   'roster.hero.title': "Des plannings qui respectent les règles – et les souhaits de l’équipe.",

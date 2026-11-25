@@ -46,10 +46,10 @@ export default {
   'notFound.text': 'Die gesuchte Seite existiert nicht oder wurde verschoben.',
   'notFound.home': 'Zur deutschen Startseite',
 
-  'home.meta.title': "Apensum – Zeiterfassung, Spesen und Gutachten in einer Schweizer App",
+  'home.meta.title': "Zeiterfassung Schweiz – Arbeitszeit, Stundenrapporte, Absenzen und Spesen | Apensum",
   'home.meta.description':
-    'Apensum verbindet ein gesetzeskonformes Schweizer Arbeitszeit-Fundament mit flexiblen Fachmodulen wie Gutachten und Spesen. Auf Deutsch, Französisch, Italienisch und Englisch.',
-  'hero.eyebrow': "Die Schweizer Business-App, die mitwächst",
+    "Zeiterfassung für Schweizer KMU nach Arbeitsgesetz: Stempeln, Projektzeit und Stundenrapporte, Absenzen und Ferien, Saldi, Spesen und Dienstplan. Auf Deutsch, Französisch, Italienisch und Englisch, aktuell kostenlos.",
+  'hero.eyebrow': "Zeiterfassung und HR-Software für Schweizer KMU",
   'hero.title': "Von der Stempeluhr bis zum Gutachten.",
   'hero.lead':
     "Apensum erfasst Arbeits- und Projektzeit nach Schweizer Arbeitsgesetz, rechnet Spesen ab und führt vertrauliche Falldossiers bis zum fertigen Gutachten – alles in einer App. Und wenn Sie mehr brauchen, bauen Sie Apensum mit eigenen Modulen zu Ihrer Lösung aus.",
@@ -161,9 +161,9 @@ export default {
   'home.oss.text': "Der Kern von Apensum ist Open Source unter der GNU AGPL-3.0, sein Quellcode liegt auf GitHub. Alle können ihn lesen und prüfen, selbst betreiben und anpassen – wer eine geänderte Version als Dienst anbietet, legt seine Änderungen ebenfalls offen. Die Module HR-Prozesse, Gutachten und Spesen sind proprietär.",
   'home.oss.link': "Quellcode auf GitHub",
 
-  'features.meta.title': 'Funktionen – Apensum',
+  'features.meta.title': "Funktionen – Zeiterfassung, Rapporte, Absenzen, Ferien und Spesen | Apensum",
   'features.meta.description':
-    'Präsenzzeit, Projektzeit, Absenzen, Saldi, Zeitblätter, Spesen, Anfragen und Dokumente: alles, was Apensum kann, auf einen Blick.',
+    "Stempeln und Präsenzzeit, Projektzeit und Wochenrapport, Monatsrapport, Absenzen und Ferien, Überstunden- und Feriensaldi, Spesen, Anfragen und Dokumente: alle Funktionen von Apensum.",
   'features.title': 'Alles, was Ihr Team braucht. Nichts, was es nicht braucht.',
   'features.lead': 'Apensum deckt den ganzen Ablauf ab, von der Zeiterfassung bis zum Monatsabschluss – mit allen Schweizer Besonderheiten eingebaut.',
   'features.toc': 'Funktionsbereiche',
@@ -358,7 +358,7 @@ export default {
   'security.opensource.title': "Offener Quellcode",
   'security.opensource.text': "Der Quellcode des Kerns ist unter der GNU AGPL-3.0 öffentlich auf GitHub. Alle können nachprüfen, wie Apensum Ihre Daten speichert und schützt. Die Module HR-Prozesse, Gutachten und Spesen sind proprietär.",
   'security.note': 'Fragen zu Sicherheit oder Datenschutz? Melden Sie sich – wir beantworten sie gerne im Detail.',
-  'pricing.meta.title': 'Preise – Apensum',
+  'pricing.meta.title': "Preise – Zeiterfassung aktuell kostenlos | Apensum",
   'pricing.meta.description': 'Apensum ist während der Aufbauphase kostenlos. Anpassungen nach Mass verrechnen wir nach Aufwand.',
   'pricing.title': 'Einfache, faire Preise',
   'pricing.lead': 'Apensum befindet sich im Aufbau. Darum kostet die Nutzung zurzeit nichts – Sie bezahlen nur für Arbeit, die eigens für Sie gemacht wird.',
@@ -502,7 +502,7 @@ export default {
   'privacy.changes.text': ['Wir können diese Erklärung anpassen, wenn sich unsere Website oder das Recht ändert. Es gilt die hier veröffentlichte Fassung.'],
   'slug.law': "sicherheit/arbeitsgesetz",
   'nav.law': "Arbeitsgesetz",
-  'law.meta.title': "Arbeitszeiterfassung nach Arbeitsgesetz – Apensum",
+  'law.meta.title': "Zeiterfassungspflicht Schweiz – Arbeitszeiterfassung nach Arbeitsgesetz | Apensum",
   'law.meta.description': "Was das Arbeitsgesetz bei der Zeiterfassung verlangt – Ruhezeiten, Pausen, Überzeit, Aufbewahrung – und wie Apensum Sie dabei unterstützt.",
   'law.title': "Arbeitszeiterfassung nach Arbeitsgesetz",
   'law.lead': "Arbeitgeber müssen die Arbeits- und Ruhezeiten ihrer Mitarbeitenden erfassen und fünf Jahre aufbewahren. Apensum erfasst, was das Gesetz verlangt, und prüft die erfassten Zeiten für Sie.",
@@ -564,7 +564,7 @@ export default {
     'Aktuell kostenlos und ohne Zusatzkosten in Apensum enthalten',
   ],
 
-  'expenses.meta.title': 'Spesen & Belege – Digitale Spesenabrechnung | Apensum',
+  'expenses.meta.title': "Spesenabrechnung digital – Spesen und Belege per Handy | Apensum",
   'expenses.meta.description': 'Spesen per Handy erfassen, KI-Belegerkennung in Schweizer Rechenzentren, Mehrwährungen und Lohnexport für Abacus und Bexio. Aktuell kostenlos in Apensum.',
   'expenses.hero.eyebrow': "Fachmodul von Apensum",
   'expenses.hero.title': 'Spesenabrechnung ohne Zettelwirtschaft und ohne Abtippen.',
@@ -711,7 +711,7 @@ export default {
   // Shift planning module page (pages.mjs roster) and Support (pages.mjs support, SUPPORT_ARTICLES).
   'slug.roster': "dienstplan",
   'nav.roster': "Dienstplan",
-  'roster.meta.title': "Dienstplan – Schichtplanung für Pflege und 24-Stunden-Betriebe | Apensum",
+  'roster.meta.title': "Dienstplan-Software – Schichtplanung für Pflege und 24-Stunden-Betriebe | Apensum",
   'roster.meta.description': "Schichten planen mit Regelprüfung, automatischem Vorschlag und Wünschen, die eine KI in der Schweiz ausliest. Der veröffentlichte Plan wird zur Sollzeit.",
   'roster.hero.eyebrow': "Fachmodul von Apensum",
   'roster.hero.title': "Dienstpläne, die die Regeln einhalten – und die Wünsche des Teams.",
