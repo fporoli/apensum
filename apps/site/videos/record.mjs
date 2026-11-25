@@ -293,10 +293,8 @@ const SCENES = {
       const category = p.getByRole('combobox', { name: /^Kategorie/ });
       if (!/Reisen/.test(await category.textContent())) await s.choose(category, 'Reisen');
       await s.choose(p.getByRole('combobox', { name: /^Unterkategorie/ }), 'Taxi/Fahrdienst');
-      const comment = p.getByLabel('Kommentar');
-      await s.click(comment, 150);
-      await comment.fill('');
-      await comment.pressSequentially('Taxi zum Flughafen, Kundentermin', { delay: 55 });
+      // The receipt reading filled the item text; the internal note stays the person's own.
+      await s.type(p.getByLabel('Interne Bemerkung'), 'Kundentermin in Kloten');
       await s.wait(400);
       await s.click(p.getByRole('button', { name: 'Hinzufügen' }), 2000);
 
@@ -305,7 +303,10 @@ const SCENES = {
       await s.type(p.locator('#expense-km'), '84', 300);
       await s.moveTo(p.getByText(/km × .* = /).first());
       await s.wait(1400);
-      await s.type(p.getByLabel('Kommentar'), 'Kunde in Winterthur, hin und zurück');
+      const text = p.getByLabel(/^Positionstext/);
+      await s.click(text, 150);
+      await text.fill('');
+      await text.pressSequentially('Kunde in Winterthur, hin und zurück', { delay: 55 });
       await s.click(p.getByRole('button', { name: 'Hinzufügen' }), 2000);
 
       await s.nav('Dokumente');
@@ -339,7 +340,7 @@ const SCENES = {
 
       await s.nav('Absenzen');
       await s.caption('Der Teamkalender zeigt, wer wann fehlt – mit den Feiertagen des Kantons');
-      await s.click(p.getByRole('tab', { name: 'Team' }), 1200);
+      await s.click(p.getByRole('tab', { name: 'Gesamtansicht' }), 1200);
       const next = p.getByRole('button', { name: /nächster monat|weiter/i }).first();
       if (await next.count()) await s.click(next, 1600);
       await s.wait(2000);
