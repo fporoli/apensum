@@ -193,7 +193,7 @@ export class PersonnelDocumentsController {
     };
     const stateError = personnelDocError(next, categoryRules(categories.values[next.category]));
     if (stateError) return { ok: false, error: stateError };
-    const keep = (column: string, value: unknown) => (value === undefined ? sql.raw(column) : sql`${value}`);
+    const keep = (column: string, value: unknown) => (value === undefined ? sql.identifier(column) : sql`${value}`);
     await db.execute(sql`
       UPDATE personnel_documents SET
         title = ${keep('title', v.title)},
