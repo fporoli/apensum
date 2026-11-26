@@ -250,6 +250,7 @@ export { ConfigFieldGroup, DateInput, useGroupTitle, type FieldOption } from './
 export { FieldDesignScope, useFormTemplate, type FormTemplate } from './designMode';
 export { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
 export { CollapsibleCard, ConfirmDialog, EmptyState, PageHeader, PersonPicker, TableEmptyRow } from './components';
+export { SortHeader, TableSearch, useTableView, type TableColumn, type TableSort, type TableViewState } from './TableView';
 export * from './icons';
 export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, type Attachment } from './attachments';
 export { currencyOptions, type CurrencyOption } from './currencyOptions';
