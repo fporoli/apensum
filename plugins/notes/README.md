@@ -2,7 +2,7 @@
 
 Personal notes per person and organization, in Markdown (shown formatted, the source on demand), visible to their author and to whom they share one with.\
 It is deliberately small: copy it to start a new module, and read it next to `docs/PLUGINS.md`.\
-The module is off by default; an organization's admin switches it on under Organization settings → Modules.
+The module is on by default; an organization's admin switches it off under Organization settings → Modules.
 
 ## The files
 

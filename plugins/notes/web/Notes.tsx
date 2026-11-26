@@ -1,14 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Stack, Tab, Tabs, TextField, Typography,
+  Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, InputAdornment, Paper, Stack,
+  Tab, Tabs, TextField, Typography,
 } from '@mui/material';
-import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, useI18n } from '@worktime3/web/plugin';
+import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n } from '@worktime3/web/plugin';
+import { isMailAddress, MAX_MAIL_ADDRESSES, splitAddresses } from '../shared/mail';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 interface Note { id: string; text: string; created_at: string; shared_with?: { userId: string; name: string }[] }
 interface SharedNote { id: string; text: string; created_at: string; author: string }
 interface Person { userId: string; name: string; departmentId: string | null; department: string | null }
+
+/** Lower case, without accents: "Müller" finds "muller". */
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** Whether every word of the search is in the texts (none = everything). */
+const matches = (query: string, ...texts: (string | null | undefined)[]) => {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  const hay = fold(texts.filter(Boolean).join(' '));
+  return words.every((w) => hay.includes(w));
+};
+
+/** Whether the notes shared with the caller are shown: remembered in this browser, on by default. */
+const SHOW_SHARED = 'notes.showShared';
+const storedShowShared = () => { try { return localStorage.getItem(SHOW_SHARED) !== '0'; } catch { return true; } };
 
 /** The note a link names (`#/notes?id=<id>`), to scroll to and mark. */
 const linkedId = () => new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('id');
@@ -30,6 +46,19 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
   const [sharing, setSharing] = useState<Note | null>(null);
   const [mailing, setMailing] = useState<Note | null>(null);
   const [focus, setFocus] = useState<string | null>(linkedId);
+  const [query, setQuery] = useState('');
+  const [showShared, setShowShared] = useState(storedShowShared);
+  const toggleShared = (on: boolean) => {
+    setShowShared(on);
+    try { localStorage.setItem(SHOW_SHARED, on ? '1' : '0'); } catch { /* not remembered */ }
+  };
+  // Searched: one's own notes by their text and with whom they are shared, the others' by text and author.
+  const shownNotes = useMemo(() => (notes ?? []).filter((n) => matches(query, n.text, ...(n.shared_with ?? []).map((s) => s.name))), [notes, query]);
+  const shownShared = useMemo(() => (showShared ? shared.filter((n) => matches(query, n.text, n.author)) : []), [shared, showShared, query]);
+  // A link or a notification to a note shared with the caller shows the shared ones, the search cleared.
+  useEffect(() => {
+    if (focus && shared.some((n) => n.id === focus)) { setShowShared(true); setQuery(''); }
+  }, [focus, shared]);
   // Writing: the text or its preview (like VS Code's Markdown preview); a saved note shows formatted, its source on demand.
   // A note being changed: its id and the text so far.
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
@@ -127,10 +156,31 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
           <Button type="submit" variant="contained" disabled={busy || !text.trim()}>{t('notes.add')}</Button>
         </Box>
       </Paper>
-      {notes && notes.length === 0 && (
+      {((notes?.length ?? 0) > 0 || shared.length > 0) && (
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField
+            size="small"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('notes.search')}
+            sx={{ flex: '1 1 260px', maxWidth: 420 }}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" color="action" /></InputAdornment> }, htmlInput: { 'aria-label': t('notes.search') } }}
+          />
+          {shared.length > 0 && (
+            <FormControlLabel
+              control={<Checkbox size="small" checked={showShared} onChange={(e) => toggleShared(e.target.checked)} />}
+              label={t('notes.showShared', { count: String(shared.length) })}
+            />
+          )}
+        </Box>
+      )}
+      {query.trim() && shownNotes.length === 0 && shownShared.length === 0 && (
+        <Typography color="text.secondary">{t('notes.noMatch')}</Typography>
+      )}
+      {notes && notes.length === 0 && !query.trim() && (
         <Paper variant="outlined"><EmptyState icon={<EditIcon fontSize="inherit" />} title={t('notes.empty')} /></Paper>
       )}
-      {notes?.map((n) => (
+      {shownNotes.map((n) => (
         <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, ...mark(n.id) }}>
           {editing?.id === n.id ? (
             <>
@@ -163,10 +213,10 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
         </Paper>
       ))}
 
-      {shared.length > 0 && (
+      {shownShared.length > 0 && (
         <>
           <Typography variant="h6" sx={{ pt: 1 }}>{t('notes.sharedWithMe')}</Typography>
-          {shared.map((n) => (
+          {shownShared.map((n) => (
             <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', ...mark(n.id) }}>
               <Typography variant="caption" color="text.secondary">{t('notes.from', { name: n.author })}</Typography>
               <Box sx={{ mt: 0.5 }}>{body(n.id, n.text)}</Box>
@@ -277,22 +327,47 @@ function ShareDialog({ orgId, authHeaders, onClose, onShare }: {
 function MailDialog({ onClose, onSend }: { onClose: () => void; onSend: (addresses: string[], message: string) => Promise<boolean> }) {
   const { t } = useI18n();
   const [addresses, setAddresses] = useState<string[]>([]);
+  const [typed, setTyped] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  // Addresses are taken from what is typed on Enter, a comma, semicolon or space, a paste, and when leaving the field.
+  const take = (more: string[]) => setAddresses((prev) => [...new Set([...prev, ...more.flatMap(splitAddresses)])].slice(0, MAX_MAIL_ADDRESSES));
+  const commit = () => { if (typed.trim()) { take([typed]); setTyped(''); } };
+  const wrong = addresses.filter((a) => !isMailAddress(a));
+  // What is still in the field counts too, so Send right after typing works.
+  const pending = typed.trim() ? splitAddresses(typed) : [];
+  const all = [...new Set([...addresses, ...pending])];
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm">
       <DialogTitle>{t('notes.mailTitle')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         <Typography variant="body2" color="text.secondary">{t('notes.mailHint')}</Typography>
-        <Autocomplete multiple freeSolo options={[]} value={addresses} onChange={(_, v) => setAddresses((v as string[]).map((a) => a.trim()).filter(Boolean).slice(0, 10))}
-          renderInput={(params) => <TextField {...params} size="small" label={t('notes.addresses')} helperText={t('notes.addressesHint')} />} />
+        <Autocomplete
+          multiple freeSolo options={[]} value={addresses} inputValue={typed}
+          onChange={(_, v) => { setAddresses([]); take(v as string[]); }}
+          onInputChange={(_, v, reason) => {
+            if (reason === 'reset') return;
+            // A separator typed or pasted ends an address.
+            if (/[\s,;]/.test(v)) { take([v.replace(/[^\s,;]*$/, '')]); setTyped(v.replace(/^.*[\s,;]/, '')); } else setTyped(v);
+          }}
+          onBlur={commit}
+          renderTags={(value, getTagProps) => value.map((a, i) => {
+            const { key, ...props } = getTagProps({ index: i });
+            return <Chip key={key} {...props} size="small" label={a} color={isMailAddress(a) ? 'default' : 'error'} variant={isMailAddress(a) ? 'filled' : 'outlined'} />;
+          })}
+          renderInput={(params) => (
+            <TextField {...params} size="small" label={t('notes.addresses')} error={wrong.length > 0}
+              helperText={wrong.length ? t('notes.error.invalid-address') : t('notes.addressesHint')} />
+          )}
+        />
         <TextField size="small" multiline minRows={2} label={t('notes.message')} value={message} onChange={(e) => setMessage(e.target.value)} inputProps={{ maxLength: 1000 }} />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
-        <Button variant="contained" disabled={busy || addresses.length === 0} onClick={async () => {
+        <Button variant="contained" disabled={busy || all.length === 0 || all.some((a) => !isMailAddress(a))} onClick={async () => {
+          commit();
           setBusy(true);
-          const ok = await onSend(addresses, message);
+          const ok = await onSend(all, message);
           if (!ok) setBusy(false);
         }}>{t('notes.send')}</Button>
       </DialogActions>

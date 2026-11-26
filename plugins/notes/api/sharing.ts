@@ -4,20 +4,20 @@
  * Pure, tested in test/notes.test.ts.
  */
 
-/** At most this many addresses per forward, and per person and hour. */
-export const MAX_MAIL_ADDRESSES = 10;
-export const MAX_MAILS_PER_HOUR = 30;
+import { isMailAddress, MAX_MAIL_ADDRESSES, splitAddresses } from '../shared/mail';
 
-const EMAIL = /^[^\s@<>(),;:"\[\]]{1,64}@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i;
+export { MAX_MAIL_ADDRESSES };
+/** At most this many addresses per person and hour. */
+export const MAX_MAILS_PER_HOUR = 30;
 
 /** The addresses as given (a list, or text separated by commas, semicolons or spaces): trimmed, lower-case, once each. */
 export function parseAddresses(raw: unknown): { ok: true; addresses: string[] } | { ok: false; error: string } {
-  const parts = (Array.isArray(raw) ? raw : typeof raw === 'string' ? raw.split(/[\s,;]+/) : [])
-    .filter((a): a is string => typeof a === 'string').map((a) => a.trim().toLowerCase()).filter(Boolean);
+  const parts = (Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [])
+    .filter((a): a is string => typeof a === 'string').flatMap(splitAddresses);
   const addresses = [...new Set(parts)];
   if (addresses.length === 0) return { ok: false, error: 'no-addresses' };
   if (addresses.length > MAX_MAIL_ADDRESSES) return { ok: false, error: 'too-many-addresses' };
-  if (addresses.some((a) => a.length > 200 || !EMAIL.test(a))) return { ok: false, error: 'invalid-address' };
+  if (addresses.some((a) => !isMailAddress(a))) return { ok: false, error: 'invalid-address' };
   return { ok: true, addresses };
 }
 

@@ -14,7 +14,7 @@
     "module": {
       "id": "notes",
       "caption": "modules.notes",
-      "defaultEnabled": false,
+      "defaultEnabled": true,
       "objects": ["nav.notes"]
     },
     "api": "dist/api/index.js",
