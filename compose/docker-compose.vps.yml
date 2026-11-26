@@ -106,6 +106,8 @@ services:
     # No host port here — the shared edge Caddy (see infra/caddy/edge/) is the single
     # entrypoint, proxying API_HOST to this container over the edge network.
     container_name: ${CONTAINER_PREFIX:?required}-api
+    # Back by itself after a restart of Docker or the server (an `apt upgrade` of docker-ce restarts it).
+    restart: unless-stopped
     networks: [default, edge]
     volumes:
       # Uploaded and issued documents (DocumentsService, encrypted at rest with DOCUMENTS_KEY). Without the
@@ -168,6 +170,8 @@ services:
     # No host port here — the shared edge Caddy (see infra/caddy/edge/) is the single
     # entrypoint, proxying WEB_HOST to this container over the edge network.
     container_name: ${CONTAINER_PREFIX:?required}-web
+    # Back by itself after a restart of Docker or the server (an `apt upgrade` of docker-ce restarts it).
+    restart: unless-stopped
     networks: [edge]
     # One image for every instance: these replace the build-time placeholders at start.
     environment:
