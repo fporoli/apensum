@@ -44,7 +44,7 @@ import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from '.
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-type Box_ = 'mine' | 'inbox' | 'archived';
+export type Box_ = 'mine' | 'inbox' | 'archived';
 type Status = 'open' | 'in_progress' | 'resolved';
 
 interface RequestItem {
@@ -201,6 +201,11 @@ interface RequestsProps {
   onChanged?: () => void;
   /** Opens another page by its section id (a task's source page). */
   navigate?: (section: string) => void;
+  /**
+   * Shown inside the Flows page (Flows.tsx): its box is fixed (no header or tabs), a change of `composeSignal` opens
+   * the new-flow dialog, and `onCreated` gets the new one (the page then shows it among one's own).
+   */
+  embedded?: { box: Box_; composeSignal?: number; onCreated?: (id: string) => void };
 }
 
 /**
@@ -209,9 +214,10 @@ interface RequestsProps {
  * member), "Archived" the archived ones of both. Handlers take a request, answer, set its status
  * and archive it; every change notifies the other side.
  */
-export default function Requests({ orgId, userId, authHeaders, focusId, refreshKey, onChanged, navigate }: RequestsProps) {
+export default function Requests({ orgId, userId, authHeaders, focusId, refreshKey, onChanged, navigate, embedded }: RequestsProps) {
   const { t, locale } = useI18n();
-  const [box, setBox] = useState<Box_>('mine');
+  const [chosenBox, setBox] = useState<Box_>('mine');
+  const box = embedded?.box ?? chosenBox;
   const [items, setItems] = useState<RequestItem[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(focusId ?? null);
@@ -223,6 +229,8 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const [forwarding, setForwarding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
+  // The Flows page's "New flow" button.
+  useEffect(() => { if (embedded?.composeSignal) setComposeOpen(true); }, [embedded?.composeSignal]);
   const [editingDetails, setEditingDetails] = useState(false);
   const [types, setTypes] = useState<TypeRow>({ values: {}, translation: {} });
   const replyFiles = useAttachmentDraft(setError);
@@ -713,15 +721,17 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader
-        title={t('requests.title')}
-        subtitle={t('requests.subtitle')}
-        end={
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setComposeOpen(true)}>
-            {t('requests.new')}
-          </Button>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title={t('requests.title')}
+          subtitle={t('requests.subtitle')}
+          end={
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setComposeOpen(true)}>
+              {t('requests.new')}
+            </Button>
+          }
+        />
+      )}
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
@@ -745,7 +755,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         </Paper>
       )}
 
-      <Tabs
+      {!embedded && <Tabs
         value={box}
         onChange={(_, v: Box_) => {
           setBox(v);
@@ -764,7 +774,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           }
         />
         <Tab value="archived" label={t('requests.box.archived')} />
-      </Tabs>
+      </Tabs>}
 
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 2fr) 3fr' }, alignItems: 'start' }}>
         <Box sx={{ display: { xs: selectedId ? 'none' : 'block', md: 'block' }, minWidth: 0 }}>{list}</Box>
@@ -820,6 +830,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           setComposeOpen(false);
           setBox('mine');
           setSelectedId(id);
+          embedded?.onCreated?.(id);
           onChanged?.();
         }}
       />

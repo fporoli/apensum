@@ -598,7 +598,7 @@ export default function Home({
                   {t('dashboard.pendingApprovals', { count: approvalsCount })}
                 </Typography>
               </Box>
-              <Button size="small" variant="contained" onClick={() => onNavigate('approvals')}>
+              <Button size="small" variant="contained" onClick={() => onNavigate('flows')}>
                 {t('dashboard.openApprovals')}
               </Button>
             </Paper>

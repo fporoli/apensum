@@ -308,7 +308,7 @@ export default function App() {
 
   function navigateToNotification(n: Notification) {
     if (n.type === 'workflow.assigned') {
-      navigate('approvals');
+      navigate('flows');
       return;
     }
     if (n.source_table === 'personnel_documents' || n.source_table === 'report_runs') {
@@ -329,7 +329,7 @@ export default function App() {
     }
     if (n.source_table === 'requests') {
       setRequestFocus(n.source_table_uuid);
-      navigate('requests');
+      navigate('flows');
       return;
     }
     const pluginSection = PLUGIN_NOTIFICATION_SECTIONS[n.source_table];

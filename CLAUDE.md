@@ -251,7 +251,13 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
 - Flat folder of PascalCase page components.\
   Each page is an entry in `corePages.tsx` (section, hash, permission object, role fallback, navbar entry with optional parent and count, render), the same shape plugins use (`PluginPage`); `App.tsx` builds the navbar (`navigation.ts`), hashes and gating from the core's and the plugins' entries alike and owns session, org switcher and badges.
 - Each page calls the API directly with `fetch(\`${API}/...\`, { headers: await authHeaders() })`, where `const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1'` is declared per file.
-- All UI strings go through i18n: `const t = useT()` from `i18n.tsx`.\
+- Terms (one thing, one word, in the app, on the website, in the brochures and the support articles; new texts use only these):\
+  **Flow** (der Flow, die Flows; FR le flow, IT il flow) = everything someone starts and others work on (an absence, an expense report, a timesheet, a request of the organization's own type); never Anfrage, Anliegen, Workflow or Freigabe for the thing.\
+  **Art** (type) = what kind of flow; **freier Flow** (free flow) = one without a set course, to the manager or a department; **Schritt** (step), **Baustein** (block), **Verlauf** (history).\
+  **Flows** is the one page (`Flows.tsx`, `#/flows`, tabs Zu erledigen / Meine / Erledigt, "Neuer Flow"; `#/approvals` and `#/requests?id=` open it); **Flow-Designer** is where an owner sets up the types and their steps (Admin settings).\
+  The code keeps its names (`requests`, `workflows`, `nav.approvals`, `nav.requests`, `requests.*` texts): a free flow is a row of `requests`.\
+  The rename of the remaining texts is in progress (the Flows page is a frame around the former Requests and Workflow lists for now).
+ `const t = useT()` from `i18n.tsx`.\
   When you add a key, add it to all four dictionaries in `dictionaries.ts` (en/de/fr/it); `dictionaries.test.mjs` fails on missing keys or mismatched `{{placeholders}}`.
 - Format dates, times and numbers with the app's `locale` from `useI18n()`, never the browser default (`toLocaleDateString()` with no argument), and in its Swiss variant: the `localeFormat.ts` helpers do it, direct `Intl`/`toLocale*` calls pass `swissLocale(locale)` (`de` -> `de-CH`: 2'848.77, 17.11.2026).\
   `locale` itself stays the language key (texts, labels).\

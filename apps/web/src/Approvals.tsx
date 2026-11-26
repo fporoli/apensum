@@ -97,9 +97,9 @@ function formatAbsenceType(type: string, t: TFunction): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-type Scope = 'assigned' | 'mine';
+export type Scope = 'assigned' | 'mine';
 const STATUS_FILTERS = ['pending', 'approved', 'rejected', 'all'] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
+export type StatusFilter = (typeof STATUS_FILTERS)[number];
 const STATUS_COLOR = { pending: 'warning', approved: 'success', rejected: 'error' } as const;
 
 interface ActionItem {
@@ -205,9 +205,15 @@ interface ApprovalsProps {
   canDecide: boolean;
   authHeaders: () => Promise<Record<string, string>>;
   onChanged?: () => void;
+  /**
+   * Shown inside the Flows page (Flows.tsx): no page header; a given scope or status is fixed (its selector hidden),
+   * `statuses` limits the status selector, and items of `excludeSources` (e.g. requests, listed there on their own)
+   * are left out.
+   */
+  embedded?: { scope?: Scope; status?: StatusFilter; statuses?: readonly StatusFilter[]; excludeSources?: readonly string[] };
 }
 
-export default function Approvals({ orgId, role, canDecide, authHeaders, onChanged }: ApprovalsProps) {
+export default function Approvals({ orgId, role, canDecide, authHeaders, onChanged, embedded }: ApprovalsProps) {
   const { t, locale } = useI18n();
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [approved, setApproved] = useState<PeriodRow[]>([]);
@@ -226,8 +232,11 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
   /** The workflow definition shown, '' = all. */
   const [kind, setKind] = useState('');
   /** `assigned` = to decide (the inbox), `mine` = what one submitted. */
-  const [scope, setScope] = useState<Scope>(canDecide ? 'assigned' : 'mine');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
+  const [chosenScope, setScope] = useState<Scope>(canDecide ? 'assigned' : 'mine');
+  const [chosenStatus, setStatusFilter] = useState<StatusFilter>(embedded?.statuses?.[0] ?? 'pending');
+  const scope = embedded?.scope ?? chosenScope;
+  const statusFilter = embedded?.status ?? chosenStatus;
+  const statusOptions = embedded?.statuses ?? STATUS_FILTERS;
   // The rights arrive after the first render: open on the inbox once they say the caller decides.
   useEffect(() => setScope(canDecide ? 'assigned' : 'mine'), [canDecide]);
   const decides = scope === 'assigned' && statusFilter === 'pending';
@@ -354,7 +363,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
         fetch(`${API}/organizations/${orgId}/timesheet-periods?status=approved`, { headers }),
       ]);
       const [i, a] = await Promise.all([iRes.json(), aRes.json()]);
-      if (Array.isArray(i)) setActionItems(i);
+      if (Array.isArray(i)) setActionItems(embedded?.excludeSources?.length ? i.filter((x: ActionItem) => !embedded.excludeSources!.includes(x.source_table)) : i);
       if (Array.isArray(a)) setApproved(a);
     } catch { /* offline fallback */ } finally {
       setLoading(false);
@@ -482,7 +491,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader title={t('approvals.title')} subtitle={t('approvals.subtitle')} />
+      {!embedded && <PageHeader title={t('approvals.title')} subtitle={t('approvals.subtitle')} />}
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
@@ -496,13 +505,17 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
               : t(decides ? 'approvals.actionItems' : 'approvals.items', { count: filteredActionItems.length })}
           </Typography>
           <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', flex: { xs: '1 1 100%', sm: '0 1 auto' } }}>
-          <TextField select size="small" label={t('approvals.view')} value={scope} onChange={(e) => setScope(e.target.value as Scope)} sx={{ minWidth: { xs: '100%', sm: 190 } }}>
-            <MenuItem value="assigned">{t('approvals.view.assigned')}</MenuItem>
-            <MenuItem value="mine">{t('approvals.view.mine')}</MenuItem>
-          </TextField>
-          <TextField select size="small" label={t('approvals.status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)} sx={{ minWidth: { xs: '100%', sm: 150 } }}>
-            {STATUS_FILTERS.map((s) => <MenuItem key={s} value={s}>{t(`approvals.status.${s}`)}</MenuItem>)}
-          </TextField>
+          {!embedded?.scope && (
+            <TextField select size="small" label={t('approvals.view')} value={scope} onChange={(e) => setScope(e.target.value as Scope)} sx={{ minWidth: { xs: '100%', sm: 190 } }}>
+              <MenuItem value="assigned">{t('approvals.view.assigned')}</MenuItem>
+              <MenuItem value="mine">{t('approvals.view.mine')}</MenuItem>
+            </TextField>
+          )}
+          {!embedded?.status && (
+            <TextField select size="small" label={t('approvals.status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)} sx={{ minWidth: { xs: '100%', sm: 150 } }}>
+              {statusOptions.map((s) => <MenuItem key={s} value={s}>{t(`approvals.status.${s}`)}</MenuItem>)}
+            </TextField>
+          )}
           <TextField
             select
             size="small"

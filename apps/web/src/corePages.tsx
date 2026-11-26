@@ -10,12 +10,10 @@ import {
   BeachAccessIcon,
   CalendarMonthIcon,
   CampaignIcon,
-  CheckCircleIcon,
   ContactsIcon,
   DashboardIcon,
   DescriptionIcon,
   EventIcon,
-  ForumIcon,
   GroupIcon,
   HistoryIcon,
   ImportExportIcon,
@@ -45,7 +43,6 @@ const OrganizationSettings = lazy(() => import('./OrganizationSettings'));
 const Timesheet = lazy(() => import('./Timesheet'));
 const WorkTime = lazy(() => import('./WorkTime'));
 const Absences = lazy(() => import('./Absences'));
-const Approvals = lazy(() => import('./Approvals'));
 const Reports = lazy(() => import('./Reports'));
 const ProjectTimesheet = lazy(() => import('./ProjectTimesheet'));
 const TeamView = lazy(() => import('./TeamView'));
@@ -53,7 +50,7 @@ const TeamCalendar = lazy(() => import('./TeamView').then((m) => ({ default: m.T
 const BalanceReport = lazy(() => import('./BalanceReport'));
 const AuditLog = lazy(() => import('./AuditLog'));
 const Users = lazy(() => import('./Users'));
-const Requests = lazy(() => import('./Requests'));
+const Flows = lazy(() => import('./Flows'));
 const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
 const News = lazy(() => import('./News'));
@@ -236,7 +233,7 @@ export const CORE_PAGES: AppPage[] = [
     section: 'directory',
     hash: '#/directory',
     object: 'nav.directory',
-    nav: { group: 'organization', after: 'requests', label: 'nav.directory', icon: <ContactsIcon fontSize="small" /> },
+    nav: { group: 'organization', after: 'flows', label: 'nav.directory', icon: <ContactsIcon fontSize="small" /> },
     render: (c) => <Directory orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {
@@ -255,30 +252,28 @@ export const CORE_PAGES: AppPage[] = [
     render: (c) => <Reports orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {
-    section: 'approvals',
-    hash: '#/approvals',
+    section: 'flows',
+    hash: '#/flows',
     object: 'nav.approvals',
-    // Everyone sees their own requests; managers and HR decide on others'.
+    // Everyone sees their own flows; managers and HR decide on others'.
     allowedByRole: () => true,
     nav: {
       group: 'organization',
-      label: 'nav.approvals',
-      icon: <CheckCircleIcon fontSize="small" />,
-      badge: async ({ authHeaders }) => {
-        const d = await fetchJson(`${API}/workflows/assigned-to-me`, authHeaders);
-        return Array.isArray(d) ? d.length : 0;
+      label: 'nav.flows',
+      icon: <AccountTreeIcon fontSize="small" />,
+      // What waits for the caller: workflow items (a free flow's steps among them) and free flows to handle.
+      badge: async ({ orgId, authHeaders }) => {
+        const [items, summary] = await Promise.all([
+          fetchJson(`${API}/workflows/assigned-to-me?orgId=${orgId}`, authHeaders),
+          fetchJson(`${API}/organizations/${orgId}/requests/summary`, authHeaders) as Promise<{ inboxFree?: unknown } | null>,
+        ]);
+        return (Array.isArray(items) ? items.length : 0) + (typeof summary?.inboxFree === 'number' ? summary.inboxFree : 0);
       },
     },
-    render: (c) => (
-      <Approvals
-        orgId={c.orgId}
-        role={c.roles.displayRole}
-        canDecide={c.permissions ? holdsBeyondOwn(c.permissions, 'nav.approvals', 'edit') : c.roles.canManage}
-        authHeaders={c.authHeaders}
-        onChanged={c.onBadgesChanged}
-      />
-    ),
+    render: (c) => flowsPage(c),
   },
+  // The former Workflow and Requests pages: their links (mails, notifications, bookmarks) open the Flows page.
+  { section: 'approvals', hash: '#/approvals', object: 'nav.approvals', allowedByRole: () => true, render: (c) => flowsPage(c, 'todo') },
   {
     section: 'users',
     hash: '#/users',
@@ -389,32 +384,7 @@ export const CORE_PAGES: AppPage[] = [
     render: (c) => <WorkflowSettings orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
 
-  {
-    section: 'requests',
-    hash: '#/requests',
-    object: 'nav.requests',
-    nav: {
-      group: 'organization',
-      after: 'approvals',
-      label: 'nav.requests',
-      icon: <ForumIcon fontSize="small" />,
-      badge: async ({ orgId, authHeaders }) => {
-        const d = (await fetchJson(`${API}/organizations/${orgId}/requests/summary`, authHeaders)) as { inbox?: unknown } | null;
-        return typeof d?.inbox === 'number' ? d.inbox : 0;
-      },
-    },
-    render: (c) => (
-      <Requests
-        orgId={c.orgId}
-        userId={c.userId}
-        authHeaders={c.authHeaders}
-        focusId={c.requestFocus}
-        refreshKey={c.liveNotification}
-        onChanged={c.onBadgesChanged}
-        navigate={c.navigate}
-      />
-    ),
-  },
+  { section: 'requests', hash: '#/requests', object: 'nav.requests', render: (c) => flowsPage(c, c.requestFocus ? undefined : 'mine') },
   // personal
   {
     section: 'documents',
@@ -501,3 +471,23 @@ export const CORE_PAGES: AppPage[] = [
     render: (c) => <SuperAdminUsers authHeaders={c.authHeaders} />,
   },
 ];
+
+/** The Flows page (Flows.tsx), opened on `tab` (else the caller's inbox when they decide, else their own). */
+function flowsPage(c: CorePageContext, tab?: 'todo' | 'mine' | 'done') {
+  const p = c.permissions;
+  return (
+    <Flows
+      orgId={c.orgId}
+      userId={c.userId}
+      role={c.roles.displayRole}
+      canDecide={p ? holdsBeyondOwn(p, 'nav.approvals', 'edit') : c.roles.canManage}
+      hasFreeFlows={p ? holdsAny(p, 'nav.requests') : true}
+      authHeaders={c.authHeaders}
+      initialTab={tab}
+      focusId={c.requestFocus}
+      refreshKey={c.liveNotification}
+      onChanged={c.onBadgesChanged}
+      navigate={c.navigate}
+    />
+  );
+}

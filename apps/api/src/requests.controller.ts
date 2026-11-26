@@ -409,17 +409,19 @@ export class RequestsController {
   @Get('summary')
   async summary(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
-    if (!db) return { ok: true, offline: true, inbox: 0 };
+    if (!db) return { ok: true, offline: true, inbox: 0, inboxFree: 0 };
     const callerId = await this.caller(db, orgId, req);
-    if (!callerId) return { ok: true, inbox: 0 };
+    if (!callerId) return { ok: true, inbox: 0, inboxFree: 0 };
     const all = await reachesAll(db, orgId, callerId, 'nav.requests', 'edit');
+    // `free`: those without a workflow of their type (a workflow's steps are counted with the caller's workflow items,
+    // so the Flows page's badge counts each once).
     const rows = await db.execute(
-      sql`SELECT count(*)::int AS n ${LIST_FROM(orgId)}
+      sql`SELECT count(*)::int AS n, (count(*) FILTER (WHERE r.target_kind IS DISTINCT FROM 'workflow'))::int AS free ${LIST_FROM(orgId)}
           WHERE r.organization_id = ${orgId} AND r.archived_at IS NULL AND r.status <> 'resolved'
             AND r.requester_user_id IS DISTINCT FROM ${callerId} AND ${handlesCondition(orgId, callerId, all)}
             AND (r.assignee_user_id IS NULL OR r.assignee_user_id = ${callerId})`,
     );
-    return { ok: true, inbox: (rows.rows[0]?.n as number) ?? 0 };
+    return { ok: true, inbox: (rows.rows[0]?.n as number) ?? 0, inboxFree: (rows.rows[0]?.free as number) ?? 0 };
   }
 
   /** One request with its thread, and what the caller may do with it. */
