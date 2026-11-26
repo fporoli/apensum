@@ -50,7 +50,7 @@ export const ABSENCE_CATALOGUE: WorkflowKindCatalogue = {
   },
   defaultConfig: {
     version: 1,
-    steps: [{ key: 'manager_review', do: ['review'], assignTo: 'manager', reject: 'end', label: { de: 'Freigabe Vorgesetzte', fr: 'Approbation du supérieur', it: 'Approvazione del superiore', en: 'Manager approval' } }],
+    steps: [{ key: 'manager_review', do: ['review'], assignTo: 'manager', reject: 'end', label: { de: 'Prüfung Vorgesetzte', fr: 'Contrôle du supérieur', it: 'Verifica del superiore', en: 'Manager review' } }],
   },
   source: 'Vacation Request',
   source_name: 'getAbsenceTitle',

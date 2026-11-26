@@ -787,9 +787,9 @@ INSERT INTO workflow_definitions (organization_id, name, description, steps, con
 SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'flow:material', 'A flow of a type with set steps: its steps, one after the other.', '[]'::jsonb,
   '{"version": 1, "steps": [
      {"key": "manager", "do": ["review"], "assignTo": "manager", "reject": "back",
-      "label": {"de": "Freigabe Vorgesetzte", "en": "Manager approval", "fr": "Approbation du supérieur", "it": "Approvazione del superiore"}},
+      "label": {"de": "Prüfung Vorgesetzte", "en": "Manager review", "fr": "Contrôle du supérieur", "it": "Verifica del superiore"}},
      {"key": "finance", "do": ["review"], "assignTo": "permission:nav.expensePayout", "when": {"field.betrag": {"gt": 500}}, "reject": "back",
-      "label": {"de": "Freigabe Finanzen", "en": "Finance approval", "fr": "Approbation des finances", "it": "Approvazione delle finanze"}},
+      "label": {"de": "Prüfung Finanzen", "en": "Finance review", "fr": "Contrôle des finances", "it": "Verifica delle finanze"}},
      {"key": "order", "do": ["task"], "assignTo": "department:frontdesk", "reject": "back",
       "label": {"de": "Im Webshop bestellen", "en": "Order in the web shop", "fr": "Commander en ligne", "it": "Ordinare online"}},
      {"key": "handover", "do": ["task"], "assignTo": "department:frontdesk", "reject": "none",
