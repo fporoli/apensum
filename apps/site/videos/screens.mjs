@@ -199,7 +199,7 @@ const PHONE = { ...CONTEXT, viewport: { width: 390, height: 844 }, isMobile: tru
 async function shootSignedOut(browser, lang, tab, file) {
   const context = await browser.newContext(CONTEXT);
   try {
-    await context.addInitScript((l) => localStorage.setItem('worktime.locale', l), lang);
+    await context.addInitScript((l) => { localStorage.setItem('worktime.locale', l); sessionStorage.setItem('worktime.demoAutoLoginOff', '1'); }, lang);
     const page = await context.newPage();
     page.setDefaultTimeout(15000);
     await page.goto(BASE);
@@ -238,6 +238,8 @@ async function login(browser, user, lang, phone = false) {
     await sleep(1500);
     return { context, page };
   }
+  // dev signs a visitor in as the demo auto-login account (DEMO_AUTO_LOGIN): as after "Log out", the login page instead.
+  await page.addInitScript(() => sessionStorage.setItem('worktime.demoAutoLoginOff', '1'));
   await page.goto(BASE);
   await page.getByRole('textbox').first().fill(`${user}@acme.com`);
   await page.locator('input[type=password]').first().fill(user);

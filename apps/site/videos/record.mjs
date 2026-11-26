@@ -290,7 +290,7 @@ const SCENES = {
       await s.caption('Ein Vorschlag aus der Quittung, verarbeitet in der Schweiz – kurz prüfen und ergänzen');
       await s.moveTo(p.getByLabel(/^Betrag \(Beleg\)/));
       await s.wait(1200);
-      const category = p.getByRole('combobox', { name: /^Kategorie/ });
+      const category = p.getByRole('combobox', { name: /^Kategorie(?! Alle)/ });
       if (!/Reisen/.test(await category.textContent())) await s.choose(category, 'Reisen');
       await s.choose(p.getByRole('combobox', { name: /^Unterkategorie/ }), 'Taxi/Fahrdienst');
       // The receipt reading filled the item text; the internal note stays the person's own.
@@ -299,7 +299,7 @@ const SCENES = {
       await s.click(p.getByRole('button', { name: 'Hinzufügen' }), 2000);
 
       await s.caption('Kilometerspesen: Strecke in km eintragen – der Betrag rechnet sich mit dem Ansatz der Firma');
-      await s.choose(p.getByRole('combobox', { name: /^Kategorie/ }), 'Kilometer');
+      await s.choose(p.getByRole('combobox', { name: /^Kategorie(?! Alle)/ }), 'Kilometer');
       await s.type(p.locator('#expense-km'), '84', 300);
       await s.moveTo(p.getByText(/km × .* = /).first());
       await s.wait(1400);
@@ -713,6 +713,8 @@ async function login(page, user) {
     }
     await route.fulfill({ response: res, json: body ?? undefined });
   });
+  // dev signs a visitor in as the demo auto-login account (DEMO_AUTO_LOGIN): as after "Log out", the login page instead.
+  await page.addInitScript(() => sessionStorage.setItem('worktime.demoAutoLoginOff', '1'));
   await page.goto(BASE);
   await page.getByLabel('E-Mail').fill(`${user}@acme.com`);
   await page.getByLabel('Passwort', { exact: true }).fill(user);
