@@ -5,11 +5,11 @@ import {
 } from '@worktime3/shared/workflowConfig';
 import { PERMISSION_OBJECTS } from '@worktime3/shared/permissions';
 import { useT } from './i18n';
-import { AddIcon, ArrowDownwardIcon, ArrowUpwardIcon, ChevronRightIcon, ContentCopyIcon, DeleteIcon } from './icons';
+import { AddIcon, ArrowDownwardIcon, ArrowUpwardIcon, ContentCopyIcon, DeleteIcon } from './icons';
 
 /** What the designer knows of a kind (from GET workflow-configs). */
 export interface DesignerKind {
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean; automatic?: boolean; message?: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean; fieldsOptional?: boolean; automatic?: boolean; message?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
   /** Its steps may go to everyone of a unit, each on their own. */
@@ -21,6 +21,19 @@ export interface DesignerUnits {
   teams: { code: string | null; name: string }[];
   /** The organization's active members, for one person as assignee. */
   people?: { id: string; name: string | null; email: string }[];
+  /** Who holds each permission object's edit on all today (a `permission:<object>` step goes to them). */
+  holders?: Record<string, string[]>;
+}
+
+/** Whether a block lets its step go to `assignTo` (`permission:<object>` exactly, else by its kind). */
+function blockAllows(assignees: readonly string[], assignTo: string): boolean {
+  const k = assigneeKind(assignTo);
+  return k === 'permission' ? assignees.includes(assignTo) : !!k && assignees.includes(k);
+}
+
+/** Where a step of a block goes when nothing is chosen yet: the manager, else the first permission it allows. */
+function defaultAssignee(assignees: readonly string[]): string {
+  return assignees.includes('manager') ? 'manager' : assignees.find((a) => a.startsWith('permission:')) ?? 'manager';
 }
 
 const LANGS = ['de', 'fr', 'it', 'en'] as const;
@@ -102,7 +115,7 @@ export function WorkflowDesigner({ kind, units, config, errors, editable, onChan
     const first = Object.keys(kind.blocks)[0];
     let n = steps.length + 1;
     while (steps.some((s) => s.key === `step_${n}`)) n++;
-    onChange({ ...config, steps: [...steps, { key: `step_${n}`, do: [first], assignTo: kind.blocks[first].assignees.includes('manager') ? 'manager' : kind.blocks[first].assignees.find((a) => a.startsWith('permission:')) ?? 'manager' }] });
+    onChange({ ...config, steps: [...steps, { key: `step_${n}`, do: [first], assignTo: defaultAssignee(kind.blocks[first].assignees) }] });
   };
   const general = errors.filter((e) => !/^steps\[\d+\]/.test(e.path));
   const errorText = (e: WorkflowConfigError) => {
@@ -150,6 +163,12 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     const key = `workflowDesigner.block.${name}`;
     return t(key) === key ? kind.blocks[name]?.label ?? name : t(key);
   };
+  /** What the person does in a step of this block, in a sentence ('' where there is no text for it). */
+  const doesHint = (name: string) => {
+    const key = `workflowDesigner.doesHint.${name}`;
+    return t(key) === key ? '' : t(key);
+  };
+
   // Who the step may go to: what every one of its blocks allows.
   const allowed = step.do.length
     ? step.do.map((b) => kind.blocks[b]?.assignees ?? []).reduce((a, b) => a.filter((x) => b.includes(x)))
@@ -160,15 +179,21 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
   const people = units.people ?? [];
   // Each on their own: where the step reaches several people (a unit or a permission), for kinds that offer it.
   const canEach = !!kind.each && (who === 'department' || who === 'team' || who === 'permission');
-  const asksFields = step.do.some((b) => kind.blocks[b]?.fields);
+  // Fields: a block that asks them always, one that may (a review) when the step has them.
+  const fieldsOptional = step.do.length > 0 && step.do.every((b) => kind.blocks[b]?.fieldsOptional);
+  const asksFields = step.do.some((b) => kind.blocks[b]?.fields) || (fieldsOptional && !!step.fields);
   const sendsMessage = step.do.some((b) => kind.blocks[b]?.message);
   /** The step with its blocks changed: fields only while a block asks them, a first empty field when one starts to. */
   const withBlocks = (doBlocks: string[]): WorkflowStepConfig => {
     const { fields, message, privateAnswers, ...rest } = step;
-    const asks = doBlocks.some((b) => kind.blocks[b]?.fields);
+    const asks = doBlocks.some((b) => kind.blocks[b]?.fields) || (!!fields && doBlocks.every((b) => kind.blocks[b]?.fieldsOptional));
     const sends = doBlocks.some((b) => kind.blocks[b]?.message);
+    // The assignee stays where the new block allows it, else the block's default.
+    const allows = doBlocks.map((b) => kind.blocks[b]?.assignees ?? []).reduce((a, b) => a.filter((x) => b.includes(x)));
+    const { each: _each, ...base } = rest;
+    const keep = blockAllows(allows, rest.assignTo);
     return {
-      ...rest, do: doBlocks,
+      ...(keep ? rest : { ...base, assignTo: defaultAssignee(allows) }), do: doBlocks,
       ...(asks ? { fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : {}),
       ...(asks && privateAnswers ? { privateAnswers: true } : {}),
       ...(sends ? { message: message ?? { subject: {} } } : {}),
@@ -222,22 +247,38 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
         )}
       </Box>
 
-      {/* What the step does: its blocks, in order. */}
-      <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* What the step does: one block (older configurations with several show them, and the check says so). */}
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
         <Typography variant="body2" sx={{ minWidth: 110 }}>{t('workflowDesigner.does')}</Typography>
-        {step.do.map((b, j) => (
-          <Box key={`${b}-${j}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {j > 0 && <ChevronRightIcon fontSize="small" color="action" />}
-            <Chip size="small" color="primary" variant="outlined" label={blockLabel(b)} onDelete={editable && step.do.length > 1 ? () => onChange(withBlocks(step.do.filter((_, k) => k !== j))) : undefined} />
-          </Box>
-        ))}
-        {editable && (
-          <TextField select size="small" value="" label={t('workflowDesigner.addBlock')} sx={{ minWidth: 150 }}
-            onChange={(e) => onChange(withBlocks([...step.do, e.target.value]))}>
+        {step.do.length > 1 ? (
+          <>
+            {step.do.map((b, j) => (
+              <Chip key={`${b}-${j}`} size="small" color="error" variant="outlined" label={blockLabel(b)}
+                onDelete={editable ? () => onChange(withBlocks(step.do.filter((_, k) => k !== j))) : undefined} />
+            ))}
+          </>
+        ) : (
+          <TextField select size="small" value={step.do[0] ?? ''} disabled={!editable} sx={{ minWidth: 190 }}
+            onChange={(e) => onChange(withBlocks([e.target.value]))}>
             {Object.keys(kind.blocks).map((b) => <MenuItem key={b} value={b}>{blockLabel(b)}</MenuItem>)}
           </TextField>
         )}
+        {step.do.length === 1 && (
+          <Typography variant="caption" color="text.secondary" sx={{ flex: '1 1 240px' }}>{doesHint(step.do[0])}</Typography>
+        )}
       </Box>
+      {/* A review may have its own fields too: whoever approves fills them. */}
+      {fieldsOptional && (
+        <Box sx={{ pl: { sm: 2 } }}>
+          <FormControlLabel
+            control={<Checkbox size="small" checked={!!step.fields} disabled={!editable}
+              onChange={(e) => {
+                const { fields: _f, privateAnswers: _p, ...rest } = step;
+                onChange(e.target.checked ? { ...rest, fields: [{ key: 'field_1', type: 'text', label: {} }] } : rest);
+              }} />}
+            label={<Typography variant="body2">{t('workflowDesigner.withFields')}</Typography>} />
+        </Box>
+      )}
 
       {/* Who decides or does it. */}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -260,6 +301,16 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
             {permissions.map((p) => <MenuItem key={p} value={p}>{permissionLabel(p)}</MenuItem>)}
           </TextField>
         )}
+        {who === 'permission' && units.holders && (() => {
+          // Who that is today (the step goes to all of them; nobody = HR, then the owners).
+          const ids = units.holders[step.assignTo.slice('permission:'.length)] ?? [];
+          const names = ids.map((id) => people.find((p) => p.id === id)).filter(Boolean).map((p) => p!.name ?? p!.email).sort((a, b) => a.localeCompare(b));
+          return (
+            <Typography variant="caption" color={names.length ? 'text.secondary' : 'warning.main'} sx={{ flex: '1 1 100%', pl: { sm: '118px' } }}>
+              {names.length ? t('workflowDesigner.holdersToday', { names: names.join(', ') }) : t('workflowDesigner.holdersNobody')}
+            </Typography>
+          );
+        })()}
         {who === 'person' && (
           <TextField select size="small" value={people.some((p) => p.id === unitCode) ? unitCode : ''} disabled={!editable} onChange={(e) => onChange(withAssignee(`person:${e.target.value}`))} sx={{ minWidth: 260 }}>
             {[...people].sort((a, b) => (a.name ?? a.email).localeCompare(b.name ?? b.email)).map((p) => <MenuItem key={p.id} value={p.id}>{p.name ?? p.email}</MenuItem>)}

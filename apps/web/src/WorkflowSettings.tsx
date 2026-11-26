@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, Chip, Paper, Tab, Tabs, TextField, Typography } from '@mui/material';
+import {
+  Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Paper, Tab, Tabs, TextField, Tooltip, Typography,
+} from '@mui/material';
+import { FLOW_TYPE_KEY, MAX_FLOW_TYPE_NAME, flowTypeKeyFromName } from '@worktime3/shared/flows';
 import { WorkflowDesigner } from './WorkflowDesigner';
 import {
   validateWorkflowConfig, type FactType, type RejectMode, type WorkflowConfig, type WorkflowConfigError, type WorkflowKindCatalogue,
 } from '@worktime3/shared/workflowConfig';
 import { useI18n, useT } from './i18n';
 import { ConfirmDialog, PageHeader } from './components';
-import { AddIcon, ContentCopyIcon, DeleteIcon, RestartAltIcon, SaveIcon } from './icons';
+import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -61,6 +64,7 @@ interface Units {
   departments: { code: string | null; name: string }[];
   teams: { code: string | null; name: string }[];
   people: { id: string; name: string | null; email: string }[];
+  holders?: Record<string, string[]>;
 }
 
 /** Copies a text, with a short "copied" on the button. */
@@ -89,13 +93,17 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
   const [units, setUnits] = useState<Units>({ departments: [], teams: [], people: [] });
   const [editable, setEditable] = useState(false);
   const [error, setError] = useState('');
+  // The organization's flow types: added or renamed here, so a new type gets its steps on the same page.
+  const [flowTypes, setFlowTypes] = useState<FlowType[]>([]);
+  const [typeDialog, setTypeDialog] = useState<{ isNew: boolean; type: FlowType } | null>(null);
 
   const load = useCallback(async () => {
     try {
       const data = await (await fetch(`${API}/organizations/${orgId}/workflow-configs`, { headers: await authHeaders() })).json();
       setKinds(Array.isArray(data?.kinds) ? data.kinds : []);
-      setUnits({ departments: data?.units?.departments ?? [], teams: data?.units?.teams ?? [], people: data?.units?.people ?? [] });
+      setUnits({ departments: data?.units?.departments ?? [], teams: data?.units?.teams ?? [], people: data?.units?.people ?? [], holders: data?.units?.holders ?? {} });
       setEditable(data?.editable === true);
+      setFlowTypes(Array.isArray(data?.flowTypes) ? data.flowTypes : []);
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -104,19 +112,123 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
-      <PageHeader title={t('workflowConfig.title')} subtitle={t('workflowConfig.subtitle')} />
+      <PageHeader
+        title={t('workflowConfig.title')}
+        subtitle={t('workflowConfig.subtitle')}
+        end={editable && kinds.some((k) => k.id === FLOWS_KIND) ? (
+          <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => setTypeDialog({ isNew: true, type: { key: '', names: {}, confidential: false } })}>
+            {t('workflowConfig.flowType.new')}
+          </Button>
+        ) : undefined}
+      />
       {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
       {!editable && kinds.length > 0 && <Alert severity="info">{t('workflowConfig.ownerOnly')}</Alert>}
       {kinds.map((kind) => (
-        <KindEditor key={`${kind.id}:${kind.variant ?? ''}`} orgId={orgId} kind={kind} units={units} editable={editable} authHeaders={authHeaders} onSaved={load} />
+        <KindEditor
+          key={`${kind.id}:${kind.variant ?? ''}`} orgId={orgId} kind={kind} units={units} editable={editable} authHeaders={authHeaders} onSaved={load}
+          onRename={editable && kind.id === FLOWS_KIND && kind.variant ? () => {
+            const type = flowTypes.find((f) => f.key === kind.variant);
+            if (type) setTypeDialog({ isNew: false, type });
+          } : undefined}
+        />
       ))}
       {kinds.length === 0 && !error && <Typography color="text.secondary">{t('workflowConfig.none')}</Typography>}
+      {typeDialog && (
+        <FlowTypeDialog
+          orgId={orgId} authHeaders={authHeaders} isNew={typeDialog.isNew} type={typeDialog.type} taken={flowTypes.map((f) => f.key)}
+          onClose={() => setTypeDialog(null)} onSaved={async () => { setTypeDialog(null); await load(); }}
+        />
+      )}
     </Box>
   );
 }
 
-function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
+/** The kind of the organization's flow types (one configuration per type). */
+const FLOWS_KIND = 'flows.flow';
+
+/** One of the organization's flow types (static data flows/flow_type). */
+interface FlowType {
+  key: string;
+  names: Record<string, string>;
+  confidential: boolean;
+}
+
+const TYPE_LANGS = ['de', 'fr', 'it', 'en'] as const;
+
+/** Adds a flow type or renames one: its name per language, its key (from the name, new types only), confidential. */
+function FlowTypeDialog({ orgId, authHeaders, isNew, type, taken, onClose, onSaved }: {
+  orgId: string; authHeaders: () => Promise<Record<string, string>>; isNew: boolean; type: FlowType; taken: string[];
+  onClose: () => void; onSaved: () => Promise<void>;
+}) {
+  const t = useT();
+  const { locale } = useI18n();
+  const [names, setNames] = useState<Record<string, string>>(type.names);
+  const [confidential, setConfidential] = useState(type.confidential);
+  const [key, setKey] = useState(type.key);
+  const [keyTouched, setKeyTouched] = useState(!isNew);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  // A new type's key follows its name (in the page's language, else the first given) until someone edits it.
+  const firstName = names[locale] || TYPE_LANGS.map((l) => names[l]).find(Boolean) || '';
+  const shownKey = keyTouched ? key : firstName ? flowTypeKeyFromName(firstName) : '';
+  const keyError = isNew && shownKey && (!FLOW_TYPE_KEY.test(shownKey) ? t('workflowConfig.flowType.keyInvalid') : taken.includes(shownKey) ? t('workflowConfig.flowType.keyTaken') : '');
+  const hasName = TYPE_LANGS.some((l) => (names[l] ?? '').trim());
+
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/flow-types/${encodeURIComponent(shownKey)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify({ names, confidential }),
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        const k = `workflowConfig.flowType.error.${data?.error}`;
+        setError(t(k) === k ? t('workflowConfig.saveFailed') : t(k));
+        return;
+      }
+      await onSaved();
+    } catch {
+      setError(t('common.cannotReachApi'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{t(isNew ? 'workflowConfig.flowType.new' : 'workflowConfig.flowType.rename')}</DialogTitle>
+      <DialogContent sx={{ display: 'grid', gap: 1.5, pt: '8px !important' }}>
+        {error && <Alert severity="error">{error}</Alert>}
+        <Typography variant="body2" color="text.secondary">{t('workflowConfig.flowType.hint')}</Typography>
+        {TYPE_LANGS.map((l) => (
+          <TextField key={l} size="small" label={`${t('workflowConfig.flowType.name')} (${l.toUpperCase()})`} value={names[l] ?? ''}
+            onChange={(e) => setNames((prev) => ({ ...prev, [l]: e.target.value }))} slotProps={{ htmlInput: { maxLength: MAX_FLOW_TYPE_NAME } }} />
+        ))}
+        <TextField size="small" label={t('workflowConfig.flowType.key')} value={shownKey} disabled={!isNew}
+          onChange={(e) => { setKeyTouched(true); setKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_')); }}
+          error={!!keyError} helperText={keyError || t('workflowConfig.flowType.keyHint')}
+          slotProps={{ htmlInput: { maxLength: 30, spellCheck: false, style: { fontFamily: 'monospace' } } }} />
+        <Box>
+          <FormControlLabel control={<Checkbox size="small" checked={confidential} onChange={(e) => setConfidential(e.target.checked)} />}
+            label={<Typography variant="body2">{t('workflowConfig.flowType.confidential')}</Typography>} />
+          <Typography variant="caption" color="text.secondary" component="div">{t('workflowConfig.flowType.confidentialHint')}</Typography>
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
+        <Button variant="contained" disabled={busy || !hasName || !shownKey || !!keyError} onClick={() => void save()}>{t('common.save')}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRename }: {
   orgId: string; kind: KindInfo; units: Units; editable: boolean; authHeaders: () => Promise<Record<string, string>>; onSaved: () => Promise<void>;
+  /** Renames the flow type this card is about (the flow types' kind only). */
+  onRename?: () => void;
 }) {
   const t = useT();
   const { locale } = useI18n();
@@ -188,7 +300,14 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved }: {
   return (
     <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="h6" sx={{ flex: 1 }}>{title}</Typography>
+        <Typography variant="h6" sx={{ flex: 1 }}>
+          {title}
+          {onRename && (
+            <Tooltip title={t('workflowConfig.flowType.rename')}>
+              <IconButton size="small" sx={{ ml: 0.5 }} aria-label={t('workflowConfig.flowType.rename')} onClick={onRename}><EditIcon fontSize="small" /></IconButton>
+            </Tooltip>
+          )}
+        </Typography>
         <Chip size="small" color={kind.config ? 'primary' : 'default'} label={t(kind.config ? 'workflowConfig.own' : kind.optional ? 'workflowConfig.noWorkflow' : 'workflowConfig.default')} />
       </Box>
       {!opened && (

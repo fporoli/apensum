@@ -35,7 +35,8 @@ export const FLOW_CATALOGUE: WorkflowKindCatalogue = {
   each: true,
   facts: { urgent: 'boolean', type: 'string', 'requester.department': 'string', 'requester.management': 'boolean' },
   blocks: {
-    review: { label: 'Review', action: 'flow.reviewed', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.approve', decides: true },
+    // A review may ask fields as well (an amount to enter while approving): whoever approves fills them.
+    review: { label: 'Review', action: 'flow.reviewed', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.approve', decides: true, fieldsOptional: true },
     task: { label: 'Task', action: 'flow.done', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.done' },
     // Sent by the system the moment the workflow gets there (its own step, nobody acts on it): to the step's assignees.
     mail: { label: 'E-mail', action: 'flow.mail', assignees: [...ASSIGNEES, 'requester'], automatic: true, message: true, doneKey: 'approvals.event.sent' },

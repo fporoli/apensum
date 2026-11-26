@@ -7,7 +7,9 @@
  *   { "version": 1, "steps": [
  *       { "key": "manager", "do": ["review"], "assignTo": "manager", "reject": "back" },
  *       { "key": "finance", "do": ["review"], "assignTo": "permission:nav.expensePayout", "when": { "total": { "gt": 500 } } },
- *       { "key": "settle", "do": ["process", "pay"], "assignTo": "permission:nav.expenseProcessing" } ] }
+ *       { "key": "pay", "do": ["pay"], "assignTo": "permission:nav.expenseProcessing" } ] }
+ *
+ * A step does one block (`do` holds exactly one: a list only so that the format stays as it was).
  *
  * Pure, used by the API (validation, running) and the browser (the editor's checks). Keep it erasable TypeScript.
  */
@@ -124,6 +126,8 @@ export interface WorkflowBlock {
   actionKey?: string;
   /** The step asks its fields (`WorkflowStepConfig.fields`), filled by whoever does it. */
   fields?: boolean;
+  /** The step may ask fields as well (none = it asks nothing), e.g. a review that has an amount entered. */
+  fieldsOptional?: boolean;
   /** Done by the system the moment the workflow reaches it (nobody acts on it); alone in its step. */
   automatic?: boolean;
   /** The step sends a message (`WorkflowStepConfig.message`) to its assignees. */
@@ -335,6 +339,8 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     keys.add(key);
     const blocks = Array.isArray(s.do) ? s.do : [];
     if (!Array.isArray(s.do) || blocks.length === 0 || !blocks.every((b) => typeof b === 'string')) errors.push({ path: `${at}.do`, code: 'no-blocks' });
+    // One block per step: two things to do are two steps.
+    else if (blocks.length > 1) errors.push({ path: `${at}.do`, code: 'one-block' });
     const assignTo = typeof s.assignTo === 'string' ? s.assignTo : '';
     if (!assigneeKind(assignTo)) errors.push({ path: `${at}.assignTo`, code: 'invalid-assignee' });
     blocks.forEach((b: string, j: number) => {
@@ -379,8 +385,9 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
       if (!m) errors.push({ path: `${at}.message`, code: 'invalid-message' });
       else message = m;
     }
-    // The fields a block with `fields` asks: required with it, refused without.
-    const asks = blocks.some((b: string) => kind.blocks[b]?.fields);
+    // The fields a block with `fields` asks: required with it, allowed with `fieldsOptional`, refused without.
+    const requiresFields = blocks.some((b: string) => kind.blocks[b]?.fields);
+    const asks = requiresFields || (s.fields !== undefined && blocks.length > 0 && blocks.every((b: string) => kind.blocks[b]?.fieldsOptional));
     let fields: StepField[] | undefined;
     if (s.fields !== undefined && !asks) errors.push({ path: `${at}.fields`, code: 'fields-not-allowed' });
     else if (asks) {

@@ -241,7 +241,7 @@ export default {
   'features.requests.lead': 'Everything someone starts and others work on, in one place – without e-mail chaos.',
   'features.requests.items': [
     'Free Flows to the line manager or a department, with their history',
-    'Your own types with set steps in the Flow designer, without programming: review, task, form and e-mail, with conditions',
+    'Your own flow types with set steps in the Flow designer, without programming: review, task, form and e-mail, with conditions',
     'One page for everything: To do, Mine, Done – absences, expenses and timesheets included',
     'Attachments by paperclip, drag and drop or pasted screenshot',
     'Notifications in the app and by e-mail',

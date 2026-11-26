@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanDueDate, cleanFlowLink, isFlowOverdue, flowTypeConfidential, flowTypeKeys, flowTypeLabel, flowTypeOptions } from './flows.ts';
+import { cleanDueDate, cleanFlowLink, flowTypeKeyFromName, withFlowType, isFlowOverdue, flowTypeConfidential, flowTypeKeys, flowTypeLabel, flowTypeOptions } from './flows.ts';
 
 test('cleanFlowLink accepts http(s) links and adds https to a bare host', () => {
   assert.equal(cleanFlowLink('https://jira.example.com/browse/IT-42'), 'https://jira.example.com/browse/IT-42');
@@ -72,4 +72,23 @@ test('a type is confidential by its attribute', () => {
   assert.equal(flowTypeConfidential(values, 'odd'), false);
   assert.equal(flowTypeConfidential(values, null), false);
   assert.equal(flowTypeConfidential(undefined, 'hr'), false);
+});
+
+test('a flow type added or renamed in the Flow-Designer', () => {
+  assert.equal(flowTypeKeyFromName('Materialbestellung'), 'materialbestellung');
+  assert.equal(flowTypeKeyFromName('Geschenk-Sammlung für Ueli'), 'geschenk_sammlung_fuer_ueli');
+  assert.equal(flowTypeKeyFromName('123'), 'type');
+  const row = { values: { service: { sort: 1 }, hr: { sort: 4, confidential: true } }, translation: { de: { service: 'Service', hr: 'HR' }, en: { service: 'Service' } } };
+  const added = withFlowType(row, 'gift', { de: ' Geschenk ', en: 'Gift', fr: '' }, false);
+  assert.deepEqual(added.values.gift, { sort: 5 });
+  assert.equal(added.translation.de.gift, 'Geschenk');
+  assert.equal(added.translation.fr, undefined);
+  assert.equal(row.translation.de.gift, undefined);
+  const renamed = withFlowType(row, 'hr', { de: 'Personal' }, false);
+  assert.deepEqual(renamed.values.hr, { sort: 4 });
+  assert.deepEqual(renamed.translation, { de: { service: 'Service', hr: 'Personal' }, en: { service: 'Service' } });
+  assert.deepEqual(withFlowType(null, 'x', { de: 'X' }, true), { values: { x: { sort: 1, confidential: true } }, translation: { de: { x: 'X' } } });
+  assert.deepEqual(withFlowType(row, 'Bad Key', { de: 'X' }, false), { error: 'invalid-key' });
+  assert.deepEqual(withFlowType(row, 'ok', { de: ' ' }, false), { error: 'name-required' });
+  assert.deepEqual(withFlowType(row, 'ok', { es: 'X' }, false), { error: 'invalid-name' });
 });

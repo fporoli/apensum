@@ -44,11 +44,12 @@ test('what the checker refuses', () => {
   assert.deepEqual(codes(validateWorkflowConfig(KIND, { version: 1, steps: [
     { key: 'm', do: ['review'], assignTo: 'manager', when: { total: { gt: 5 } } },
     { key: 'p', do: ['process'], assignTo: 'permission:nav.expenseProcessing', reject: 'back' },
-    { key: 'x', do: ['pay', 'review'], assignTo: 'permission:nav.expensePayout' },
+    { key: 'x', do: ['pay'], assignTo: 'permission:nav.expensePayout' },
+    { key: 'z', do: ['review', 'process'], assignTo: 'permission:nav.expenseProcessing' },
     { key: 'y', do: ['process'], assignTo: 'permission:nav.expenseProcessing', when: { colour: true } },
   ] })), [
     'steps[0].when first-step-condition', 'steps[1].reject not-rejectable', 'steps[2].do[0] block-last',
-    'steps[3].do[0] block-once', 'steps[3].when.colour unknown-fact',
+    'steps[3].do one-block', 'steps[3].assignTo assignee-not-allowed', 'steps[3].do[1] block-once', 'steps[4].do[0] block-once', 'steps[4].when.colour unknown-fact',
   ]);
 });
 
@@ -77,11 +78,13 @@ test('the next step skips what does not apply; facts are asked only when needed'
 test('compiling: actions in order, a review step flagged, the label from the blocks or the configuration', () => {
   const r = validateWorkflowConfig(KIND, { version: 1, steps: [
     { key: 'manager', do: ['review'], assignTo: 'manager' },
-    { key: 'settle', do: ['process', 'pay'], assignTo: 'permission:nav.expenseProcessing', label: { de: 'Abrechnen', en: 'Settle' } },
+    { key: 'settle', do: ['process'], assignTo: 'permission:nav.expenseProcessing', label: { de: 'Abrechnen', en: 'Settle' } },
+    { key: 'pay', do: ['pay'], assignTo: 'permission:nav.expensePayout' },
   ] });
-  const [m, s] = compileWorkflow(KIND, r.value);
+  const [m, s, p] = compileWorkflow(KIND, r.value);
   assert.deepEqual([m.actions, m.returnActions, m.reject, m.review], [['expense.approve'], ['expense.reject'], 'back', true]);
-  assert.deepEqual([s.actions, s.returnActions, s.rejectable, s.inDialog, s.label], [['expense.process', 'expense.paid'], [], false, true, 'Settle']);
+  assert.deepEqual([s.actions, s.returnActions, s.rejectable, s.inDialog, s.label], [['expense.process'], [], false, true, 'Settle']);
+  assert.deepEqual(p.actions, ['expense.paid']);
 });
 
 test('codes of departments and teams; team assignees only where a block allows them', () => {
@@ -232,7 +235,25 @@ test('a message step is refused without a subject, with other blocks, or each on
     'steps[0].message message-not-allowed',
     'steps[1].each each-not-allowed',
     'steps[1].message invalid-message',
+    'steps[2].do one-block',
     'steps[2].do automatic-alone',
     'steps[2].message invalid-message',
   ]);
+});
+
+test('one block per step; a review may ask fields where its block allows them', () => {
+  const REVIEWKIND = { ...KIND, blocks: { ...KIND.blocks, review: { ...KIND.blocks.review, fieldsOptional: true } } };
+  const AMOUNT = { key: 'amount', type: 'number', label: { de: 'Betrag' } };
+  const r = validateWorkflowConfig(REVIEWKIND, { version: 1, steps: [
+    { key: 'plain', do: ['review'], assignTo: 'manager' },
+    { key: 'asks', do: ['review'], assignTo: 'manager', fields: [AMOUNT], privateAnswers: true },
+  ] });
+  assert.deepEqual(codes(r), []);
+  assert.equal(r.value.steps[0].fields, undefined);
+  assert.deepEqual(r.value.steps[1].fields, [AMOUNT]);
+  assert.equal(r.value.steps[1].privateAnswers, true);
+  assert.deepEqual(codes(validateWorkflowConfig(REVIEWKIND, { version: 1, steps: [
+    { key: 'a', do: ['review'], assignTo: 'manager' },
+    { key: 'b', do: ['process'], assignTo: 'permission:nav.expenseProcessing', fields: [AMOUNT] },
+  ] })), ['steps[1].fields fields-not-allowed']);
 });

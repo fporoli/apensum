@@ -101,6 +101,9 @@ export const WORK_SECTION_OBJECTS: readonly PermissionObject[] = [
 export const ADMIN_SECTION_OBJECTS: readonly PermissionObject[] = [
   // Roles & permissions in Admin settings: create/edit roles and what they grant.
   { id: 'section.admin.roles', kind: 'section', scopes: ORG_SCOPES, caption: 'roles.title', parent: { own: 'nav.admin', others: 'nav.admin' } },
+  // The Flow-Designer: changing who does a step of whose flows (absences, expenses, the flow types). Only the owner by
+  // default (113), who may give it to a role (admins, developers): whoever has it routes other people's flows.
+  { id: 'section.admin.workflows', kind: 'section', scopes: ORG_SCOPES, caption: 'workflowConfig.title', parent: { own: 'nav.admin', others: 'nav.admin' } },
 ];
 
 /** Sections the plugins add (registerPermissionObjects); navbar objects of plugins join NAV_OBJECTS. */
@@ -118,6 +121,7 @@ export const OWNER_PERMISSIONS: readonly string[] = [
   'nav.invitations:edit:all',
   'nav.admin:see:all',
   'section.admin.roles:edit:all',
+  'section.admin.workflows:edit:all',
   'nav.audit:see:all',
 ];
 

@@ -101,3 +101,59 @@ export function flowTypeConfidential(values: unknown, key: string | null | undef
   const attrs = (values as Record<string, unknown>)[key];
   return !!attrs && typeof attrs === 'object' && (attrs as Record<string, unknown>).confidential === true;
 }
+
+/** A flow type's key: lower-case letters, digits and _, starting with a letter, up to 30 (also a workflow variant key). */
+export const FLOW_TYPE_KEY = /^[a-z][a-z0-9_]{0,29}$/;
+/** The longest name of a flow type in one language. */
+export const MAX_FLOW_TYPE_NAME = 80;
+const FLOW_TYPE_LANGS = ['de', 'fr', 'it', 'en'] as const;
+
+/** A key made from a type's name: "Materialbestellung" -> "materialbestellung", "Gift collection" -> "gift_collection". */
+export function flowTypeKeyFromName(name: string): string {
+  const slug = name.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^[_0-9]+|_+$/g, '').slice(0, 30).replace(/_+$/, '');
+  return slug || 'type';
+}
+
+/**
+ * The flow_type list with one type added or renamed (the Flow-Designer: names per language, confidential or not): a
+ * new type is sorted last, an existing one keeps its other properties. `{ error }` when the key or the names are not
+ * valid (at least one name, each up to MAX_FLOW_TYPE_NAME).
+ */
+export function withFlowType(
+  row: { values?: unknown; translation?: Record<string, Record<string, string>> | null } | null | undefined,
+  key: string,
+  names: unknown,
+  confidential: boolean,
+): { values: Record<string, unknown>; translation: Record<string, Record<string, string>> } | { error: string } {
+  if (typeof key !== 'string' || !FLOW_TYPE_KEY.test(key)) return { error: 'invalid-key' };
+  if (!names || typeof names !== 'object' || Array.isArray(names)) return { error: 'invalid-name' };
+  const cleaned: Record<string, string> = {};
+  for (const [lang, text] of Object.entries(names as Record<string, unknown>)) {
+    if (!(FLOW_TYPE_LANGS as readonly string[]).includes(lang) || typeof text !== 'string') return { error: 'invalid-name' };
+    const t = text.trim();
+    if (t.length > MAX_FLOW_TYPE_NAME) return { error: 'invalid-name' };
+    if (t) cleaned[lang] = t;
+  }
+  if (Object.keys(cleaned).length === 0) return { error: 'name-required' };
+  const values: Record<string, unknown> = row?.values && typeof row.values === 'object' && !Array.isArray(row.values) ? { ...(row.values as Record<string, unknown>) } : {};
+  const old = values[key];
+  const attrs: Record<string, unknown> = old && typeof old === 'object' && !Array.isArray(old) ? { ...(old as Record<string, unknown>) } : {};
+  if (!(key in values)) {
+    const sorts = Object.values(values).map((v) => Number((v as { sort?: unknown } | null)?.sort)).filter(Number.isFinite);
+    attrs.sort = (sorts.length ? Math.max(...sorts) : 0) + 1;
+  }
+  if (confidential) attrs.confidential = true;
+  else delete attrs.confidential;
+  values[key] = attrs;
+  const translation: Record<string, Record<string, string>> = {};
+  for (const [lang, labels] of Object.entries(row?.translation ?? {})) translation[lang] = { ...labels };
+  for (const lang of FLOW_TYPE_LANGS) {
+    const forLang = { ...(translation[lang] ?? {}) };
+    if (cleaned[lang]) forLang[key] = cleaned[lang];
+    else delete forLang[key];
+    if (Object.keys(forLang).length) translation[lang] = forLang;
+    else delete translation[lang];
+  }
+  return { values, translation };
+}
