@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'cases', 'expenses', 'roster', 'hr', 'hrplus', 'billing', 'whistle', 'plugins', 'pricing', 'security', 'law', 'support', 'about', 'references', 'contact', 'news', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'opensource', 'cases', 'expenses', 'roster', 'hr', 'hrplus', 'billing', 'whistle', 'plugins', 'pricing', 'security', 'law', 'support', 'about', 'references', 'contact', 'news', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -159,6 +159,7 @@ function footer(ctx) {
       <a href="${link('pricing')}">${t('nav.pricing')}</a>
       <a href="${link('security')}">${t('nav.security')}</a>
       <a href="${link('law')}">${t('nav.law')}</a>
+      <a href="${link('opensource')}">${t('nav.opensource')}</a>
       <a href="${link('support')}">${t('nav.support')}</a>
       <a href="${ctx.demo}">${t('cta.demo')}</a>
       ${config.appUrl ? `<a href="${esc(config.appUrl)}">${t('nav.login')}</a>` : ''}
@@ -187,7 +188,7 @@ function footer(ctx) {
  * website and the application. Only what the site says elsewhere too: no ratings, no street (the legal notice has it),
  * no phone (shown only on a click). `</` is escaped so the JSON can't end its script element.
  */
-export function structuredData(ctx, description) {
+export function structuredData(ctx, description, faq = null) {
   const { lang, page, config, t } = ctx;
   const origin = `https://${config.domain}`;
   const organization = {
@@ -224,12 +225,19 @@ export function structuredData(ctx, description) {
       publisher: { '@id': `${origin}/#organization` },
     });
   }
+  // A page's questions and answers as the page shows them (`opensource`).
+  if (faq?.length) {
+    graph.push({
+      '@type': 'FAQPage',
+      mainEntity: faq.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+    });
+  }
   const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
   return `<script type="application/ld+json">${json}</script>`;
 }
 
 /** A full HTML document. `alternates` maps language -> path of this page. */
-export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false, news = false }) {
+export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false, news = false, faq = null }) {
   const { lang, page, config, assets, t } = ctx;
   const origin = `https://${config.domain}`;
   const alternates = page
@@ -259,7 +267,7 @@ export function layout(ctx, { title, description, body, noindex = false, reveal 
   ${form ? `<script src="${assets.contact}" defer></script>` : ''}
   ${news ? `<script src="${assets.news}" defer></script>` : ''}
   ${news || body.includes('class="shot') ? `<script src="${assets.zoom}" data-close="${t('shot.close')}" defer></script>` : ''}
-  ${noindex ? '' : structuredData(ctx, description)}
+  ${noindex ? '' : structuredData(ctx, description, faq)}
 </head>
 <body>
   <a class="skip" href="#main">${t('nav.skip')}</a>

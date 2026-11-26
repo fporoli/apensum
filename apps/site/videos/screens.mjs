@@ -96,19 +96,29 @@ async function prepare() {
     const r = await api(ueli.token, 'POST', `/organizations/${ueli.orgId}/absences`, { dateStart: from, dateEnd: to, absenceType: 'vacation', note: 'Skiferien in Arosa' });
     console.log('screens: vacation request', r.ok ? 'created' : r.error);
   }
+  // A Free Flow to the manager, answered, and a flow of the own type "Materialbestellung" (set steps, seed.sql).
   const subject = 'Änderung Arbeitspensum ab Januar';
-  const requests = await api(ueli.token, 'GET', `/organizations/${ueli.orgId}/requests`);
-  const reqs = Array.isArray(requests) ? requests : (requests.requests ?? requests.items ?? []);
-  if (!reqs.some((r) => r.subject === subject)) {
-    const r = await api(ueli.token, 'POST', `/organizations/${ueli.orgId}/requests`, {
+  const flows = await api(ueli.token, 'GET', `/organizations/${ueli.orgId}/flows?box=mine`);
+  const mine = Array.isArray(flows) ? flows : (flows.flows ?? []);
+  if (!mine.some((r) => r.subject === subject)) {
+    const r = await api(ueli.token, 'POST', `/organizations/${ueli.orgId}/flows`, {
       target: 'manager',
       type: 'other',
       subject,
       message: 'Hallo Marco, ich möchte ab Januar auf 80 % reduzieren, freitags frei. Wäre das möglich?',
     });
-    console.log('screens: request', r.ok ? 'created' : r.error);
-    const id = r.request?.id ?? r.id;
-    if (id) await api(marco.token, 'POST', `/organizations/${marco.orgId}/requests/${id}/messages`, { body: 'Grundsätzlich ja. Ich bespreche es mit HR und melde mich bis Ende Woche.' });
+    console.log('screens: free flow', r.ok ? 'created' : r.error);
+    if (r.id) await api(marco.token, 'POST', `/organizations/${marco.orgId}/flows/${r.id}/messages`, { body: 'Grundsätzlich ja. Ich bespreche es mit HR und melde mich bis Ende Woche.' });
+  }
+  const order = 'Bürostuhl für das Homeoffice';
+  if (!mine.some((r) => r.subject === order)) {
+    const r = await api(ueli.token, 'POST', `/organizations/${ueli.orgId}/flows`, {
+      type: 'material',
+      subject: order,
+      message: 'Mein Stuhl ist kaputt; dieses Modell wäre ergonomisch und günstig.',
+      custom: { artikel: 'Bürostuhl ErgoPlus', menge: 1, betrag: 380 },
+    });
+    console.log('screens: material flow', r.ok ? 'created' : r.error);
   }
 }
 
@@ -135,10 +145,14 @@ const SHOTS = {
   'balances-1': { user: 'ulla', hash: '#/balances' },
   'balances-2': { user: 'ueli', hash: '#/timesheet' },
   'balances-3': { user: 'ulla', hash: '#/balances', tab: 1 },
-  'timesheets-1': { user: 'marco', hash: '#/approvals' },
+  'timesheets-1': { user: 'marco', hash: '#/flows', async go(p) {
+    await p.locator('main .MuiListItemButton-root').filter({ hasText: /Absenz|Absence|Assenza/ }).first().click();
+    await sleep(1200);
+  } },
   'expenses-1': { user: 'ueli', hash: '#/expenses' },
-  'requests-1': { user: 'marco', hash: '#/requests', tab: 1, async go(p) {
-    await p.getByText('Änderung Arbeitspensum ab Januar').first().click();
+  'requests-1': { user: 'marco', hash: '#/flows', async go(p) {
+    await p.locator('main .MuiListItemButton-root').filter({ hasText: 'Bürostuhl' }).first().click();
+    await sleep(1200);
   } },
   'documents-1': { user: 'ueli', hash: '#/documents' },
   'admin-1': { user: 'alice', hash: '#/admin/roles' }, // only the owner edits roles

@@ -1,6 +1,6 @@
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
 import { githubMark, icon } from './icons.mjs';
-import { esc, layout, newsletterForm, pagePath } from './layout.mjs';
+import { MODULE_PAGES, esc, layout, newsletterForm, pagePath } from './layout.mjs';
 
 /** The canton each language's holiday example shows. */
 const EXAMPLE_CANTON = { de: 'ZH', fr: 'VD', it: 'TI', en: 'BE' };
@@ -329,6 +329,7 @@ ${
       <p class="eyebrow">${icon('code')}${t('home.oss.eyebrow')}</p>
       <h2>${t('home.oss.title')}</h2>
       <p class="lead">${t('home.oss.text')}</p>
+      <p><a class="link-arrow" href="${ctx.link('opensource')}">${t('opensource.title')}${icon('arrow')}</a></p>
       ${githubButton(ctx, t('home.oss.link'))}
     </div>
   </div>
@@ -519,6 +520,62 @@ export function security(ctx) {
 </section>
 ${ctaBand(ctx)}`;
   return layout(ctx, { title: t('security.meta.title'), description: t('security.meta.description'), body });
+}
+
+/**
+ * Open-source time recording for Switzerland (page `opensource`): what of Apensum is open (the core, AGPL-3.0) and
+ * what is not (the module pages' modules, named from them), running it oneself or hosted in Switzerland, and questions
+ * people search for (also as FAQPage structured data). Claims must match the repository and the app.
+ */
+export function opensource(ctx) {
+  const { t } = ctx;
+  // The module names as written (t() escapes them; t.list escapes the filled-in text once more).
+  const unescape = (x) => x.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  const modules = MODULE_PAGES.filter((p) => p !== 'plugins').map((p) => unescape(t(`nav.${p}`))).join(', ');
+  const answers = t.list('opensource.faq.a', { modules });
+  const faq = t.list('opensource.faq.q').map((q, i) => [q, answers[i]]);
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${icon('code')}${t('nav.opensource')}</p>
+    <h1>${t('opensource.title')}</h1>
+    <p class="lead">${t('opensource.lead')}</p>
+    ${ctx.config.sourceUrl ? githubButton(ctx, t('home.oss.link')) : ''}
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap grid grid-2">
+    <article class="card feature">
+      <div class="feature-icon">${icon('code')}</div>
+      <h2 class="h3">${t('opensource.open.title')}</h2>
+      ${checklist(t.list('opensource.open.items'))}
+    </article>
+    <article class="card feature">
+      <div class="feature-icon">${icon('lock')}</div>
+      <h2 class="h3">${t('opensource.closed.title')}</h2>
+      <p>${t('opensource.closed.text', { modules })}</p>
+    </article>
+    <article class="card feature">
+      <div class="feature-icon">${icon('layers')}</div>
+      <h2 class="h3">${t('opensource.self.title')}</h2>
+      <p>${t('opensource.self.text')}</p>
+    </article>
+    <article class="card feature">
+      <div class="feature-icon">${icon('shield')}</div>
+      <h2 class="h3">${t('opensource.hosted.title')}</h2>
+      <p>${t('opensource.hosted.text')}</p>
+      <a class="link-arrow" href="${ctx.link('security')}">${t('opensource.hosted.link')}${icon('arrow')}</a>
+    </article>
+  </div>
+</section>
+<section class="section tight-bottom">
+  <div class="wrap narrow">
+    <h2>${t('opensource.faqTitle')}</h2>
+    ${faq.map(([q, a]) => `<h3 class="h3">${q}</h3>\n    <p>${a}</p>`).join('\n    ')}
+  </div>
+</section>
+${ctaBand(ctx)}`;
+  return layout(ctx, { title: t('opensource.meta.title'), description: t('opensource.meta.description'), body, faq });
 }
 
 /** Paths of the pages the contact form's server sends the visitor back to. */
@@ -1436,4 +1493,4 @@ export function newsResult(ctx, kind) {
   return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
 }
 
-export const RENDER = { home, features, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, support, pricing, security, law, about, references, contact, news, impressum, privacy };
+export const RENDER = { home, features, opensource, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, support, pricing, security, law, about, references, contact, news, impressum, privacy };

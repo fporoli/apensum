@@ -119,6 +119,8 @@ a:hover { color: var(--brand-strong); }
 }
 .header-row { display: flex; align-items: center; justify-content: space-between; min-height: 66px; gap: 16px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
+/* The header's logo sits a little higher: centred, the larger wordmark's baseline would be 2.3px below the menu's. */
+.header-row > .brand { position: relative; top: -0.145rem; }
 .wordmark { font-size: 1.35rem; font-weight: 500; letter-spacing: -0.02em; color: var(--muted); }
 .wordmark b { color: var(--ink); font-weight: 750; }
 .menu summary { list-style: none; cursor: pointer; display: none; padding: 8px; border-radius: 8px; color: var(--ink); }

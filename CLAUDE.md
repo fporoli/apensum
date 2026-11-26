@@ -413,6 +413,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   The holiday card imports `packages/shared/src/worktime.ts`.\
   The Working Hours Act page (`law`) cites SECO (`lawSourceUrl`); its cards must stay true to the app (report, Überzeit account, midnight split, retention via versions).\
   Claims must match what the app does.\
+  Open-source time recording (`opensource`, linked from the footer and the home page's open-source card): what is open (the core) and what is not (the module pages' modules, named from them), running it oneself or hosted, and an FAQ (also FAQPage structured data).\
   Structured data (`structuredData` in `layout.mjs`, schema.org JSON-LD): the Organization on every indexed page, WebSite and SoftwareApplication (0 CHF, AGPL, the repository) on the home page; never ratings, the street or the phone.\
   Deployed only by the `site` workflow (`infra/site/`: own Caddy container behind the shared edge, `remote.sh`; a host other than the main domain, e.g. `wwwpp.apensum.ch`, is a noindex preview in its own container); `npm run site:dev` previews on :3010.\
   Media (not in git, `apps/site/media`, shipped from the `site-media` release by `npm run site:videos:publish`): role videos plus the developer one (`npm run site:videos`, `videos/record.mjs`) and the features page's screenshots per language (`npm run site:screens`, `videos/screens.mjs`, shot ids = `FEATURE_SHOTS`), both from the dev stack with demo data; pages show only what is there.\

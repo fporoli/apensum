@@ -330,12 +330,11 @@ const SCENES = {
       await s.caption('Eine neue Benachrichtigung: Ueli hat Ferien beantragt');
       await s.moveTo(p.getByRole('button', { name: 'Benachrichtigungen' }));
       await s.wait(2000);
-      await s.nav('Workflow');
-      await s.caption('Alle Freigaben in einem Eingang – nur für seine eigenen Mitarbeitenden');
-      const row = p.locator('tr', { hasText: 'Absenzantrag' }).first();
-      await s.moveTo(row, 0.25);
-      await s.wait(1400);
-      await s.click(row.getByRole('button', { name: 'Genehmigen' }), 1800);
+      await s.nav('Flows');
+      await s.caption('Alles, was auf ihn wartet, auf einer Seite – nur von seinen eigenen Mitarbeitenden');
+      const row = p.locator('main .MuiListItemButton-root', { hasText: 'Absenz' }).first();
+      await s.click(row, 1400);
+      await s.click(p.locator('main').getByRole('button', { name: 'Genehmigen' }).first(), 1800);
       await s.caption('Genehmigt – Ueli wird automatisch informiert', 2000);
 
       await s.nav('Absenzen');
@@ -398,7 +397,7 @@ const SCENES = {
       await s.caption('Module pro Organisation ein- und ausschalten – der Menüpunkt verschwindet sofort');
       // The settings sections are collapsed: open "Module" first.
       await s.click(p.getByText('Module', { exact: true }).first(), 900);
-      const toggle = p.getByRole('checkbox', { name: /Anfragen/ }).first();
+      const toggle = p.getByRole('checkbox', { name: /Free Flows/ }).first();
       await s.click(toggle, 1800);
       await s.moveTo(p.locator('.MuiDrawer-root').getByRole('button', { name: /^Dokumente/ }).first());
       await s.wait(1400);
