@@ -2,14 +2,10 @@
 
 Postgres · Liquibase · Drizzle ORM
 
-31 application tables across thirteen subsystems. Many tenant-owned tables carry
-`organization_id` directly; global tables and tables scoped through a parent
-relationship do not. `project_times.organization_id` is required because every
-entry belongs to an organization whether or not it is tagged to a project. Each
-section below is a self-contained entity-relationship diagram for one subsystem;
-tables that also appear elsewhere (mainly `organizations` and `users`) are shown
-with just their primary key for context — their full column list lives in the
-section where they're introduced.
+31 documented core application tables are covered across thirteen subsystems; plugin-owned tables are inventoried separately below.\
+Many tenant-owned tables carry `organization_id` directly; global tables and tables scoped through a parent relationship do not.\
+`project_times.organization_id` is required because every entry belongs to an organization whether or not it is tagged to a project.\
+Each section below is a self-contained entity-relationship diagram for one subsystem; tables that also appear elsewhere (mainly `organizations` and `users`) are shown with just their primary key for context — their full column list lives in the section where they're introduced.
 
 **Notation:** `PK` primary key · `FK` foreign key · `UK` unique constraint.
 Routine creation/update timestamps are omitted for clarity; timestamps that are
@@ -578,7 +574,7 @@ erDiagram
     TIMESHEET_PERIODS { uuid id PK }
 ```
 
-## Expenses (3 tables)
+## Expenses (5 tables; 3 diagrammed here)
 
 Employees log ad hoc expense line items and bundle a self-chosen subset into
 an expense report for approval — unlike `timesheet_periods` (an implicit
@@ -641,7 +637,8 @@ erDiagram
 > and are both optional; `value` is the hand-entered amount in the org's
 > reporting currency (`currency`), defaulting to 0 until filled in.
 > `category`/`sub_category` are free-text picklists backed by `static_data`
-> (entity `expenses`), not DB enums or FKs; so are the currencies (enum `currency`).
+> (entity `expenses`), not DB enums or FKs; `currency` is a three-letter ISO code.
+> The expenses plugin owns these tables in `public` and declares them in `apensum.tables`; the two additional tables are listed in Plugin-owned data.
 
 ## Workflows & Notifications (3 tables)
 
@@ -1009,6 +1006,33 @@ erDiagram
     DOCUMENTS { uuid id PK }
 ```
 
+## Plugin-owned data
+
+The plugin tables below are not part of the core Drizzle schema.\
+They are created by each plugin's Liquibase changelog and introspected into that plugin's `api/db/schema.ts`.\
+Standard product builds include the private plugin code; rebuilding from source requires the supplied plugin source trees or authorized access to their repositories.\
+These plugins own 39 tables: 34 in plugin schemas and 5 expenses tables in `public`; the tables exist in a database after their changelogs are migrated.\
+Installing the code does not by itself enable a module or satisfy its license requirement.\
+Tables reference core records where appropriate, but polymorphic references such as `(source_table, source_id)` intentionally have no foreign key.
+
+| Plugin / schema | Tables | Purpose |
+|---|---|---|
+| `billing` | `settings`, `customers`, `project_customers`, `person_rates`, `invoices`, `invoice_lines`, `invoice_items`, `written_off` | Organization billing settings and customers; project/customer rates; invoices and their lines; source-record links and write-offs. |
+| `cases` | `cases`, `case_documents`, `case_interviews`, `assessment_templates`, `assessments`, `user_keys`, `case_keys` | Confidential case dossiers, document and interview records, assessment templates and drafts, and the per-user/per-case key envelopes used by browser-side encryption. |
+| `expenses` (`public`) | `expenses`, `expense_reports`, `expense_report_items`, `expense_payruns`, `expense_vat_lines` | Expenses and approval reports; report membership; payout runs; per-expense VAT amounts and booking lines. |
+| `hr` | `work_permits`, `year_statements`, `exit_statements`, `reviews` | Work permits; issued year-end and exit balance statements; employee review records. |
+| `hrplus` | `settings`, `templates`, `checklists`, `certificates`, `items`, `loans` | Organization settings and onboarding/offboarding templates and checklists; employee certificates; tracked equipment and loans. |
+| `notes` | `notes` | Personal and organization notes, scoped by organization and user. |
+| `roster` | `shift_types`, `demand`, `profiles`, `assignments`, `published`, `wishes` | Shift definitions and staffing demand; roster profiles and assignments; published plans and employee shift wishes. |
+| `whistle` | `reports`, `messages` | Confidential whistleblowing reports and their reporter/handler message thread. |
+
+`cases.assessments` stores the section content, custom values, evidence and assessor guidance; for encrypted cases those sensitive fields are sealed in the `enc` envelope, and plaintext compute requests are not persisted.\
+The `cases.case_documents` and `cases.case_interviews` rows can also carry encrypted content; file bytes remain in the core document store.\
+`cases.user_keys` and `cases.case_keys` store wrapped key material, never a passphrase or an unwrapped private or case key.\
+`billing.invoice_items` maps source records to invoice lines by `(source_table, source_id)`; `billing.written_off` records written-off expense sources. These polymorphic source ids intentionally have no FK.
+
+The HR and HR Plus plugins use different schemas (`hr` and `hrplus`), and their rows remain separate from the core's `users`, `organizations`, `documents` and `personnel_documents` tables.
+
 ## Not diagrammed
 
 - Liquibase's own bookkeeping tables `databasechangelog` /
@@ -1016,6 +1040,5 @@ erDiagram
 
 ---
 
-Refreshed against `apps/api/src/db/schema.ts` and the Liquibase changelogs on
-2026-10-29. A styled, interactive version of this
-reference is also published as a Claude artifact.
+Refreshed against the generated core and plugin Drizzle schemas and the Liquibase changelogs on 2026-11-26.\
+A styled, interactive version of this reference is also published as a Claude artifact.

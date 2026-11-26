@@ -19,31 +19,47 @@ The code quality across all workspaces is notably high: typed throughout, modula
 ## 2. Core Architecture Assessment
 
 ### 2.1 The Plugin System (`plugins/<id>`)
-- **Design:** Plugins are first-class citizen packages (`@worktime3/<id>`) exporting `defineApiPlugin` (controllers, providers, workflow hooks, payroll hooks, document categories) and `defineWebPlugin` (pages, nav groups, texts, settings, badges).
-- **Strict Namespacing:** Enforced by `packages/shared/src/pluginApi.ts`. Every plugin-contributed entity (database tables, custom schemas, permission objects, route paths, nav entries) must be prefixed with the plugin ID. This eliminates naming collisions and allows clean runtime loading.
-- **Tenant Isolation & Module Toggles:** Org admins can toggle individual modules on or off in Organization Settings. The permission resolver (`permissionIdsOf`) dynamically masks off disabled module permissions, preventing access at both the API guard and UI layer.
-- **Schema Ownership:** Plugins maintain their own Liquibase changelog tree (`plugins/<id>/changelog/`) and run after the core changelogs, isolating schema evolution.
+- **Design:** Plugins are folders loaded from `plugins/`, not independently installed npm workspaces.
+  Their manifests declare the plugin API version (currently 3), optional module and permissions, database ownership, and API/web entry points.\
+  `defineApiPlugin` and `defineWebPlugin` register the plugin's API, pages, texts, settings and extension points.
+- **Extension points:** Plugins can contribute pages, reports, team views, payroll items, documents, workflow kinds, workflow actions, assistant tools, settings, and planned work-time minutes.\
+  The core checks plugin API compatibility at API startup and web build, and validates namespaced plugin contributions.
+- **Modules and licensing:** Organizations can enable or disable registered modules in Organization Settings.
+  Disabled module permissions are removed from the effective permissions, which hides plugin pages and makes corresponding permission checks fail.\
+  Licensed modules also require an operator-granted license before an organization can enable them.
+- **Schema ownership:** A plugin can own a Postgres schema (`apensum.dbSchema`) or declare tables in `public` (`apensum.tables`).\
+  Its Liquibase changelogs run after the core changelog, and declared tables are introspected into that plugin's `api/db/schema.ts`, not the core's generated schema.
+- **Deployment:** Standard product builds include the private plugin code; core-only CI is a separate check that Apensum also runs without plugins.\
+  A customer building from source needs the corresponding private plugin source trees or authorized repository access.\
+  Installed code does not by itself enable a module or satisfy its license requirement.
 
 ### 2.2 Swiss Compliance & Business Logic
 - **ArG Überzeit vs. Flextime:** Apensum tracks Überzeit (statutory overtime beyond 45 or 50 hours per week) in a distinct account from regular flextime, honoring Swiss labor law requirements.
 - **Cantonal Holiday Engine:** Evaluates floating and fixed holidays across all 26 Swiss cantons, respecting regional variations and part-time employee workload percentages.
-- **Payroll Interfaces:** Built-in generators for Abacus AbaSalary Lohnarten CSV and Bexio payroll, ensuring direct integration with Swiss accounting systems.
+- **Payroll Interfaces:** Built-in payroll exports include Abacus wage types; other exports and plugin-provided payroll items are registered through the plugin API.
 - **Absence Calendar Feeds:** Implements compliant RFC 5545 iCalendar feeds (`personal`, `team`, `all`) with secure capability tokens, allowing employees and managers to subscribe via Apple Calendar, Outlook, and Google Calendar.
 
 ### 2.3 Security, Privacy & Zero-Knowledge Dossier Encryption
 - **Client-Side Envelope Encryption (`plugins/cases`):**
-  - Case files and sensitive assessment notes are encrypted using **AES-256-GCM**.
-  - Symmetric Case Keys are derived using PBKDF2/Argon2id and wrapped per member with individual public/private key pairs.
-  - The database only ever stores encrypted envelopes. Neither database administrators nor compromised host environments can inspect sensitive case contents.
+  - Encrypted case fields are sealed in the browser with the case's AES-256-GCM key; that key is wrapped to authorized members' RSA public keys.
+  - Each document or interview audio file uses its own random file key, sealed in the corresponding row.
+  - The user's RSA private key is wrapped under a key derived from their passphrase with PBKDF2; the server does not receive passphrases or unwrapped keys.
+  - The server refuses plaintext writes to encrypted case records and does not index or process their stored fields.
+  - When an authorized user invokes AI or PDF computation, the browser sends decrypted content for that stateless request; the server does not persist that plaintext.
+  - This protects stored case content from database-only access, but does not make a compromised browser or delivery of malicious client code harmless.
 - **Identity & Access Control:**
   - Integrated Keycloak OIDC authentication + local HS256 JWT fallback unified behind a single `jwt.guard.ts`.
   - Granular RBAC permissions with scoped checks (`own`, `team`, `reports`, `all`).
-- **Comprehensive Audit Trail:** All critical operations (logins, role alterations, data modifications, exports) are recorded in an append-only `audit_log` with actor metadata and serialized state diffs.
+- **Audit Trail:** Security-sensitive actions and writes are audited, with metadata describing the event rather than storing sensitive values or notes.
+  Row history is recorded separately through the versioning system.
 
 ### 2.4 AI Transcription & Synthesis Pipeline
 - **Swiss Provider Only:** Azure OpenAI in Switzerland for audio transcription (Whisper) and LLM inference; no other AI provider receives data.
-- **Cost & Budget Control:** Enforces monthly CHF budget limits per instance and per organization with automated circuit breakers to eliminate unexpected cloud billing.
-- **Interview Workflow:** Audio interviews are uploaded, transcribed with Swiss German / German phonetic accuracy, and synthesized into structured assessment sections while maintaining strict citation of source notes.
+- **Cost & Budget Control:** Azure calls reserve and settle usage through the shared AI budget service, with instance and organization CHF limits, configurable prices, and a global kill switch.
+- **Case AI:** Organization settings control transcription, summaries and assessment drafts.
+  Drafts use a fixed grounding prompt, include documents and current interview material, and require evidence markers and source quotes for factual statements.\
+  Assessment guidance can influence focus and structure but is explicitly lower priority than source documents and interviews.
+- **Encrypted cases:** AI requests use a browser-decrypted, stateless compute path; the server stores neither the decrypted request content nor generated plaintext on the encrypted case.
 
 ---
 
@@ -52,13 +68,10 @@ The code quality across all workspaces is notably high: typed throughout, modula
 ### 3.1 Framework vs. Single App Narrative
 - The website now clearly positions Apensum as a **Modular Swiss Business Suite & Framework**:
   - The core delivers time-tracking, ArG compliance, employee management, and payroll exports.
-  - Modules extend the suite: **Fälle & Gutachten (Cases & Assessments)** and **Spesen & Quittungen (Expenses & Receipts)** are highlighted as bundled, production-ready modules.
-- **Opportunities:**
-  - Create a dedicated **Modules** dropdown in the site navigation, housing:
-    - *Cases & Assessments* (Dossier management, audio recording, AI transcription)
-    - *Expenses & Receipts* (Multi-currency, OCR receipts, multi-step approvals)
-    - *Plugin Developer Guide* ("Build a custom module in TypeScript in 5 steps")
-  - Remove redundant feature sections from the core Features page to avoid dilution.
+  - The site has a Modules navigation group for Cases & Assessments, Expenses & Receipts, and the plugin developer guide.
+  - The standard product build includes private plugins for HR, HR Plus, roster planning, billing, whistleblowing and personal notes, alongside Cases and Expenses.
+  - Module settings and, for licensed modules, operator-granted licenses determine which organizations can use those installed features.
+- **Review point:** Keep public product claims aligned with the modules available and licensed for each organization.
 
 ### 3.2 Performance & Technical Architecture of `apps/site`
 - **Zero-Hydration Static Generator:** Built with `build.mjs` and native Node.js. Generates 68 pre-rendered static HTML pages with zero client-side JavaScript bloat.
@@ -79,9 +92,9 @@ The code quality across all workspaces is notably high: typed throughout, modula
 ## 5. Prioritized Roadmap & Recommendations
 
 ### Short-Term (Completed & Validated)
-- [x] **Website Modules Submenu & Plugin Developer Page:** Marketing website navigation features a dedicated "Modules" (`Module`) dropdown containing *Cases* (`/faelle-gutachten`), *Expenses* (`/spesen`), and the *Plugin Developer Guide* (`/plugins`), with clean removal of redundant sections from the core Features page.
+- [x] **Website Modules Submenu & Plugin Developer Page:** Marketing navigation groups Cases, Expenses, and the plugin guide under Modules.
 - [x] **Correct VPS Port Documentation:** Updated `README.md` to accurately document `5436` for Production, `5434` for Preprod, and `5437` for Demo.
-- [x] **Preserve Clean Plugin Format:** Plugins remain CommonJS to seamlessly match NestJS runtime resolution and Drizzle ORM typing without dual-package hazards.
+- [x] **Plugin API Compatibility:** The current plugin API version is checked at API startup and web build, and core-only CI validates operation without plugins.
 
 ### Medium-Term (Feature & Architecture Improvements)
 - [ ] **Plugin CLI & Scaffolding Generator:** Add an `npm run plugin:create <name>` command that scaffolds a fully compliant plugin directory with manifest, sample controller, sample page, and test suite.

@@ -27,7 +27,7 @@ plugins/<id>/
 ```json
 "apensum": {
   "id": "expenses",
-  "apensumApi": 2,
+  "apensumApi": 3,
   "legacyNames": true,
   "permissions": [
     { "id": "nav.expenses", "kind": "nav", "scopes": ["own", "team", "reports", "all"], "caption": "nav.expenses" },
@@ -356,6 +356,9 @@ are limited to the catalogue (`mergePermissionRows` in access.ts).
   CI (`ci.yml`) leaves them out: the core's CI tests the core and the bundled example plugin, and its logs
   are public. A private plugin has its own CI that checks the core out and itself into
   `plugins/<id>` (e.g. the hr plugin's `.github/workflows/test.yml`).
+- The standard product build includes the configured private plugins.
+  A customer rebuilding from source needs the supplied plugin source trees or authorized access to their
+  private repositories; the public core checkout alone is not the complete product source.
 - An image that contains a private plugin contains its code, so its registry package must be
   **private**. `build-push` refuses to build while one of those images can be pulled anonymously.
   Make the GHCR packages `api`, `web`, `migrate`, `seed` and `web-azure` private (package settings),
