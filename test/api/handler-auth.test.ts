@@ -1,14 +1,15 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 // Every handler authorizes itself (CLAUDE.md, "API conventions"): each HTTP handler, unless it is @Public(), must call an
 // access helper (callerUserId, can, isOrgMember, ...), directly or through a method of its own file that does (any
 // depth), whether the organization is in the route, in a row it loads (`expenses/:id`) or nowhere. A check forgotten in
 // a new endpoint fails here, not in production. The few that need none are listed in NO_CHECK, with the reason. The core
 // alone (CI, without the private plugins) has some 220 handlers, some 160 of them with `orgId` in the route.
-const ROOTS = [join(__dirname, '../../apps/api/src'), join(__dirname, '../../plugins')];
+const REPO = join(__dirname, '../..');
+const ROOTS = [join(REPO, 'apps/api/src'), join(REPO, 'plugins')];
 const CHECKS = /\b(callerUserId|can|isOrgMember|isOperator|canSeeUserData|canEditUserData|listableUserIds|reachesAll|isOrgOwner|isManagerOf|canManageItem|canEditBeyondOwn)\(/;
 /** Handlers that read nothing of anyone's (`file handler`). */
 const NO_CHECK = new Map([
@@ -91,7 +92,8 @@ test('every handler checks who calls (directly or through its own helpers)', () 
       if (/\borgId\b/.test(src.slice(paren, open))) withOrg++;
       const body = block(src, open);
       const ok = CHECKS.test(body) || [...body.matchAll(/this\.(\w+)\(/g)].some((c) => checking.has(c[1]));
-      const name = `${file.replace(/.*apensum\//, '')} ${m[3]}`;
+      // Relative to the repository, whatever folder it is checked out in (a plugin's CI: apensum-<plugin>/).
+      const name = `${relative(REPO, file).split(sep).join('/')} ${m[3]}`;
       if (!ok && !NO_CHECK.has(name)) unchecked.push(name);
     }
   }
