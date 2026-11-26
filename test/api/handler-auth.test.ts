@@ -6,7 +6,8 @@ import { join } from 'node:path';
 // Every org-scoped handler authorizes itself (CLAUDE.md, "API conventions"): each HTTP handler with an `orgId` route
 // parameter, unless it is @Public(), must call an access helper (callerUserId, can, isOrgMember, ...), directly or
 // through a method of its own file that does (any depth). A check forgotten in a new endpoint fails here, not in
-// production. Handlers that take the organization from the body instead are not covered.
+// production. Handlers that take the organization from the body instead are not covered. The core alone (CI, without
+// the private plugins) has some 160 of them.
 const ROOTS = [join(__dirname, '../../apps/api/src'), join(__dirname, '../../plugins')];
 const CHECKS = /\b(callerUserId|can|isOrgMember|isOperator|canSeeUserData|canEditUserData|listableUserIds|reachesAll|isOrgOwner|isManagerOf|canManageItem|canEditBeyondOwn)\(/;
 const HANDLER = /@(Get|Post|Put|Patch|Delete)\([^)]*\)\s*\n((?:\s*@[^\n]*\n)*)\s*(?:async\s+)?(\w+)\(/g;
@@ -85,6 +86,6 @@ test('every org-scoped handler checks who calls (directly or through its own hel
       if (!ok) unchecked.push(`${file.replace(/.*apensum\//, '')} ${m[3]}`);
     }
   }
-  assert.ok(count > 200, `found only ${count} org-scoped handlers: the scan is broken`);
+  assert.ok(count > 120, `found only ${count} org-scoped handlers: the scan is broken`);
   assert.deepEqual(unchecked, [], `org-scoped handlers without an access check:\n${unchecked.join('\n')}`);
 });
