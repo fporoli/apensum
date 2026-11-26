@@ -76,6 +76,11 @@ export interface WorkflowStepConfig {
   each?: boolean;
   /** What the step asks (only with a block that has `fields`). */
   fields?: StepField[];
+  /**
+   * The answers are for the requester only (with `fields`): the others see that someone answered, not what, and a
+   * message step sends them to the requester alone.
+   */
+  privateAnswers?: boolean;
   /** What an automatic message block sends (only with a block that has `message`). */
   message?: StepMessage;
 }
@@ -323,7 +328,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
   steps.forEach((s, i) => {
     const at = `steps[${i}]`;
     if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
-    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'message'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'privateAnswers', 'message'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
     const key = typeof s.key === 'string' ? s.key : '';
     if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
     else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
@@ -383,9 +388,13 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
       if (checked.errors.length) errors.push(...checked.errors);
       else fields = checked.fields;
     }
+    const privateAnswers = s.privateAnswers === true;
+    if (s.privateAnswers !== undefined && typeof s.privateAnswers !== 'boolean') errors.push({ path: `${at}.privateAnswers`, code: 'invalid-private' });
+    else if (privateAnswers && !asks) errors.push({ path: `${at}.privateAnswers`, code: 'private-not-allowed' });
     out.push({
       key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}),
-      ...(each ? { each: true } : {}), ...(fields ? { fields } : {}), ...(message ? { message } : {}),
+      ...(each ? { each: true } : {}), ...(fields ? { fields } : {}), ...(fields && privateAnswers ? { privateAnswers: true } : {}),
+      ...(message ? { message } : {}),
     });
   });
   for (const [name, block] of Object.entries(kind.blocks)) if (block.required && !done.has(name)) errors.push({ path: 'steps', code: 'block-required' });
@@ -439,6 +448,8 @@ export interface CompiledWorkflowStep {
   each?: boolean;
   /** What it asks whoever does it. */
   fields?: StepField[];
+  /** Its answers are for the requester only. */
+  privateAnswers?: boolean;
   /** Done by the system when reached: its actions run with the step's assignees as recipients. */
   automatic?: boolean;
   /** What it sends. */
@@ -472,6 +483,7 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       ...(blocks.some((b) => b.decides) ? { decides: true } : {}),
       ...(s.each ? { each: true } : {}),
       ...(s.fields ? { fields: s.fields } : {}),
+      ...(s.fields && s.privateAnswers ? { privateAnswers: true } : {}),
       ...(blocks.some((b) => b.automatic) ? { automatic: true } : {}),
       ...(s.message ? { message: s.message } : {}),
       ...(kind.source ? { source: kind.source } : {}),

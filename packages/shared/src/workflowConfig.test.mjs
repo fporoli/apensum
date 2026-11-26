@@ -176,6 +176,21 @@ test('each, person and fields are refused where they do not belong', () => {
   ] })), ['steps[0].assignTo assignee-not-allowed', 'steps[1].each each-not-allowed']);
 });
 
+test('a form step\'s answers may be for the requester only, and only a form step\'s', () => {
+  const r = validateWorkflowConfig(REQ, { version: 1, steps: [
+    { key: 'ok', do: ['review'], assignTo: PERSON },
+    { key: 'give', do: ['form'], assignTo: 'team:gift', each: true, fields: [AMOUNT], privateAnswers: true },
+  ] });
+  assert.deepEqual(codes(r), []);
+  assert.equal(r.value.steps[1].privateAnswers, true);
+  assert.equal(compileWorkflow(REQ, r.value)[1].privateAnswers, true);
+  assert.equal(compileWorkflow(REQ, r.value)[0].privateAnswers, undefined);
+  assert.deepEqual(codes(validateWorkflowConfig(REQ, { version: 1, steps: [
+    { key: 'ok', do: ['review'], assignTo: PERSON, privateAnswers: true },
+    { key: 'give', do: ['form'], assignTo: 'manager', fields: [AMOUNT], privateAnswers: 'yes' },
+  ] })), ['steps[0].privateAnswers private-not-allowed', 'steps[1].privateAnswers invalid-private']);
+});
+
 test('stepFieldValues checks what someone gives a step', () => {
   const fields = [AMOUNT, { key: 'on', type: 'date', label: { en: 'On' } }, { key: 'ok', type: 'checkbox', label: { en: 'OK' } }, { key: 'note', type: 'text', label: { en: 'Note' } }];
   assert.deepEqual(stepFieldValues(fields, { amount: "1'250.50", on: '2026-12-01', ok: true, note: '  hi ', other: 1 }), { ok: true, values: { amount: 1250.5, on: '2026-12-01', ok: true, note: 'hi' } });

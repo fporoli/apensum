@@ -164,12 +164,13 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
   const sendsMessage = step.do.some((b) => kind.blocks[b]?.message);
   /** The step with its blocks changed: fields only while a block asks them, a first empty field when one starts to. */
   const withBlocks = (doBlocks: string[]): WorkflowStepConfig => {
-    const { fields, message, ...rest } = step;
+    const { fields, message, privateAnswers, ...rest } = step;
     const asks = doBlocks.some((b) => kind.blocks[b]?.fields);
     const sends = doBlocks.some((b) => kind.blocks[b]?.message);
     return {
       ...rest, do: doBlocks,
       ...(asks ? { fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : {}),
+      ...(asks && privateAnswers ? { privateAnswers: true } : {}),
       ...(sends ? { message: message ?? { subject: {} } } : {}),
     };
   };
@@ -276,6 +277,15 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
 
       {/* What a form step asks whoever does it. */}
       {asksFields && <StepFieldsEditor fields={step.fields ?? []} editable={editable} onChange={(fields) => onChange({ ...step, fields })} />}
+      {asksFields && (
+        <Box sx={{ pl: { sm: 2 } }}>
+          <FormControlLabel
+            control={<Checkbox size="small" checked={!!step.privateAnswers} disabled={!editable}
+              onChange={(e) => { const { privateAnswers: _p, ...rest } = step; onChange(e.target.checked ? { ...rest, privateAnswers: true } : rest); }} />}
+            label={<Typography variant="body2">{t('workflowDesigner.privateAnswers')}</Typography>} />
+          <Typography variant="caption" color="text.secondary" component="div">{t('workflowDesigner.privateAnswersHint')}</Typography>
+        </Box>
+      )}
       {/* What a message step sends (the system sends it the moment the workflow gets there). */}
       {sendsMessage && <StepMessageEditor message={step.message ?? { subject: {} }} editable={editable} onChange={(message) => onChange({ ...step, message })} />}
 

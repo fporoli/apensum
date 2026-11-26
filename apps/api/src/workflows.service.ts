@@ -74,6 +74,8 @@ export interface WorkflowActionContext {
   /** What the actor filled in the step's fields (a block with `fields`), checked, with the fields. */
   values?: Record<string, string | number | boolean>;
   fields?: StepField[];
+  /** The answers are for the requester only (the step's `privateAnswers`). */
+  privateAnswers?: boolean;
   /** An automatic step (e.g. a message): who it goes to, and what it sends. */
   recipients?: string[];
   message?: StepMessage;
@@ -945,7 +947,7 @@ export class WorkflowsService {
     for (const name of names) {
       await this.runNamedAction(db, name, {
         sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid, actorUserId, decisionNote, stepKey: stepDef?.key, stepLabel: stepDef?.label, stepLabels: stepDef?.labels, stepBlocks: stepDef?.blocks,
-        ...(values && outcome === 'approved' ? { values, fields: stepDef?.fields } : {}),
+        ...(values && outcome === 'approved' ? { values, fields: stepDef?.fields, ...(stepDef?.privateAnswers ? { privateAnswers: true } : {}) } : {}),
       });
     }
   }

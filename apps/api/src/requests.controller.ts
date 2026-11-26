@@ -14,7 +14,7 @@ import { REQUEST_FORM, customValuesErrors, customValuesToSave, mergeForm, reques
 import { FieldsService } from './fields.service';
 import { RequestsService, currentAssignments, noticeSubject } from './requests.service';
 import { WorkflowsService, type WorkflowStepDefinition } from './workflows.service';
-import { REQUEST_WORKFLOW_KIND } from './request-workflow';
+import { REQUEST_WORKFLOW_KIND, visibleThread } from './request-workflow';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -227,6 +227,7 @@ export class RequestsController {
       // What the step asks whoever does it, and whether each assignee does it on their own.
       fields: current?.fields ?? null,
       each: !!current?.each,
+      privateAnswers: !!current?.privateAnswers,
       // Sent back: the requester changes it and submits it again.
       returned: w.status === 'rejected' && r.status !== 'resolved',
     };
@@ -459,7 +460,7 @@ export class RequestsController {
           )
         ).rows
       : [];
-    return { ok: true, request, messages, handlers, isRequester: a.requester, isHandler: a.handler, workflow: await this.workflowOf(db, a.r, callerId) };
+    return { ok: true, request, messages: visibleThread(messages as Record<string, unknown>[], callerId, a.r.requester_user_id ?? null), handlers, isRequester: a.requester, isHandler: a.handler, workflow: await this.workflowOf(db, a.r, callerId) };
   }
 
   /**

@@ -122,6 +122,7 @@ interface ActionItem {
   step_in_dialog?: boolean;
   /** What the step asks whoever does it (a form step). */
   step_fields?: StepField[] | null;
+  step_private_answers?: boolean;
   /** The caller submitted it. */
   is_own?: boolean;
   /** What happened, oldest first (`key` is a text key: the core's or a plugin's). */
@@ -652,7 +653,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                     <TableRow>
                       <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <StepFieldsForm fields={item.step_fields} values={fillValues} onChange={setFillValues} />
+                          <StepFieldsForm fields={item.step_fields} values={fillValues} onChange={setFillValues} privateAnswers={item.step_private_answers} />
                           <Button size="small" variant="contained" onClick={() => void approveItem(item.id, fillValues, item.step_fields ?? undefined)}>{t('approvals.submitForm')}</Button>
                         </Box>
                       </TableCell>

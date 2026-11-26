@@ -93,8 +93,10 @@ interface Message {
     step?: StepLabel;
     automatic?: boolean;
     note?: string;
-    /** A form step's answers (request-workflow.ts threadEvent). */
+    /** A form step's answers (request-workflow.ts threadEvent); left out for others when `private`. */
     values?: StepAnswer[];
+    /** The answers are for the requester only. */
+    private?: boolean;
   };
   posted_at: string;
   author_user_id: string | null;
@@ -124,6 +126,7 @@ interface RequestWorkflowInfo {
   returned: boolean;
   /** What the pending step asks whoever does it (a form step). */
   fields?: StepField[] | null;
+  privateAnswers?: boolean;
   /** Every assignee does it on their own. */
   each?: boolean;
 }
@@ -637,6 +640,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
               <Typography key={m.id} variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
                 {eventText(m)} · {formatRelativeTime(m.posted_at, locale)}
                 {m.data.values?.length ? <StepAnswers answers={m.data.values} yes={t('common.yes')} /> : null}
+                {m.data.private && !m.data.values ? <Typography variant="caption" color="text.secondary" component="div">{t('workflow.privateAnswers.hidden')}</Typography> : null}
               </Typography>
             );
           }
@@ -1153,7 +1157,10 @@ function NewRequestDialog({
 /** The sums of the number answers of the thread's form steps, per step and field ("Amount: 80"). */
 function stepTotals(messages: Message[], locale: string): string[] {
   const sums = new Map<string, { label: string; total: number; count: number }>();
+  // A step whose answers the caller only partly sees (some for the requester only) gets no total.
+  const partly = new Set(messages.filter((m) => m.data.private && !m.data.values).map((m) => m.data.step?.key ?? ''));
   for (const m of messages) {
+    if (partly.has(m.data.step?.key ?? '')) continue;
     for (const a of m.data.values ?? []) {
       if (a.type !== 'number' || typeof a.value !== 'number') continue;
       const id = `${m.data.step?.key ?? ''}:${a.key}`;
@@ -1203,7 +1210,7 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
       {workflow.status === 'pending' && workflow.each && <Typography variant="caption" color="text.secondary">{t('requests.workflow.each')}</Typography>}
       {totals.length > 0 && <Typography variant="body2">{t('requests.workflow.totals', { totals: totals.join(' · ') })}</Typography>}
       {workflow.returned && <Alert severity="warning">{t(isRequester ? 'requests.workflow.returnedToYou' : 'requests.workflow.returned')}</Alert>}
-      {workflow.canDecide && workflow.fields?.length ? <StepFieldsForm fields={workflow.fields} values={values} onChange={setValues} disabled={busy} /> : null}
+      {workflow.canDecide && workflow.fields?.length ? <StepFieldsForm fields={workflow.fields} values={values} onChange={setValues} disabled={busy} privateAnswers={workflow.privateAnswers} /> : null}
       {(workflow.canDecide || (isRequester && (workflow.returned || workflow.status === 'pending'))) && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {(workflow.canDecide || workflow.returned) && (

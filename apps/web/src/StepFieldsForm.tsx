@@ -8,13 +8,15 @@ import { formatLocaleDate, formatLocaleNumber } from './localeFormat';
 
 export type StepValues = Record<string, string | boolean>;
 
-export function StepFieldsForm({ fields, values, onChange, disabled }: {
+export function StepFieldsForm({ fields, values, onChange, disabled, privateAnswers }: {
   fields: readonly StepField[];
   values: StepValues;
   onChange: (values: StepValues) => void;
   disabled?: boolean;
+  /** The answers are for the requester only (the step's `privateAnswers`): says so under the fields. */
+  privateAnswers?: boolean;
 }) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   return (
     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
       {fields.map((f) => {
@@ -36,6 +38,7 @@ export function StepFieldsForm({ fields, values, onChange, disabled }: {
             sx={{ minWidth: f.type === 'text' ? 240 : 150 }} />
         );
       })}
+      {privateAnswers && <Typography variant="caption" color="text.secondary" sx={{ flexBasis: '100%' }}>{t('workflow.privateAnswers.hint')}</Typography>}
     </Box>
   );
 }

@@ -64,6 +64,8 @@ async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' 
     ...(ctx.values && ctx.fields?.length
       ? { values: ctx.fields.filter((f) => ctx.values![f.key] !== undefined).map((f) => ({ key: f.key, type: f.type, label: f.label, value: ctx.values![f.key] })) }
       : {}),
+    // Answers for the requester only: the thread shows them to the requester and their author (`visibleThread`).
+    ...(ctx.values && ctx.fields?.length && ctx.privateAnswers ? { private: true } : {}),
   };
   await db.execute(sql`INSERT INTO request_messages (request_id, author_user_id, kind, data)
                        VALUES (${ctx.sourceTableUuid}::uuid, ${ctx.actorUserId}::uuid, 'event', ${JSON.stringify(data)}::jsonb)`);
@@ -108,12 +110,13 @@ export class RequestWorkflow implements OnModuleInit {
     this.workflows.registerAction('request.mail', async (db, ctx) => {
       const recipients = ctx.recipients ?? [];
       if (!ctx.message || recipients.length === 0) return;
-      const [r] = (await db.execute(sql`SELECT id, organization_id, subject, confidential FROM requests WHERE id = ${ctx.sourceTableUuid}::uuid`)).rows as { id: string; organization_id: string; subject: string; confidential: boolean }[];
+      const [r] = (await db.execute(sql`SELECT id, organization_id, subject, confidential, requester_user_id FROM requests WHERE id = ${ctx.sourceTableUuid}::uuid`)).rows as { id: string; organization_id: string; subject: string; confidential: boolean; requester_user_id: string | null }[];
       if (!r) return;
-      const answers: MailAnswer[] = ctx.message.answers && !r.confidential
+      const answers = ctx.message.answers && !r.confidential
         ? ((await db.execute(sql`
-            SELECT COALESCE(u.display_name, u.email) AS name, m.data->'values' AS values FROM request_messages m LEFT JOIN users u ON u.id = m.author_user_id
-            WHERE m.request_id = ${r.id}::uuid AND m.kind = 'event' AND jsonb_typeof(m.data->'values') = 'array' ORDER BY m.posted_at`)).rows as unknown as MailAnswer[])
+            SELECT COALESCE(u.display_name, u.email) AS name, m.data->'values' AS values, COALESCE((m.data->>'private')::boolean, false) AS private
+            FROM request_messages m LEFT JOIN users u ON u.id = m.author_user_id
+            WHERE m.request_id = ${r.id}::uuid AND m.kind = 'event' AND jsonb_typeof(m.data->'values') = 'array' ORDER BY m.posted_at`)).rows as unknown as (MailAnswer & { private: boolean })[])
         : [];
       const users = (await db.execute(sql`
         SELECT u.id, u.email, u.locale FROM users u
@@ -121,7 +124,9 @@ export class RequestWorkflow implements OnModuleInit {
         WHERE u.id = ANY(${`{${recipients.join(',')}}`}::uuid[])`)).rows as { id: string; email: string | null; locale: string | null }[];
       for (const u of users) {
         if (!u.email) continue;
-        const mail = workflowMail({ message: ctx.message, request: { id: r.id, subject: r.subject, confidential: !!r.confidential }, answers }, u.locale);
+        // Answers for the requester only go to the requester alone.
+        const theirs = answers.filter((a) => !a.private || u.id === r.requester_user_id).map(({ private: _p, ...a }) => a);
+        const mail = workflowMail({ message: ctx.message, request: { id: r.id, subject: r.subject, confidential: !!r.confidential }, answers: theirs }, u.locale);
         await sendMail({ to: u.email, subject: mail.subject, text: mail.text }, 15_000).catch((err) => console.warn(`workflow mail for request ${r.id} failed: ${err instanceof Error ? err.message : err}`));
       }
       await threadEvent(db, ctx, 'mailed');
@@ -192,6 +197,20 @@ export class RequestWorkflow implements OnModuleInit {
  * Who takes part in a workflow request's steps: whoever its pending step waits for, and whoever already acted on it.
  * They see the request and its thread (like a request's handlers).
  */
+/**
+ * The thread as `callerId` may read it: a form step's answers for the requester only (`data.private`) are left out
+ * for everyone but the requester and whoever gave them (the event stays: that they answered).
+ */
+export function visibleThread<M extends { author_user_id?: unknown; data?: unknown }>(messages: M[], callerId: string, requesterId: string | null): M[] {
+  if (callerId === requesterId) return messages;
+  return messages.map((m) => {
+    const data = m.data as Record<string, unknown> | null | undefined;
+    if (!data?.private || !('values' in data) || m.author_user_id === callerId) return m;
+    const { values: _values, ...rest } = data;
+    return { ...m, data: rest };
+  });
+}
+
 export async function workflowParticipants(db: Db, requestId: string): Promise<string[]> {
   const rows = await db.execute(sql`
     SELECT DISTINCT unnest(w.assigned_to_user_id) AS user_id FROM workflows w

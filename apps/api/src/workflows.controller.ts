@@ -93,6 +93,7 @@ export class WorkflowsController {
         step_in_dialog: !!stepDef?.inDialog,
         // What the step asks the caller to fill in (a block with fields).
         step_fields: stepDef?.fields ?? null,
+        step_private_answers: !!stepDef?.privateAnswers,
       };
     });
 
@@ -182,6 +183,8 @@ export class WorkflowsController {
     );
     return rows.map(({ workflow_started: _started, ...r }) => ({
       ...r,
+      // A form step's answers (`inputs`) are shown where the item's own page decides who sees them (a request's thread).
+      workflow_data: withoutInputs(r.workflow_data),
       history: (histories.get(r.id) ?? []).map((e) => ({ ...e, by_name: e.by ? (actorNames.get(e.by) ?? null) : null })),
       // The caller submitted it: deciding on it oneself is allowed, but shown (four-eyes principle).
       is_own: (r.workflow_data as Record<string, unknown> | null)?.submittedByUserId === callerId,
@@ -220,4 +223,11 @@ export class WorkflowsController {
     if (!callerId) return { ok: false, error: 'unauthenticated' };
     return this.workflowsSvc.resolve(db, id, callerId, 'rejected', body?.note);
   }
+}
+
+/** A workflow's data without the answers of its form steps (`workflow_data.inputs`). */
+export function withoutInputs(data: unknown): unknown {
+  if (!data || typeof data !== 'object' || !('inputs' in data)) return data;
+  const { inputs: _inputs, ...rest } = data as Record<string, unknown>;
+  return rest;
 }
