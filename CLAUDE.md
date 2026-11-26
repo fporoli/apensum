@@ -258,7 +258,7 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
   The code keeps its names (`requests`, `workflows`, `nav.approvals`, `nav.requests`, `requests.*` texts): a free flow is a row of `requests`.\
   The page's list is its own (`flowRows.ts`: requests and workflow items of the tab, a request's workflow item once, newest first, filter by type and search); the right side shows a request's thread (`Requests` `embedded.detailOnly`) or one workflow item as a card (`Approvals` `embedded.onlyId`), and the request forms' design mode and the new-flow dialog come from `Requests` `embedded.designOnly`.\
   A flow with set steps shows them one under the other (`flowSteps.ts`, from the thread's step events since the last submission: done by whom and when, the current one with who did it so far and who is missing, sent back, skipped, to come).\
-  The rename of the remaining texts is in progress.
+  `dictionaries.test.mjs` keeps to it: no German text says Anfrage, Anliegen or Workflow, no language says workflow (the assistant's requests to the AI excepted); the configured steps of a type are its Ablauf ("set steps"), the block `review` is Prüfen; Admin settings -> Workflows is the page titled Flow-Designer.
  `const t = useT()` from `i18n.tsx`.\
   When you add a key, add it to all four dictionaries in `dictionaries.ts` (en/de/fr/it); `dictionaries.test.mjs` fails on missing keys or mismatched `{{placeholders}}`.
 - Format dates, times and numbers with the app's `locale` from `useI18n()`, never the browser default (`toLocaleDateString()` with no argument), and in its Swiss variant: the `localeFormat.ts` helpers do it, direct `Intl`/`toLocale*` calls pass `swissLocale(locale)` (`de` -> `de-CH`: 2'848.77, 17.11.2026).\

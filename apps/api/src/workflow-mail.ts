@@ -13,10 +13,10 @@ const langOf = (locale: string | null | undefined): Lang => {
 const SWISS: Record<Lang, string> = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-CH' };
 
 const TEXTS: Record<Lang, { request: string; confidential: string; answers: string; total: string; open: string }> = {
-  de: { request: 'Anfrage', confidential: 'Vertrauliche Anfrage', answers: 'Beiträge', total: 'Summe', open: 'Öffnen' },
-  fr: { request: 'Demande', confidential: 'Demande confidentielle', answers: 'Contributions', total: 'Total', open: 'Ouvrir' },
-  it: { request: 'Richiesta', confidential: 'Richiesta confidenziale', answers: 'Contributi', total: 'Totale', open: 'Apri' },
-  en: { request: 'Request', confidential: 'Confidential request', answers: 'Answers', total: 'Total', open: 'Open' },
+  de: { request: 'Flow', confidential: 'Vertraulicher Flow', answers: 'Beiträge', total: 'Summe', open: 'Öffnen' },
+  fr: { request: 'Flow', confidential: 'Flow confidentiel', answers: 'Contributions', total: 'Total', open: 'Ouvrir' },
+  it: { request: 'Flow', confidential: 'Flow confidenziale', answers: 'Contributi', total: 'Totale', open: 'Apri' },
+  en: { request: 'Flow', confidential: 'Confidential flow', answers: 'Answers', total: 'Total', open: 'Open' },
 };
 
 /** One person's answers to a form step, as the thread keeps them. */

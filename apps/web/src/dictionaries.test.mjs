@@ -46,3 +46,19 @@ test('standard role descriptions: the English text is what the migrations insert
     assert.ok(sql.includes(reference[key].replace(/'/g, "''")), `${key} not found in the changelogs`);
   }
 });
+
+// The glossary (CLAUDE.md, "Terms"): one thing, one word. What someone starts and others work on is a "Flow"; the
+// German texts never call it Anfrage, Anliegen or Workflow again (the assistant's requests to the AI are another thing).
+test('the German texts keep to the glossary: Flow, never Anfrage, Anliegen or Workflow', () => {
+  const allowed = (key) => key.startsWith('assistant.');
+  const offending = Object.entries(DICTIONARIES.de)
+    .filter(([key, text]) => !allowed(key) && /Anfrage|Anliegen|Workflow/.test(text))
+    .map(([key, text]) => `${key}: ${text}`);
+  assert.deepEqual(offending, []);
+});
+
+test('no language calls a flow or its steps a workflow', () => {
+  const offending = Object.entries(DICTIONARIES).flatMap(([locale, dict]) =>
+    Object.entries(dict).filter(([key, text]) => !key.startsWith('assistant.') && /workflow/i.test(text)).map(([key, text]) => `${locale} ${key}: ${text}`));
+  assert.deepEqual(offending, []);
+});

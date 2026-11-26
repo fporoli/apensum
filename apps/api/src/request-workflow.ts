@@ -35,7 +35,7 @@ export const REQUEST_CATALOGUE: WorkflowKindCatalogue = {
   each: true,
   facts: { urgent: 'boolean', type: 'string', 'requester.department': 'string', 'requester.management': 'boolean' },
   blocks: {
-    review: { label: 'Approval', action: 'request.reviewed', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.approve', decides: true },
+    review: { label: 'Review', action: 'request.reviewed', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.approve', decides: true },
     task: { label: 'Task', action: 'request.done', returnAction: 'request.returned', assignees: ASSIGNEES, actionKey: 'requests.workflow.done' },
     // Sent by the system the moment the workflow gets there (its own step, nobody acts on it): to the step's assignees.
     mail: { label: 'E-mail', action: 'request.mail', assignees: [...ASSIGNEES, 'requester'], automatic: true, message: true, doneKey: 'approvals.event.sent' },
