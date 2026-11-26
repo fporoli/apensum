@@ -110,14 +110,21 @@ sso_prune() {
 
 # Values are single-quoted so compose does not interpolate `$`; they must not contain a
 # single quote. SMTP_* may be empty: the compose file falls back to the instance's Mailpit.
+# When this instance was last deployed (health `instance.deployedAt`, the app bar's box): now for a deploy; a
+# reset by hand keeps the last deploy's (a scheduled reset does not write the env file at all).
+deployed_now() { export DEPLOYED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; }
+deployed_before() { export DEPLOYED_AT="$(sed -n "s/^DEPLOYED_AT='\(.*\)'$/\1/p" "$ROOT/compose/.env" 2>/dev/null || true)"; }
+
 write_app_env() {
+  # The app bar names the instance (all but prod show a box): the GitHub Environment's name.
+  export INSTANCE="$ENVIRONMENT"
   export REALM_FILE="$ROOT/rendered/realm-worktime.json" DEX_CONFIG="$ROOT/rendered/dex.yaml" CONTAINER_PREFIX="$PREFIX" \
     PG_PORT WEB_HOST API_HOST AUTH_HOST SSO_PROVIDER SSO_ISSUER SSO_JWKS_URL COMPOSE_PROFILES
   (
     umask 077
     for name in POSTGRES_PASSWORD KEYCLOAK_ADMIN KEYCLOAK_ADMIN_PASSWORD API_JWT_SECRET DOCUMENTS_KEY DOCUMENTS_KEY_PREVIOUS \
-      SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS DEMO_RESET_EVERY_HOURS DEMO_AUTO_LOGIN TWO_FACTOR \
-      CONTACT_SITE_ORIGINS CONTACT_EMAIL NTFY_TOPIC_URL \
+      SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USER SMTP_PASSWORD SMTP_SECURE SHOW_DEMO_ACCOUNTS DEMO_RESET_EVERY_HOURS DEMO_AUTO_LOGIN WORKFLOW_RECALL_DAYS TWO_FACTOR \
+      CONTACT_SITE_ORIGINS CONTACT_EMAIL NTFY_TOPIC_URL INSTANCE DEPLOYED_AT \
       REALM_FILE DEX_CONFIG CONTAINER_PREFIX PG_PORT WEB_HOST API_HOST AUTH_HOST SSO_PROVIDER SSO_ISSUER SSO_JWKS_URL COMPOSE_PROFILES; do
       printf "%s='%s'\n" "$name" "$(printenv "$name" || true)"
     done > "$ROOT/compose/.env"
@@ -219,6 +226,7 @@ caddy_reload() {
 
 deploy() {
   install_files
+  deployed_now
   write_app_env
   ghcr_login
   edge_up
@@ -374,6 +382,7 @@ verify_reset() {
 
 reset_seed() {
   install_files
+  deployed_before
   write_app_env
   ghcr_login
   reset_steps
@@ -459,6 +468,7 @@ scheduled_reset() {
 # database, before the API; then the seed. An instance deployed for the first time has nothing to drop.
 deploy_reset() {
   install_files
+  deployed_now
   write_app_env
   ghcr_login
   edge_up

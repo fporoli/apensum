@@ -125,6 +125,8 @@ export interface ActionItem {
   step_private_answers?: boolean;
   /** The caller submitted it. */
   is_own?: boolean;
+  /** False for an item recalled under "Done": the caller did a step of it, it waits with someone else now. */
+  assigned_to_me?: boolean;
   /** What happened, oldest first (`key` is a text key: the core's or a plugin's). */
   history?: { key: string; by_name: string | null; at: string; note?: string | null }[];
   definition_name: string;
@@ -577,6 +579,15 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                       {item.absence?.document_id && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void viewAbsenceDocument(item.absence!)}>{t('approvals.documents')}</Button>
                       )}
+                      {(() => {
+                        // A kind done on its own page (PluginWorkflowKind.page): open the record there.
+                        const page = pluginRecord(item)?.kind.page;
+                        return page && (!page.ownOnly || item.is_own) ? (
+                          <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => { window.location.hash = page.hash(item.source_table_uuid); }}>
+                            {t('approvals.open')}
+                          </Button>
+                        ) : null;
+                      })()}
                       {item.flow && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => { window.location.hash = `#/flows?id=${item.source_table_uuid}`; }}>
                           {t('approvals.open')}

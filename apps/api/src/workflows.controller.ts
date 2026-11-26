@@ -16,6 +16,12 @@ import { ForwardMailService, type ForwardInput } from './forward-mail.service';
  * "Approvals" screen is entirely driven by `assigned-to-me`, regardless of
  * workflow type.
  */
+/** How many days a step one did stays under "Done" after the flow moved on (WORKFLOW_RECALL_DAYS, default 5). */
+export function workflowRecallDays(env: NodeJS.ProcessEnv = process.env): number {
+  const days = Number(env.WORKFLOW_RECALL_DAYS);
+  return env.WORKFLOW_RECALL_DAYS?.trim() && Number.isInteger(days) && days >= 0 && days <= 365 ? days : 5;
+}
+
 @Controller('workflows')
 export class WorkflowsController {
   constructor(
@@ -45,7 +51,14 @@ export class WorkflowsController {
     const teamIds = await this.workflowsSvc.callerTeamIds(db, callerId);
     const assignedToCaller = sql`${workflows.assigned_to_user_id} @> ARRAY[${callerId}]::uuid[]`;
     const assignment = teamIds.length > 0 ? or(assignedToCaller, inArray(workflows.assigned_to_team_id, teamIds)) : assignedToCaller;
-    const who = scope === 'mine' ? sql`${workflows.workflow_data} ->> 'submittedByUserId' = ${callerId}` : assignment;
+    // "Done" (all statuses of one's queue) also recalls the flows the caller did a step of in the last
+    // WORKFLOW_RECALL_DAYS days (default 5), now with someone else or finished: by the history's entries.
+    const recalled = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${workflows.workflow_data} -> 'history') = 'array' THEN ${workflows.workflow_data} -> 'history' ELSE '[]'::jsonb END) e
+      WHERE e ->> 'by' = ${callerId} AND e ->> 'key' <> 'approvals.event.submitted'
+        AND CASE WHEN e ->> 'at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN (e ->> 'at')::timestamptz END >= now() - make_interval(days => ${workflowRecallDays()}))`;
+    const who = scope === 'mine'
+      ? sql`${workflows.workflow_data} ->> 'submittedByUserId' = ${callerId}`
+      : status === 'all' ? or(assignment, recalled)! : assignment;
     const conditions = [who];
     if (status !== 'all') conditions.push(eq(workflows.step_status, status === 'approved' || status === 'rejected' ? status : 'pending'));
     if (orgId && /^[0-9a-f-]{36}$/i.test(orgId)) conditions.push(eq(workflows.organization_id, orgId));
@@ -63,6 +76,8 @@ export class WorkflowsController {
         // Who decides (the first assignee): shown on one's own requests.
         assignee_name: sql<string | null>`(SELECT COALESCE(u.display_name, u.email) FROM users u WHERE u.id = (${workflows.assigned_to_user_id})[1])`,
         definition_name: workflow_definitions.name,
+        // Whether the caller is at it now; false for one recalled from "done" (its step was the caller's).
+        assigned_to_me: sql<boolean>`(${assignment})`,
         // The steps the workflow started with, else (older ones) its definition's.
         steps: sql<unknown>`COALESCE(${workflows.steps}, ${workflow_definitions.steps})`,
       })

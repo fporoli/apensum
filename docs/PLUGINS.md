@@ -241,7 +241,8 @@ workflows: {
 ```
 
 Its web part's `workflowKinds` entry (same `recordField` as `records.field`) gives the item its label,
-title and Inspect dialog. `plugins/expenses/api/workflow.ts` and `web/ExpenseReportReview.tsx` do it.
+title and Inspect dialog. `plugins/expenses/api/workflow.ts` and `web/ExpenseReportReview.tsx` do it.\
+A kind whose steps are done on the plugin's own page gives it as `page: { sourceTable, hash: (id) => ... }`: the notification of a step opens the record there instead of on the Flows page, and the item gets an "Open" button (the expenses plugin's payment runs, `#/expense-payout?id=`); with `ownOnly` (a page of one's own records, such as one's expense reports, `#/expense-reports?id=`) the button is on the items one submitted, and notifications stay on the Flows page.
 
 ### Configurable workflows
 

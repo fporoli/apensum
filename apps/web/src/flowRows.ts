@@ -56,7 +56,8 @@ export function flowRows(
   }
   for (const i of items) {
     if (requestsListed && i.source_table === 'flows') continue;
-    if (tab === 'done' && i.step_status === 'pending') continue;
+    // Done: what is finished, and what the caller did a step of that waits with someone else now (recalled).
+    if (tab === 'done' && i.step_status === 'pending' && i.assigned_to_me !== false) continue;
     rows.push({ source: 'workflow', id: i.id, at: i.finished ?? i.started ?? '', ...label.item(i) });
   }
   return rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));

@@ -30,3 +30,10 @@ test('done: decided items, resolved requests of the inbox and archived ones, eac
     label, true);
   assert.deepEqual(rows.map((r) => `${r.source}:${r.id}`), ['flow:r2', 'workflow:w3', 'flow:r4']);
 });
+
+test("done: a flow one did a step of shows while it waits with someone else (recalled), pending ones of one's own queue do not", () => {
+  const rows = flowRows('done', [],
+    [item('w1', 'pending', 'expense_payruns', '2026-11-26T10:00:00Z', { assigned_to_me: false }), item('w2', 'pending', 'absences', '2026-11-25T10:00:00Z', { assigned_to_me: true })],
+    label, true);
+  assert.deepEqual(rows.map((r) => r.id), ['w1']);
+});

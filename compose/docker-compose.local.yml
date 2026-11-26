@@ -57,6 +57,8 @@ services:
     environment:
       DATABASE_URL: postgresql://worktime:${POSTGRES_PASSWORD:-worktime_dev_only}@pg:5432/worktime
       API_PORT: 8000
+      # The app bar's box says "Local" (health.controller.ts instanceInfo).
+      INSTANCE: local
       # Compose passes only what is listed here: values come from .env.local via `npm run local:up`.
       API_JWT_SECRET: ${API_JWT_SECRET:-}
       # Encryption of stored documents (empty = unencrypted, warned at startup).
@@ -73,6 +75,7 @@ services:
       # As on the demo instance: no session = this account, the user menu switches people (scripts/with-env.mjs
       # sets ueli@acme.com unless .env.local says otherwise; empty = off).
       DEMO_AUTO_LOGIN: ${DEMO_AUTO_LOGIN:-}
+      WORKFLOW_RECALL_DAYS: ${WORKFLOW_RECALL_DAYS:-}
       # AI (assistant, Cases, receipts) on Azure OpenAI in Switzerland (optional, paid; see env.example.*.cfg).
       # Off unless keys, budget and prices are set.
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}

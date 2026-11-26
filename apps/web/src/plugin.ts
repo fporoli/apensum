@@ -143,6 +143,14 @@ export interface PluginWorkflowKind {
   title?: { sourceName: string; get: (record: PluginWorkflowRecord) => string | null };
   /** The "Inspect" dialog; without it the item has no Inspect button. */
   Inspect?: ComponentType<PluginWorkflowInspectProps & { open: boolean }>;
+  /**
+   * The record's own page, where its steps are done with everything they need (e.g. a payment run's exports): the
+   * notification of a step opens it there instead of on the Flows page, and the item gets an "Open" button.
+   * `sourceTable` is the workflow's source table (the notification's), `hash` the page's link to one record.
+   * `ownOnly`: the page shows one's own records only (e.g. one's expense reports): the button is on the items one
+   * submitted, and the notifications of steps (which go to the deciders) stay on the Flows page.
+   */
+  page?: { sourceTable: string; hash: (recordId: string) => string; ownOnly?: boolean };
 }
 
 /**

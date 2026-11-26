@@ -36,8 +36,9 @@ import { DesignModeNotice, DesignModeProvider, useDesignAccess } from './designM
 import NotificationBell from './NotificationBell';
 import { useNotifications, type Notification } from './useNotifications';
 import { formatDurationMinutes } from './localeFormat';
-import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES } from './plugins';
+import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES, PLUGIN_WORKFLOW_KINDS } from './plugins';
 import { ApensumMark } from './ApensumMark';
+import InstanceInfo from './InstanceInfo';
 import { CORE_NAV_GROUPS, CORE_PAGES, type AppPage, type CorePageContext } from './corePages';
 import { buildNavTree, sectionHashes } from './navigation';
 import { resolveRoleFlags, type RoleFlags } from './roleFlags';
@@ -327,6 +328,12 @@ export default function App() {
     // A step to do: the Flows page on "To do", with that flow open (a free flow or one of an own type by its row,
     // anything else, an absence or an expense report, by its workflow).
     if (n.type === 'workflow.assigned') {
+      // A plugin's kind done on its own page (PluginWorkflowKind.page, e.g. a payment run) opens there.
+      const ownPage = PLUGIN_WORKFLOW_KINDS.find((k) => k.page?.sourceTable === n.source_table && !k.page.ownOnly)?.page;
+      if (ownPage && n.source_table_uuid) {
+        window.location.hash = ownPage.hash(n.source_table_uuid);
+        return;
+      }
       if (n.source_table === 'flows') setFlowFocus({ source: 'flow', id: n.source_table_uuid, tab: 'todo', at: Date.now() });
       else if (n.workflow_id) setFlowFocus({ source: 'workflow', id: n.workflow_id, tab: 'todo', at: Date.now() });
       navigate('flows');
@@ -730,6 +737,7 @@ export default function App() {
                 <ApensumMark size={28} variant="onColor" sx={{ display: { xs: 'none', sm: 'block' } }} />
               )}
               <Typography variant="h6" sx={{ fontWeight: 700 }}>{t('appbar.title')}</Typography>
+              <InstanceInfo />
             </Box>
 
             {activeCheckIn && (

@@ -19,6 +19,21 @@ export function demoResetEveryHours(env: NodeJS.ProcessEnv = process.env): numbe
   return Number.isInteger(hours) && hours >= 1 && hours <= 24 && 24 % hours === 0 ? hours : null;
 }
 
+/** The instances the app bar names (InstanceInfo.tsx); prod and an unset or unknown name show nothing. */
+export const NAMED_INSTANCES = ['development', 'local', 'test', 'demo', 'preprod'] as const;
+
+/**
+ * Which instance this is, for the app bar's box on every instance but prod: INSTANCE (infra/vps/remote.sh sets the
+ * GitHub Environment's name, scripts/with-env.mjs `development`/`local`, compose local `local`) and DEPLOYED_AT, when
+ * remote.sh last deployed it (not a demo's reset; null in development and local, which are not deployed).
+ */
+export function instanceInfo(env: NodeJS.ProcessEnv = process.env): { name: (typeof NAMED_INSTANCES)[number]; deployedAt: string | null } | null {
+  const name = (env.INSTANCE ?? '').trim().toLowerCase();
+  if (!(NAMED_INSTANCES as readonly string[]).includes(name)) return null;
+  const d = env.DEPLOYED_AT ? new Date(env.DEPLOYED_AT) : null;
+  return { name: name as (typeof NAMED_INSTANCES)[number], deployedAt: d && !Number.isNaN(d.getTime()) ? d.toISOString() : null };
+}
+
 /**
  * Whether the database answers `SELECT 1` within `timeoutMs`; no database (offline mode) counts as not.
  * Nothing else is told: an outside monitor (docs/OPERATIONS.md "Monitoring") only sees ok or not.
@@ -43,7 +58,7 @@ export class HealthController {
   health() {
     // smtp: the mail relay as last seen (startup check, then each send); details only in the log.
     const everyHours = demoResetEveryHours();
-    return { status: 'ok', time: new Date().toISOString(), startedAt: STARTED_AT, smtp: lastSmtpStatus(), demoReset: everyHours ? { everyHours } : null };
+    return { status: 'ok', time: new Date().toISOString(), startedAt: STARTED_AT, smtp: lastSmtpStatus(), demoReset: everyHours ? { everyHours } : null, instance: instanceInfo() };
   }
 
   /** For outside monitors (HTTP status only): 200 while the database answers, else 503. */

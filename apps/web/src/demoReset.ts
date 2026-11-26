@@ -42,3 +42,9 @@ export function demoResetWarning(now: number, everyHours: number): { at: number;
   const left = at - now;
   return left <= DEMO_RESET_WARN_MINUTES * MINUTE ? { at, minutes: Math.max(1, Math.ceil(left / MINUTE)) } : null;
 }
+
+/** Hours and minutes until `at` for the app bar's countdown ("1", "52"), never below 0:00. */
+export function demoResetCountdown(now: number, at: number): { hours: string; minutes: string } {
+  const left = Math.max(0, Math.floor((at - now) / MINUTE));
+  return { hours: String(Math.floor(left / 60)), minutes: String(left % 60).padStart(2, '0') };
+}

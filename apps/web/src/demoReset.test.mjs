@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DEMO_RESET_MINUTE_UTC, demoResetWarning, inDemoResetWindow, lastDemoReset, nextDemoReset } from './demoReset.ts';
+import { DEMO_RESET_MINUTE_UTC, demoResetWarning, inDemoResetWindow, lastDemoReset, nextDemoReset, demoResetCountdown } from './demoReset.ts';
 
 const at = (iso) => Date.parse(iso);
 
@@ -28,4 +28,11 @@ test('the minute matches the reset timer on the server', () => {
   assert.match(remote, /date -u \+%H\) % \$\{DEMO_RESET_EVERY_HOURS/, 'the reset goes by the hour in UTC');
   const compose = readFileSync(new URL('../../../.github/workflows/vps.yml', import.meta.url), 'utf8');
   assert.match(compose, /DEMO_RESET_EVERY_HOURS/, 'vps.yml passes DEMO_RESET_EVERY_HOURS to the server');
+});
+
+test('the app bar counts down hours and minutes to the reset', () => {
+  const at = Date.UTC(2026, 10, 26, 0, 7);
+  assert.deepEqual(demoResetCountdown(at - (112 * 60 + 30) * 1000, at), { hours: '1', minutes: '52' });
+  assert.deepEqual(demoResetCountdown(at - 5 * 60_000, at), { hours: '0', minutes: '05' });
+  assert.deepEqual(demoResetCountdown(at + 60_000, at), { hours: '0', minutes: '00' });
 });
