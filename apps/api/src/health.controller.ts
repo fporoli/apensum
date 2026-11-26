@@ -21,7 +21,7 @@ export function demoResetEveryHours(env: NodeJS.ProcessEnv = process.env): numbe
 
 /**
  * Whether the database answers `SELECT 1` within `timeoutMs`; no database (offline mode) counts as not.
- * Nothing else is told: an outside monitor (README "Monitoring") only sees ok or not.
+ * Nothing else is told: an outside monitor (docs/OPERATIONS.md "Monitoring") only sees ok or not.
  */
 export async function databaseAnswers(db: Pick<Db, 'execute'> | null, timeoutMs = 3000): Promise<boolean> {
   if (!db) return false;

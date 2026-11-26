@@ -1,7 +1,7 @@
 # Setting up a fresh server
 
 How to prepare a new Linux server (Ubuntu 24.04 LTS) for Apensum instances, before the first `vps` deploy.\
-The README's "Deploy → VPS" covers the GitHub side (Environment, secrets, variables) and "Moving an instance to another server" what follows on a server that replaces another.\
+docs/OPERATIONS.md's "Deploy → VPS" covers the GitHub side (Environment, secrets, variables) and "Moving an instance to another server" what follows on a server that replaces another.\
 It takes 20–40 minutes.
 
 The deploy user is called `ubuntu` here; use the same name as `VPS_USER`.\
@@ -128,8 +128,8 @@ List only the instances this server will run.
 
 ## 7. Then, in GitHub and DNS
 
-1. Each instance's GitHub Environment: `VPS_HOST` (the server's address) and `VPS_USER` (`ubuntu`), and a `PG_PORT` no other instance on this server uses (README, "Deploy → VPS").
+1. Each instance's GitHub Environment: `VPS_HOST` (the server's address) and `VPS_USER` (`ubuntu`), and a `PG_PORT` no other instance on this server uses (docs/OPERATIONS.md, "Deploy → VPS").
 2. DNS A records of the instance's hostnames (`WEB_SUB`, `API_SUB`, ...) and `portainer` to the server.
 3. The `vps` workflow's `deploy`, then `portainer` once per server; create Portainer's admin within 5 minutes of its start.
-4. A new instance: `reset-seed` for demo data, or `restore` of a backup (README, "Moving an instance to another server").
+4. A new instance: `reset-seed` for demo data, or `restore` of a backup (docs/OPERATIONS.md, "Moving an instance to another server").
 5. Prod: run the `backup` workflow by hand (`backup`, then `verify`) to check that backups reach the storage.

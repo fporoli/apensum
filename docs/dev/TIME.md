@@ -1,0 +1,47 @@
+# Time: work-time model, balances, vacation, timesheets
+
+Targets and holidays, balances and year-end closing, vacation rules, no time recording, the two timesheets.\
+Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere and points here.
+
+- Work-time model (`packages/shared/src/worktime.ts`, DB side in `work-time-model.service.ts`): a day a plugin's plan sets (`ApiPlugin.plannedMinutes`, `WorkTimeModel.planned`, e.g. the roster plugin's published months) takes the plan's minutes as its target, holidays included, unless the person has an approved absence that day; otherwise a person's target per day comes from their `work_schedules` row in force (minutes per weekday, with history; else the org's full-time week Mon-Fri), minus public holidays (computed per canton, plus `org_holidays` rows) and approved absences.\
+  Holidays are per person (`WorkTimeModelService.holidays(..., { userId })`, `holidaysFor`): the canton of their location (`locations` 087, Organization settings → Working time and holidays) on each day, by the `location_id` of their dated assignment, else the organization's `settings.holidayRegion`.\
+  `org_holidays` rows with a `location_id` apply to that location only (a municipality's day, e.g. Knabenschiessen) and win over the rows for everyone; a location in use can't be deleted.\
+  Never compute holidays from the organization's region alone where a person's days are counted.\
+  A session or project entry past midnight is one row, split at the person's local midnight wherever days are counted (`minutesByLocalDay` in `work-time-model.service.ts`, `minutesPerDay` in the web's `aggregate.ts`); lock checks cover every day it touches (`isPeriodLocked`/`isProjectPeriodLocked` take an end); a session over 16 h (`LONG_SESSION_MINUTES`) returns `long-session-confirm` until resent with `acknowledgeLongSession`.\
+  Working-time sessions of a person never overlap (an open session runs until closed): check-in, add and edit return `overlap` with the other session.\
+  A session never runs past a local month end (each month is its own timesheet): add and edit return `crosses-month`, a check-out after it is cut at midnight of the 1st into two sessions (`splitAtMonthEnds`); past midnight within a month it stays one entry, which the dialog says.\
+  The entry dialog shows the day under it (`GET .../users/:userId/work-time/day`, `work-time-day.ts`): the day's sessions and absences, the overlaps and the Working Hours Act findings with the draft in place, as hints only.\
+  A session can be marked `home_office` only while the organization's work-time setting `homeOffice` is on (085; off = the mark is nowhere).\
+  `client_ip` (the address of the last write) is stored and never returned, versioned or exported.\
+  Project time stays independent of attendance, but a day's project time above its attendance + `projectTimeToleranceMinutes` returns `project-exceeds-attendance-confirm` until the client resends with `acknowledgeAttendance`.
+- Balances (`balances.service.ts`, `computeYearBalances` is pure): approving a working-time timesheet closes the month into `work_time_months` (reopening deletes it); other months are computed live from the model.\
+  Nothing is counted after the employment ends (`until`, from `exit_at`).\
+  Overtime = month differences + `balance_adjustments`; Überzeit (attendance beyond `legalMaxWeeklyMinutes` per calendar week) is a share of it, kept as its own account (`legal_overtime` adjustments move both); vacation is in full-time days (the vacation rules prorated by workload, or a `vacation_entitlements` row of HR's, which replaces the year's total; carried over).\
+  Others' balances and the monthly report with alerts are `nav.balances` (Time balances page); one's own are always visible.\
+  Year-end closing (`balance_years` 086, Time balances → Year-end closing tab, `YearClosing.tsx`, `GET balance-years`, `POST balance-years/close|reopen`, edit beyond own on `nav.balances`): it freezes a person's overtime, Überzeit and vacation at the end of a year, and `computeYearBalances` opens later years from the newest closing (`opening`), ignoring everything before it (adjustments included).\
+  A closed year is locked: `isPeriodLocked` covers it, adjustments and entitlements in it return `year-closed`, and so does reopening one of its months.\
+  Years close in order (closing one closes the open years before it), without `force` only when every month is approved, and only the newest closed year reopens.\
+  The person is notified of each closing (their numbers, in their language) and reopening (`year-closing-notice.ts`, source `balance_years`, the bell opens Work time); `db:close-years` notifies nobody.
+- Vacation rules (095, `packages/shared/src/vacation.ts`, `organizations.settings.vacation`, Employees -> Vacation and probation, HR = `section.people.employment` edit on everyone): dated rules with base days, management days instead of them, and age steps added on top, never below Art. 329a CO (20, 25 until the 20th birthday).\
+  Without saved rules the old `vacationDaysPerYear` is the base.\
+  Management is `employee_assignments.is_management`, a fact for these rules only: never a right, never an exemption from time recording.\
+  The birth date is the organization's own (`basicdata.orgs.<orgId>.birthDate`, `orgOwnedKeys`); how an entitlement comes about tells the age, so only the person and HR get `vacation.basis`.\
+  Probation is the rules' months or `organization_memberships.probation_until` (the HR plugin uses both): vacation in it only warns the person and the manager, it is never refused.
+- No time recording (095, `work_schedules.time_recording = 'none'` with `exemption_reason` senior_executive or waiver): the days keep their scheduled minutes for vacation and absences but have no target (`DayTarget.notRecorded`), check-in, entries and the timesheet return `time-not-recorded`, and the month is `not-recorded`, which no close waits for.\
+  Whatever counts attendance or open timesheets must respect it (`recordedAttendance`, `notRecordingUserIds`, `isTimeNotRecorded`).\
+  `daily` (hours per day, ArGV 1 art. 73b) and the setting `simplifiedRecording` are reserved: nothing offers or accepts them until that is built.
+- Two timesheets: the working-time timesheet (`timesheet_periods`, `timesheets.controller.ts`, Monthly timesheet page) goes to the line manager and closes the month's balance; the project timesheet (`project_time_periods`, one row per person, project and month, `project-timesheets.controller.ts`) goes to each project's owner (Approvals page), approved on submit when the person owns the project or it has none.\
+  Hours without a project can't be submitted.\
+  The week view of the project time page is the weekly report (Wochenrapport, `WeekReport.tsx`, `GET organizations/:orgId/users/:userId/week-report?week=`, pure grid in `week-report.ts`, for whoever sees the person's project time): attendance (In & Out), target and project time per project and subproject each day, with the differences, beside the chosen day's sessions (adding one) and the balances; a cell hands its day and project to the entry form.\
+  It is a view only: time is submitted per month, by the two timesheets.\
+  A project can be limited to teams (`project_teams`, 070, set under Projects & Teams): then only their members and leads and the project owner book on it (`projectBookingError` in `access.ts`, checked on create and when an entry moves to another project, for the person whose entry it is; existing entries stay); `GET projects?bookableFor=` flags each project `bookable`.\
+  Work time and project time are changed by the person, their designated manager or HR (`canEditUserData`: `nav.workTime` / `nav.time` edit beyond own) and only while the month is open; the manager or HR reopens a submitted/approved month (`timesheet-periods/:id/reopen`, `project-timesheets/:id/reopen`).\
+  The pages pick the person via `time-record-people` (`PersonPicker`).\
+  Managers and HR also get a Team tab on those pages and on Absences, Expenses and Expense reports (`TeamView.tsx`, `GET organizations/:orgId/team-overview?kind=&month=`): one row per person they may see (`listableUserIds`), the caller first, opening that person's page or their entries; Absences adds a month calendar with the org's holidays.\
+  There is no Team hours page any more (091 removed `nav.teamHours`): project hours by team are Reports' project hours with the team filter (`teamId`, members and lead).\
+  HR's read access to absences and expenses is 049.\
+  The Calendar page (`nav.calendar`, 109, HR `see:all`, manager `see:reports`, under Employees; `TeamCalendar` in `TeamView.tsx`) is the Absences team calendar on its own; who appears still follows `nav.absences`.\
+  Plugins add team tables (`ApiPlugin.teamViews` rows, web `teamViews` columns; the expenses plugin's two).\
+  There is no ZIP export or restore of an organization: don't add one, whoever downloads it reads everything, whatever their role.\
+  Import/Export (`nav.importExport` alone, never `nav.users`; HR by default): payroll export and employee import; plugins add payroll items (`ApiPlugin.payroll`, e.g. Abacus wage type 3000 for expenses).\
+  The work schedule is HR's alone (048); every basic-data section, Personalien included, is requested by the employee and approved by HR.

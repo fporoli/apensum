@@ -1,0 +1,25 @@
+# Cases (assessments)
+
+The end-to-end encryption and the private cases plugin.\
+Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere and points here.
+
+- Cases encryption (`docs/CASES_ENCRYPTION.md`, `plugins/cases/shared/caseCrypto.ts`, `caseVault.ts`): a case is end-to-end encrypted in the browser (passphrase -> RSA key pair -> a case key per case, wrapped per member in `cases.case_keys`; each file has its own key sealed in its row).\
+  Rows carry an `enc` envelope and blanked plaintext columns; the API refuses plaintext writes to an encrypted case (`case-encrypted`) and its server-side AI/PDF/transcription paths.\
+  Those jobs run as stateless `compute/*` calls with the decrypted content in the request and store nothing.\
+  Never store a document id from a request body: a row links only the file uploaded with it, and downloads check the file's `source_table` and id.\
+  Never read, log or index an encrypted row's fields on the server, never add a server feature that needs them without a `compute` path, and never store a passphrase or key.\
+  A lost passphrase is unrecoverable by design.
+- Cases (Assessments; private plugin in `fporoli/apensum-assessment`, cloned into `plugins/cases` and named in `PRIVATE_PLUGINS` like hr; module `cases`, default off; its own Postgres schema `cases`, `apensum.dbSchema`; tables created by the core's old changesets 071-076, new changes in its changelog; api/, web/, shared/cases.ts, texts).\
+  Assessments are archived (`archived_at`, its changeset 005, `POST .../assessments/:id/archive`), never deleted.\
+  Its own fields on cases and assessments are templates of the forms `cases.case` / `cases.assessment` (`shared/forms.ts`, designed on the Cases page in design mode; values in `custom`, sealed in `enc` when encrypted, checked by `customValuesErrors`).\
+  The AI draft asks Azure for a strict JSON schema of the template's section keys (`aiDraftSchema`) and can write one section again (`section_key`, plain and `compute/ai-draft`): an empty section is filled, otherwise the editor shows the text to replace, add or drop.\
+  Evidence (`shared/caseEvidence.ts`, plugin changeset 008 `assessments.evidence`/`guidance`, both sealed fields): the material's blocks are labelled D1… (documents), I1… (interviews), H (the assessor's notes, one text per assessment, weighing less than the material); the model ends each fact with `[n]` and returns per marker the label and a verbatim quote, which `parseAiDraftWithEvidence` turns into document/interview ids (the compute path sends the ids too).\
+  The editor shows markers with the source and quote on hover (orange when the browser does not find the quote in the source, grey when it rests on the notes only), a click marks the quote in the evidence panel; exports remove the markers or, with "Mit Belegen", number them as footnotes (`exportSections`, PDF `?evidence=1` / `with_evidence`).\
+  Cases AI per organization (`organizations.settings.cases.ai`, `plugins/cases/shared/cases.ts`, set by whoever edits Organization settings, under Organization settings -> AI and costs, the plugin's `CaseAiSettingsPanel` shown there via `orgSettings` `within: 'org.ai'`, `GET/PUT case-ai-settings`).\
+  Cases data goes to Azure OpenAI in Switzerland only: transcription Azure OpenAI Whisper (`azure-transcribe.ts`; Azure has no fast Speech transcription in Switzerland; 25 MB per request = `MAX_INTERVIEW_AUDIO_BYTES`) or off, summary key sentences (no model) or Azure, AI draft Azure or off.\
+  Default: everything on Azure (capped by the budgets below).\
+  A summary is made of the transcript as it stands in the editor, saved or not; a generated text fills an empty field directly, else it is shown as a draft to accept.\
+  There is no self-hosted Whisper any more.\
+  `case-ai.service.ts` picks the provider (a chosen but unconfigured one is an error, never a silent fallback).\
+  The AI budget is the core's, for every module and plugin: every Azure call goes through `AiBudgetService` (`ai_usage` 078, with an optional `subject_table`/`subject_id` and any lowercase `kind`): it reserves the estimated CHF under an advisory lock and refuses beyond `AI_MONTHLY_BUDGET_CHF` (instance, unset = Azure off), the org's limit (`organizations.settings.ai .monthlyLimitChf`, `packages/shared/src/ai.ts`, default 10; set by operators on the Super Admin page AI limits, `GET operator/ai`, `PUT operator/organizations/:id/ai-limit`, audited in that organization; the organization sees it read-only in `AiSettingsPanel.tsx`, `GET ai-settings`), one running call per user and 20 per hour (the assistant is its own lane: 60 questions per hour, not counted with the other calls; the CHF limits cover both); prices come from env (`AZURE_*_CHF_*`), `AI_AZURE_ENABLED=false` is the kill switch, no retries against Azure.\
+  Azure resources (shared by all environments, Switzerland North, "Standard" deployments only, resource group `apensum-ai`) are `infra/azure/ai-provision.sh` (`resources|github|local|rotate`); budgets per environment are GitHub Environment variables, keys repo-level.

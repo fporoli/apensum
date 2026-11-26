@@ -13,6 +13,7 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces && node scripts/plugins.mjs test",
+    "test:e2e": "node --test test/e2e/*.test.mjs",
     "plugins": "node scripts/plugins.mjs",
     "db:migrate": "node infra/liquibase/migrate.mjs",
     "db:status": "node infra/liquibase/migrate.mjs status",

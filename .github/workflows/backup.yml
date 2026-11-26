@@ -1,4 +1,4 @@
-# Backups of an instance (README "Backups"): every night and hourly through the day (prod), a restore test on the 1st of each month,
+# Backups of an instance (docs/OPERATIONS.md "Backups"): every night and hourly through the day (prod), a restore test on the 1st of each month,
 # and a manual restore. On the server (infra/vps/backup.sh) the whole database (Keycloak's auth schema included)
 # and the documents volume are encrypted with the age public key BACKUP_AGE_RECIPIENT while they are read; this
 # runner only moves the ciphertext to S3-compatible storage (e.g. MinIO: BACKUP_S3_ENDPOINT, bucket BACKUP_S3_BUCKET,

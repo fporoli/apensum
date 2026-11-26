@@ -4,7 +4,7 @@
 // development), not docs/BUILD_PROMPT.md or docs/SYSTEM_REVIEW.md (internal), not code. Pure, tested in site-chat.test.ts.
 
 /** The files, relative to the repository's root. */
-export const CHAT_DOCS = ['README.md', 'docs/PLUGINS.md', 'docs/CASES_ENCRYPTION.md', 'docs/SERVER_SETUP.md', 'docs/FIELD_CONFIG.md', 'docs/DATABASE_SCHEMA.md'];
+export const CHAT_DOCS = ['README.md', 'docs/OPERATIONS.md', 'docs/PLUGINS.md', 'docs/CASES_ENCRYPTION.md', 'docs/SERVER_SETUP.md', 'docs/FIELD_CONFIG.md', 'docs/DATABASE_SCHEMA.md'];
 
 export interface DocChunk {
   source: string;

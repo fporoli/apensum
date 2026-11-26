@@ -4,7 +4,7 @@ run-name: 'vps: ${{ inputs.action }} on ${{ inputs.environment }} (tag ${{ input
 # SSH and runs infra/vps/remote.sh there, so the server holds no git checkout and no
 # hand-maintained config. One GitHub Environment = one instance: pick it in `environment`
 # (`vps` is production, e.g. `preproduction` is another one). Each environment holds its own
-# secrets and variables (Settings > Environments, list in the README's Deploy section), so
+# secrets and variables (Settings > Environments, list in docs/OPERATIONS.md's Deploy section), so
 # an environment with a different VPS_HOST deploys to another server, and one with the same
 # VPS_HOST adds an instance next to the others, with its own subdomains.
 #   deploy      edge stack + worktime3 (migrate, api, web, Keycloak) at the given image tag
@@ -122,7 +122,7 @@ jobs:
           WEB_SUB: ${{ vars.WEB_SUB }}
           API_SUB: ${{ vars.API_SUB }}
           AUTH_SUB: ${{ vars.AUTH_SUB }}
-          # Single sign-on of this instance: none (default), dex or keycloak (README "Single sign-on").
+          # Single sign-on of this instance: none (default), dex or keycloak (docs/OPERATIONS.md "Single sign-on").
           SSO_PROVIDER: ${{ vars.SSO_PROVIDER }}
           DEX_CONNECTORS_B64: ${{ env.DEX_CONNECTORS_B64 }}
           SHOW_DEMO_ACCOUNTS: ${{ vars.SHOW_DEMO_ACCOUNTS }}

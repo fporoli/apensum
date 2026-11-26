@@ -159,6 +159,6 @@ test('a technical question: the model searches the documentation once, then answ
   assert.deepEqual(rounds.map((r) => r.withSearch), [true, false]);
   const tool = rounds[1].last as { role: string; content: string };
   assert.equal(tool.role, 'tool');
-  assert.match(tool.content, /\[README\.md — .*Backups/);
+  assert.match(tool.content, /\[docs\/OPERATIONS\.md — .*Backups/);
   assert.equal((usage.finish[0] as { inputTokens: number }).inputTokens, 4000);
 });

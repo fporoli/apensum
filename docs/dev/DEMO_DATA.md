@@ -1,0 +1,20 @@
+# Demo data
+
+The seed's organizations, people and generated history (infra/postgres/seeds/seed.sql and the plugins' seed.sql).\
+Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere and points here.
+
+Demo logins (from `seed.sql`): every `<name>@acme.com` user's password is `<name>` (`admin@acme.com` / `admin`, `marta@acme.com` / `marta`, ...).\
+Acme reporting line: Alice manages Admin, Adam and Fido (Finance, Acme's own role `finance`: payment runs; the expenses plugin's seed sends Acme's payment runs to the department `finance`); Adam manages Marta, Marco and Uma; Marta manages Ulla (also hr); Marco manages Ueli; Uma is also developer.\
+Alice owns Acme and is also its admin (so roles and who is admin or HR are Alice's, and she sets up request types and their workflows alone), Admin owns Globex.\
+The Login screen's demo-account dropdown (Admin, Manager = Marta, HR User = Ulla, User = Ueli, Team Lead = Marco, Finance = Fido) come from the global `static_data` row `login`/`demo_accounts` via public `GET auth/demo-accounts`; each value is a JSON string `{name, user, password}`.\
+On the demo and test instances, and in dev and local (`DEMO_AUTO_LOGIN`: GitHub Environment variable; `scripts/with-env.mjs` and the VS Code API launch set `ueli@acme.com` unless the env file does, empty = off; `demo-switch.ts`, web `demoAccounts.ts`) a visitor without a session is signed in as that account (not again after "Log out" in that tab), and the login page and the user menu list the people of its organization with roles and department instead: only accounts whose password is the seed's `<name>`, checked against the hash; switching is an ordinary sign-in and a reload, never a token of someone else's.\
+Teams: Platform (Alice), People & Culture (Ulla), Product Development (Marco).\
+Cases (`plugins/cases/seed.sql`, **generated** by `npx tsx plugins/cases/scripts/generate-demo-seed.mts`, never hand-edited: the rows are ciphertext) turns the module on for Acme and adds one encrypted KESB case led by Marta; Admin, Marta, Marco and Ulla have a Cases key pair (passphrase `<name>-cases-demo`), and only Marta (its lead) and Ulla (HR) hold its key, the ones who may open it (a person who had set up their own keeps it and sees the case locked).\
+The end of `seed.sql` generates each Acme member's history from their start date to yesterday (absences, attendance, project time, approved timesheets); a plugin's `seed.sql` (expenses: expenses and reports) runs after it in the same transaction and may use its `pg_temp.seed_*` helpers.\
+It is deterministic (`pg_temp.seed_rnd`/`seed_id` hash a key), so re-seeding adds only newly passed days.\
+It books no more vacation a year than the entitlement (25 days, prorated; management and age rules only add), so no demo balance of vacation is negative; keep that in step if Acme's base days change.\
+`seed.sql` makes nobody an operator: each VPS instance gets its own from its deploy (`operators ensure`), and operators must use two-step login, which a published demo login could not; locally run `operators grant` (or `ensure`) yourself.\
+Its working days use Zurich's holidays (`pg_temp.seed_workday`); keep that in step with `worktime.ts` if Acme's region changes.\
+The seed also writes the workflows behind the demo's expense reports and an open vacation request each from Ueli (to Marco) and Ulla (to Marta), as the API would (only for rows without one).\
+Last month stays unsubmitted for Ueli and Uma (`pg_temp.seed_last_month_open`, not in January), so HR's month-end close has something open.\
+After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`, the balance logic, which SQL can't repeat) closes last year (Year-end closing) for every Acme member but Uma, whose year stays open to close in the demo; `dev:seed`, `dev:resetdb`, `local:seed` run it, and `infra/vps/remote.sh` runs the built one in the API container after `seed`/`reset-seed`.

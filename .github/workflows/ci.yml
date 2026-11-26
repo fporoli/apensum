@@ -35,6 +35,11 @@ jobs:
       # (a changelog added without npm run dev:introspect).
       - run: npm run db:checkschema
       - run: npm run db:seed
+      # End to end on the seeded database: real HTTP and SQL (test/e2e).
+      - name: End-to-end tests
+        run: |
+          npm run start --workspace=@worktime3/api > api.log 2>&1 &
+          npm run test:e2e || { cat api.log; exit 1; }
 
   # The core without any plugin (APENSUM_PLUGINS_DIR points at an empty folder): it builds, its tests
   # pass, a fresh database migrates and seeds, and the API runs with nothing of a plugin left
