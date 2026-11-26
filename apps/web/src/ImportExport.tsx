@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import {
   Alert,
   Box,
-  Button,
   Chip,
   LinearProgress,
   Paper,
@@ -20,6 +19,7 @@ import {
   alpha,
   useTheme,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatMoney, formatSignedMinutes, swissLocale } from './localeFormat';
 import { PageHeader } from './components';

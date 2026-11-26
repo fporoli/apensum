@@ -2,9 +2,10 @@
 // tab, pictures as text). With MarkdownHelp, a quick reference. Both in the plugin contract.
 import { useMemo, useState } from 'react';
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Link, Table, TableBody, TableCell, TableHead, TableRow, Typography,
+  Box, Dialog, DialogActions, DialogContent, DialogTitle, Link, Table, TableBody, TableCell, TableHead, TableRow, Typography,
   type SxProps, type Theme,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { markdownHtml } from './markdownRender';
 

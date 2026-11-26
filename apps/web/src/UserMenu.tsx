@@ -3,7 +3,6 @@ import {
   Alert,
   Avatar,
   Box,
-  Button,
   Checkbox,
   Dialog,
   DialogActions,
@@ -17,6 +16,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import type { Session } from './Login';
 import { demoLabel, type DemoPerson } from './demoAccounts';
 import { LOCALES, useT, type Locale } from './i18n';

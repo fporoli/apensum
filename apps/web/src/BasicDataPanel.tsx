@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Dialog,
   DialogActions,
@@ -24,6 +23,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { BASICDATA_FORM, BASICDATA_NESTED_KEYS_BY_GROUP, validateFields, writableKeys, type ResolvedForm } from '@worktime3/shared/fields';

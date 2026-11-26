@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Paper, Tab, Tabs, TextField, Tooltip, Typography,
+  Alert, Box, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Paper, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { FLOW_TYPE_KEY, MAX_FLOW_TYPE_NAME, flowTypeKeyFromName } from '@worktime3/shared/flows';
 import { WorkflowDesigner } from './WorkflowDesigner';
 import {

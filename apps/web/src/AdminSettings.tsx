@@ -3,7 +3,6 @@ import { alpha } from '@mui/material/styles';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   Dialog,
@@ -27,6 +26,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { LOCALES, useI18n, useT, type Locale } from './i18n';
 import RolesPermissions from './RolesPermissions';
 import { DESCRIPTION_MAX, PROPERTIES_LIST, attributeTextValid, listDescription, attributeValue, keepLabels, propertiesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Button } from './Button';
 import { LOCALES, useI18n } from './i18n';
 import { CheckCircleIcon } from './icons';
 

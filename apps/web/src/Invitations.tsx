@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   LinearProgress,
   MenuItem,
@@ -16,6 +15,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';

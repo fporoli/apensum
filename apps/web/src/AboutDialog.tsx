@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
-  Button,
   Dialog,
   DialogActions,
   DialogContent,
@@ -13,6 +12,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import type { Session } from './Login';
 import { infoUrl } from './infoUrl';
 import { useI18n } from './i18n';

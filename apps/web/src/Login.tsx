@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Container, Divider, IconButton, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Container, Divider, IconButton, MenuItem, Paper, Tab, Tabs, TextField, Tooltip, Typography } from '@mui/material';
+import { Button } from './Button';
 import { completeSsoLogin, isSsoCallback, ssoConfig, startSsoLogin } from './auth';
 import { LOCALES, useI18n } from './i18n';
 import { DarkModeIcon, LightModeIcon } from './icons';

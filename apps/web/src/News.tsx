@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   Dialog,
@@ -21,6 +20,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { ConfirmDialog, EmptyState, PageHeader } from './components';
 import { AddIcon, CampaignIcon, CheckCircleIcon, ChevronLeftIcon, DeleteIcon, EditIcon, ImageIcon, VisibilityIcon } from './icons';

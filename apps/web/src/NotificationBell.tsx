@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Badge, Box, Button, Divider, IconButton, Menu, MenuItem, Snackbar, Typography } from '@mui/material';
+import { Badge, Box, Divider, IconButton, Menu, MenuItem, Snackbar, Typography } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { NotificationsIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';

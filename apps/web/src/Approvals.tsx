@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Dialog,
   DialogActions,
@@ -23,6 +22,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
+import { Button } from './Button';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n, type TFunction } from './i18n';
 import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shared/workflowConfig';

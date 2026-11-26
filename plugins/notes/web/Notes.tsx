@@ -1,9 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, InputAdornment, Paper, Stack,
-  Tab, Tabs, TextField, Typography,
+  Alert,
+  Autocomplete,
+  Box,
+  Checkbox,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  InputAdornment,
+  Paper,
+  Stack,
+  Tab,
+  Tabs,
+  TextField,
+  Typography,
 } from '@mui/material';
-import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n } from '@worktime3/web/plugin';
+import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n, Button } from '@worktime3/web/plugin';
 import { isMailAddress, MAX_MAIL_ADDRESSES, splitAddresses } from '../shared/mail';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';

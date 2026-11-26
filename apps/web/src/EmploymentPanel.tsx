@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   Dialog,
@@ -23,6 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { formatLocaleDate } from './localeFormat';
 import { ConfirmDialog } from './components';

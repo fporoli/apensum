@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   FormControlLabel,
@@ -18,6 +17,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { CANTONS, holidayName, type Holiday, type OrgHolidayRow } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
 import { formatLocaleDate, swissLocale } from './localeFormat';

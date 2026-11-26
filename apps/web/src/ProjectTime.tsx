@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Dialog,
   DialogActions,
@@ -25,6 +24,7 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
+import { Button } from './Button';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { bucket, minutes, periodLabel, periodRange, shiftPeriod, todayDate, type Entry, type PeriodType } from './aggregate';
 import { useI18n } from './i18n';

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   LinearProgress,
   Paper,
@@ -16,6 +15,7 @@ import {
   alpha,
   useTheme,
 } from '@mui/material';
+import { Button } from './Button';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { bucket, minutes, periodRange, shiftPeriod, startOfWeek, todayDate, type Entry } from './aggregate';
 import BalanceOverview from './BalanceOverview';

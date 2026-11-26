@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Alert, Box, Button, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
+import { Button } from './Button';
 import {
   assigneeKind, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type StepMessage, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
 } from '@worktime3/shared/workflowConfig';

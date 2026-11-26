@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   IconButton,
   LinearProgress,
   Link,
@@ -15,6 +14,7 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes, swissLocale } from './localeFormat';
 import { ClockTimeField } from './TimeFields';

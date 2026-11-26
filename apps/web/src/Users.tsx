@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Dialog,
   DialogActions,
@@ -23,6 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { BasicDataPanel } from './BasicDataPanel';
 import WorkSchedulePanel from './WorkSchedulePanel';
 import EmploymentPanel from './EmploymentPanel';

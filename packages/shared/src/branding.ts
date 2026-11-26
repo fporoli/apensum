@@ -14,6 +14,8 @@ export interface OrgBranding {
   sidebarColor?: string;
   /** Logo shown in the app bar: a `data:image/...;base64,` URL. */
   logo?: string;
+  /** The colorful look: colored icons in the navigation and an icon on the buttons (off by default). */
+  colorful?: boolean;
 }
 
 export const BRANDING_COLOR_KEYS = ['headerColor', 'backgroundColor', 'sidebarColor'] as const;
@@ -46,10 +48,11 @@ export function parseBranding(raw: unknown): OrgBranding {
   const r = raw as Record<string, unknown>;
   for (const key of BRANDING_COLOR_KEYS) if (isHexColor(r[key])) out[key] = (r[key] as string).toLowerCase();
   if (isLogoDataUrl(r.logo) && r.logo.length <= MAX_LOGO_DATA_URL_LENGTH) out.logo = r.logo;
+  if (r.colorful === true) out.colorful = true;
   return out;
 }
 
-export type BrandingResult = { ok: true; branding: OrgBranding } | { ok: false; error: 'invalid-color' | 'invalid-logo' | 'logo-too-large' };
+export type BrandingResult = { ok: true; branding: OrgBranding } | { ok: false; error: 'invalid-color' | 'invalid-logo' | 'logo-too-large' | 'invalid-style' };
 
 /**
  * Validates a full branding object to save. Missing, null and empty-string fields mean
@@ -70,6 +73,9 @@ export function validateBranding(input: unknown): BrandingResult {
     if (logo.length > MAX_LOGO_DATA_URL_LENGTH) return { ok: false, error: 'logo-too-large' };
     branding.logo = logo;
   }
+  const colorful = r.colorful;
+  if (colorful !== undefined && colorful !== null && typeof colorful !== 'boolean') return { ok: false, error: 'invalid-style' };
+  if (colorful === true) branding.colorful = true;
   return { ok: true, branding };
 }
 

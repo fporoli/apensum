@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Dialog,
   DialogActions,
@@ -22,6 +21,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import type { Session } from './Login';
 import { useT } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, Chip, CircularProgress, Divider, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Chip, CircularProgress, Divider, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Button } from './Button';
 import QRCode from 'qrcode';
 import { TWO_FACTOR_POLICIES, type TwoFactorPolicy } from '@worktime3/shared/twoFactor';
 import { ApensumMark } from './ApensumMark';

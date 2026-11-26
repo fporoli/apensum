@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, Chip, IconButton, Paper, TextField, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Chip, IconButton, Paper, TextField, Tooltip, Typography } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 import { AutoAwesomeIcon, CloseIcon, HistoryIcon, PushPinIcon, RestartAltIcon, StarBorderIcon, StarIcon } from './icons';
 

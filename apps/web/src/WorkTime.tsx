@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   Collapse,
@@ -27,6 +26,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import BalanceOverview from './BalanceOverview';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
@@ -47,6 +47,8 @@ interface Session {
   check_out: string | null;
   comment: string | null;
   home_office?: boolean;
+  /** Its month is submitted/approved or its year closed (the list says): read-only until the month is reopened. */
+  locked?: boolean;
 }
 
 /** What the entry dialog shows under the session (`work-time/day`): the day's sessions and absences, overlaps, Act hints. */
@@ -578,7 +580,20 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
                       <TableCell>{formatDuration(e.check_in, e.check_out)}</TableCell>
                       <TableCell>{e.comment || '—'}</TableCell>
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                        {canEdit && (
+                        {canEdit && e.locked && (
+                          // A disabled button shows no tooltip itself: the span carries it.
+                          <Tooltip title={t('workTime.periodLocked')}>
+                            <Box component="span" sx={{ display: 'inline-flex' }}>
+                              <IconButton size="small" disabled aria-label={t('time.edit')}>
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton size="small" disabled aria-label={t('time.remove')}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          </Tooltip>
+                        )}
+                        {canEdit && !e.locked && (
                           <>
                             <Tooltip title={t('time.edit')}>
                               <IconButton size="small" aria-label={t('time.edit')} onClick={() => setDraft(draftFromSession(e))}>

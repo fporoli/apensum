@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Box, Button, Chip, List, ListItemButton, ListItemText, Paper, Typography } from '@mui/material';
+import { Box, Chip, List, ListItemButton, ListItemText, Paper, Typography } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { CampaignIcon } from './icons';
 import { formatLocaleDateTime } from './localeFormat';

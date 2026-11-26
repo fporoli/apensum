@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Autocomplete, Avatar, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material';
+import { Alert, Autocomplete, Avatar, Box, Chip, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 import { MailIcon } from './icons';
 

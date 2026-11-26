@@ -5,9 +5,10 @@
 // of an own type is a request with a workflow: it is listed once, as the request.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
+  Alert, Box, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
   Tab, Tabs, TextField,
 } from '@mui/material';
+import { Button } from './Button';
 import { flowTypeLabel } from '@worktime3/shared/flows';
 import Approvals, { actionItemLabel, correspondingObject, itemPerson, type ActionItem, type Scope, type StatusFilter } from './Approvals';
 import FlowDetail, { type Box_, type ComposePreset, type FlowItem } from './FlowDetail';

@@ -3,7 +3,6 @@ import {
   Alert,
   Badge,
   Box,
-  Button,
   Checkbox,
   Chip,
   Dialog,
@@ -28,6 +27,7 @@ import {
   Typography,
   Tooltip,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shared/workflowConfig';
 import { StepAnswers, StepFieldsForm, type StepAnswer, type StepValues } from './StepFieldsForm';

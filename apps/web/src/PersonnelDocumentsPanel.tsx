@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   CircularProgress,
   Dialog,
@@ -21,6 +20,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { staticValueLabel } from '@worktime3/shared/staticData';
 import { addMonthsIso, categoryKeys, categoryRules, personnelDocError } from '@worktime3/shared/personnelDocs';
 import { useI18n } from './i18n';

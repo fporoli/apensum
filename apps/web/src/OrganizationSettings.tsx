@@ -2,7 +2,6 @@ import { Suspense, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   FormControlLabel,
@@ -16,6 +15,7 @@ import {
   TableRow,
   TextField,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { currencyOptions, type CurrencyOption } from './currencyOptions';
 import { PageHeader, TableEmptyRow } from './components';

@@ -52,3 +52,11 @@ test('contrastTextColor picks light text on dark backgrounds', () => {
   assert.equal(contrastTextColor('#1a56db'), '#ffffff');
   assert.equal(contrastTextColor('#fde68a'), '#1a1f36');
 });
+
+test('the colorful look: on only when true, anything else refused or dropped', () => {
+  assert.deepEqual(validateBranding({ colorful: true }), { ok: true, branding: { colorful: true } });
+  assert.deepEqual(validateBranding({ colorful: false }), { ok: true, branding: {} });
+  assert.deepEqual(validateBranding({ colorful: 'yes' }), { ok: false, error: 'invalid-style' });
+  assert.deepEqual(parseBranding({ colorful: true, headerColor: '#112233' }), { headerColor: '#112233', colorful: true });
+  assert.deepEqual(parseBranding({ colorful: 'true' }), {});
+});

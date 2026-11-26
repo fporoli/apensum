@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { GROUPS_KEY, mergeForm, type FormDef, type ResolvedForm } from '@worktime3/shared/fields';
-import { Alert, Button } from '@mui/material';
+import { Alert } from '@mui/material';
+import { Button } from './Button';
 import { changedKeys, checkLayers, cloneLayers, configFor, emptyLayer, isCustomIn, type DesignError, type Layers, type Scope } from './formDesign';
 import { useT } from './i18n';
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   IconButton,
   MenuItem,
   Table,
@@ -15,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { MAX_AGE_STEPS, MAX_PROBATION_MONTHS, type VacationRule, type VacationSettings as Settings } from '@worktime3/shared/vacation';
 import { useI18n } from './i18n';
 import { formatLocaleDate, formatLocaleNumber, parseLocaleNumber } from './localeFormat';

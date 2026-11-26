@@ -2,7 +2,6 @@ import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   LinearProgress,
   Paper,
@@ -22,6 +21,7 @@ import {
   alpha,
   useTheme,
 } from '@mui/material';
+import { Button } from './Button';
 import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatSignedMinutes, swissLocale } from './localeFormat';

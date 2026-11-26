@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, FormControlLabel, IconButton, Switch, Tooltip, Typography } from '@mui/material';
+import { Button } from './Button';
 import { darken } from '@mui/material/styles';
 import {
   BRANDING_COLOR_KEYS,
@@ -14,7 +15,8 @@ import {
 import { useT } from './i18n';
 import { DEFAULT_BRANDING_COLORS, useBranding } from './theme';
 import { ApensumMark } from './ApensumMark';
-import { CloseIcon } from './icons';
+import { CloseIcon, DashboardIcon, SaveIcon, TimerIcon, BeachAccessIcon } from './icons';
+import { ACTION_COLORS, navColor } from './colorful';
 import { SectionPaper } from './SettingsSection';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -106,6 +108,7 @@ export default function BrandingSettings({ orgId, authHeaders }: BrandingSetting
     if (code === 'invalid-color') return t('branding.invalidColor');
     if (code === 'invalid-logo') return t('branding.invalidLogo');
     if (code === 'logo-too-large') return t('branding.logoTooLarge');
+    if (code === 'invalid-style') return t('branding.saveFailed');
     return t('branding.saveFailed');
   }
 
@@ -237,6 +240,24 @@ export default function BrandingSettings({ orgId, authHeaders }: BrandingSetting
               {draft.logo ? t('branding.logoHelper') : `${t('branding.noLogo')} ${t('branding.logoHelper')}`}
             </Typography>
           </Box>
+
+          <Box>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={draft.colorful === true}
+                  onChange={(e) => {
+                    setSuccess(null);
+                    const on = e.target.checked;
+                    setDraft(({ colorful: _c, ...rest }) => (on ? { ...rest, colorful: true } : rest));
+                  }}
+                />
+              }
+              label={t('branding.colorful')}
+              slotProps={{ typography: { variant: 'body2', sx: { fontWeight: 600 } } }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{t('branding.colorfulHelper')}</Typography>
+          </Box>
         </Box>
 
         <Box>
@@ -264,15 +285,23 @@ export default function BrandingSettings({ orgId, authHeaders }: BrandingSetting
             </Box>
             <Box sx={{ display: 'flex', height: 120 }}>
               <Box sx={{ width: 96, bgcolor: sidebar, color: sidebarText ?? 'text.primary', borderRight: 1, borderColor: 'divider', p: 1, display: 'grid', gap: 0.75, alignContent: 'start' }}>
-                {[0.9, 0.7, 0.8].map((w, i) => (
-                  <Box key={i} sx={{ height: 8, width: `${w * 100}%`, borderRadius: 1, bgcolor: 'currentColor', opacity: i === 0 ? 0.55 : 0.25 }} />
+                {([['home', DashboardIcon, 0.9], ['workTime', TimerIcon, 0.7], ['absences', BeachAccessIcon, 0.8]] as const).map(([section, Icon, w], i) => (
+                  <Box key={section} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Icon sx={{ fontSize: 14, color: draft.colorful ? navColor(section) : 'currentColor', opacity: draft.colorful ? 1 : 0.6 }} />
+                    <Box sx={{ height: 8, flexGrow: 1, maxWidth: `${w * 100}%`, borderRadius: 1, bgcolor: 'currentColor', opacity: i === 0 ? 0.55 : 0.25 }} />
+                  </Box>
                 ))}
               </Box>
               <Box sx={{ flexGrow: 1, bgcolor: page, p: 1.25 }}>
                 <Typography variant="caption" sx={{ fontWeight: 700, color: isDarkColor(page) ? '#ffffff' : 'text.primary' }}>
                   {t('branding.previewPage')}
                 </Typography>
-                <Box sx={{ mt: 0.75, height: 64, bgcolor: '#ffffff', borderRadius: 1, boxShadow: '0 1px 3px rgba(16,24,40,0.12)' }} />
+                <Box sx={{ mt: 0.75, height: 64, bgcolor: '#ffffff', borderRadius: 1, boxShadow: '0 1px 3px rgba(16,24,40,0.12)', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', p: 0.75 }}>
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 0.75, py: 0.25, border: 1, borderColor: '#d0d5dd', borderRadius: 1, fontSize: 11, fontWeight: 600, color: '#0f172a' }}>
+                    {draft.colorful && <SaveIcon sx={{ fontSize: 13, color: ACTION_COLORS.save }} />}
+                    {t('common.save')}
+                  </Box>
+                </Box>
               </Box>
             </Box>
           </Box>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Button, Snackbar } from '@mui/material';
+import { Alert, Snackbar } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 import { isNewVersion } from './appVersion';
 

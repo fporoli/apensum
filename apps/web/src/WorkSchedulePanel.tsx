@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   IconButton,
   MenuItem,
@@ -19,6 +18,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { EXEMPTION_REASONS, dayMinutesFor, weeklyMinutes, type WorkSchedule } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
 import { formatLocaleDate, swissLocale } from './localeFormat';

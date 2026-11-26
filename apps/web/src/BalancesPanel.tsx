@@ -2,7 +2,6 @@ import { Fragment, useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Dialog,
   DialogActions,
@@ -22,6 +21,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes, parseLocaleNumber, swissLocale } from './localeFormat';
 import { TableEmptyRow } from './components';

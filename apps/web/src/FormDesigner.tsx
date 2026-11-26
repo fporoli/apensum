@@ -2,7 +2,6 @@ import { useState, type DragEvent, type ReactNode } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   Divider,
   Drawer,
@@ -23,6 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import {
   ENTRY_TYPES,
   GROUPS_KEY,

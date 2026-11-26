@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
 import type { AuthenticatedPrincipal } from './jwt';
 import {
@@ -313,6 +313,23 @@ export async function isPeriodLocked(
         LIMIT 1`,
   );
   return rows.rows.length > 0;
+}
+
+/**
+ * The same lock as isPeriodLocked, as an SQL condition over a row's own columns (a list marks its locked entries in one
+ * query): the local days from `start` to `end` (exclusive; none = `start`'s day) touch a submitted/approved
+ * working-time month or a closed year of that person.
+ */
+export function periodLockedSql(organizationId: SQL | AnyColumn, userId: SQL | AnyColumn, start: SQL | AnyColumn, end: SQL | AnyColumn): SQL<boolean> {
+  const tz = sql`coalesce((SELECT timezone FROM users WHERE id = ${userId}), 'UTC')`;
+  const first = sql`(${start} AT TIME ZONE ${tz})::date`;
+  const last = sql`((CASE WHEN ${end} > ${start} THEN ${end} - interval '1 microsecond' ELSE ${start} END) AT TIME ZONE ${tz})::date`;
+  return sql<boolean>`(EXISTS (SELECT 1 FROM timesheet_periods tp
+      WHERE tp.organization_id = ${organizationId} AND tp.user_id = ${userId} AND tp.status IN ('submitted', 'approved')
+        AND tp.period_start <= ${last} AND tp.period_end > ${first})
+    OR EXISTS (SELECT 1 FROM balance_years by_
+      WHERE by_.organization_id = ${organizationId} AND by_.user_id = ${userId}
+        AND by_.year BETWEEN extract(year FROM ${first})::int AND extract(year FROM ${last})::int))`;
 }
 
 /** True when the person's year is closed (year-end closing, `balance_years`): nothing in it changes until it is reopened. */

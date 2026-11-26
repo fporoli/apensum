@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   IconButton,
   LinearProgress,
@@ -15,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { formatLocaleDate, formatSignedMinutes } from './localeFormat';
 import { ConfirmDialog, TableEmptyRow } from './components';

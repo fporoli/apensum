@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Box,
-  Button,
   MenuItem,
   TextField,
   Dialog,
@@ -19,6 +18,7 @@ import {
   Paper,
   Stack,
 } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 import { ExpandLessIcon, ExpandMoreIcon } from './icons';
 

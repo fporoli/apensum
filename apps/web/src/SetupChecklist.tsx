@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Box, Button, Chip, LinearProgress, Paper, Typography } from '@mui/material';
+import { Alert, Box, Chip, LinearProgress, Paper, Typography } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 import { CheckCircleIcon } from './icons';
 

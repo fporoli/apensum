@@ -4,7 +4,7 @@ import { DbService, type Db } from './db.service';
 import { WorkTimeService } from './work-time.service';
 import { VersionsService } from './versions.service';
 import { addDays, isLongSession } from '@worktime3/shared/worktime';
-import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, listableUserIds, reachesAll } from './access';
+import { callerUserId, canEditUserData, canSeeUserData, editableUserIds, isOrgMember, isPeriodLocked, listableUserIds, periodLockedSql, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { isTimeNotRecorded } from './time-recording';
 import { absences, organization_memberships, users, work_times } from './db/schema';
@@ -213,8 +213,9 @@ export class WorkTimeController {
     if (from) conditions.push(gte(work_times.check_in, from));
     if (to) conditions.push(lt(work_times.check_in, to));
 
+    // `locked`: its month is submitted/approved or its year closed (as the writes check), so the page shows it read-only.
     const rows = await db
-      .select(SESSION_COLUMNS)
+      .select({ ...SESSION_COLUMNS, locked: periodLockedSql(work_times.organization_id, work_times.user_id, work_times.check_in, work_times.check_out) })
       .from(work_times)
       .where(and(...conditions))
       .orderBy(asc(work_times.check_in));

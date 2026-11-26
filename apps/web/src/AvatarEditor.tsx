@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Alert, Avatar, Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
+import { Alert, Avatar, Box, CircularProgress, Stack, Typography } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';

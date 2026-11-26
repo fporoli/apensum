@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   InputAdornment,
   LinearProgress,
   Paper,
@@ -14,6 +13,7 @@ import {
   TableRow,
   TextField,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n } from './i18n';
 import { PageHeader, TableEmptyRow } from './components';
 import { HistoryIcon, RefreshIcon, SearchIcon } from './icons';

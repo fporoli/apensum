@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   LinearProgress,
   Paper,
@@ -15,6 +14,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { periodLabel } from './aggregate';
 import { useI18n } from './i18n';
 import { formatDurationMinutes } from './localeFormat';

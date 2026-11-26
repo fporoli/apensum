@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNo
 import {
   AppBar,
   Box,
-  Button,
   Chip,
   Collapse,
   Container,
@@ -23,8 +22,10 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
+import { Button } from './Button';
 import { useI18n, type Locale } from './i18n';
 import { useBranding } from './theme';
+import { navColor } from './colorful';
 import Login, { clearSession, loadSession, saveSession, type Session } from './Login';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { TwoFactorRequired } from './TwoFactor';
@@ -220,6 +221,7 @@ export default function App() {
 
   // The organization's look and feel (theme colors, app bar logo); the default theme when signed out.
   const { branding, setBranding } = useBranding();
+  const colorful = branding.colorful === true;
   useEffect(() => {
     setBranding({});
     if (!session || !orgId) return;
@@ -583,7 +585,7 @@ export default function App() {
                       }}
                     >
                       {n.icon && (
-                        <ListItemIcon sx={{ minWidth: 32, color: 'inherit' }}>
+                        <ListItemIcon sx={{ minWidth: 32, color: colorful ? navColor(n.section) : 'inherit' }}>
                           {n.icon}
                         </ListItemIcon>
                       )}
@@ -653,7 +655,7 @@ export default function App() {
                               }}
                             >
                               {child.icon && (
-                                <ListItemIcon sx={{ minWidth: 28, color: 'inherit' }}>
+                                <ListItemIcon sx={{ minWidth: 28, color: colorful ? navColor(child.section) : 'inherit' }}>
                                   {child.icon}
                                 </ListItemIcon>
                               )}

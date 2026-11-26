@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Box, Button, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Stack, TextField, Typography } from '@mui/material';
+import { Button } from './Button';
 import type { AiSettings } from '@worktime3/shared/ai';
 import { useI18n } from './i18n';
 import { formatMoney } from './localeFormat';

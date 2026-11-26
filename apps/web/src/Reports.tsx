@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Checkbox,
   Chip,
   Dialog,
@@ -28,6 +27,7 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
+import { Button } from './Button';
 import { BarChart } from '@mui/x-charts/BarChart';
 import { REPORTS, reportById, type ReportDefinition, type ReportId, type ReportMeasure, type ReportRow, type SavedReportSettings } from '@worktime3/shared/reports';
 import { buildCsv, buildXlsx } from '@worktime3/shared/xlsx';

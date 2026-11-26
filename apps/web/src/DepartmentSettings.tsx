@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Box,
-  Button,
   Chip,
   IconButton,
   MenuItem,
@@ -17,6 +16,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { Button } from './Button';
 import { useT } from './i18n';
 import { ConfirmDialog, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, CheckIcon, CloseIcon, DeleteIcon, EditIcon } from './icons';
