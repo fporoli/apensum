@@ -90,4 +90,20 @@ export class HourlyLimiter {
     }
     return true;
   }
+
+  /** Whether `key` has reached the limit, without recording anything (to count only failures, check first, record after). */
+  full(key: string, nowMs: number): boolean {
+    return (this.hits.get(key) ?? []).filter((t) => nowMs - t < 3600_000).length >= this.max;
+  }
 }
+
+/**
+ * Failed password logins allowed per hour: per account and address together (one person mistyping, or someone trying
+ * one account), per address (someone trying many accounts) and per account from anywhere (many addresses trying one
+ * account, high so that nobody can lock a colleague out on purpose). Only failures count; a success clears nothing.
+ */
+export const LOGIN_FAILS_PER_ACCOUNT_AND_IP = 10;
+export const LOGIN_FAILS_PER_IP = 50;
+export const LOGIN_FAILS_PER_ACCOUNT = 200;
+/** Registrations per address and hour. */
+export const REGISTRATIONS_PER_IP = 5;

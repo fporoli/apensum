@@ -134,7 +134,10 @@ edge_up() {
   # Tools that moved into each instance (Adminer, Mailpit): drop what older deploys left.
   rm -f "$EDGE/sites/db.caddy" "$EDGE/sites/mail.caddy"
   docker rm -f edge-adminer mailpit >/dev/null 2>&1 || true
-  sed -e "s/__WEB_HOST__/$WEB_HOST/g" -e "s/__API_HOST__/$API_HOST/g" -e "s/__PREFIX__/$PREFIX/g" \
+  # The CSP names the sign-on host; without single sign-on the app's own host stands in (allowed anyway).
+  local auth_host="$WEB_HOST"
+  case "$SSO_PROVIDER" in dex|keycloak) auth_host="$AUTH_HOST" ;; esac
+  sed -e "s/__WEB_HOST__/$WEB_HOST/g" -e "s/__API_HOST__/$API_HOST/g" -e "s/__AUTH_HOST__/$auth_host/g" -e "s/__PREFIX__/$PREFIX/g" \
     "$ROOT/infra/caddy/edge/sites/worktime3.caddy.tpl" > "$EDGE/sites/$PREFIX.caddy"
   # The single sign-on host only when the instance has one.
   case "$SSO_PROVIDER" in

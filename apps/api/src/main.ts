@@ -3,10 +3,12 @@ import { NestFactory } from '@nestjs/core';
 import { WsAdapter } from '@nestjs/platform-ws';
 import { AppModule } from './app.module';
 import { verifySmtp } from './mailer';
+import { corsOrigins } from './cors';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors();
+  // Only the web app and the website (cors.ts); without APP_BASE_URL every origin, as before.
+  app.enableCors({ origin: corsOrigins() });
   app.setGlobalPrefix('api/v1');
   // Notifications' WebSocket gateway (path '/ws/notifications') shares this same HTTP
   // server/port — only upgrade requests on that path are intercepted, every REST route

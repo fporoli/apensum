@@ -13,7 +13,10 @@ import { VersionsService } from './versions.service';
 import { NotificationsService } from './notifications.service';
 import { noticeRegistration } from './registration-notice';
 import { demoPeople } from './demo-switch';
-import { HourlyLimiter, mintResetToken, passwordStamp, readResetToken, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail } from './password-reset';
+import {
+  HourlyLimiter, LOGIN_FAILS_PER_ACCOUNT, LOGIN_FAILS_PER_ACCOUNT_AND_IP, LOGIN_FAILS_PER_IP, mintResetToken, passwordStamp, readResetToken,
+  REGISTRATIONS_PER_IP, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail,
+} from './password-reset';
 import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
 
 /** Second-step attempts per account within an hour (in memory, per API process). */
@@ -164,6 +167,11 @@ export async function membershipsOf(db: Db, userId: string): Promise<SessionMemb
 export class AuthController {
   private readonly resetPerEmail = new HourlyLimiter(RESET_LIMIT_PER_EMAIL);
   private readonly resetPerIp = new HourlyLimiter(RESET_LIMIT_PER_IP);
+  // Failed logins (in memory, per API process; see password-reset.ts for the limits) and registrations per address.
+  private readonly loginFailsPerAccountAndIp = new HourlyLimiter(LOGIN_FAILS_PER_ACCOUNT_AND_IP);
+  private readonly loginFailsPerIp = new HourlyLimiter(LOGIN_FAILS_PER_IP);
+  private readonly loginFailsPerAccount = new HourlyLimiter(LOGIN_FAILS_PER_ACCOUNT);
+  private readonly registrationsPerIp = new HourlyLimiter(REGISTRATIONS_PER_IP);
 
   constructor(
     private readonly db: DbService,
@@ -178,9 +186,10 @@ export class AuthController {
    */
   @Public()
   @Post('register')
-  async register(@Body() body: { email: string; displayName: string; password: string }) {
+  async register(@Body() body: { email: string; displayName: string; password: string }, @Req() req?: { headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
+    if (req && !this.registrationsPerIp.allow(clientIp(req), Date.now())) return { ok: false, error: 'too-many-attempts' };
     const email = (body.email ?? '').trim().toLowerCase();
     if (!isValidEmail(email)) return { ok: false, error: 'invalid-email' };
     if (!body.displayName?.trim()) return { ok: false, error: 'display-name-required' };
@@ -260,11 +269,23 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  async login(@Body() body: { email: string; password: string }) {
+  async login(@Body() body: { email: string; password: string }, @Req() req?: { headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const email = (body.email ?? '').trim().toLowerCase();
     if (!isValidEmail(email) || typeof body.password !== 'string') return { ok: false, error: 'invalid-credentials' };
+    // Too many failures from here, for this account, or for this account from anywhere: wait (before any password check).
+    const ip = req ? clientIp(req) : 'unknown';
+    const now = Date.now();
+    if (this.loginFailsPerAccountAndIp.full(`${email}|${ip}`, now) || this.loginFailsPerIp.full(ip, now) || this.loginFailsPerAccount.full(email, now)) {
+      return { ok: false, error: 'too-many-attempts' };
+    }
+    const failed = () => {
+      this.loginFailsPerAccountAndIp.allow(`${email}|${ip}`, now);
+      this.loginFailsPerIp.allow(ip, now);
+      this.loginFailsPerAccount.allow(email, now);
+      return { ok: false as const, error: 'invalid-credentials' };
+    };
     const [row] = await db
       .select({
         id: users.id,
@@ -276,10 +297,10 @@ export class AuthController {
       .from(users)
       .innerJoin(user_identities, and(eq(user_identities.user_id, users.id), eq(user_identities.provider, 'password')))
       .where(eq(users.email, email));
-    if (!row) return { ok: false, error: 'invalid-credentials' };
+    if (!row) return failed();
     if (row.status !== 'active') return { ok: false, error: 'account-inactive' };
     const match = row.password_hash ? await bcrypt.compare(body.password, row.password_hash) : false;
-    if (!match) return { ok: false, error: 'invalid-credentials' };
+    if (!match) return failed();
     // Two-step login on: the password only earns a short token for the second step (bound to this password).
     if (!twoFactorOff() && (await twoFactorRow(db, row.id))?.enabled) {
       const challenge = mintResetToken(twoFactorChallengeKey(), row.id, row.password_hash, Math.floor(Date.now() / 1000), TWO_FACTOR_CHALLENGE_SEC);

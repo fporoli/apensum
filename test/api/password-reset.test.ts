@@ -123,3 +123,13 @@ test('requestReset always answers ok and never changes a password', async () => 
   assert.deepEqual(await c.requestReset({}, req), { ok: true });
   assert.equal(updates.length, 0);
 });
+
+test('HourlyLimiter.full checks without counting (failed logins count only when they fail)', () => {
+  const limit = new HourlyLimiter(2);
+  assert.equal(limit.full('k', 0), false);
+  assert.equal(limit.full('k', 0), false, 'checking records nothing');
+  limit.allow('k', 0);
+  limit.allow('k', 1);
+  assert.equal(limit.full('k', 2), true);
+  assert.equal(limit.full('k', 3600_001), false, 'an hour later');
+});
