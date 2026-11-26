@@ -19,7 +19,8 @@ import {
 import { Button } from './Button';
 import type { Session } from './Login';
 import { demoLabel, type DemoPerson } from './demoAccounts';
-import { LOCALES, useT, type Locale } from './i18n';
+import { LOCALES, useI18n, useT, type Locale } from './i18n';
+import { infoUrl } from './infoUrl';
 import AboutDialog from './AboutDialog';
 import AvatarEditor from './AvatarEditor';
 import { TwoFactorPanel } from './TwoFactor';
@@ -32,6 +33,7 @@ import {
   InfoOutlinedIcon,
   LightModeIcon,
   LogoutIcon,
+  PublicIcon,
   SettingsIcon,
   SwapHorizIcon,
   VisibilityIcon,
@@ -64,6 +66,7 @@ interface UserMenuProps {
 
 export default function UserMenu({ session, authHeaders, currentOrgId, canDesign, designMode, onDesignModeChange, onShareScreen, onLogout, demo, onLocaleChange, onSettingsChange }: UserMenuProps) {
   const t = useT();
+  const { locale } = useI18n();
   const { mode, toggleMode } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -180,6 +183,10 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
         <MenuItem onClick={() => { setAnchorEl(null); setAboutOpen(true); }}>
           <ListItemIcon sx={{ minWidth: 32 }}><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
           {t('usermenu.information')}
+        </MenuItem>
+        <MenuItem component="a" href={infoUrl(locale)} target="_blank" rel="noopener" onClick={() => setAnchorEl(null)}>
+          <ListItemIcon sx={{ minWidth: 32 }}><PublicIcon fontSize="small" /></ListItemIcon>
+          {t('usermenu.website')}
         </MenuItem>
         <MenuItem onClick={() => { setAnchorEl(null); toggleMode(); }}>
           <ListItemIcon sx={{ minWidth: 32 }}>
