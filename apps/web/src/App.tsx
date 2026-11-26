@@ -48,6 +48,7 @@ import {
   MenuIcon,
   TimerIcon,
 } from './icons';
+import type { FlowFocus } from './flowRows';
 
 const Assistant = lazy(() => import('./Assistant'));
 
@@ -125,7 +126,7 @@ export default function App() {
   // Navbar counts per section (PageNav.badge).
   const [badges, setBadges] = useState<Record<string, number>>({});
   // A request to open on the Requests page (from a notification).
-  const [requestFocus, setRequestFocus] = useState<string | null>(null);
+  const [flowFocus, setFlowFocus] = useState<FlowFocus | null>(null);
   // Bumped when an organization's modules change, so the permissions (and navbar) reload.
   const [permissionsVersion, setPermissionsVersion] = useState(0);
 
@@ -151,7 +152,7 @@ export default function App() {
     const focusFromHash = () => {
       const [path, query] = window.location.hash.split('?');
       const id = path === '#/requests' || path === '#/flows' ? new URLSearchParams(query ?? '').get('id') : null;
-      if (id) setRequestFocus(id);
+      if (id) setFlowFocus({ source: 'flow', id, at: Date.now() });
     };
     focusFromHash();
     window.addEventListener('hashchange', focusFromHash);
@@ -307,7 +308,11 @@ export default function App() {
   }, [session?.locale]);
 
   function navigateToNotification(n: Notification) {
+    // A step to do: the Flows page on "To do", with that flow open (a free flow or one of an own type by its row,
+    // anything else, an absence or an expense report, by its workflow).
     if (n.type === 'workflow.assigned') {
+      if (n.source_table === 'flows') setFlowFocus({ source: 'flow', id: n.source_table_uuid, tab: 'todo', at: Date.now() });
+      else if (n.workflow_id) setFlowFocus({ source: 'workflow', id: n.workflow_id, tab: 'todo', at: Date.now() });
       navigate('flows');
       return;
     }
@@ -328,7 +333,7 @@ export default function App() {
       return;
     }
     if (n.source_table === 'flows') {
-      setRequestFocus(n.source_table_uuid);
+      setFlowFocus({ source: 'flow', id: n.source_table_uuid, at: Date.now() });
       navigate('flows');
       return;
     }
@@ -493,7 +498,7 @@ export default function App() {
         onWorkTimeChanged: () => setWorkTimeVersion((v) => v + 1),
         projectsVersion,
         onProjectsChanged: () => setProjectsVersion((v) => v + 1),
-        requestFocus,
+        flowFocus,
         liveNotification,
         onModulesChanged: () => setPermissionsVersion((v) => v + 1),
         homeActions: PAGES.filter((p) => p.homeAction && allowed(p.section)).map((p) => ({

@@ -3,7 +3,7 @@
 // flows and flows of the organization's own types (`requests`, opened on the right by Requests.tsx), and the built-in
 // types such as absences, expense reports and timesheets (`workflows/assigned-to-me`, opened by Approvals.tsx). A flow
 // of an own type is a request with a workflow: it is listed once, as the request.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
   Tab, Tabs, TextField,
@@ -15,7 +15,8 @@ import { EmptyState, PageHeader } from './components';
 import { useI18n } from './i18n';
 import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';
-import { flowRows, type FlowRow, type FlowsTab } from './flowRows';
+import { flowRows, type FlowFocus, type FlowRow, type FlowsTab } from './flowRows';
+export type { FlowFocus, FlowsTab } from './flowRows';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -31,8 +32,8 @@ interface FlowsProps {
   authHeaders: () => Promise<Record<string, string>>;
   /** The tab to open on (an old link to the Workflow or Requests page, a notification). */
   initialTab?: FlowsTab;
-  /** A free flow to open (a notification, `#/flows?id=`). */
-  focusId?: string | null;
+  /** A flow to open (a notification, `#/flows?id=`), on its tab when it names one. */
+  focus?: FlowFocus | null;
   refreshKey?: unknown;
   onChanged?: () => void;
   navigate?: (section: string) => void;
@@ -51,13 +52,15 @@ const WORKFLOW_COLOR = { pending: 'warning', approved: 'success', rejected: 'err
 export default function Flows(props: FlowsProps) {
   const { t, locale } = useI18n();
   const { orgId, userId, authHeaders, hasFreeFlows } = props;
-  const [tab, setTab] = useState<FlowsTab>(props.focusId ? 'mine' : props.initialTab ?? (props.canDecide ? 'todo' : 'mine'));
+  // A focus opens its tab; otherwise "To do", which gives way to "Mine" when nothing waits (see the first load below).
+  const [tab, setTab] = useState<FlowsTab>(props.focus ? props.focus.tab ?? 'mine' : props.initialTab ?? 'todo');
+  const chooseTab = useRef(!props.focus && !props.initialTab);
   const [requests, setRequests] = useState<(FlowItem & { box: Box_ })[]>([]);
   const [items, setItems] = useState<ActionItem[]>([]);
   const [types, setTypes] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<{ source: FlowRow['source']; id: string } | null>(props.focusId ? { source: 'flow', id: props.focusId } : null);
+  const [selected, setSelected] = useState<{ source: FlowRow['source']; id: string } | null>(props.focus ? { source: props.focus.source, id: props.focus.id } : null);
   const [typeFilter, setTypeFilter] = useState('');
   const [search, setSearch] = useState('');
   const [composeSignal, setComposeSignal] = useState(0);
@@ -86,8 +89,11 @@ export default function Flows(props: FlowsProps) {
   const shown = TABS[tab];
 
   useEffect(() => {
-    if (props.focusId) setSelected({ source: 'flow', id: props.focusId });
-  }, [props.focusId]);
+    if (!props.focus) return;
+    chooseTab.current = false;
+    if (props.focus.tab) setTab(props.focus.tab);
+    setSelected({ source: props.focus.source, id: props.focus.id });
+  }, [props.focus]);
 
   // The request types' labels (static data `requests`/`flow_type`).
   useEffect(() => {
@@ -114,6 +120,12 @@ export default function Flows(props: FlowsProps) {
         ...(hasFreeFlows ? shown.boxes.map((box) => fetch(`${API}/organizations/${orgId}/flows?box=${box}`, { headers }).then((r) => r.json())) : []),
       ]);
       setItems(Array.isArray(wf) ? wf : []);
+      // Opened without a focus: "To do" stays when something waits there, else "Mine".
+      if (chooseTab.current && tab === 'todo') {
+        chooseTab.current = false;
+        const waiting = (Array.isArray(wf) ? wf.length : 0) + boxes.reduce((n, b) => n + (Array.isArray(b?.flows) ? b.flows.filter((f: FlowItem) => f.status !== 'resolved').length : 0), 0);
+        if (waiting === 0) setTab('mine');
+      }
       setRequests(boxes.flatMap((b, k) => (Array.isArray(b?.flows) ? (b.flows as FlowItem[]).map((r) => ({ ...r, box: shown.boxes[k] })) : [])));
       setError(null);
     } catch {

@@ -51,6 +51,7 @@ const BalanceReport = lazy(() => import('./BalanceReport'));
 const AuditLog = lazy(() => import('./AuditLog'));
 const Users = lazy(() => import('./Users'));
 const Flows = lazy(() => import('./Flows'));
+import type { FlowFocus } from './flowRows';
 const Documents = lazy(() => import('./Documents'));
 const Directory = lazy(() => import('./Directory'));
 const News = lazy(() => import('./News'));
@@ -77,7 +78,8 @@ export interface CorePageContext extends PluginPageContext {
   projectsVersion: number;
   onProjectsChanged: () => void;
   /** A request to open on the Requests page (from a notification or a link). */
-  requestFocus: string | null;
+  /** A flow to open on the Flows page (a notification, `#/flows?id=`). */
+  flowFocus: FlowFocus | null;
   /** Changes when a notification arrives. */
   liveNotification: unknown;
   /** An organization's modules changed: permissions and navbar reload. */
@@ -384,7 +386,7 @@ export const CORE_PAGES: AppPage[] = [
     render: (c) => <WorkflowSettings orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
 
-  { section: 'requests', hash: '#/requests', object: 'nav.flows', render: (c) => flowsPage(c, c.requestFocus ? undefined : 'mine') },
+  { section: 'requests', hash: '#/requests', object: 'nav.flows', render: (c) => flowsPage(c, c.flowFocus ? undefined : 'mine') },
   // personal
   {
     section: 'documents',
@@ -484,7 +486,7 @@ function flowsPage(c: CorePageContext, tab?: 'todo' | 'mine' | 'done') {
       hasFreeFlows={p ? holdsAny(p, 'nav.flows') : true}
       authHeaders={c.authHeaders}
       initialTab={tab}
-      focusId={c.requestFocus}
+      focus={c.flowFocus}
       refreshKey={c.liveNotification}
       onChanged={c.onBadgesChanged}
       navigate={c.navigate}

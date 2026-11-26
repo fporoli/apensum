@@ -819,7 +819,7 @@ export class WorkflowsService {
           assignedToUserId: placed.assignees,
           excludeUserId: callerId,
           type: 'workflow.assigned',
-          title: `A request needs your step: ${next.label}`,
+          title: `A flow needs your step: ${next.label}`,
           sourceTableUuid: workflow.source_table_uuid,
           workflowId: workflow.id,
         }).catch((err) => console.error('notify-assignees-failed', err));

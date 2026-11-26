@@ -5,6 +5,15 @@ import type { Box_, FlowItem } from './FlowDetail';
 
 export type FlowsTab = 'todo' | 'mine' | 'done';
 
+/** A flow to open (a notification, `#/flows?id=`): a row of `flows` or a workflow item (an absence, an expense report,
+ * ...), on its tab when it names one; `at` tells two clicks on the same one apart. */
+export interface FlowFocus {
+  source: 'flow' | 'workflow';
+  id: string;
+  tab?: FlowsTab;
+  at: number;
+}
+
 /** One row of the list, whichever source it comes from. */
 export interface FlowRow {
   source: 'flow' | 'workflow';
