@@ -125,8 +125,8 @@ a:hover { color: var(--brand-strong); }
 .wordmark b { color: var(--ink); font-weight: 750; }
 .menu summary { list-style: none; cursor: pointer; display: none; padding: 8px; border-radius: 8px; color: var(--ink); }
 .menu summary::-webkit-details-marker { display: none; }
-.menu-panel { display: flex; align-items: center; gap: 22px; }
-.nav { display: flex; gap: 22px; }
+.menu-panel { display: flex; align-items: center; gap: 18px; }
+.nav { display: flex; gap: 18px; }
 .nav a { color: var(--text); text-decoration: none; font-weight: 500; white-space: nowrap; }
 .nav a:hover, .nav a[aria-current] { color: var(--brand); }
 /* Modules submenu: opens on hover or keyboard focus (no JavaScript). */
@@ -152,9 +152,14 @@ a:hover { color: var(--brand-strong); }
 .langs a { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-decoration: none; padding: 3px 7px; border-radius: 6px; }
 .langs a span { display: none; }
 .langs a[aria-current] { background: var(--brand-soft); color: var(--brand); }
-.header-actions { display: flex; gap: 10px; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+/* The buttons never wrap ("Log in" on two lines in English and French). */
+.header-actions .btn { white-space: nowrap; }
+/* The header may be wider than the pages' content: the menu, the languages and two buttons need about 1260px
+   in French, the longest language; below 1320px the small-screen menu takes over. */
+.site-header .wrap { max-width: 1400px; }
 .menu { display: none; }
-@media (max-width: 1140px) {
+@media (max-width: 1320px) {
   .menu-panel.bar { display: none; }
   .menu { display: block; }
   .menu summary { display: inline-flex; }
