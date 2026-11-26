@@ -248,3 +248,31 @@ test('news posts: the News page loads them from the API with news.js; nothing wi
     rmSync(out, { recursive: true, force: true });
   }
 });
+
+test('structured data: who runs the site on every page, the website and the application on the home page', () => {
+  const out = mkdtempSync(join(tmpdir(), 'apensum-site-'));
+  try {
+    build({ outDir: out, config: fullConfig, log: { warn() {} } });
+    const ld = (lang, page) => {
+      const html = readFileSync(join(out, pagePath(DICTS, lang, page), 'index.html'), 'utf8');
+      const m = html.match(/<script type="application\/ld\+json">(.*?)<\/script>/s);
+      assert.ok(m, `${lang} ${page}: no JSON-LD`);
+      return JSON.parse(m[1])['@graph'];
+    };
+    for (const lang of LANGS) {
+      const home = ld(lang, 'home');
+      assert.deepEqual(home.map((x) => x['@type']), ['Organization', 'WebSite', 'SoftwareApplication']);
+      const app = home[2];
+      assert.equal(app.offers.price, '0');
+      assert.equal(app.offers.priceCurrency, 'CHF');
+      assert.equal(app.operatingSystem, 'Web');
+      assert.ok(app.description.length > 50);
+      // Nothing the site does not say: no ratings, no street, no phone.
+      const text = JSON.stringify(home);
+      assert.doesNotMatch(text, /aggregateRating|review|telephone|streetAddress/);
+      assert.deepEqual(ld(lang, 'pricing').map((x) => x['@type']), ['Organization']);
+    }
+  } finally {
+    rmSync(out, { recursive: true, force: true });
+  }
+});

@@ -182,6 +182,52 @@ function footer(ctx) {
 </footer>`;
 }
 
+/**
+ * Structured data for search engines (schema.org as JSON-LD): who runs the site on every page, and on the home page the
+ * website and the application. Only what the site says elsewhere too: no ratings, no street (the legal notice has it),
+ * no phone (shown only on a click). `</` is escaped so the JSON can't end its script element.
+ */
+export function structuredData(ctx, description) {
+  const { lang, page, config, t } = ctx;
+  const origin = `https://${config.domain}`;
+  const organization = {
+    '@type': 'Organization',
+    '@id': `${origin}/#organization`,
+    name: 'Apensum',
+    url: `${origin}/`,
+    logo: `${origin}/brand/apensum-logo-512.png`,
+    email: config.email,
+    address: { '@type': 'PostalAddress', addressLocality: 'Stein am Rhein', addressRegion: 'SH', addressCountry: 'CH' },
+    ...(config.sourceUrl ? { sameAs: [config.sourceUrl] } : {}),
+  };
+  const graph = [organization];
+  if (page === 'home') {
+    graph.push({
+      '@type': 'WebSite',
+      '@id': `${origin}/#website`,
+      name: 'Apensum',
+      url: `${origin}/`,
+      inLanguage: LANGS.map((l) => LOCALES[l]),
+      publisher: { '@id': `${origin}/#organization` },
+    });
+    graph.push({
+      '@type': 'SoftwareApplication',
+      name: 'Apensum',
+      url: `${origin}${ctx.pathIn(lang)}`,
+      description,
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      inLanguage: LANGS.map((l) => LOCALES[l]),
+      isAccessibleForFree: true,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'CHF', description: t('pricing.lead') },
+      ...(config.sourceUrl ? { license: 'https://www.gnu.org/licenses/agpl-3.0.html', codeRepository: config.sourceUrl } : {}),
+      publisher: { '@id': `${origin}/#organization` },
+    });
+  }
+  const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
+  return `<script type="application/ld+json">${json}</script>`;
+}
+
 /** A full HTML document. `alternates` maps language -> path of this page. */
 export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false, news = false }) {
   const { lang, page, config, assets, t } = ctx;
@@ -213,6 +259,7 @@ export function layout(ctx, { title, description, body, noindex = false, reveal 
   ${form ? `<script src="${assets.contact}" defer></script>` : ''}
   ${news ? `<script src="${assets.news}" defer></script>` : ''}
   ${news || body.includes('class="shot') ? `<script src="${assets.zoom}" data-close="${t('shot.close')}" defer></script>` : ''}
+  ${noindex ? '' : structuredData(ctx, description)}
 </head>
 <body>
   <a class="skip" href="#main">${t('nav.skip')}</a>
