@@ -12,10 +12,15 @@ import { ProjectsController } from './projects.controller';
 import { FlowsController, REQUEST_STATUSES } from './flows.controller';
 import { WorkTimeController } from './work-time.controller';
 import { WorkflowsController } from './workflows.controller';
+import { TimesheetsController } from './timesheets.controller';
+import { ProjectTimesheetsController } from './project-timesheets.controller';
+import { TeamOverviewController } from './team-overview.controller';
+import { DirectoryController } from './directory.controller';
 
 /**
  * The core's assistant tools (assistant-tools.ts): working time, project time, absences, balances,
- * approvals and requests. Each calls the page's controller method as the caller.
+ * approvals and requests, the monthly report and the project timesheet, the team calendar and the directory.
+ * Each calls the page's controller method as the caller.
  */
 
 type Args = Record<string, unknown>;
@@ -534,12 +539,152 @@ const flowsStatus: AssistantTool = {
   },
 };
 
+// ---- Monthly report (working time) and project timesheet ----
+
+const monthArg = { month: { type: 'string', description: 'YYYY-MM (default: last month)' } };
+/** The month asked for, else the one before today's (the month people usually submit). */
+function monthOf(args: Args, ctx: AssistantToolContext): string | { error: string } {
+  if (args.month !== undefined) return typeof args.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(args.month) ? args.month : { error: 'month must be YYYY-MM' };
+  const [y, m] = ctx.today.split('-').map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
+const timesheetStatus: AssistantTool = {
+  name: 'timesheet_status',
+  object: 'nav.timesheet',
+  description: "MONTHLY REPORT (working time, Monatsrapport): whether the user's month (or a colleague's they may see) is open, submitted, approved or rejected; without a month, the last months.",
+  parameters: { type: 'object', properties: { month: { type: 'string', description: 'YYYY-MM (optional)' }, ...person } },
+  async run(args, ctx) {
+    const who = await target(args, ctx);
+    if ('error' in who) return { data: who };
+    const rows = await ctx.get(TimesheetsController).list(ctx.orgId, ctx.req, who.id === ctx.callerId ? undefined : who.id) as {
+      user_id: string; period_start: string; status: string; submitted_at: string | null; reviewed_at: string | null; review_note: string | null;
+    }[];
+    const own = rows.filter((r) => r.user_id === who.id);
+    const month = typeof args.month === 'string' && /^\d{4}-\d{2}$/.test(args.month) ? args.month : null;
+    const periods = (month ? own.filter((r) => r.period_start.startsWith(month)) : own.slice(0, 6))
+      .map((r) => ({ month: r.period_start.slice(0, 7), status: r.status, submittedAt: r.submitted_at, reviewedAt: r.reviewed_at, reviewNote: r.review_note }));
+    return { data: { person: who.name ?? 'you', periods, ...(month && periods.length === 0 ? { note: 'not submitted yet (open)' } : {}) } };
+  },
+};
+
+const timesheetSubmit: AssistantTool = {
+  name: 'timesheet_submit',
+  object: 'nav.timesheet',
+  description: "MONTHLY REPORT: submit the user's own working-time month to their manager (it then closes the month's balance when approved). Only the user's own; ask before submitting.",
+  parameters: { type: 'object', properties: { ...monthArg, note: { type: 'string' } } },
+  async run(args, ctx) {
+    const month = monthOf(args, ctx);
+    if (typeof month !== 'string') return { data: month };
+    const res = await ctx.get(TimesheetsController).submit(ctx.orgId, { periodStart: `${month}-01`, note: str(args.note) }, ctx.req) as { ok: boolean; error?: string; autoApproved?: boolean };
+    return { data: res, action: res.ok ? `Monthly report ${month} submitted.` : undefined };
+  },
+};
+
+const projectTimesheetStatus: AssistantTool = {
+  name: 'project_timesheet_status',
+  object: 'nav.time',
+  description: "PROJECT TIMESHEET (project time per project and month, Projektrapport): the user's (or a colleague's) hours per project in a month and each project month's status (open, submitted, approved, rejected).",
+  parameters: { type: 'object', properties: { ...monthArg, ...person } },
+  async run(args, ctx) {
+    const month = monthOf(args, ctx);
+    if (typeof month !== 'string') return { data: month };
+    const who = await target(args, ctx);
+    if ('error' in who) return { data: who };
+    const res = await ctx.get(ProjectTimesheetsController).month(ctx.orgId, ctx.req, month, who.id === ctx.callerId ? undefined : who.id) as {
+      ok: boolean; error?: string; projects?: { project_name: string | null; owner_name: string | null; minutes: number; period: { status: string; review_note: string | null } | null }[];
+      unassigned?: { minutes: number; entries: number };
+    };
+    if (!res.ok) return { data: res };
+    return {
+      data: {
+        person: who.name ?? 'you', month,
+        projects: (res.projects ?? []).map((p) => ({ project: p.project_name, owner: p.owner_name, hours: hours(Number(p.minutes)), status: p.period?.status ?? 'open', reviewNote: p.period?.review_note ?? null })),
+        withoutProject: res.unassigned && res.unassigned.entries > 0 ? { hours: hours(res.unassigned.minutes), entries: res.unassigned.entries } : null,
+      },
+    };
+  },
+};
+
+const projectTimesheetSubmit: AssistantTool = {
+  name: 'project_timesheet_submit',
+  object: 'nav.time',
+  description: "PROJECT TIMESHEET: submit the user's own project time of a month, each project to its owner (hours without a project block it). Only the user's own; ask before submitting.",
+  parameters: { type: 'object', properties: { ...monthArg, note: { type: 'string' } } },
+  async run(args, ctx) {
+    const month = monthOf(args, ctx);
+    if (typeof month !== 'string') return { data: month };
+    const res = await ctx.get(ProjectTimesheetsController).submit(ctx.orgId, { periodStart: `${month}-01`, note: str(args.note) }, ctx.req) as { ok: boolean; error?: string };
+    return { data: res, action: res.ok ? `Project timesheet ${month} submitted.` : undefined };
+  },
+};
+
+// ---- Team calendar and directory ----
+
+const calendarAbsences: AssistantTool = {
+  name: 'calendar_absences',
+  object: 'nav.calendar',
+  description: 'TEAM CALENDAR: who of the people the user may see (their reporting line, or everyone for HR) is absent on which days of a period, with the type, as the Calendar page shows it.',
+  parameters: { type: 'object', properties: { ...dateRange } },
+  async run(args, ctx) {
+    const fromDay = isIsoDay(args.from) ? args.from : ctx.today;
+    const toDay = isIsoDay(args.to) ? args.to : fromDay;
+    if (toDay < fromDay) return { data: { error: '"to" is before "from"' } };
+    const names = new Map<string, string>();
+    const absences: { person: string; from: string; to: string; type: string; halfDay: boolean; status: string }[] = [];
+    const seen = new Set<string>();
+    // One month at a time, as the page loads it.
+    for (let m = fromDay.slice(0, 7); m <= toDay.slice(0, 7); m = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 1)).toISOString().slice(0, 7)) {
+      const res = await ctx.get(TeamOverviewController).overview(ctx.orgId, ctx.req, 'absences', m) as {
+        ok: boolean; error?: string; people?: { id: string; name: string | null; email: string }[];
+        absences?: { id: string; user_id: string; date_start: string; date_end: string; status: string; absence_type: string; half_day: boolean }[];
+      };
+      if (!res.ok) return { data: res };
+      for (const p of res.people ?? []) names.set(p.id, p.name ?? p.email);
+      for (const a of res.absences ?? []) {
+        // An absence over a month's end comes with both months: once.
+        if (a.status === 'rejected' || a.date_end < fromDay || a.date_start > toDay || seen.has(a.id)) continue;
+        seen.add(a.id);
+        absences.push({ person: names.get(a.user_id) ?? '?', from: a.date_start, to: a.date_end, type: a.absence_type, halfDay: a.half_day, status: a.status });
+      }
+    }
+    if (names.size === 0) return { data: { note: 'The user sees nobody else in the calendar (no reporting line); their own absences: absences_list.' } };
+    return { data: { from: fromDay, to: toDay, absences } };
+  },
+};
+
+const directoryFind: AssistantTool = {
+  name: 'directory_find',
+  object: 'nav.directory',
+  description: "DIRECTORY: colleagues by name, department, function or location, with e-mail, phone, function, department, manager and whether they are checked in or absent today (never why). For 'how do I reach X', 'who leads Y'.",
+  parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words to look for (name, department, function, location); empty = everyone' } } },
+  async run(args, ctx) {
+    const res = await ctx.get(DirectoryController).list(ctx.orgId, ctx.req) as {
+      ok: boolean; error?: string; people?: { name: string; email: string; phone: string | null; position: string | null; department: string | null; location: string | null; managerName: string | null; status: string; absentUntil: string | null }[];
+    };
+    if (!res.ok) return { data: res };
+    const words = (str(args.query) ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+    const found = (res.people ?? []).filter((p) => words.every((w) => [p.name, p.email, p.position, p.department, p.location].some((v) => (v ?? '').toLowerCase().includes(w))));
+    return {
+      data: {
+        count: found.length,
+        people: found.slice(0, 25).map((p) => ({
+          name: p.name, email: p.email, phone: p.phone, function: p.position, department: p.department, location: p.location, manager: p.managerName,
+          today: p.status === 'absent' ? `absent until ${p.absentUntil}` : p.status === 'checkedIn' ? 'checked in' : null,
+        })),
+      },
+    };
+  },
+};
+
 export const CORE_ASSISTANT_TOOLS: AssistantTool[] = [
   workTimeList, workTimeAdd, workTimeCheckIn, workTimeCheckOut, workTimeDelete,
   projectsList, projectTimeList, projectTimeAdd, projectTimeDelete, teamHours,
   absencesList, absencesTypes, absencesRequest, absencesCancel, balancesGet,
   approvalsList, approvalsDecide,
   flowsList, flowsGet, flowsCreate, flowsReply, flowsStatus,
+  timesheetStatus, timesheetSubmit, projectTimesheetStatus, projectTimesheetSubmit,
+  calendarAbsences, directoryFind,
 ];
 
 /** Registers the core's tools (AssistantService does at start). */

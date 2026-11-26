@@ -12,8 +12,10 @@ export const notesInNotes = notes.table("notes", {
 	user_id: uuid().notNull(),
 	text: text().notNull(),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	shared_with: uuid().array().default(sql`'{}'`).notNull(),
 }, (table) => [
 	index("idx_notes_owner").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.created_at.desc().nullsFirst()),
+	index("idx_notes_shared_with").using("gin", table.shared_with.asc().nullsLast()),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],

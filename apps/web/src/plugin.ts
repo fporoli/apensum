@@ -255,6 +255,7 @@ export * from './icons';
 export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, type Attachment } from './attachments';
 export { currencyOptions, type CurrencyOption } from './currencyOptions';
 export { SectionPaper } from './SettingsSection';
+export { MarkdownHelp, MarkdownView, markdownHtml } from './MarkdownView';
 export { default as TeamView, DetailTable as TeamDetailTable, StatusChip } from './TeamView';
 export { totalsByCurrency } from './teamOverview';
 // A person's week (project time against attendance and target) and balances, as on the core's pages.

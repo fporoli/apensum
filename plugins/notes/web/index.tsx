@@ -9,6 +9,8 @@ const Notes = lazy(() => import('./Notes'));
 export default defineWebPlugin({
   id: 'notes',
   texts: NOTES_TEXTS,
+  // A note shared with someone: the bell opens the Notes page.
+  notificationSections: { 'notes.notes': 'notes' },
   pages: [
     {
       section: 'notes',

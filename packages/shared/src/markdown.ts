@@ -2,9 +2,9 @@
  * A small Markdown subset to HTML, shared by the website's news posts (apps/site), the app's News
  * page and the news mails, so a post looks the same everywhere.
  *
- * Supported: `##` / `###` headings, paragraphs, `-` and `1.` lists (an indented line continues an
- * item), `>` quotes, a picture alone on its line (a figure), `**bold**`, `*italic*`, `` `code` ``,
- * `[links](url)` and `![pictures](src)`. Everything else is text: every character is escaped, so
+ * Supported: `#` / `##` / `###` headings, paragraphs, `-` / `*` and `1.` / `1)` lists (an indented line continues an
+ * item), `>` quotes, a picture alone on its line (a figure), `**bold**`, `*italic*`, `~~struck~~`, `` `code` ``,
+ * `[links](url)` and `![pictures](src)`; read line by line, so a heading, list or quote needs no empty line before it. Everything else is text: every character is escaped, so
  * the output is safe to put into a page as HTML.
  *
  * The caller decides what pictures and links become (`image(src, alt)`, `link(href, label)`; both get
@@ -42,6 +42,7 @@ function inline(text: string, opts: MarkdownOptions): string {
   s = escapeHtml(s);
   s = s.replace(IMAGE_MD, (_, alt: string, src: string) => opts.image(src, alt));
   s = s.replace(LINK_MD, (_, label: string, href: string) => opts.link(href, label));
+  s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>');
   return s.replace(/\u0000(\d+)\u0000/g, (_, i: string) => `<code>${escapeHtml(codes[Number(i)])}</code>`);
 }
@@ -56,27 +57,61 @@ function joinItems(lines: string[], marker: RegExp): string[] {
   return items;
 }
 
+const HEADING = /^(#{1,3})\s+(.*)$/;
+const BULLET = /^\s*[-*]\s+/;
+const NUMBERED = /^\s*\d+[.)]\s+/;
+const FIGURE = /^!\[[^\]]*\]\([^)\s]+\)$/;
+
+/**
+ * Line by line, as editors show Markdown: a heading, a list or a quote starts where its line starts, also right after a
+ * line of text (no empty line needed); an empty line ends a paragraph, a list or a quote. `#` and `##` are the same
+ * heading (the page has its own title), `###` the smaller one; a list item goes on in a line indented by two spaces.
+ */
 export function renderMarkdown(md: string, opts: MarkdownOptions): string {
   const out: string[] = [];
-  const text = md.replace(/\r\n/g, '\n').trim();
-  if (!text) return '';
-  for (const block of text.split(/\n{2,}/)) {
-    const lines = block.split('\n');
-    const h = /^(#{2,3})\s+(.*)$/.exec(block);
-    if (h && lines.length === 1) {
-      out.push(`<h${h[1].length}>${inline(h[2], opts)}</h${h[1].length}>`);
-    } else if (/^\s*[-*]\s+/.test(lines[0]) && lines.every((l) => /^\s*[-*]\s+/.test(l) || /^\s{2,}\S/.test(l))) {
-      out.push(`<ul>${joinItems(lines, /^\s*[-*]\s+/).map((i) => `<li>${inline(i, opts)}</li>`).join('')}</ul>`);
-    } else if (/^\s*\d+\.\s+/.test(lines[0]) && lines.every((l) => /^\s*\d+\.\s+/.test(l) || /^\s{2,}\S/.test(l))) {
-      out.push(`<ol>${joinItems(lines, /^\s*\d+\.\s+/).map((i) => `<li>${inline(i, opts)}</li>`).join('')}</ol>`);
-    } else if (lines.every((l) => l.startsWith('>'))) {
-      out.push(`<blockquote><p>${inline(lines.map((l) => l.replace(/^>\s?/, '')).join(' '), opts)}</p></blockquote>`);
-    } else if (/^!\[[^\]]*\]\([^)\s]+\)$/.test(block.trim())) {
-      out.push(`<figure>${inline(block.trim(), opts)}</figure>`);
-    } else {
-      out.push(`<p>${lines.map((l) => inline(l, opts)).join('<br>')}</p>`);
+  const lines = md.replace(/\r\n/g, '\n').trim().split('\n');
+  if (!lines.join('').trim()) return '';
+  let para: string[] = [];
+  const flush = () => {
+    if (para.length) out.push(`<p>${para.map((l) => inline(l, opts)).join('<br>')}</p>`);
+    para = [];
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.trim()) { flush(); continue; }
+    const h = HEADING.exec(line.trim());
+    if (h) {
+      flush();
+      const level = h[1].length === 3 ? 3 : 2;
+      out.push(`<h${level}>${inline(h[2], opts)}</h${level}>`);
+      continue;
     }
+    const list = BULLET.test(line) ? { tag: 'ul', marker: BULLET } : NUMBERED.test(line) ? { tag: 'ol', marker: NUMBERED } : null;
+    if (list) {
+      flush();
+      // The items of this kind, each with the indented lines that go on with it.
+      const items: string[] = [];
+      while (i < lines.length && (list.marker.test(lines[i]) || (items.length > 0 && /^\s{2,}\S/.test(lines[i])))) items.push(lines[i++]);
+      i--;
+      out.push(`<${list.tag}>${joinItems(items, list.marker).map((it) => `<li>${inline(it, opts)}</li>`).join('')}</${list.tag}>`);
+      continue;
+    }
+    if (line.startsWith('>')) {
+      flush();
+      const quoted: string[] = [];
+      while (i < lines.length && lines[i].startsWith('>')) quoted.push(lines[i++].replace(/^>\s?/, ''));
+      i--;
+      out.push(`<blockquote><p>${inline(quoted.join(' '), opts)}</p></blockquote>`);
+      continue;
+    }
+    // A picture alone on its line, with nothing around it in its paragraph: a figure.
+    if (FIGURE.test(line.trim()) && para.length === 0 && !(lines[i + 1] ?? '').trim()) {
+      out.push(`<figure>${inline(line.trim(), opts)}</figure>`);
+      continue;
+    }
+    para.push(line);
   }
+  flush();
   return out.join('\n');
 }
 
@@ -91,9 +126,9 @@ export function markdownPlain(md: string): string {
     .replace(IMAGE_MD, '')
     .replace(LINK_MD, '$1')
     .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^\s*([-*]|\d+\.)\s+/gm, '')
+    .replace(/^\s*([-*]|\d+[.)])\s+/gm, '')
     .replace(/^>\s?/gm, '')
-    .replace(/\*\*|\*|`/g, '')
+    .replace(/\*\*|\*|`|~~/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }

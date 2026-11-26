@@ -258,7 +258,9 @@ plugin's own controller method as the caller, `ctx.get(MyController).create(ctx.
 so the endpoint's checks run unchanged; it returns `{ data, action? }` (`data` goes to the model,
 `action` is a line in the "done" list). `ctx` also has `today`, `timeZone`, `instant(date, 'HH:MM')`,
 `local(iso)`, `findPerson(name)` and `findProject(name)`. Never read or write the database around the
-controller's checks. `plugins/expenses/api/assistant-tools.ts` does it.
+controller's checks. `plugins/notes/api/assistant-tools.ts` is the short example (list, add, delete one's notes);
+`plugins/expenses/api/assistant-tools.ts`, `roster`, `billing`, `hrplus` and `hr` have their own.
+Leave out what must not reach the model: the cases module (end-to-end encrypted) and the reporting office have no tools.
 
 Everything a plugin adds to the API is declared in `defineApiPlugin`, so its `api/index.ts` shows all of
 it; the core registers it at startup (`plugins.ts`, `plugin-registrar.ts`). A plugin calls no
