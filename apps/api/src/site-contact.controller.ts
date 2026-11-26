@@ -2,6 +2,7 @@ import { Body, Controller, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Public } from './jwt.guard';
 import { sendMail, type MailOptions } from './mailer';
+import { pushToOperator, type OperatorPush } from './operator-push';
 import { isValidEmail } from './auth.controller';
 import { clientIp } from './client-ip';
 
@@ -57,6 +58,13 @@ export function safeBackPath(path: unknown): string {
 const oneLine = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/[\r\n\t]+/g, ' ').trim().slice(0, max) : '');
 
 /** Checks the fields; null when the form is not usable. */
+/** The hint on the operator's phone about a message: its topic only (one of CONTACT_TOPICS). */
+export function contactPush(topicKey: unknown): OperatorPush {
+  const key = oneLine(topicKey, 20);
+  const topic = Object.hasOwn(CONTACT_TOPICS, key) ? CONTACT_TOPICS[key] : CONTACT_TOPICS.general;
+  return { title: 'Neue Nachricht über die Website', message: `Thema: ${topic}. Die Nachricht ist in der Mailbox.`, tags: ['incoming_envelope'], priority: 4 };
+}
+
 export function contactMail(form: ContactForm, to: string): MailOptions | null {
   const name = oneLine(form.name, 120);
   const email = oneLine(form.email, 200);
@@ -114,6 +122,8 @@ export function spamReason(form: ContactForm): string | null {
 export class SiteContactController {
   /** Replaceable in tests. */
   send: (mail: MailOptions) => Promise<void> = (mail) => sendMail(mail, 10_000);
+  /** The hint on the operator's phone (operator-push.ts); replaceable in tests. */
+  push: (push: OperatorPush) => Promise<boolean> = (push) => pushToOperator(push);
   now: () => number = () => Date.now();
   private readonly perIp = new Map<string, number[]>();
   private sentToday: number[] = [];
@@ -152,6 +162,8 @@ export class SiteContactController {
     try {
       await this.send(mail);
       done();
+      // Only the topic (a fixed list), never who wrote or what: the push leaves Switzerland.
+      void this.push(contactPush(form?.topic));
     } catch {
       done('mail-failed');
     }

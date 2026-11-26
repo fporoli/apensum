@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import type { Executor } from './access';
 import { sendMail } from './mailer';
+import { pushToOperator } from './operator-push';
+import { appBaseUrl } from './app-url';
 import type { NotificationsService } from './notifications.service';
 
 /**
@@ -54,6 +56,8 @@ export async function noticeRegistration(db: Executor, notifications: Notificati
       SELECT u.id, u.email::text AS email, u.locale FROM organization_memberships m JOIN users u ON u.id = m.user_id
       WHERE m.organization_id = ${OPERATOR_ORG_ID} AND m.status = 'active' AND u.status = 'active'`)
   ).rows as { id: string; email: string; locale: string | null }[];
+  // On the operator's phone too (operator-push.ts): that someone registered, not who.
+  void pushToOperator({ title: 'Neue Registrierung', message: 'Eine neue Organisation hat sich bei Apensum registriert.', click: appBaseUrl(), tags: ['tada'] });
   if (!operators.length) return;
   for (const o of operators) {
     const mail = registrationMail(o.locale, r, at);

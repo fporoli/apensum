@@ -5,6 +5,7 @@ import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { DbService } from './db.service';
 import { DOCUMENTS_ROOT } from './documents.service';
 import { lastSmtpStatus, sendMail } from './mailer';
+import { pushToOperator } from './operator-push';
 import { NotificationsService } from './notifications.service';
 
 /**
@@ -106,6 +107,8 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async tell(f: Finding) {
+    // On the operator's phone too (operator-push.ts), also when the mail relay is what fails.
+    void pushToOperator({ title: f.text.de.split(':')[0].replace(/\.$/, ''), message: f.text.de, tags: ['warning'], priority: 4 });
     const db = this.db.getDb();
     if (!db) return;
     const operators = (

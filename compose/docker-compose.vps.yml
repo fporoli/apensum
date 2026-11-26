@@ -162,6 +162,8 @@ services:
       # (empty = apensum.ch, www.apensum.ch) and the address it mails (empty = info@apensum.ch).
       CONTACT_SITE_ORIGINS: ${CONTACT_SITE_ORIGINS:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      # Hints on the operator's phone through ntfy (operator-push.ts); empty = none.
+      NTFY_TOPIC_URL: ${NTFY_TOPIC_URL:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       mailpit: { condition: service_started }
