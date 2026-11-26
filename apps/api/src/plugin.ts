@@ -135,6 +135,8 @@ export { NotificationsService } from './notifications.service';
 export type { NoticeText, NoticeValue } from './notification-text';
 export { sendMail, type MailOptions } from './mailer';
 export { appBaseUrl } from './app-url';
+/** The client's address behind the edge proxy (for limits; never store it with a record). */
+export { clientIp } from './client-ip';
 
 // Who records no working time in a period (no working-time timesheet to wait for).
 export { notRecordingUserIds } from './time-recording';

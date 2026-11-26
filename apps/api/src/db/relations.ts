@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { users, user_identities, organizations, organization_domains, organization_memberships, roles, organization_invitations, audit_logs, teams, projects, project_times, subprojects, timesheet_periods, versions, workflow_definitions, static_data, workflows, notifications, work_time_balance_entries, work_times, documents, absences, basicdata_versions, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, exchange_rates, ai_usage, news_posts, balance_years, assistant_prompts, user_two_factor, personnel_documents, permissions, role_permissions, project_teams, news_post_departments, news_post_documents, flow_message_documents, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads, work_time_balances } from "./schema";
+import { users, user_identities, organizations, organization_domains, organization_memberships, roles, organization_invitations, audit_logs, teams, projects, project_times, subprojects, timesheet_periods, versions, workflow_definitions, static_data, workflows, notifications, work_time_balance_entries, work_times, documents, absences, basicdata_versions, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, exchange_rates, ai_usage, news_posts, balance_years, assistant_prompts, user_two_factor, personnel_documents, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads, work_time_balances } from "./schema";
 
 export const user_identitiesRelations = relations(user_identities, ({one}) => ({
 	user: one(users, {
@@ -405,8 +405,6 @@ export const documentsRelations = relations(documents, ({one, many}) => ({
 	timesheet_documents: many(timesheet_documents),
 	report_runs: many(report_runs),
 	personnel_documents: many(personnel_documents),
-	news_post_documents: many(news_post_documents),
-	flow_message_documents: many(flow_message_documents),
 }));
 
 export const absencesRelations = relations(absences, ({one}) => ({
@@ -562,7 +560,6 @@ export const departmentsRelations = relations(departments, ({one, many}) => ({
 	}),
 	employee_assignments: many(employee_assignments),
 	flows: many(flows),
-	news_post_departments: many(news_post_departments),
 }));
 
 export const employee_assignmentsRelations = relations(employee_assignments, ({one}) => ({
@@ -609,7 +606,7 @@ export const timesheet_documentsRelations = relations(timesheet_documents, ({one
 	}),
 }));
 
-export const flow_messagesRelations = relations(flow_messages, ({one, many}) => ({
+export const flow_messagesRelations = relations(flow_messages, ({one}) => ({
 	user: one(users, {
 		fields: [flow_messages.author_user_id],
 		references: [users.id]
@@ -618,7 +615,6 @@ export const flow_messagesRelations = relations(flow_messages, ({one, many}) => 
 		fields: [flow_messages.flow_id],
 		references: [flows.id]
 	}),
-	flow_message_documents: many(flow_message_documents),
 }));
 
 export const flowsRelations = relations(flows, ({one, many}) => ({
@@ -713,8 +709,6 @@ export const news_postsRelations = relations(news_posts, ({one, many}) => ({
 		fields: [news_posts.organization_id],
 		references: [organizations.id]
 	}),
-	news_post_departments: many(news_post_departments),
-	news_post_documents: many(news_post_documents),
 	newsletter_deliveries: many(newsletter_deliveries),
 	news_post_reads: many(news_post_reads),
 }));
@@ -798,39 +792,6 @@ export const project_teamsRelations = relations(project_teams, ({one}) => ({
 	team: one(teams, {
 		fields: [project_teams.team_id],
 		references: [teams.id]
-	}),
-}));
-
-export const news_post_departmentsRelations = relations(news_post_departments, ({one}) => ({
-	department: one(departments, {
-		fields: [news_post_departments.department_id],
-		references: [departments.id]
-	}),
-	news_post: one(news_posts, {
-		fields: [news_post_departments.post_id],
-		references: [news_posts.id]
-	}),
-}));
-
-export const news_post_documentsRelations = relations(news_post_documents, ({one}) => ({
-	document: one(documents, {
-		fields: [news_post_documents.document_id],
-		references: [documents.id]
-	}),
-	news_post: one(news_posts, {
-		fields: [news_post_documents.post_id],
-		references: [news_posts.id]
-	}),
-}));
-
-export const flow_message_documentsRelations = relations(flow_message_documents, ({one}) => ({
-	document: one(documents, {
-		fields: [flow_message_documents.document_id],
-		references: [documents.id]
-	}),
-	flow_message: one(flow_messages, {
-		fields: [flow_message_documents.message_id],
-		references: [flow_messages.id]
 	}),
 }));
 

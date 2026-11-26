@@ -281,10 +281,8 @@ export class FlowsController {
         sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body) VALUES (${r.id}, ${authorId}, 'message', ${text}) RETURNING id`,
       )
     ).rows as { id: string }[];
-    for (const file of files) {
-      const documentId = await this.documents.upload(db, r.organization_id, authorId, file, { table: 'flow_messages', id: message.id });
-      await db.execute(sql`INSERT INTO flow_message_documents (message_id, document_id) VALUES (${message.id}, ${documentId})`);
-    }
+    // The document names its message (source_table/source_table_id): that is the link.
+    for (const file of files) await this.documents.upload(db, r.organization_id, authorId, file, { table: 'flow_messages', id: message.id });
     return message.id;
   }
 
@@ -445,9 +443,8 @@ export class FlowsController {
     ).rows;
     const files = (
       await db.execute(
-        sql`SELECT md.message_id, d.id, d.file_name, d.mime_type, d.size_bytes
-            FROM flow_message_documents md JOIN documents d ON d.id = md.document_id
-            JOIN flow_messages m ON m.id = md.message_id
+        sql`SELECT m.id AS message_id, d.id, d.file_name, d.mime_type, d.size_bytes
+            FROM documents d JOIN flow_messages m ON d.source_table = 'flow_messages' AND m.id = d.source_table_id
             WHERE m.flow_id = ${id} ORDER BY d.file_name`,
       )
     ).rows as { message_id: string; id: string; file_name: string; mime_type: string; size_bytes: number }[];
@@ -778,8 +775,8 @@ export class FlowsController {
       return;
     }
     const linked = await db.execute(
-      sql`SELECT 1 FROM flow_message_documents md JOIN flow_messages m ON m.id = md.message_id
-          WHERE md.document_id = ${documentId} AND m.flow_id = ${id}`,
+      sql`SELECT 1 FROM documents d JOIN flow_messages m ON d.source_table = 'flow_messages' AND m.id = d.source_table_id
+          WHERE d.id = ${documentId} AND m.flow_id = ${id}`,
     );
     const doc = linked.rows.length > 0 ? await this.documents.get(db, documentId) : undefined;
     if (!doc) {

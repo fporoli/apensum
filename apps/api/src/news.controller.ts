@@ -53,9 +53,9 @@ function currentAssignments(orgId: string): SQL {
 
 /** SQL condition over `p` (news_posts): the post's audience includes `userId`. */
 function inAudience(orgId: string, userId: string): SQL {
-  return sql`(NOT EXISTS (SELECT 1 FROM news_post_departments pd WHERE pd.post_id = p.id)
-    OR EXISTS (SELECT 1 FROM news_post_departments pd JOIN departments d ON d.id = pd.department_id
-               WHERE pd.post_id = p.id AND (d.leader_user_id = ${userId}
+  return sql`(cardinality(p.department_ids) = 0
+    OR EXISTS (SELECT 1 FROM departments d
+               WHERE d.id = ANY(p.department_ids) AND (d.leader_user_id = ${userId}
                  OR d.id = (SELECT department_id FROM (${currentAssignments(orgId)}) a WHERE a.user_id = ${userId}))))`;
 }
 
@@ -200,10 +200,10 @@ export class NewsController {
         sql`SELECT u.id, coalesce(nullif(u.display_name, ''), u.email) AS name, u.email, u.locale
             FROM organization_memberships m JOIN users u ON u.id = m.user_id, news_posts p
             WHERE m.organization_id = ${orgId} AND m.status = 'active' AND u.is_active AND p.id = ${postId}
-              AND (NOT EXISTS (SELECT 1 FROM news_post_departments pd WHERE pd.post_id = p.id)
-                OR EXISTS (SELECT 1 FROM news_post_departments pd JOIN departments d ON d.id = pd.department_id
+              AND (cardinality(p.department_ids) = 0
+                OR EXISTS (SELECT 1 FROM departments d
                            LEFT JOIN (${currentAssignments(orgId)}) a ON a.user_id = u.id
-                           WHERE pd.post_id = p.id AND (d.leader_user_id = u.id OR a.department_id = d.id)))
+                           WHERE d.id = ANY(p.department_ids) AND (d.leader_user_id = u.id OR a.department_id = d.id)))
             ORDER BY name`,
       )
     ).rows as Omit<Reader, 'orgId'>[];
@@ -265,14 +265,14 @@ export class NewsController {
     }
     if (ids.size === 0) return true;
     const rows = await db.execute(
-      sql`SELECT count(*)::int AS n FROM news_post_documents WHERE post_id = ${postId} AND document_id IN (${sql.join([...ids].map((d) => sql`${d}`), sql`, `)})`,
+      sql`SELECT count(*)::int AS n FROM documents WHERE source_table = 'news_posts' AND source_table_id = ${postId} AND id IN (${sql.join([...ids].map((d) => sql`${d}`), sql`, `)})`,
     );
     return (rows.rows[0]?.n as number) === ids.size;
   }
 
   private async setDepartments(db: Executor, postId: string, departmentIds: string[]) {
-    await db.execute(sql`DELETE FROM news_post_departments WHERE post_id = ${postId}`);
-    for (const d of departmentIds) await db.execute(sql`INSERT INTO news_post_departments (post_id, department_id) VALUES (${postId}, ${d})`);
+    const ids = sql.join(departmentIds.map((d) => sql`${d}::uuid`), sql`, `);
+    await db.execute(sql`UPDATE news_posts SET department_ids = ${departmentIds.length ? sql`ARRAY[${ids}]` : sql`'{}'::uuid[]`} WHERE id = ${postId}`);
   }
 
   /** Posts the caller may see here, newest first (drafts first), with their own read state. */
@@ -286,7 +286,7 @@ export class NewsController {
     const rows = await db.execute(
       sql`SELECT p.id, p.texts, p.require_ack, ${iso('p.published_at')} AS published_at, (p.organization_id IS NULL) AS product, p.is_public,
                  p.author_user_id, coalesce(nullif(u.display_name, ''), u.email) AS author_name,
-                 coalesce((SELECT array_agg(pd.department_id) FROM news_post_departments pd WHERE pd.post_id = p.id), '{}') AS department_ids,
+                 p.department_ids,
                  ${iso('r.read_at')} AS read_at, ${iso('r.acknowledged_at')} AS acknowledged_at
           FROM news_posts p
           LEFT JOIN users u ON u.id = p.author_user_id
@@ -423,9 +423,9 @@ export class NewsController {
     const caller = await this.caller(db, orgId, req);
     const post = await this.editable(db, orgId, caller, id);
     if ('error' in post) return { ok: false, error: post.error };
-    const docs = (await db.execute(sql`SELECT document_id FROM news_post_documents WHERE post_id = ${id}`)).rows as { document_id: string }[];
+    const docs = (await db.execute(sql`SELECT id FROM documents WHERE source_table = 'news_posts' AND source_table_id = ${id}`)).rows as { id: string }[];
     await db.execute(sql`DELETE FROM news_posts WHERE id = ${id}`);
-    for (const d of docs) await this.documents.remove(db, d.document_id).catch(() => {});
+    for (const d of docs) await this.documents.remove(db, d.id).catch(() => {});
     void this.versions.record('news_posts', id, 'delete', caller!.id, post).catch(() => {});
     return { ok: true };
   }
@@ -597,10 +597,10 @@ export class NewsController {
     if ('error' in post) return { ok: false, error: post.error };
     if (!file?.buffer?.length) return { ok: false, error: 'file-required' };
     if (!NEWS_IMAGE_TYPES.includes(file.mimetype)) return { ok: false, error: 'news-image-type' };
-    const count = await db.execute(sql`SELECT count(*)::int AS n FROM news_post_documents WHERE post_id = ${id}`);
+    const count = await db.execute(sql`SELECT count(*)::int AS n FROM documents WHERE source_table = 'news_posts' AND source_table_id = ${id}`);
     if ((count.rows[0]?.n as number) >= MAX_NEWS_IMAGES) return { ok: false, error: 'news-too-many-images' };
+    // The picture names its post (source_table/source_table_id): that is the link.
     const documentId = await this.documents.upload(db as Db, orgId ?? OPERATOR_ORG_ID, caller!.id, file, { table: 'news_posts', id });
-    await db.execute(sql`INSERT INTO news_post_documents (post_id, document_id) VALUES (${id}, ${documentId})`);
     return { ok: true, documentId };
   }
 
@@ -620,7 +620,7 @@ export class NewsController {
       res.status(404).json({ ok: false, error: 'not-found' });
       return;
     }
-    const linked = await db.execute(sql`SELECT 1 FROM news_post_documents WHERE post_id = ${id} AND document_id = ${documentId}`);
+    const linked = await db.execute(sql`SELECT 1 FROM documents WHERE source_table = 'news_posts' AND source_table_id = ${id} AND id = ${documentId}`);
     const doc = linked.rows.length > 0 ? await this.documents.get(db, documentId) : undefined;
     if (!doc) {
       res.status(404).json({ ok: false, error: 'not-found' });

@@ -3,13 +3,19 @@ import { test } from 'node:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Every org-scoped handler authorizes itself (CLAUDE.md, "API conventions"): each HTTP handler with an `orgId` route
-// parameter, unless it is @Public(), must call an access helper (callerUserId, can, isOrgMember, ...), directly or
-// through a method of its own file that does (any depth). A check forgotten in a new endpoint fails here, not in
-// production. Handlers that take the organization from the body instead are not covered. The core alone (CI, without
-// the private plugins) has some 160 of them.
+// Every handler authorizes itself (CLAUDE.md, "API conventions"): each HTTP handler, unless it is @Public(), must call an
+// access helper (callerUserId, can, isOrgMember, ...), directly or through a method of its own file that does (any
+// depth), whether the organization is in the route, in a row it loads (`expenses/:id`) or nowhere. A check forgotten in
+// a new endpoint fails here, not in production. The few that need none are listed in NO_CHECK, with the reason. The core
+// alone (CI, without the private plugins) has some 220 handlers, some 160 of them with `orgId` in the route.
 const ROOTS = [join(__dirname, '../../apps/api/src'), join(__dirname, '../../plugins')];
 const CHECKS = /\b(callerUserId|can|isOrgMember|isOperator|canSeeUserData|canEditUserData|listableUserIds|reachesAll|isOrgOwner|isManagerOf|canManageItem|canEditBeyondOwn)\(/;
+/** Handlers that read nothing of anyone's (`file handler`). */
+const NO_CHECK = new Map([
+  ['apps/api/src/about.controller.ts about', 'build and server facts, behind the login'],
+  ['apps/api/src/roles.controller.ts list', 'the global roles one can invite to (names and descriptions)'],
+  ['apps/api/src/users.controller.ts me', 'the caller from their own token'],
+]);
 const HANDLER = /@(Get|Post|Put|Patch|Delete)\([^)]*\)\s*\n((?:\s*@[^\n]*\n)*)\s*(?:async\s+)?(\w+)\(/g;
 const METHOD = /^ {2}(?:private |protected |public )?(?:static )?(?:async )?(\w+)\s*(?:<[^>]*>)?\(/gm;
 
@@ -55,9 +61,10 @@ function block(src: string, open: number): string {
   return src.slice(open);
 }
 
-test('every org-scoped handler checks who calls (directly or through its own helpers)', () => {
+test('every handler checks who calls (directly or through its own helpers)', () => {
   const unchecked: string[] = [];
   let count = 0;
+  let withOrg = 0;
   for (const file of ROOTS.flatMap(controllers)) {
     const src = readFileSync(file, 'utf8');
     // The file's methods by name, and which of them check (directly, or by calling one that does).
@@ -79,13 +86,15 @@ test('every org-scoped handler checks who calls (directly or through its own hel
       if (/@Public\(\)/.test(m[2]) || /@Public\(\)\s*$/.test(before)) continue;
       const paren = m.index! + m[0].length - 1;
       const open = bodyStart(src, paren);
-      if (open < 0 || !/\borgId\b/.test(src.slice(paren, open))) continue;
+      if (open < 0) continue;
       count++;
+      if (/\borgId\b/.test(src.slice(paren, open))) withOrg++;
       const body = block(src, open);
       const ok = CHECKS.test(body) || [...body.matchAll(/this\.(\w+)\(/g)].some((c) => checking.has(c[1]));
-      if (!ok) unchecked.push(`${file.replace(/.*apensum\//, '')} ${m[3]}`);
+      const name = `${file.replace(/.*apensum\//, '')} ${m[3]}`;
+      if (!ok && !NO_CHECK.has(name)) unchecked.push(name);
     }
   }
-  assert.ok(count > 120, `found only ${count} org-scoped handlers: the scan is broken`);
-  assert.deepEqual(unchecked, [], `org-scoped handlers without an access check:\n${unchecked.join('\n')}`);
+  assert.ok(count > 180 && withOrg > 120, `found only ${count} handlers (${withOrg} with orgId): the scan is broken`);
+  assert.deepEqual(unchecked, [], `handlers without an access check:\n${unchecked.join('\n')}`);
 });

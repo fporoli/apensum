@@ -69,8 +69,8 @@ export class PublicNewsController {
     const linked =
       db && ID.test(id) && ID.test(documentId)
         ? await db.execute(
-            sql`SELECT 1 FROM news_post_documents d JOIN news_posts p ON p.id = d.post_id
-                WHERE d.post_id = ${id} AND d.document_id = ${documentId} AND p.organization_id IS NULL AND p.is_public AND p.published_at IS NOT NULL`,
+            sql`SELECT 1 FROM documents d JOIN news_posts p ON d.source_table = 'news_posts' AND p.id = d.source_table_id
+                WHERE p.id = ${id} AND d.id = ${documentId} AND p.organization_id IS NULL AND p.is_public AND p.published_at IS NOT NULL`,
           )
         : null;
     const doc = db && linked && linked.rows.length > 0 ? await this.documents.get(db, documentId) : undefined;

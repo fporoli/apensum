@@ -130,6 +130,7 @@
     <include file="112-static-data-description.sql" relativeToChangelogFile="true"/>
     <include file="113-permission-flow-designer.sql" relativeToChangelogFile="true"/>
     <include file="114-flow-type-description.sql" relativeToChangelogFile="true"/>
+    <include file="115-link-tables-folded.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

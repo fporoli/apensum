@@ -707,7 +707,7 @@ erDiagram
 > of a row that already exists here, so a missed push is never a lost
 > notification, only a delayed one.
 
-## Flows (3 tables)
+## Flows (2 tables)
 
 The "flows" module (052, renamed from requests in 110): a Free Flow a person
 sends to their line manager or to a department, or a flow of the organization's
@@ -719,6 +719,7 @@ through `notifications` (`source_table = 'flows'`). Since 069 a flow has
 a type (`flow_type`, a key of the `flows`/`flow_type` static_data row),
 an `urgent` flag (urgent open flows are listed first) and an optional
 `link_url` (http(s) only).
+A message's attachments are the documents that name it (`documents.source_table = 'flow_messages'`, `source_table_id` = the message; 115 dropped the link table `flow_message_documents`).
 
 ```mermaid
 erDiagram
@@ -727,8 +728,7 @@ erDiagram
     USERS ||--o{ FLOWS : "assignee_user_id"
     DEPARTMENTS ||--o{ FLOWS : "target_department_id"
     FLOWS ||--o{ FLOW_MESSAGES : "thread"
-    FLOW_MESSAGES ||--o{ FLOW_MESSAGE_DOCUMENTS : "attachments"
-    DOCUMENTS ||--o{ FLOW_MESSAGE_DOCUMENTS : "document_id"
+    FLOW_MESSAGES ||--o{ DOCUMENTS : "attachments (source_table_id)"
     USERS ||--o{ FLOW_MESSAGES : "author_user_id"
 
     FLOWS {
@@ -757,26 +757,22 @@ erDiagram
         jsonb data "event details: status, assignee, archived"
         timestamptz posted_at
     }
-    FLOW_MESSAGE_DOCUMENTS {
-        uuid message_id PK, FK
-        uuid document_id PK, FK
-    }
     ORGANIZATIONS { uuid id PK }
     USERS { uuid id PK }
     DEPARTMENTS { uuid id PK }
     DOCUMENTS { uuid id PK }
 ```
 
-## News (5 tables)
+## News (3 tables)
 
 The "news" module (080): posts an organization's admin or HR (`nav.news:edit`)
-publishes to everyone, or to the departments in `news_post_departments` (whoever's
+publishes to everyone, or to the departments in `department_ids` (115; empty = everyone; whoever's
 assignment in force is in one of them, and its leaders; worked out per call).
 `texts` holds a title and a Markdown text per language. `published_at` NULL is a
 draft. Publishing notifies the audience (`notifications.source_table = 'news_posts'`)
 and optionally mails them a link. `news_post_reads` records when each person
 opened a post and, for a post with `require_ack`, confirmed reading it. Pictures
-are documents linked by `news_post_documents` and shown as `![alt](doc:<id>)`.
+are the documents that name the post (`documents.source_table = 'news_posts'`, 115) and are shown as `![alt](doc:<id>)`.
 A post with `organization_id` NULL (082) is product news: written by a
 operator for the admins of every organization, never with departments.
 A product post with `is_public` (083) is also on the website (`public/news`)
@@ -787,13 +783,10 @@ records who got it, so no one gets it twice.
 erDiagram
     ORGANIZATIONS ||--o{ NEWS_POSTS : "scopes"
     USERS ||--o{ NEWS_POSTS : "author_user_id"
-    NEWS_POSTS ||--o{ NEWS_POST_DEPARTMENTS : "audience"
-    DEPARTMENTS ||--o{ NEWS_POST_DEPARTMENTS : "department_id"
     NEWS_POSTS ||--o{ NEWS_POST_READS : "read by"
     USERS ||--o{ NEWS_POST_READS : "user_id"
-    NEWS_POSTS ||--o{ NEWS_POST_DOCUMENTS : "pictures"
+    NEWS_POSTS ||--o{ DOCUMENTS : "pictures (source_table_id)"
     NEWS_POSTS ||--o{ NEWSLETTER_DELIVERIES : "sent to"
-    DOCUMENTS ||--o{ NEWS_POST_DOCUMENTS : "document_id"
 
     NEWS_POSTS {
         uuid id PK
@@ -803,25 +796,18 @@ erDiagram
         boolean require_ack "readers confirm they read it"
         timestamptz published_at "nullable — NULL = draft"
         boolean is_public "product news only: website and newsletter"
+        uuid_array department_ids "the audience; empty = everyone (no FK: a deleted department is removed from it)"
     }
     NEWSLETTER_DELIVERIES {
         uuid post_id PK, FK
         uuid subscriber_id PK, FK "newsletter_subscribers"
         timestamptz sent_at
     }
-    NEWS_POST_DEPARTMENTS {
-        uuid post_id PK, FK
-        uuid department_id PK, FK
-    }
     NEWS_POST_READS {
         uuid post_id PK, FK
         uuid user_id PK, FK
         timestamptz read_at
         timestamptz acknowledged_at "nullable"
-    }
-    NEWS_POST_DOCUMENTS {
-        uuid post_id PK, FK
-        uuid document_id PK, FK
     }
     ORGANIZATIONS { uuid id PK }
     USERS { uuid id PK }

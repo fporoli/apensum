@@ -1193,6 +1193,7 @@ export const news_posts = pgTable("news_posts", {
 	require_ack: boolean().default(false).notNull(),
 	published_at: timestamp({ withTimezone: true, mode: 'string' }),
 	is_public: boolean().default(false).notNull(),
+	department_ids: uuid().array().default(sql`'{}'`).notNull(),
 }, (table) => [
 	index("idx_news_posts_org").using("btree", table.organization_id.asc().nullsLast(), table.published_at.desc().nullsFirst()),
 	index("idx_news_posts_product").using("btree", table.published_at.desc().nullsFirst()).where(sql`(organization_id IS NULL)`),
@@ -1373,59 +1374,6 @@ export const project_teams = pgTable("project_teams", {
 			name: "project_teams_team_id_fkey"
 		}).onDelete("restrict"),
 	primaryKey({ columns: [table.project_id, table.team_id], name: "project_teams_pkey"}),
-]);
-
-export const news_post_departments = pgTable("news_post_departments", {
-	post_id: uuid().notNull(),
-	department_id: uuid().notNull(),
-}, (table) => [
-	foreignKey({
-			columns: [table.department_id],
-			foreignColumns: [departments.id],
-			name: "news_post_departments_department_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.post_id],
-			foreignColumns: [news_posts.id],
-			name: "news_post_departments_post_id_fkey"
-		}).onDelete("cascade"),
-	primaryKey({ columns: [table.post_id, table.department_id], name: "news_post_departments_pkey"}),
-]);
-
-export const news_post_documents = pgTable("news_post_documents", {
-	post_id: uuid().notNull(),
-	document_id: uuid().notNull(),
-}, (table) => [
-	index("idx_news_post_documents_document").using("btree", table.document_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.document_id],
-			foreignColumns: [documents.id],
-			name: "news_post_documents_document_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.post_id],
-			foreignColumns: [news_posts.id],
-			name: "news_post_documents_post_id_fkey"
-		}).onDelete("cascade"),
-	primaryKey({ columns: [table.post_id, table.document_id], name: "news_post_documents_pkey"}),
-]);
-
-export const flow_message_documents = pgTable("flow_message_documents", {
-	message_id: uuid().notNull(),
-	document_id: uuid().notNull(),
-}, (table) => [
-	index("idx_flow_message_documents_document").using("btree", table.document_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.document_id],
-			foreignColumns: [documents.id],
-			name: "flow_message_documents_document_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.message_id],
-			foreignColumns: [flow_messages.id],
-			name: "flow_message_documents_message_id_fkey"
-		}).onDelete("cascade"),
-	primaryKey({ columns: [table.message_id, table.document_id], name: "flow_message_documents_pkey"}),
 ]);
 
 export const team_members = pgTable("team_members", {

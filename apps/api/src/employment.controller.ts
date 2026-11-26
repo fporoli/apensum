@@ -203,6 +203,8 @@ export class EmploymentController {
     if (Number(used?.n ?? 0) > 0) return { ok: false, error: 'department-in-use' };
     if (existing.code && (await this.workflows.unitInUse(db, orgId, 'department', existing.code))) return { ok: false, error: 'department-in-workflow' };
     await db.delete(departments).where(eq(departments.id, id));
+    // As the link table's cascade did: the department leaves the audiences of news posts.
+    await db.execute(sql`UPDATE news_posts SET department_ids = array_remove(department_ids, ${id}::uuid) WHERE organization_id = ${orgId} AND ${id}::uuid = ANY(department_ids)`);
     void this.versions.record('departments', id, 'delete', callerId, { id }).catch(() => {});
     void this.audit.record(orgId, callerId, 'department.delete', 'department', id, {}).catch(() => {});
     return { ok: true };

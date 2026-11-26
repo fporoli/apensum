@@ -101,8 +101,7 @@ export class DocumentsController {
                ${iso('d.created_at')}, false, jsonb_build_object('subject', r.subject)
         FROM flows r
         JOIN flow_messages m ON m.flow_id = r.id
-        JOIN flow_message_documents md ON md.message_id = m.id
-        JOIN documents d ON d.id = md.document_id
+        JOIN documents d ON d.source_table = 'flow_messages' AND d.source_table_id = m.id
         WHERE r.organization_id = ${orgId} AND r.requester_user_id = ${userId}
       ) docs
       ORDER BY date DESC, added_at DESC, file_name`);
