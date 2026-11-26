@@ -356,3 +356,11 @@ Setting up a server is in [docs/SERVER_SETUP.md](docs/SERVER_SETUP.md).
 
 Apensum is free software under the [GNU Affero General Public License v3.0](LICENSE) (`AGPL-3.0-only`).\
 You may use, change and run it, including as a hosted service; if you offer a changed version to users over a network, you must make that version's source code available to them under the same license.
+
+The core is also available under a commercial license (dual licensing), for those who cannot or will not meet the AGPL's conditions:\
+modules of their own that stay confidential while others use them (customers, clients, the companies of a group), Apensum run under another name (white label), or operation for third parties without publishing changes.\
+The commercial license comes with support and commitments on the plugin contract (`PLUGIN_API_VERSION`, [docs/PLUGINS.md](docs/PLUGINS.md)); ask through the [contact form](https://apensum.ch/de/kontakt/).
+
+The optional modules (Assessments, Expenses, HR, HR plus, Customer invoicing, Reporting office, Shift plan) are not part of this repository and not open source; they are licensed separately.
+
+Contributions to the core are welcome under the [Contributor License Agreement](docs/CLA.md), which keeps the dual licensing possible; see [CONTRIBUTING.md](CONTRIBUTING.md).

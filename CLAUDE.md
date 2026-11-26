@@ -95,7 +95,9 @@ That looks like success but does nothing.
 
 - Flat folder of PascalCase page components.\
   Each page is an entry in `corePages.tsx` (section, hash, permission object, role fallback, navbar entry with optional parent and count, render), the same shape plugins use (`PluginPage`); `App.tsx` builds the navbar (`navigation.ts`), hashes and gating from the core's and the plugins' entries alike and owns session, org switcher and badges.
-- Each page calls the API directly with `fetch(\`${API}/...\`, { headers: await authHeaders() })`, where `const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1'` is declared per file.
+- Pages load through `useApi(url, authHeaders, { refreshMs })` (`useApi.ts`: data, loading, error code, `reload`, `clearError`; an answer that arrives after a newer request is dropped) and send with `apiRequest` (`apiRequest.ts`: `{ ok, data }` or `{ ok: false, error }`, network and HTTP failures as codes; both in the plugin contract).\
+  New pages use them; older pages still call `fetch(\`${API}/...\`, { headers: await authHeaders() })` themselves and move over when they are changed anyway (`Directory.tsx` and `AuditLog.tsx` show the pattern).\
+  `const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1'` is declared per file.
 - Terms (one thing, one word, in the app, on the website, in the brochures and the support articles; new texts use only these):\
   **Flow** (der Flow, die Flows; FR le flow, IT il flow) = everything someone starts and others work on (an absence, an expense report, a timesheet, a request of the organization's own type); never Anfrage, Anliegen, Workflow or Freigabe for the thing.\
   **Art** (type) = what kind of flow, an organization's own one is a **Flow-Art** (FR type de flow, IT tipo di flow, EN flow type), added and renamed in the Flow-Designer (`PUT organizations/:orgId/flow-types/:key`, `withFlowType`, into the organization's copy of static data `flows`/`flow_type`); **Free Flow** (so in every language) = one without set steps, to the manager or a department; **Schritt** (step), **Baustein** (block), **Verlauf** (history).\

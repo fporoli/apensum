@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -6,7 +6,8 @@ import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { pluginsDir, readPluginManifests } from './plugins';
 import { DbService } from './db.service';
-import type { Executor } from './access';
+import { callerUserId, isOperator, type Executor } from './access';
+import type { AuthenticatedRequest } from './jwt.guard';
 
 const STARTED_AT = new Date().toISOString();
 
@@ -79,21 +80,27 @@ export async function databaseInfo(db: Executor | null) {
 export class AboutController {
   constructor(private readonly db: DbService) {}
 
-  /** Behind the global JWT guard, unlike `health`: registration is open, so keep this free of anything sensitive. */
+  /**
+   * Behind the global JWT guard, unlike `health`. Registration is open, so anyone signed in reads the build, times and
+   * whether the database answers; the server's name, Node version, environment and the last migration only the
+   * instance's operators (they help find a fault, and they tell an attacker which version runs where).
+   */
   @Get()
-  async about() {
+  async about(@Req() req?: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    const userId = db && req?.user ? await callerUserId(db, req.user) : null;
+    const operator = !!db && !!userId && (await isOperator(db, userId));
+    const database = await databaseInfo(db);
     return {
       ok: true,
       build: buildInfo(),
       server: {
-        hostname: hostname(),
-        environment: process.env.NODE_ENV || null,
-        nodeVersion: process.version,
+        ...(operator ? { hostname: hostname(), environment: process.env.NODE_ENV || null, nodeVersion: process.version } : {}),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         startedAt: STARTED_AT,
         time: new Date().toISOString(),
       },
-      database: await databaseInfo(this.db.getDb()),
+      database: operator ? database : { status: database.status },
       plugins: (plugins ??= pluginInfos()),
     };
   }

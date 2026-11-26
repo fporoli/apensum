@@ -13,7 +13,6 @@ const ROOTS = [join(REPO, 'apps/api/src'), join(REPO, 'plugins')];
 const CHECKS = /\b(callerUserId|can|isOrgMember|isOperator|canSeeUserData|canEditUserData|listableUserIds|reachesAll|isOrgOwner|isManagerOf|canManageItem|canEditBeyondOwn)\(/;
 /** Handlers that read nothing of anyone's (`file handler`). */
 const NO_CHECK = new Map([
-  ['apps/api/src/about.controller.ts about', 'build and server facts, behind the login'],
   ['apps/api/src/roles.controller.ts list', 'the global roles one can invite to (names and descriptions)'],
   ['apps/api/src/users.controller.ts me', 'the caller from their own token'],
 ]);

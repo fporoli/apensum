@@ -319,6 +319,19 @@ changeset. Use the plugin id as changeset author.
 - **Texts are the plugin's own.** They are merged into the dictionaries at startup; a key may not
   override a core text (see `plugins/notes/test/texts.test.mjs`).
 
+## Licence of a plugin
+
+A plugin imports the core's contract (`@worktime3/api/plugin`, `@worktime3/web/plugin`) and runs in the core's process, so the core and the plugin are one work under the core's licence, the GNU AGPL-3.0.\
+What that means for a plugin of your own:
+
+- You may write, run and change plugins without asking and without paying, in a private repository too.
+- Run only by you for your own people, nothing has to be published; the people who use it may ask you for its source (AGPL section 13).
+- Offered to others over the network (customers, clients, the other companies of a group, a hosted service), the plugin's source goes to those users under the AGPL-3.0, like the core's.
+- Keeping a plugin confidential while others use it, running Apensum under another name, or operating it for third parties without publishing needs the commercial licence of the core (dual licensing, README "License").
+
+A plugin's own `package.json` names its licence (`"license"`): `AGPL-3.0-only` for an open one; a confidential one under the commercial licence states its own (the private modules say `UNLICENSED`).\
+The core's licence never depends on the plugins installed: it runs without any (CI job `core-only`).
+
 ## Developing a private plugin locally
 
 ```sh

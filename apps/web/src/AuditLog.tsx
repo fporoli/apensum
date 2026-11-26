@@ -1,4 +1,3 @@
-import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -13,6 +12,7 @@ import {
   TableRow,
   TextField,
 } from '@mui/material';
+import { useApi } from './useApi';
 import { Button } from './Button';
 import { useI18n } from './i18n';
 import { PageHeader, TableEmptyRow } from './components';
@@ -47,28 +47,10 @@ function formatMetadata(metadata: Record<string, unknown> | null): string {
 
 export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
   const { t, locale } = useI18n();
-  const [entries, setEntries] = useState<AuditLogItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  async function reloadEntries() {
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await fetch(`${API}/audit-logs?orgId=${orgId}`, { headers: await authHeaders() });
-      const data = await res.json();
-      if (Array.isArray(data)) setEntries(data);
-    } catch {
-      setError(t('audit.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void reloadEntries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId]);
+  const audit = useApi<AuditLogItem[]>(`${API}/audit-logs?orgId=${orgId}`, authHeaders);
+  const entries = Array.isArray(audit.data) ? audit.data : [];
+  const loading = audit.loading;
+  const error = audit.error ? t('audit.loadFailed') : null;
 
   const columns: TableColumn<AuditLogItem>[] = [
     { key: 'when', value: (e) => e.created_at, search: false },
@@ -86,13 +68,13 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
         title={t('audit.title')}
         subtitle={t('audit.subtitle')}
         end={
-          <Button size="small" variant="outlined" startIcon={<RefreshIcon fontSize="small" />} onClick={() => void reloadEntries()}>
+          <Button size="small" variant="outlined" startIcon={<RefreshIcon fontSize="small" />} onClick={() => void audit.reload()}>
             {t('audit.refresh')}
           </Button>
         }
       />
 
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {error && <Alert severity="error" onClose={audit.clearError}>{error}</Alert>}
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ mb: 2 }}>

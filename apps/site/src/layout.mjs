@@ -5,7 +5,7 @@ export const DEFAULT_LANG = 'de';
 export const LOCALES = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-GB' };
 export const LANG_NAMES = { de: 'Deutsch', fr: 'Français', it: 'Italiano', en: 'English' };
 /** Pages per language; every page but home has a translated slug (`slug.<page>`). */
-export const PAGES = ['home', 'features', 'opensource', 'cases', 'expenses', 'roster', 'hr', 'hrplus', 'billing', 'whistle', 'plugins', 'brochures', 'pricing', 'security', 'law', 'support', 'about', 'references', 'contact', 'news', 'impressum', 'privacy'];
+export const PAGES = ['home', 'features', 'platform', 'opensource', 'cases', 'expenses', 'roster', 'hr', 'hrplus', 'billing', 'whistle', 'plugins', 'brochures', 'pricing', 'security', 'law', 'support', 'about', 'references', 'contact', 'news', 'impressum', 'privacy'];
 
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export function esc(value) {
@@ -162,6 +162,7 @@ function footer(ctx) {
     <nav aria-label="${t('footer.product')}">
       <h2>${t('footer.product')}</h2>
       <a href="${link('features')}">${t('nav.features')}</a>
+      <a href="${link('platform')}">${t('nav.platform')}</a>
       <a href="${link('pricing')}">${t('nav.pricing')}</a>
       <a href="${link('security')}">${t('nav.security')}</a>
       <a href="${link('law')}">${t('nav.law')}</a>

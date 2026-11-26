@@ -29,7 +29,26 @@ test('about still answers in offline mode and exposes no configuration', async (
   const result = await controller.about();
   assert.equal(result.ok, true);
   assert.equal(result.database.status, 'offline');
-  assert.deepEqual(Object.keys(result.server).sort(), ['environment', 'hostname', 'nodeVersion', 'startedAt', 'time', 'timeZone']);
+  assert.deepEqual(Object.keys(result.server).sort(), ['startedAt', 'time', 'timeZone']);
+});
+
+test('the server\'s name, versions and last migration only for operators', async () => {
+  // callerUserId (a local token: its user, if active), isOperator, then databaseInfo, in that order.
+  const db = (operator: boolean) => ({
+    execute: async (q: { queryChunks?: unknown[] }) => {
+      const text = JSON.stringify(q);
+      if (text.includes('is_operator')) return { rows: [{ is_operator: operator }] };
+      if (text.includes('databasechangelog')) return { rows: [{ filename: '116-x.sql' }] };
+      return { rows: [{ id: 'u1', is_active: true, status: 'active' }] };
+    },
+  });
+  const req = { user: { kind: 'local', sub: 'u1' } } as never;
+  const member = await new AboutController({ getDb: () => db(false) } as unknown as DbService).about(req);
+  assert.deepEqual(Object.keys(member.server).sort(), ['startedAt', 'time', 'timeZone']);
+  assert.deepEqual(member.database, { status: 'ok' });
+  const op = await new AboutController({ getDb: () => db(true) } as unknown as DbService).about(req);
+  assert.deepEqual(Object.keys(op.server).sort(), ['environment', 'hostname', 'nodeVersion', 'startedAt', 'time', 'timeZone']);
+  assert.equal((op.database as { lastChangeset?: string }).lastChangeset, '116-x.sql');
 });
 
 test('plugins: version, and the commit from the image build, a git checkout, or the core for a bundled one', async () => {

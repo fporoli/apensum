@@ -254,6 +254,9 @@ export { SortHeader, TableSearch, useTableView, type TableColumn, type TableSort
 export * from './icons';
 /** The app's button (MUI's, with the organization's colorful look): use it instead of MUI's. */
 export { Button } from './Button';
+/** Loading from the API: useApi (a page's data, loading, error, reload), apiRequest (one call, ok + data or an error code). */
+export { useApi, type UseApi, type UseApiOptions } from './useApi';
+export { apiRequest, CANNOT_REACH_API, BAD_RESPONSE, type ApiResult, type ApiRequestInit } from './apiRequest';
 export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, type Attachment } from './attachments';
 export { currencyOptions, type CurrencyOption } from './currencyOptions';
 export { SectionPaper } from './SettingsSection';

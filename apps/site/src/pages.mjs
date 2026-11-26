@@ -321,6 +321,18 @@ export function home(ctx) {
     </div>
   </div>
 </section>
+<section class="section tight-bottom">
+  <div class="wrap">
+    <div class="card pricing-teaser">
+      <div>
+        <p class="eyebrow">${icon('layers')}${t('nav.platform')}</p>
+        <h2>${t('home.platform.title')}</h2>
+        <p class="lead">${t('home.platform.text')}</p>
+      </div>
+      <div class="actions"><a class="btn btn-ghost" href="${ctx.link('platform')}">${icon('arrow')}${t('home.platform.link')}</a></div>
+    </div>
+  </div>
+</section>
 ${
   ctx.config.sourceUrl
     ? `
@@ -528,6 +540,48 @@ ${ctaBand(ctx)}`;
  * what is not (the module pages' modules, named from them), running it oneself or hosted in Switzerland, and questions
  * people search for (also as FAQPage structured data). Claims must match the repository and the app.
  */
+/**
+ * Apensum as a framework: what the core already solves for a business application of one's own, how modules plug in,
+ * and the licence choice (AGPL or an enterprise licence). Linked from Home, "Build a module" and the footer.
+ */
+const PLATFORM_CARDS = [['base', 'layers'], ['flows', 'sync'], ['modules', 'plug'], ['sso', 'key'], ['integrate', 'globe'], ['run', 'sliders']];
+export function platform(ctx) {
+  const { t, link } = ctx;
+  const cards = PLATFORM_CARDS.map(([k, ic]) => `<article class="card feature">
+      <div class="feature-icon">${icon(ic)}</div>
+      <h2 class="h3">${t(`platform.cards.${k}.title`)}</h2>
+      <p>${t(`platform.cards.${k}.text`)}</p>
+    </article>`).join('\n    ');
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${icon('layers')}${t('nav.platform')}</p>
+    <h1>${t('platform.title')}</h1>
+    <p class="lead">${t('platform.lead')}</p>
+    <p class="actions"><a class="btn btn-ghost" href="${link('plugins')}">${icon('plug')}${t('platform.docs')}</a>${ctx.config.sourceUrl ? githubButton(ctx, t('home.oss.link')) : ''}</p>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap grid grid-3">
+    ${cards}
+  </div>
+</section>
+<section class="section tight-bottom">
+  <div class="wrap">
+    <div class="card invest">
+      <div class="feature-icon">${icon('handshake')}</div>
+      <div>
+        <h2>${t('platform.license.title')}</h2>
+        <p>${t('platform.license.text')}</p>
+        <p class="actions"><a class="btn btn-primary" href="${ctx.contactLink('pricing')}">${icon('mail')}${t('platform.license.cta')}</a><a class="btn btn-ghost" href="${link('opensource')}">${icon('code')}${t('nav.opensource')}</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+${ctaBand(ctx)}`;
+  return layout(ctx, { title: t('platform.meta.title'), description: t('platform.meta.description'), body });
+}
+
 export function opensource(ctx) {
   const { t } = ctx;
   // The module names as written (t() escapes them; t.list escapes the filled-in text once more).
@@ -1386,6 +1440,7 @@ export function plugins(ctx) {
       ${docs ? `<a class="btn btn-primary" href="${esc(docs)}" rel="noopener">${t('plugins.docsCta')}${icon('arrow')}</a>` : ''}
       <a class="btn btn-ghost" href="${ctx.contactLink('general')}">${icon('mail')}${t('cta.contact')}</a>
     </div>
+    <p><a class="link-arrow" href="${ctx.link('platform')}">${t('home.platform.link')}${icon('arrow')}</a></p>
   </div>
 </section>
 
@@ -1537,4 +1592,4 @@ export function newsResult(ctx, kind) {
   return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
 }
 
-export const RENDER = { home, features, opensource, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, brochures: brochuresPage, support, pricing, security, law, about, references, contact, news, impressum, privacy };
+export const RENDER = { home, features, platform, opensource, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, brochures: brochuresPage, support, pricing, security, law, about, references, contact, news, impressum, privacy };

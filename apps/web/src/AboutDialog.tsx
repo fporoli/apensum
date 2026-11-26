@@ -28,15 +28,16 @@ interface Build {
 
 interface AboutInfo {
   build: Build;
+  /** hostname, environment, nodeVersion and the last changeset: operators only (about.controller.ts). */
   server: {
-    hostname: string;
-    environment: string | null;
-    nodeVersion: string;
+    hostname?: string;
+    environment?: string | null;
+    nodeVersion?: string;
     timeZone: string;
     startedAt: string;
     time: string;
   };
-  database: { status: string; lastChangeset: string | null };
+  database: { status: string; lastChangeset?: string | null };
   /** Installed plugins: version and the commit they were built from. */
   plugins?: { id: string; caption: string | null; version: string | null; commit: string | null; date: string | null }[];
 }
@@ -91,16 +92,20 @@ export default function AboutDialog({ open, onClose, session, authHeaders, curre
   const membership = session.memberships.find((m) => m.organizationId === currentOrgId);
   const databaseStatus = info ? t(`about.database.${info.database.status}`) : '—';
 
+  // The server's name, versions and the last changeset come for operators only: the rows go when they do not.
+  const operatorView = !info || info.server.hostname !== undefined;
   const serverRows: [string, string][] = [
     [t('about.apiUrl'), API],
-    [t('about.hostname'), info?.server.hostname ?? '—'],
-    [t('about.environment'), info?.server.environment ?? '—'],
-    [t('about.nodeVersion'), info?.server.nodeVersion ?? '—'],
+    ...(operatorView ? ([
+      [t('about.hostname'), info?.server.hostname ?? '—'],
+      [t('about.environment'), info?.server.environment ?? '—'],
+      [t('about.nodeVersion'), info?.server.nodeVersion ?? '—'],
+    ] as [string, string][]) : []),
     [t('about.startedAt'), formatDate(info?.server.startedAt)],
     [t('about.serverTime'), formatDate(info?.server.time)],
     [t('about.timeZone'), info?.server.timeZone ?? '—'],
     [t('about.database'), databaseStatus],
-    [t('about.lastChangeset'), info?.database.lastChangeset ?? '—'],
+    ...(operatorView ? ([[t('about.lastChangeset'), info?.database.lastChangeset ?? '—']] as [string, string][]) : []),
   ];
 
   const userRows: [string, string][] = [

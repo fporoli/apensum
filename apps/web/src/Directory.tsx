@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Avatar, Badge, Box, Card, CardContent, Chip, CircularProgress, InputAdornment, Link, MenuItem, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { ContactsIcon, MailIcon, PhoneIcon, PlaceIcon, SearchIcon } from './icons';
 import { formatLocaleDate, swissLocale } from './localeFormat';
+import { useApi } from './useApi';
+import { CANNOT_REACH_API } from './apiRequest';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -60,35 +62,15 @@ function initials(p: Person): string {
 /** Employee directory (API directory.controller.ts): everyone in the organization, with how to reach them. */
 export default function Directory({ orgId, authHeaders }: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) {
   const { t, locale } = useI18n();
-  const [people, setPeople] = useState<Person[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Check-ins change during the day: loaded again every minute while the page is open.
+  const directory = useApi<{ people?: Person[] }>(`${API}/organizations/${orgId}/directory`, authHeaders, { refreshMs: 60_000 });
+  const people = directory.data ? (Array.isArray(directory.data.people) ? directory.data.people : []) : directory.error ? [] : null;
+  const error = directory.error
+    ? directory.error === CANNOT_REACH_API ? t('common.cannotReachApi') : t('directory.loadFailed', { error: directory.error })
+    : null;
   const [query, setQuery] = useState('');
   const [department, setDepartment] = useState('all');
   const [onlyPresent, setOnlyPresent] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/organizations/${orgId}/directory`, { headers: await authHeaders() });
-      const data = await res.json();
-      if (!data?.ok) {
-        setError(t('directory.loadFailed', { error: data?.error ?? t('common.unknownError') }));
-        setPeople([]);
-        return;
-      }
-      setError(null);
-      setPeople(Array.isArray(data.people) ? data.people : []);
-    } catch {
-      setError(t('common.cannotReachApi'));
-      setPeople([]);
-    }
-  }, [orgId, authHeaders, t]);
-
-  useEffect(() => {
-    void load();
-    // Check-ins change during the day: refresh every minute while the page is open.
-    const timer = window.setInterval(() => void load(), 60_000);
-    return () => window.clearInterval(timer);
-  }, [load]);
 
   const departments = useMemo(() => {
     const map = new Map<string, string>();
@@ -145,7 +127,7 @@ export default function Directory({ orgId, authHeaders }: { orgId: string; authH
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader title={t('directory.title')} subtitle={t('directory.subtitle')} />
       {error && (
-        <Alert severity="error" onClose={() => setError(null)}>
+        <Alert severity="error" onClose={directory.clearError}>
           {error}
         </Alert>
       )}
