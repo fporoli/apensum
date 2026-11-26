@@ -184,6 +184,8 @@ const SHOTS = {
     const [field, name] = /Nouveau/.test(title) ? [1, 'Collecte pour un cadeau'] : /Nuovo/.test(title) ? [2, 'Raccolta per un regalo'] : /New/.test(title) ? [3, 'Gift collection'] : [0, 'Geschenk-Sammlung'];
     await p.getByRole('dialog').locator('input').nth(field).fill(name);
   } },
+  // Support: notes (Ueli's: his task list and Marta's note shared with him, from the seed).
+  'support-notes-1': { user: 'ueli', hash: '#/notes' },
   // Support: shift planning (shift types and demand, then a person's planning data).
   'support-roster-1': { user: 'ulla', hash: '#/roster', tab: 1 },
   'support-roster-2': { user: 'ulla', hash: '#/roster', dialog: true, async go(p) {

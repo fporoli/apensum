@@ -23,6 +23,7 @@ const MORE = [
   ['requests', 'chat'],
   ['directory', 'pin'],
   ['documents', 'doc'],
+  ['notes', 'tag'],
   ['assistant', 'sparkle'],
   ['notifications', 'bell'],
   ['orgs', 'building'],
@@ -1193,6 +1194,7 @@ export const whistle = (ctx) => licensedModule(ctx, 'whistle');
 export const SUPPORT_ARTICLES = [
   ['staticData', 'sliders', ['support-staticdata-1', 'support-staticdata-2']],
   ['flowDesigner', 'layers', ['support-flowdesigner-1', 'support-flowdesigner-2']],
+  ['notes', 'tag', ['support-notes-1']],
   ['roster', 'calendar', ['support-roster-1', 'support-roster-2']],
   ['operator', 'key', ['support-operator-1', 'support-operator-2', 'support-operator-3']],
   ['chatbot', 'chat', []],
