@@ -127,6 +127,7 @@
     <include file="109-permission-calendar.sql" relativeToChangelogFile="true"/>
     <include file="110-flows.sql" relativeToChangelogFile="true"/>
     <include file="111-permission-flows.sql" relativeToChangelogFile="true"/>
+    <include file="112-static-data-description.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

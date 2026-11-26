@@ -137,6 +137,7 @@ export const static_data = pgTable("static_data", {
 	translation: jsonb().default({}).notNull(),
 	organization_id: uuid(),
 	operator_keys: text().array().default(sql`'{}'`).notNull(),
+	description: jsonb().default({}).notNull(),
 }, (table) => [
 	index("idx_static_data_global_entity").using("btree", table.entity.asc().nullsLast(), table.enum_name.asc().nullsLast()).where(sql`(organization_id IS NULL)`),
 	index("idx_static_data_org_entity").using("btree", table.organization_id.asc().nullsLast(), table.entity.asc().nullsLast(), table.enum_name.asc().nullsLast()),

@@ -5,6 +5,7 @@ import { VersionsService } from './versions.service';
 import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { static_data } from './db/schema';
+import { cleanDescription } from '@worktime3/shared/staticData';
 
 export interface StaticDataRowLike {
   organization_id: string | null;
@@ -85,6 +86,7 @@ export class StaticDataController {
       enumName: string;
       values: unknown;
       translation?: unknown;
+      description?: unknown;
     },
     @Req() req: AuthenticatedRequest,
   ) {
@@ -97,6 +99,8 @@ export class StaticDataController {
     if (!(await can(db, orgId, callerId, 'nav.admin', 'edit'))) return { ok: false, error: 'forbidden' };
 
     if (!body.entity?.trim() || !body.enumName?.trim()) return { ok: false, error: 'entity-and-enum-name-required' };
+    const description = cleanDescription(body.description);
+    if (!description) return { ok: false, error: 'invalid-description' };
     const values = {
       organization_id: orgId,
       entity: body.entity.trim(),
@@ -104,6 +108,7 @@ export class StaticDataController {
       enum_name: body.enumName.trim(),
       values: body.values ?? {},
       translation: body.translation ?? {},
+      description,
     };
     try {
       const [row] = await db.insert(static_data).values(values).returning({ id: static_data.id });
@@ -119,7 +124,7 @@ export class StaticDataController {
   async update(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
-    @Body() body: { enumName?: string; values?: unknown; translation?: unknown },
+    @Body() body: { enumName?: string; values?: unknown; translation?: unknown; description?: unknown },
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -141,6 +146,11 @@ export class StaticDataController {
     if (body.enumName !== undefined) patch.enum_name = body.enumName.trim();
     if (body.values !== undefined) patch.values = body.values;
     if (body.translation !== undefined) patch.translation = body.translation;
+    if (body.description !== undefined) {
+      const description = cleanDescription(body.description);
+      if (!description) return { ok: false, error: 'invalid-description' };
+      patch.description = description;
+    }
 
     if (Object.keys(patch).length > 0) {
       try {

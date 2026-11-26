@@ -7,6 +7,7 @@ import { VersionsService } from './versions.service';
 import { callerUserId, isOperator, type Executor } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { static_data } from './db/schema';
+import { cleanDescription } from '@worktime3/shared/staticData';
 import { builtInKeys, checkDefaultValues } from './static-data-defaults';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,7 +46,7 @@ export class OperatorStaticDataController {
   }
 
   @Post()
-  async create(@Body() body: { entity?: unknown; enumName?: unknown; values?: unknown; translation?: unknown }, @Req() req: AuthenticatedRequest) {
+  async create(@Body() body: { entity?: unknown; enumName?: unknown; values?: unknown; translation?: unknown; description?: unknown }, @Req() req: AuthenticatedRequest) {
     const db = this.dbService.getDb();
     if (!db) return { ok: true, offline: true };
     const me = await this.operator(db, req);
@@ -55,9 +56,11 @@ export class OperatorStaticDataController {
     if (!entity || !enumName) return { ok: false, error: 'entity-and-enum-name-required' };
     const checked = checkDefaultValues(null, body.values ?? {});
     if (!checked.ok) return checked;
+    const description = cleanDescription(body.description);
+    if (!description) return { ok: false, error: 'invalid-description' };
     const row = {
       organization_id: null, entity, enum_name: enumName, values: checked.values,
-      translation: isObject(body.translation) ? body.translation : {}, operator_keys: checked.operatorKeys,
+      translation: isObject(body.translation) ? body.translation : {}, operator_keys: checked.operatorKeys, description,
     };
     try {
       const [created] = await db.insert(static_data).values(row).returning({ id: static_data.id });
@@ -71,7 +74,7 @@ export class OperatorStaticDataController {
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() body: { enumName?: unknown; values?: unknown; translation?: unknown }, @Req() req: AuthenticatedRequest) {
+  async update(@Param('id') id: string, @Body() body: { enumName?: unknown; values?: unknown; translation?: unknown; description?: unknown }, @Req() req: AuthenticatedRequest) {
     const db = this.dbService.getDb();
     if (!db) return { ok: true, offline: true };
     const me = await this.operator(db, req);
@@ -90,6 +93,11 @@ export class OperatorStaticDataController {
     if (body?.translation !== undefined) {
       if (!isObject(body.translation)) return { ok: false, error: 'invalid-translation' };
       patch.translation = body.translation;
+    }
+    if (body?.description !== undefined) {
+      const description = cleanDescription(body.description);
+      if (!description) return { ok: false, error: 'invalid-description' };
+      patch.description = description;
     }
     if (typeof body?.enumName === 'string' && body.enumName.trim() && body.enumName.trim() !== existing.enum_name) {
       // The code finds a list by its name: one with built-in values keeps it.

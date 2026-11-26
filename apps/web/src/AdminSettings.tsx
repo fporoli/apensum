@@ -29,7 +29,7 @@ import {
 } from '@mui/material';
 import { LOCALES, useI18n, useT, type Locale } from './i18n';
 import RolesPermissions from './RolesPermissions';
-import { PROPERTIES_LIST, attributeTextValid, attributeValue, keepLabels, propertiesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
+import { DESCRIPTION_MAX, PROPERTIES_LIST, attributeTextValid, listDescription, attributeValue, keepLabels, propertiesOf, withAttribute, type StaticAttribute } from '@worktime3/shared/staticData';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, ContentCopyIcon, DeleteIcon, EditIcon, PublicIcon, SearchIcon, TuneIcon } from './icons';
 
@@ -47,6 +47,8 @@ interface StaticDataRow {
   enum_name: string;
   values: Record<string, unknown>;
   translation: Record<string, Record<string, string>>;
+  /** What the list is for, per language (112). */
+  description?: Record<string, string>;
 }
 
 interface KV {
@@ -126,6 +128,16 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
   const [enumKvList, setEnumKvList] = useState<KV[]>([{ rowId: 0, key: '', label: '', attrs: null }]);
   const [enumTranslations, setEnumTranslations] = useState<Record<string, Record<string, string>>>({});
   const [translationLocale, setTranslationLocale] = useState<Locale>('de');
+  const [enumDescription, setEnumDescription] = useState<Record<string, string>>({});
+  const [descriptionLocale, setDescriptionLocale] = useState<Locale>(locale as Locale);
+  // An organization's lists only: a list for all organizations it has its own copy of is hidden (on by default).
+  const [orgOnly, setOrgOnly] = useState(() => {
+    try { return localStorage.getItem('apensum.staticData.orgOnly') !== '0'; } catch { return true; }
+  });
+  const toggleOrgOnly = (on: boolean) => {
+    setOrgOnly(on);
+    try { localStorage.setItem('apensum.staticData.orgOnly', on ? '1' : '0'); } catch { /* not remembered */ }
+  };
   const [kvFilter, setKvFilter] = useState('');
   // Values column: one line per list (the rest on hover) unless "show all values" is on; remembered in this browser.
   const [showAllValues, setShowAllValues] = useState(() => {
@@ -166,6 +178,7 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
     setEnumName('');
     setEnumKvList([makeKv()]);
     setEnumTranslations({});
+    setEnumDescription({});
     setKvFilter('');
     setDialogError(null);
     setEnumDialogOpen(true);
@@ -180,6 +193,7 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
     const list = Object.entries(row.values).map(([k, v]) => ({ ...makeKv(k, v, attributeRow), builtIn: operator && !operatorKeys.has(k) }));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
     setEnumTranslations(row.translation ?? {});
+    setEnumDescription(row.description ?? {});
     setKvFilter('');
     setDialogError(null);
     setEnumDialogOpen(true);
@@ -195,6 +209,8 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
     const list = ownOnly ? [] : Object.entries(row.values).map(([k, v]) => makeKv(k, v, attributeRow));
     setEnumKvList(list.length > 0 ? list : [makeKv('', '', attributeRow)]);
     setEnumTranslations(ownOnly ? {} : row.translation ?? {});
+    // The copy shows the description of the list it copies until it has its own.
+    setEnumDescription({});
     setKvFilter('');
     setDialogError(null);
     setEnumDialogOpen(true);
@@ -260,7 +276,7 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
         const res = await fetch(`${base}/${editingEnum.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-          body: JSON.stringify({ enumName: enumName.trim(), values, translation }),
+          body: JSON.stringify({ enumName: enumName.trim(), values, translation, description: enumDescription }),
         });
         const data = await res.json();
         if (data.ok === false) {
@@ -277,6 +293,7 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
             enumName: enumName.trim(),
             values,
             translation,
+            description: enumDescription,
           }),
         });
         const data = await res.json();
@@ -351,8 +368,12 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
   // Lists that describe other lists (static_data/...: the properties, their types) come last, apart and tinted:
   // changing them changes how other lists are edited.
   const isMetaRow = (row: StaticDataRow) => row.entity === PROPERTIES_LIST.entity;
-  const regularRows = enums.filter((r) => !isMetaRow(r));
-  const metaRows = enums.filter(isMetaRow);
+  // "Only my organization": a list for all organizations the organization has its own copy of is left out.
+  const shownRows = !operator && orgOnly ? enums.filter((r) => r.organization_id !== null || !orgKeys.has(rowKey(r.entity, r.enum_name))) : enums;
+  const regularRows = shownRows.filter((r) => !isMetaRow(r));
+  const metaRows = shownRows.filter(isMetaRow);
+  /** The list for all organizations an organization's copy copies (its description is the copy's until it has one). */
+  const globalOf = (row: StaticDataRow) => (row.organization_id === null ? null : enums.find((r) => r.organization_id === null && r.entity === row.entity && r.enum_name === row.enum_name) ?? null);
 
   /** A list's values as chips with the translated languages (the expanded cell, or the tooltip of the short one). */
   const valuesContent = (
@@ -418,7 +439,24 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
                     >
                       {row.entity}
                     </TableCell>
-                    <TableCell>{row.enum_name}</TableCell>
+                    <TableCell sx={{ maxWidth: 280 }}>
+                      {row.enum_name}
+                      {(() => {
+                        const about = listDescription(row, locale, globalOf(row));
+                        // Two lines; the whole text on hover.
+                        return about ? (
+                          <Tooltip title={about} placement="bottom-start" enterDelay={300}>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', mt: 0.25, lineHeight: 1.35, cursor: 'default' }}
+                            >
+                              {about}
+                            </Typography>
+                          </Tooltip>
+                        ) : null;
+                      })()}
+                    </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>
                       <Chip
                         size="small"
@@ -516,6 +554,15 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
           control={<Checkbox size="small" checked={showAllValues} onChange={(e) => toggleShowAll(e.target.checked)} />}
           label={t('staticdata.showAllValues')}
         />
+        {!operator && (
+          <Tooltip title={t('staticdata.orgOnlyHint')}>
+            <FormControlLabel
+              sx={{ mb: 1 }}
+              control={<Checkbox size="small" checked={orgOnly} onChange={(e) => toggleOrgOnly(e.target.checked)} />}
+              label={t('staticdata.orgOnly')}
+            />
+          </Tooltip>
+        )}
         <TableContainer>
           <Table size="small">
             <TableHead>
@@ -600,6 +647,33 @@ export function StaticDataSettings({ orgId, authHeaders, operator = false }: Omi
               required
               placeholder={t('staticdata.enumNamePlaceholder')}
             />
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <TextField
+                label={t('staticdata.listDescription')}
+                value={enumDescription[descriptionLocale] ?? ''}
+                onChange={(e) => setEnumDescription((prev) => ({ ...prev, [descriptionLocale]: e.target.value }))}
+                size="small"
+                multiline
+                minRows={2}
+                sx={{ flex: 1 }}
+                placeholder={(() => {
+                  const global = enums.find((r) => r.organization_id === null && r.entity === enumEntity.trim() && r.enum_name === enumName.trim());
+                  return !operator && global ? listDescription(global, descriptionLocale) : undefined;
+                })()}
+                helperText={t('staticdata.listDescriptionHelper')}
+                slotProps={{ htmlInput: { maxLength: DESCRIPTION_MAX } }}
+              />
+              <TextField
+                select
+                size="small"
+                label={t('usermenu.language')}
+                value={descriptionLocale}
+                onChange={(e) => setDescriptionLocale(e.target.value as Locale)}
+                sx={{ width: 90 }}
+              >
+                {LOCALES.map((l) => (<MenuItem key={l.code} value={l.code}>{l.code.toUpperCase()}</MenuItem>))}
+              </TextField>
+            </Box>
             {builtInProperties && (
               <Box>
                 <Typography variant="subtitle2">{t('staticdata.builtIn')}</Typography>

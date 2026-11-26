@@ -16,6 +16,43 @@ export interface StaticDataRowLike {
   enum_name: string;
   values: Record<string, unknown>;
   translation?: Record<string, Record<string, string>> | null;
+  /** What the list is for, per language (core changeset 112). */
+  description?: Record<string, string> | null;
+}
+
+/** The languages a list's description is written in, and how long it may be. */
+export const DESCRIPTION_LOCALES = ['de', 'fr', 'it', 'en'] as const;
+export const DESCRIPTION_MAX = 500;
+
+/**
+ * A list's description as the API stores it: a text per language (de, fr, it, en), trimmed, empty ones dropped;
+ * null when it is not such an object or a text is too long.
+ */
+export function cleanDescription(value: unknown): Record<string, string> | null {
+  if (value === null || value === undefined) return {};
+  if (!isObject(value)) return null;
+  const out: Record<string, string> = {};
+  for (const [locale, text] of Object.entries(value)) {
+    if (!(DESCRIPTION_LOCALES as readonly string[]).includes(locale) || typeof text !== 'string') return null;
+    const t = text.trim();
+    if (t.length > DESCRIPTION_MAX) return null;
+    if (t) out[locale] = t;
+  }
+  return out;
+}
+
+/**
+ * What a list is for in `locale`: its own description, else the one of the list for all organizations it copies
+ * (`fallback`), each in `locale`, else in English, else German; '' when there is none.
+ */
+export function listDescription(row: Pick<StaticDataRowLike, 'description'> | null | undefined, locale: string, fallback?: Pick<StaticDataRowLike, 'description'> | null): string {
+  for (const r of [row, fallback]) {
+    const d = r?.description;
+    if (!d) continue;
+    const text = d[locale] || d.en || d.de;
+    if (text) return text;
+  }
+  return '';
 }
 
 /** The list that describes the properties of every list. */

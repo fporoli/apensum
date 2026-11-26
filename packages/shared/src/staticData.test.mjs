@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attributeTextValid, attributeValue, effectiveRow, keepLabels, propertiesOf, staticAttributes, staticValueLabel, withAttribute } from './staticData.ts';
+import { attributeTextValid, cleanDescription, listDescription, attributeValue, effectiveRow, keepLabels, propertiesOf, staticAttributes, staticValueLabel, withAttribute } from './staticData.ts';
 
 // The rows an organization sees: the global descriptions (core and plugin migrations), the organization's copy with
 // one property of its own (and a try at changing a global one), and the lists the choices come from.
@@ -93,4 +93,21 @@ test('a list of labels that gets properties keeps its labels as English translat
     { en: { de: 'German', fr: 'Français' }, de: { fr: 'Französisch' } },
   );
   assert.deepEqual(keepLabels({ x: {} }, { de: { x: 'X' } }), { de: { x: 'X' } });
+});
+
+test('cleanDescription keeps a text per known language, trimmed, and refuses the rest', () => {
+  assert.deepEqual(cleanDescription({ de: '  Wozu  ', en: '', fr: 'Pour quoi' }), { de: 'Wozu', fr: 'Pour quoi' });
+  assert.deepEqual(cleanDescription(undefined), {});
+  assert.equal(cleanDescription('text'), null);
+  assert.equal(cleanDescription({ es: 'no' }), null);
+  assert.equal(cleanDescription({ de: 5 }), null);
+  assert.equal(cleanDescription({ de: 'x'.repeat(501) }), null);
+});
+
+test('listDescription: own text in the language, else English, German, then the list it copies', () => {
+  const global = { description: { de: 'Global', en: 'Global EN' } };
+  assert.equal(listDescription({ description: { fr: 'Propre' } }, 'fr', global), 'Propre');
+  assert.equal(listDescription({ description: {} }, 'fr', global), 'Global EN');
+  assert.equal(listDescription({ description: { de: 'Eigene' } }, 'it'), 'Eigene');
+  assert.equal(listDescription(null, 'de'), '');
 });
