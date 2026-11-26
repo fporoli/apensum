@@ -102,7 +102,7 @@ const STATUS_FILTERS = ['pending', 'approved', 'rejected', 'all'] as const;
 export type StatusFilter = (typeof STATUS_FILTERS)[number];
 const STATUS_COLOR = { pending: 'warning', approved: 'success', rejected: 'error' } as const;
 
-interface ActionItem {
+export interface ActionItem {
   id: string;
   source_table: string;
   source_table_uuid: string;
@@ -146,7 +146,7 @@ function pluginRecord(item: ActionItem): { kind: PluginWorkflowKind; record: Plu
   return null;
 }
 
-function actionItemLabel(definitionName: string, t: TFunction): string {
+export function actionItemLabel(definitionName: string, t: TFunction): string {
   const kind = PLUGIN_WORKFLOW_KINDS.find((k) => k.definitionName === definitionName);
   if (kind) return kind.label(t);
   if (definitionName === 'approve timesheet') return t('approvals.kind.timesheet');
@@ -165,7 +165,7 @@ function actionItemDetail(item: ActionItem): string {
 }
 
 /** The person an action item is about, whatever kind of record it is. */
-function itemPerson(item: ActionItem): { name: string; email: string } | null {
+export function itemPerson(item: ActionItem): { name: string; email: string } | null {
   const row = item.timesheet_period ?? pluginRecord(item)?.record ?? item.absence ?? item.project_time_period ?? item.request;
   return row ? { name: row.user_display_name, email: row.user_email } : null;
 }
@@ -186,7 +186,7 @@ const SOURCE_KEYS: Record<string, string> = {
   Request: 'approvals.source.request',
 };
 
-function correspondingObject(item: ActionItem, t: TFunction): string {
+export function correspondingObject(item: ActionItem, t: TFunction): string {
   if (!item.source) return '—';
   const plugin = pluginRecord(item);
   const pluginSource = PLUGIN_WORKFLOW_KINDS.find((k) => k.source?.name === item.source)?.source;
@@ -210,7 +210,14 @@ interface ApprovalsProps {
    * `statuses` limits the status selector, and items of `excludeSources` (e.g. requests, listed there on their own)
    * are left out.
    */
-  embedded?: { scope?: Scope; status?: StatusFilter; statuses?: readonly StatusFilter[]; excludeSources?: readonly string[] };
+  embedded?: {
+    scope?: Scope;
+    status?: StatusFilter;
+    statuses?: readonly StatusFilter[];
+    excludeSources?: readonly string[];
+    /** Only this item, without the filters (the Flows page's list is its own). */
+    onlyId?: string;
+  };
 }
 
 export default function Approvals({ orgId, role, canDecide, authHeaders, onChanged, embedded }: ApprovalsProps) {
@@ -363,7 +370,10 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
         fetch(`${API}/organizations/${orgId}/timesheet-periods?status=approved`, { headers }),
       ]);
       const [i, a] = await Promise.all([iRes.json(), aRes.json()]);
-      if (Array.isArray(i)) setActionItems(embedded?.excludeSources?.length ? i.filter((x: ActionItem) => !embedded.excludeSources!.includes(x.source_table)) : i);
+      if (Array.isArray(i)) {
+        setActionItems(i.filter((x: ActionItem) =>
+          (!embedded?.onlyId || x.id === embedded.onlyId) && !embedded?.excludeSources?.includes(x.source_table)));
+      }
       if (Array.isArray(a)) setApproved(a);
     } catch { /* offline fallback */ } finally {
       setLoading(false);
@@ -489,82 +499,10 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
     return haystack.includes(q);
   });
 
-  return (
-    <Box sx={{ display: 'grid', gap: 2 }}>
-      {!embedded && <PageHeader title={t('approvals.title')} subtitle={t('approvals.subtitle')} />}
-
-      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-      {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
-      {loading && <LinearProgress />}
-
-      <Paper sx={{ p: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-            {search.trim() || shownKind
-              ? t('approvals.actionItemsFiltered', { count: filteredActionItems.length, total: actionItems.length })
-              : t(decides ? 'approvals.actionItems' : 'approvals.items', { count: filteredActionItems.length })}
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', flex: { xs: '1 1 100%', sm: '0 1 auto' } }}>
-          {!embedded?.scope && (
-            <TextField select size="small" label={t('approvals.view')} value={scope} onChange={(e) => setScope(e.target.value as Scope)} sx={{ minWidth: { xs: '100%', sm: 190 } }}>
-              <MenuItem value="assigned">{t('approvals.view.assigned')}</MenuItem>
-              <MenuItem value="mine">{t('approvals.view.mine')}</MenuItem>
-            </TextField>
-          )}
-          {!embedded?.status && (
-            <TextField select size="small" label={t('approvals.status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)} sx={{ minWidth: { xs: '100%', sm: 150 } }}>
-              {statusOptions.map((s) => <MenuItem key={s} value={s}>{t(`approvals.status.${s}`)}</MenuItem>)}
-            </TextField>
-          )}
-          <TextField
-            select
-            size="small"
-            label={t('approvals.col.type')}
-            value={shownKind}
-            onChange={(e) => setKind(e.target.value)}
-            sx={{ minWidth: { xs: '100%', sm: 220 } }}
-            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
-          >
-            <MenuItem value="">{t('approvals.allTypes')}</MenuItem>
-            {kinds.map((k) => (
-              <MenuItem key={k} value={k}>{actionItemLabel(k, t)}</MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            size="small"
-            placeholder={t('approvals.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ minWidth: { xs: '100%', sm: 300 } }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-          </Box>
-        </Box>
-
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{scope === 'mine' ? t('approvals.col.assignee') : t('teamHours.member')}</TableCell>
-                <TableCell>{t('approvals.col.type')}</TableCell>
-                <TableCell>{t('approvals.col.object')}</TableCell>
-                <TableCell>{t('audit.col.details')}</TableCell>
-                <TableCell align="right">{t('common.actions')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredActionItems.map((item) => (
-                <Fragment key={item.id}>
-                  <TableRow hover>
-                    <TableCell>
+  /** The parts of an item's row: the table's cells, or the card of one item (`embedded.onlyId`). */
+  const itemParts = (item: ActionItem) => ({
+    person: (
+        <>
                       {scope === 'mine' ? (
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{item.assignee_name ?? '—'}</Typography>
                       ) : (
@@ -573,8 +511,10 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           <Typography variant="caption" color="text.secondary">{itemPerson(item)?.email ?? ''}</Typography>
                         </>
                       )}
-                    </TableCell>
-                    <TableCell>
+        </>
+      ),
+    type: (
+        <>
                       <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                         <Chip label={actionItemLabel(item.definition_name, t)} size="small" variant="outlined" />
                         {statusFilter !== 'pending' && (
@@ -589,8 +529,10 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           <Chip label={t('approvals.stepOf', { n: String(item.step_number), count: String(item.step_count) })} size="small" />
                         )}
                       </Box>
-                    </TableCell>
-                    <TableCell>
+        </>
+      ),
+    object: (
+        <>
                       {correspondingObject(item, t)}
                       {item.absence && (
                         <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5 }}>
@@ -601,8 +543,10 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           )}
                         </Box>
                       )}
-                    </TableCell>
-                    <TableCell>
+        </>
+      ),
+    details: (
+        <>
                       {(item.history ?? []).length > 0 && actionItemDetail(item) === '—' ? null : actionItemDetail(item)}
                       {(item.history ?? []).length > 0 && (
                         <Box component="ul" sx={{ m: 0, mt: 0.5, p: 0, listStyle: 'none' }}>
@@ -614,8 +558,10 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           ))}
                         </Box>
                       )}
-                    </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+        </>
+      ),
+    actions: (
+        <>
                       {item.timesheet_period && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(item.timesheet_period!, decidable(item))}>{t('approvals.inspect')}</Button>
                       )}
@@ -660,70 +606,29 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           </>
                         );
                       })()}
-                    </TableCell>
-                  </TableRow>
-                  {fillingId === item.id && item.step_fields?.length ? (
-                    <TableRow>
-                      <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>
+        </>
+      ),
+    fill: fillingId === item.id && item.step_fields?.length ? (
+        <>
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                           <StepFieldsForm fields={item.step_fields} values={fillValues} onChange={setFillValues} privateAnswers={item.step_private_answers} />
                           <Button size="small" variant="contained" onClick={() => void approveItem(item.id, fillValues, item.step_fields ?? undefined)}>{t('approvals.submitForm')}</Button>
                         </Box>
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                  {rejectingId === item.id && (
-                    <TableRow>
-                      <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>
+        </>
+      ) : null,
+    reject: rejectingId === item.id ? (
+        <>
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                           <TextField size="small" label={t('approvals.note')} value={note} onChange={(e) => setNote(e.target.value)} fullWidth />
                           <Button size="small" color="error" variant="contained" onClick={() => void rejectItem(item.id)}>{t(item.step_returns ? 'approvals.confirmReturn' : 'approvals.confirmReject')}</Button>
                         </Box>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
-              ))}
-              {filteredActionItems.length === 0 && (
-                <TableEmptyRow
-                  colSpan={5}
-                  icon={<CheckCircleIcon fontSize="inherit" />}
-                  title={actionItems.length > 0 ? t('approvals.noMatch') : decides ? t('approvals.nothingPending') : t('approvals.nothingFound')}
-                />
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+        </>
+      ) : null,
+  });
 
-      {role === 'admin' && (
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{t('approvals.approvedList', { count: approved.length })}</Typography>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow><TableCell>{t('teamHours.member')}</TableCell><TableCell>{t('time.period')}</TableCell><TableCell align="right">{t('common.actions')}</TableCell></TableRow>
-              </TableHead>
-              <TableBody>
-                {approved.map((p) => (
-                  <TableRow key={p.id} hover>
-                    <TableCell>{p.user_display_name}</TableCell>
-                    <TableCell>{p.period_start.slice(0, 7)}</TableCell>
-                    <TableCell align="right">
-                      <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(p, null)}>{t('approvals.inspect')}</Button>
-                      <Button size="small" onClick={() => void reopen(p.id)}>{t('approvals.reopen')}</Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {approved.length === 0 && (
-                  <TableEmptyRow colSpan={3} icon={<CheckCircleIcon fontSize="inherit" />} title={t('approvals.noneYet')} />
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
-      )}
-
+  // The dialogs (inspect a month, a plugin's record, forward by e-mail, ...), for the table and the card.
+  const dialogs = (
+    <>
       <Dialog open={!!inspectingMonth} onClose={() => setInspectingMonth(null)} maxWidth="md" fullWidth>
         <DialogTitle>
           {inspectingMonth
@@ -969,6 +874,169 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
           authHeaders={authHeaders}
         />
       )}
+    </>
+  );
+
+  // One item as a card (the Flows page's detail): the same parts as a row, one under the other.
+  if (embedded?.onlyId) {
+    const item = actionItems[0];
+    if (!item) return loading ? <LinearProgress /> : <Paper variant="outlined" sx={{ p: 2 }}><Typography color="text.secondary">{t('approvals.nothingFound')}</Typography></Paper>;
+    const part = itemParts(item);
+    return (
+      <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5, minWidth: 0 }}>
+        {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+        {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
+        <Box>
+          <Typography variant="h6" sx={{ fontSize: '1.1rem', overflowWrap: 'anywhere' }}>{part.object}</Typography>
+          <Box sx={{ mt: 0.5 }}>{part.person}</Box>
+        </Box>
+        {part.type}
+        <Box sx={{ color: 'text.secondary' }}>{part.details}</Box>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', '& .MuiButton-root': { mr: 0 } }}>{part.actions}</Box>
+        {part.fill}
+        {part.reject}
+        {dialogs}
+      </Paper>
+    );
+  }
+
+  return (
+    <Box sx={{ display: 'grid', gap: 2 }}>
+      {!embedded && <PageHeader title={t('approvals.title')} subtitle={t('approvals.subtitle')} />}
+
+      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+      {success && <Alert severity="success" onClose={() => setSuccess(null)}>{success}</Alert>}
+      {loading && <LinearProgress />}
+
+      <Paper sx={{ p: 2 }}>
+        {!embedded?.onlyId && <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+            {search.trim() || shownKind
+              ? t('approvals.actionItemsFiltered', { count: filteredActionItems.length, total: actionItems.length })
+              : t(decides ? 'approvals.actionItems' : 'approvals.items', { count: filteredActionItems.length })}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', flex: { xs: '1 1 100%', sm: '0 1 auto' } }}>
+          {!embedded?.scope && (
+            <TextField select size="small" label={t('approvals.view')} value={scope} onChange={(e) => setScope(e.target.value as Scope)} sx={{ minWidth: { xs: '100%', sm: 190 } }}>
+              <MenuItem value="assigned">{t('approvals.view.assigned')}</MenuItem>
+              <MenuItem value="mine">{t('approvals.view.mine')}</MenuItem>
+            </TextField>
+          )}
+          {!embedded?.status && (
+            <TextField select size="small" label={t('approvals.status')} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)} sx={{ minWidth: { xs: '100%', sm: 150 } }}>
+              {statusOptions.map((s) => <MenuItem key={s} value={s}>{t(`approvals.status.${s}`)}</MenuItem>)}
+            </TextField>
+          )}
+          <TextField
+            select
+            size="small"
+            label={t('approvals.col.type')}
+            value={shownKind}
+            onChange={(e) => setKind(e.target.value)}
+            sx={{ minWidth: { xs: '100%', sm: 220 } }}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+          >
+            <MenuItem value="">{t('approvals.allTypes')}</MenuItem>
+            {kinds.map((k) => (
+              <MenuItem key={k} value={k}>{actionItemLabel(k, t)}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            size="small"
+            placeholder={t('approvals.searchPlaceholder')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            sx={{ minWidth: { xs: '100%', sm: 300 } }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          </Box>
+        </Box>}
+
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{scope === 'mine' ? t('approvals.col.assignee') : t('teamHours.member')}</TableCell>
+                <TableCell>{t('approvals.col.type')}</TableCell>
+                <TableCell>{t('approvals.col.object')}</TableCell>
+                <TableCell>{t('audit.col.details')}</TableCell>
+                <TableCell align="right">{t('common.actions')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredActionItems.map((item) => {
+                const part = itemParts(item);
+                return (
+                <Fragment key={item.id}>
+                  <TableRow hover>
+                    <TableCell>{part.person}</TableCell>
+                    <TableCell>{part.type}</TableCell>
+                    <TableCell>{part.object}</TableCell>
+                    <TableCell>{part.details}</TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{part.actions}</TableCell>
+                  </TableRow>
+                  {part.fill && (
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>{part.fill}</TableCell>
+                    </TableRow>
+                  )}
+                  {part.reject && (
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ bgcolor: 'action.hover' }}>{part.reject}</TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+                );
+              })}
+              {filteredActionItems.length === 0 && (
+                <TableEmptyRow
+                  colSpan={5}
+                  icon={<CheckCircleIcon fontSize="inherit" />}
+                  title={actionItems.length > 0 ? t('approvals.noMatch') : decides ? t('approvals.nothingPending') : t('approvals.nothingFound')}
+                />
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      {role === 'admin' && !embedded && (
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{t('approvals.approvedList', { count: approved.length })}</Typography>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow><TableCell>{t('teamHours.member')}</TableCell><TableCell>{t('time.period')}</TableCell><TableCell align="right">{t('common.actions')}</TableCell></TableRow>
+              </TableHead>
+              <TableBody>
+                {approved.map((p) => (
+                  <TableRow key={p.id} hover>
+                    <TableCell>{p.user_display_name}</TableCell>
+                    <TableCell>{p.period_start.slice(0, 7)}</TableCell>
+                    <TableCell align="right">
+                      <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(p, null)}>{t('approvals.inspect')}</Button>
+                      <Button size="small" onClick={() => void reopen(p.id)}>{t('approvals.reopen')}</Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {approved.length === 0 && (
+                  <TableEmptyRow colSpan={3} icon={<CheckCircleIcon fontSize="inherit" />} title={t('approvals.noneYet')} />
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
+      )}
+
+      {dialogs}
     </Box>
   );
 }

@@ -45,9 +45,9 @@ import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from '.
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 export type Box_ = 'mine' | 'inbox' | 'archived';
-type Status = 'open' | 'in_progress' | 'resolved';
+export type Status = 'open' | 'in_progress' | 'resolved';
 
-interface RequestItem {
+export interface RequestItem {
   id: string;
   subject: string;
   status: Status;
@@ -205,7 +205,16 @@ interface RequestsProps {
    * Shown inside the Flows page (Flows.tsx): its box is fixed (no header or tabs), a change of `composeSignal` opens
    * the new-flow dialog, and `onCreated` gets the new one (the page then shows it among one's own).
    */
-  embedded?: { box: Box_; composeSignal?: number; onCreated?: (id: string) => void };
+  embedded?: {
+    box: Box_;
+    composeSignal?: number;
+    onCreated?: (id: string) => void;
+    /** Only the thread of `focusId` (the Flows page's list is its own); `onBack` closes it on a phone. */
+    detailOnly?: boolean;
+    onBack?: () => void;
+    /** Only the design-mode panel of the request forms (nothing when design mode is off). */
+    designOnly?: boolean;
+  };
 }
 
 /**
@@ -302,9 +311,10 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   );
 
   useEffect(() => {
+    if (embedded?.designOnly) return;
     void loadList();
     // refreshKey: a notification arrived.
-  }, [loadList, refreshKey]);
+  }, [loadList, refreshKey, embedded?.designOnly]);
 
   useEffect(() => {
     if (focusId) setSelectedId(focusId);
@@ -524,7 +534,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const thread = r && detail && (
     <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5, minWidth: 0, alignContent: 'start' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flexWrap: 'wrap' }}>
-        <Button size="small" startIcon={<ChevronLeftIcon />} onClick={() => setSelectedId(null)} sx={{ display: { md: 'none' } }}>
+        <Button size="small" startIcon={<ChevronLeftIcon />} onClick={() => (embedded?.onBack ? embedded.onBack() : setSelectedId(null))} sx={{ display: { md: 'none' } }}>
           {t('requests.back')}
         </Button>
         <Box sx={{ flex: 1, minWidth: 200 }}>
@@ -719,6 +729,46 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     </Paper>
   );
 
+  // The request forms' design-mode panel: which form, and its fields.
+  const designPanel = template.designer ? (
+        <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
+          {/* Which form to design: every request's fields, or a type's own. */}
+          <TextField select size="small" label={t('requests.designForm')} value={designType} onChange={(e) => setDesignType(e.target.value)} sx={{ maxWidth: 360 }}>
+            <MenuItem value="">{t('requests.designFormAll')}</MenuItem>
+            {requestTypeOptions(types.values, types.translation, locale).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+          </TextField>
+          <RequestCustomFields key={designType || 'all'} template={designType ? designTypeTemplate : template} values={{}} withPanel>
+            {(fields, title) => (
+              <Box sx={{ display: 'grid', gap: 1 }}>
+                <Typography variant="subtitle2">{title}</Typography>
+                <Typography variant="body2" color="text.secondary">{t(designType ? 'requests.typeFieldsDesign' : 'requests.customFieldsDesign')}</Typography>
+                {fields}
+              </Box>
+            )}
+          </RequestCustomFields>
+        </Paper>
+  ) : null;
+  const newFlowDialog = (
+      <NewRequestDialog
+        open={composeOpen}
+        types={types}
+        template={template}
+        orgId={orgId}
+        authHeaders={authHeaders}
+        errorText={errorText}
+        onClose={() => setComposeOpen(false)}
+        onCreated={async (id) => {
+          setComposeOpen(false);
+          setBox('mine');
+          setSelectedId(id);
+          embedded?.onCreated?.(id);
+          onChanged?.();
+        }}
+      />
+  );
+  // The Flows page's own list: this instance only offers the design panel and the new-flow dialog.
+  if (embedded?.designOnly) return <>{designPanel}{newFlowDialog}</>;
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       {!embedded && (
@@ -736,24 +786,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
-      {template.designer && (
-        <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
-          {/* Which form to design: every request's fields, or a type's own. */}
-          <TextField select size="small" label={t('requests.designForm')} value={designType} onChange={(e) => setDesignType(e.target.value)} sx={{ maxWidth: 360 }}>
-            <MenuItem value="">{t('requests.designFormAll')}</MenuItem>
-            {requestTypeOptions(types.values, types.translation, locale).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-          </TextField>
-          <RequestCustomFields key={designType || 'all'} template={designType ? designTypeTemplate : template} values={{}} withPanel>
-            {(fields, title) => (
-              <Box sx={{ display: 'grid', gap: 1 }}>
-                <Typography variant="subtitle2">{title}</Typography>
-                <Typography variant="body2" color="text.secondary">{t(designType ? 'requests.typeFieldsDesign' : 'requests.customFieldsDesign')}</Typography>
-                {fields}
-              </Box>
-            )}
-          </RequestCustomFields>
-        </Paper>
-      )}
+      {designPanel}
 
       {!embedded && <Tabs
         value={box}
@@ -776,6 +809,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         <Tab value="archived" label={t('requests.box.archived')} />
       </Tabs>}
 
+      {embedded?.detailOnly ? (thread ?? <LinearProgress />) : (
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'minmax(260px, 2fr) 3fr' }, alignItems: 'start' }}>
         <Box sx={{ display: { xs: selectedId ? 'none' : 'block', md: 'block' }, minWidth: 0 }}>{list}</Box>
         <Box sx={{ display: { xs: selectedId ? 'block' : 'none', md: 'block' }, minWidth: 0 }}>
@@ -786,6 +820,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           )}
         </Box>
       </Box>
+      )}
 
       {r && detail && (
         <ForwardMailDialog
@@ -818,22 +853,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         />
       )}
 
-      <NewRequestDialog
-        open={composeOpen}
-        types={types}
-        template={template}
-        orgId={orgId}
-        authHeaders={authHeaders}
-        errorText={errorText}
-        onClose={() => setComposeOpen(false)}
-        onCreated={async (id) => {
-          setComposeOpen(false);
-          setBox('mine');
-          setSelectedId(id);
-          embedded?.onCreated?.(id);
-          onChanged?.();
-        }}
-      />
+      {newFlowDialog}
     </Box>
   );
 }
