@@ -490,38 +490,6 @@ export const notifications = pgTable("notifications", {
 		}).onDelete("cascade"),
 ]);
 
-export const work_time_balance_entries = pgTable("work_time_balance_entries", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	balance_type: balance_entry_type().notNull(),
-	source_table: text(),
-	source_table_uuid: uuid(),
-	target_minutes: numeric({ precision: 10, scale:  2 }),
-	actual_minutes: numeric({ precision: 10, scale:  2 }),
-	delta_minutes: numeric({ precision: 10, scale:  2 }).notNull(),
-	note: text(),
-	created_by_user_id: uuid(),
-	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("idx_work_time_balance_entries_org_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast(), table.created_at.asc().nullsLast()),
-	foreignKey({
-			columns: [table.created_by_user_id],
-			foreignColumns: [users.id],
-			name: "work_time_balance_entries_created_by_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "work_time_balance_entries_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "work_time_balance_entries_user_id_fkey"
-		}).onDelete("cascade"),
-]);
-
 export const work_times = pgTable("work_times", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	user_id: uuid().notNull(),
@@ -616,29 +584,6 @@ export const absences = pgTable("absences", {
 		}).onDelete("cascade"),
 	check("chk_absence_half_day_single_day", sql`(NOT half_day) OR (date_start = date_end)`),
 	check("chk_absence_order", sql`date_end >= date_start`),
-]);
-
-export const basicdata_versions = pgTable("basicdata_versions", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	user_id: uuid().notNull(),
-	version_nr: integer().default(0).notNull(),
-	created: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastmodified: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	lastmodified_by_user_id: uuid(),
-	history: jsonb().default([]).notNull(),
-}, (table) => [
-	foreignKey({
-			columns: [table.lastmodified_by_user_id],
-			foreignColumns: [users.id],
-			name: "basicdata_versions_lastmodified_by_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "basicdata_versions_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("basicdata_versions_user_id_key").on(table.user_id),
-	check("chk_basicdata_versions_version_nr_non_negative", sql`version_nr >= 0`),
 ]);
 
 export const field_config = pgTable("field_config", {
@@ -1473,26 +1418,6 @@ export const news_post_reads = pgTable("news_post_reads", {
 			name: "news_post_reads_user_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.post_id, table.user_id], name: "news_post_reads_pkey"}),
-]);
-
-export const work_time_balances = pgTable("work_time_balances", {
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	overtime_minutes: numeric({ precision: 10, scale:  2 }).default('0').notNull(),
-	vacation_minutes: numeric({ precision: 10, scale:  2 }).default('0').notNull(),
-	updated_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "work_time_balances_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "work_time_balances_user_id_fkey"
-		}).onDelete("cascade"),
-	primaryKey({ columns: [table.organization_id, table.user_id], name: "work_time_balances_pkey"}),
 ]);
 export const audit = pgView("audit", {	uuid: uuid(),
 	entity: varchar({ length: 64 }),

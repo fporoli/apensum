@@ -80,29 +80,11 @@ erDiagram
 > `organization_settings` (flattened into real columns) and
 > `sso_configurations` (kept as the `sso_config` JSON blob, same field names).
 
-## Basic Data History (1 table)
+## Basic Data History (in `versions`)
 
-Each user has a JSON document for personal data on `users.basicdata`. Change
-requests and approved/rejected revisions are recorded in a single history row
-per user; the application owns the shape and status values in its `history`
-array.
-
-```mermaid
-erDiagram
-    USERS ||--o| BASICDATA_VERSIONS : "tracks changes for"
-    USERS ||--o{ BASICDATA_VERSIONS : "lastmodified_by_user_id"
-
-    BASICDATA_VERSIONS {
-        uuid id PK
-        uuid user_id FK UK
-        integer version_nr "default 0, check: >= 0"
-        timestamptz created
-        timestamptz lastmodified
-        uuid lastmodified_by_user_id FK "nullable"
-        jsonb history "approved / changerequested / rejected revisions"
-    }
-    USERS { uuid id PK }
-```
+Each user has a JSON document for personal data on `users.basicdata`.
+Change requests and approved/rejected revisions are recorded in one history per user: the `versions` row with `source_table = 'basicdata'` and the user's id (116; before, the table `basicdata_versions`).
+The application owns the shape and status values in its `history` array (`basicdata.service.ts`); the row is created with the first entry.
 
 ## Access Control / RBAC (6 tables)
 
@@ -318,7 +300,7 @@ erDiagram
 > project time on that project in that month; the working-time timesheet
 > does not lock project time.
 
-## Attendance & Balances (9 tables)
+## Attendance & Balances (7 tables)
 
 `work_times` is the attendance clock (check-in/check-out stamps) — distinct
 from `project_times`, which tags hours against a project/activity rather
@@ -351,8 +333,7 @@ by the schedule's workload and the counting start, unless `vacation_entitlements
 sets that year's days for the person; days taken come from approved
 `vacation` absences; the rest carries over to the next year. Balances count
 from `settings.balancesStartDate`, else from each person's first recorded
-activity. `work_time_balance_entries` / `work_time_balances` are the earlier
-ledger, migrated by 042 and no longer written.
+activity. The earlier ledger (`work_time_balance_entries` / `work_time_balances`), migrated by 042, was dropped by 116.
 
 ```mermaid
 erDiagram
@@ -361,11 +342,6 @@ erDiagram
     ORGANIZATIONS ||--o{ ABSENCES : "scopes"
     USERS ||--o{ ABSENCES : "requests"
     USERS ||--o{ ABSENCES : "reviewed_by_user_id"
-    ORGANIZATIONS ||--o{ WORK_TIME_BALANCES : "scopes"
-    USERS ||--o| WORK_TIME_BALANCES : "has"
-    ORGANIZATIONS ||--o{ WORK_TIME_BALANCE_ENTRIES : "scopes"
-    USERS ||--o{ WORK_TIME_BALANCE_ENTRIES : "affects"
-    USERS ||--o{ WORK_TIME_BALANCE_ENTRIES : "created_by_user_id"
     USERS ||--o{ WORK_SCHEDULES : "works to"
     ORGANIZATIONS ||--o{ ORG_HOLIDAYS : "observes"
     USERS ||--o{ WORK_TIME_MONTHS : "closed month"
@@ -394,25 +370,6 @@ erDiagram
         uuid reviewed_by_user_id FK "nullable"
         text review_note "nullable"
         text note "nullable — requester's own note"
-    }
-    WORK_TIME_BALANCES {
-        uuid organization_id PK "FK -> organizations"
-        uuid user_id PK "FK -> users"
-        numeric overtime_minutes "signed running total"
-        numeric vacation_minutes "signed running total"
-    }
-    WORK_TIME_BALANCE_ENTRIES {
-        uuid id PK
-        uuid organization_id FK
-        uuid user_id FK
-        enum balance_type "overtime / vacation"
-        text source_table "polymorphic — no FK, like versions.source_table; null = manual adjustment"
-        uuid source_table_uuid "polymorphic — no FK"
-        numeric target_minutes "nullable — only meaningful for overtime entries"
-        numeric actual_minutes "nullable — only meaningful for overtime entries"
-        numeric delta_minutes "signed change this entry applies"
-        text note "nullable"
-        uuid created_by_user_id FK "nullable"
     }
     WORK_SCHEDULES {
         uuid id PK

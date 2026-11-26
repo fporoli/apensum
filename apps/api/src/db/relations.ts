@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { users, user_identities, organizations, organization_domains, organization_memberships, roles, organization_invitations, audit_logs, teams, projects, project_times, subprojects, timesheet_periods, versions, workflow_definitions, static_data, workflows, notifications, work_time_balance_entries, work_times, documents, absences, basicdata_versions, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, exchange_rates, ai_usage, news_posts, balance_years, assistant_prompts, user_two_factor, personnel_documents, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads, work_time_balances } from "./schema";
+import { users, user_identities, organizations, organization_domains, organization_memberships, roles, organization_invitations, audit_logs, teams, projects, project_times, subprojects, timesheet_periods, versions, workflow_definitions, static_data, workflows, notifications, work_times, documents, absences, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, exchange_rates, ai_usage, news_posts, balance_years, assistant_prompts, user_two_factor, personnel_documents, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads } from "./schema";
 
 export const user_identitiesRelations = relations(user_identities, ({one}) => ({
 	user: one(users, {
@@ -31,12 +31,6 @@ export const usersRelations = relations(users, ({many}) => ({
 	}),
 	organizations: many(organizations),
 	notifications: many(notifications),
-	work_time_balance_entries_created_by_user_id: many(work_time_balance_entries, {
-		relationName: "work_time_balance_entries_created_by_user_id_users_id"
-	}),
-	work_time_balance_entries_user_id: many(work_time_balance_entries, {
-		relationName: "work_time_balance_entries_user_id_users_id"
-	}),
 	work_times: many(work_times),
 	documents: many(documents),
 	absences_reviewed_by_user_id: many(absences, {
@@ -44,12 +38,6 @@ export const usersRelations = relations(users, ({many}) => ({
 	}),
 	absences_user_id: many(absences, {
 		relationName: "absences_user_id_users_id"
-	}),
-	basicdata_versions_lastmodified_by_user_id: many(basicdata_versions, {
-		relationName: "basicdata_versions_lastmodified_by_user_id_users_id"
-	}),
-	basicdata_versions_user_id: many(basicdata_versions, {
-		relationName: "basicdata_versions_user_id_users_id"
 	}),
 	balance_adjustments_created_by_user_id: many(balance_adjustments, {
 		relationName: "balance_adjustments_created_by_user_id_users_id"
@@ -106,7 +94,6 @@ export const usersRelations = relations(users, ({many}) => ({
 	}),
 	membership_roles: many(membership_roles),
 	news_post_reads: many(news_post_reads),
-	work_time_balances: many(work_time_balances),
 }));
 
 export const organization_domainsRelations = relations(organization_domains, ({one}) => ({
@@ -143,7 +130,6 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 	static_data: many(static_data),
 	workflows: many(workflows),
 	notifications: many(notifications),
-	work_time_balance_entries: many(work_time_balance_entries),
 	work_times: many(work_times),
 	documents: many(documents),
 	absences: many(absences),
@@ -169,7 +155,6 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 	locations: many(locations),
 	personnel_documents: many(personnel_documents),
 	organization_licenses: many(organization_licenses),
-	work_time_balances: many(work_time_balances),
 }));
 
 export const organization_membershipsRelations = relations(organization_memberships, ({one, many}) => ({
@@ -364,23 +349,6 @@ export const notificationsRelations = relations(notifications, ({one}) => ({
 	}),
 }));
 
-export const work_time_balance_entriesRelations = relations(work_time_balance_entries, ({one}) => ({
-	user_created_by_user_id: one(users, {
-		fields: [work_time_balance_entries.created_by_user_id],
-		references: [users.id],
-		relationName: "work_time_balance_entries_created_by_user_id_users_id"
-	}),
-	organization: one(organizations, {
-		fields: [work_time_balance_entries.organization_id],
-		references: [organizations.id]
-	}),
-	user_user_id: one(users, {
-		fields: [work_time_balance_entries.user_id],
-		references: [users.id],
-		relationName: "work_time_balance_entries_user_id_users_id"
-	}),
-}));
-
 export const work_timesRelations = relations(work_times, ({one}) => ({
 	organization: one(organizations, {
 		fields: [work_times.organization_id],
@@ -425,19 +393,6 @@ export const absencesRelations = relations(absences, ({one}) => ({
 		fields: [absences.user_id],
 		references: [users.id],
 		relationName: "absences_user_id_users_id"
-	}),
-}));
-
-export const basicdata_versionsRelations = relations(basicdata_versions, ({one}) => ({
-	user_lastmodified_by_user_id: one(users, {
-		fields: [basicdata_versions.lastmodified_by_user_id],
-		references: [users.id],
-		relationName: "basicdata_versions_lastmodified_by_user_id_users_id"
-	}),
-	user_user_id: one(users, {
-		fields: [basicdata_versions.user_id],
-		references: [users.id],
-		relationName: "basicdata_versions_user_id_users_id"
 	}),
 }));
 
@@ -854,17 +809,6 @@ export const news_post_readsRelations = relations(news_post_reads, ({one}) => ({
 	}),
 	user: one(users, {
 		fields: [news_post_reads.user_id],
-		references: [users.id]
-	}),
-}));
-
-export const work_time_balancesRelations = relations(work_time_balances, ({one}) => ({
-	organization: one(organizations, {
-		fields: [work_time_balances.organization_id],
-		references: [organizations.id]
-	}),
-	user: one(users, {
-		fields: [work_time_balances.user_id],
 		references: [users.id]
 	}),
 }));

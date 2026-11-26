@@ -131,6 +131,7 @@
     <include file="113-permission-flow-designer.sql" relativeToChangelogFile="true"/>
     <include file="114-flow-type-description.sql" relativeToChangelogFile="true"/>
     <include file="115-link-tables-folded.sql" relativeToChangelogFile="true"/>
+    <include file="116-unused-and-second-history.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
-import { basicdata_versions, users } from './db/schema';
+import { users, versions } from './db/schema';
+
+/** The person's "My data" history is the versions row of this source table with their id (116). */
+export const BASICDATA_HISTORY = 'basicdata';
+const ofUser = (userId: string) => and(eq(versions.source_table, BASICDATA_HISTORY), eq(versions.source_table_uuid, userId));
 
 export type BasicDataStatus = 'approved' | 'changerequested' | 'rejected';
 
@@ -77,7 +81,7 @@ export function mergedBasicdata(patch: Record<string, unknown>) {
 
 /**
  * "Meine Daten" personal/family data: the current value lives as a JSON blob on users.basicdata,
- * while every edit — applied or merely requested — is appended to a per-user basicdata_versions
+ * while every edit — applied or merely requested — is appended to the person's versions row (BASICDATA_HISTORY)
  * history[]. An admin/HR edit (applyDirectEdit) merges into users.basicdata immediately and is
  * recorded already 'approved'; anyone else's edit (requestChange) only ever appends a
  * 'changerequested' entry, which sits there until an admin/HR calls resolveRequest.
@@ -86,13 +90,9 @@ export function mergedBasicdata(patch: Record<string, unknown>) {
 export class BasicDataService {
   constructor(private readonly db: DbService) {}
 
-  /** The user's basicdata_versions row, creating an empty one on first touch. */
+  /** The user's history row, or null before their first entry. */
   private async row(db: Db, userId: string) {
-    const [existing] = await db.select().from(basicdata_versions).where(eq(basicdata_versions.user_id, userId));
-    if (existing) return existing;
-    const [created] = await db.insert(basicdata_versions).values({ user_id: userId }).onConflictDoNothing().returning();
-    if (created) return created;
-    const [row] = await db.select().from(basicdata_versions).where(eq(basicdata_versions.user_id, userId));
+    const [row] = await db.select().from(versions).where(ofUser(userId));
     return row ?? null;
   }
 
@@ -141,10 +141,21 @@ export class BasicDataService {
       note: null,
     };
     history.push(entry);
+    const by = partial.requested_by_user_id;
+    if (!row) {
+      // The first entry creates the row; a concurrent first one wins, and this one is appended to it.
+      const [created] = await db
+        .insert(versions)
+        .values({ source_table: BASICDATA_HISTORY, source_table_uuid: userId, version_nr: entry.version, history, created_by_user_id: by, lastmodified_by_user_id: by })
+        .onConflictDoNothing()
+        .returning({ id: versions.version_id });
+      if (created) return entry;
+      return this.appendEntry(db, userId, partial);
+    }
     await db
-      .update(basicdata_versions)
-      .set({ version_nr: entry.version, history, lastmodified: sql`now()`, lastmodified_by_user_id: partial.requested_by_user_id })
-      .where(eq(basicdata_versions.user_id, userId));
+      .update(versions)
+      .set({ version_nr: entry.version, history, lastmodified: sql`now()`, lastmodified_by_user_id: by })
+      .where(ofUser(userId));
     return entry;
   }
 
@@ -189,9 +200,9 @@ export class BasicDataService {
     const now = new Date().toISOString();
     history[idx] = { ...history[idx], status: outcome, reviewed_by_user_id: actorUserId, reviewed_at: now, note };
     await db
-      .update(basicdata_versions)
+      .update(versions)
       .set({ history, lastmodified: sql`now()`, lastmodified_by_user_id: actorUserId })
-      .where(eq(basicdata_versions.user_id, userId));
+      .where(ofUser(userId));
 
     if (outcome === 'approved') {
       const data = orgId ? keepOrgSection(history[idx].data, orgId) : history[idx].data;
@@ -215,7 +226,7 @@ export class BasicDataService {
              bv.history -> (jsonb_array_length(bv.history) - 1) AS latest_entry
       FROM organization_memberships m
       JOIN users u ON u.id = m.user_id
-      JOIN basicdata_versions bv ON bv.user_id = m.user_id
+      JOIN versions bv ON bv.source_table = ${BASICDATA_HISTORY} AND bv.source_table_uuid = m.user_id
       WHERE m.organization_id = ${orgId} AND m.status = 'active'
         AND jsonb_array_length(bv.history) > 0
         AND (bv.history -> (jsonb_array_length(bv.history) - 1) ->> 'status') = 'changerequested'
