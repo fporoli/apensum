@@ -49,6 +49,7 @@ import {
   TimerIcon,
 } from './icons';
 import type { FlowFocus } from './flowRows';
+import { markSessionEnded, SESSION_ENDED_EVENT, watchSession } from './sessionWatch';
 
 const Assistant = lazy(() => import('./Assistant'));
 
@@ -177,6 +178,19 @@ export default function App() {
       navigate('home');
     }
   }, [section, allowed, navigate]);
+
+  // The API ended the session (expired, password changed, account deactivated): sign out, the login page says why.
+  useEffect(() => {
+    watchSession(API);
+    const ended = () => {
+      if (!loadSession()) return;
+      markSessionEnded();
+      clearSession();
+      setSession(null);
+    };
+    window.addEventListener(SESSION_ENDED_EVENT, ended);
+    return () => window.removeEventListener(SESSION_ENDED_EVENT, ended);
+  }, []);
 
   const authHeaders = useCallback(async (): Promise<Record<string, string>> => {
     if (!session) return {};

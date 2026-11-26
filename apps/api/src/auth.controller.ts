@@ -3,8 +3,9 @@ import type { Request } from 'express';
 import { clientIp } from './client-ip';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
+import { forgetSessions, mintSessionToken } from './session-state';
 import { Public } from './jwt.guard';
-import { mintLocalToken, purposeKey, ssoPublicConfig, TWO_FACTOR_SETUP_TOKEN_SEC, verifySsoIdToken } from './jwt';
+import { purposeKey, ssoPublicConfig, TWO_FACTOR_SETUP_TOKEN_SEC, verifySsoIdToken } from './jwt';
 import { sendMail } from './mailer';
 import * as bcrypt from 'bcryptjs';
 import { users, user_identities, organizations, organization_memberships, organization_invitations, roles, membership_roles, static_data } from './db/schema';
@@ -126,7 +127,7 @@ export async function issueSession(db: Db, user: { id: string; email: string; di
     userId: user.id,
     email: user.email,
     displayName: user.display_name,
-    token: setup ? await mintLocalToken(user.id, user.email, TWO_FACTOR_SETUP_TOKEN_SEC, 'two-factor-setup') : await mintLocalToken(user.id, user.email),
+    token: setup ? await mintSessionToken(db, user.id, user.email, TWO_FACTOR_SETUP_TOKEN_SEC, 'two-factor-setup') : await mintSessionToken(db, user.id, user.email),
     memberships: await membershipsOf(db, user.id),
     ...(setup ? { twoFactorSetupRequired: true as const } : {}),
   };
@@ -236,7 +237,7 @@ export class AuthController {
       userId,
       email: user.email,
       displayName: user.display_name,
-      token: await mintLocalToken(userId, email),
+      token: await mintSessionToken(db, userId, email),
       memberships: await membershipsOf(db, userId),
     };
     // Best-effort welcome mail (local catcher); never fail registration over it.
@@ -392,6 +393,8 @@ export class AuthController {
       .where(and(eq(user_identities.id, identity.id), identity.hash === null ? isNull(user_identities.password_hash) : eq(user_identities.password_hash, identity.hash)))
       .returning({ id: user_identities.id });
     if (updated.length === 0) return { ok: false, error: 'reset-link-invalid' };
+    // Every session of the old password ends now (session-state.ts), here at once, in other processes within seconds.
+    forgetSessions(claim.userId);
     void this.versions.record('users', claim.userId, 'update_delta', claim.userId, { password: 'reset by e-mail link' }).catch(() => {});
     return { ok: true, email: identity.email };
   }
@@ -553,7 +556,7 @@ export class AuthController {
       userId: user.id,
       email: user.email,
       displayName: user.display_name,
-      token: await mintLocalToken(user.id, user.email),
+      token: await mintSessionToken(db, user.id, user.email),
       memberships: await membershipsOf(db, user.id),
     };
   }

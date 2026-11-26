@@ -19,6 +19,8 @@ export interface AuthenticatedPrincipal {
   email?: string;
   /** The provider vouches for `email` (claim `email_verified`); only such an address finds or creates an account. */
   emailVerified?: boolean;
+  /** A local token's password stamp (session-state.ts); absent in tokens issued before it existed. */
+  pv?: string;
   /** The provider's display name (`name`, else `preferred_username`). */
   name?: string;
   /**
@@ -201,11 +203,12 @@ export async function verifySsoIdToken(
   return null;
 }
 
-export async function mintLocalToken(userId: string, email: string, expiresInSec = 12 * 3600, scope?: 'two-factor-setup'): Promise<string> {
+/** A local session token; `pv` is the stamp of the password it was issued for (session-state.ts). */
+export async function mintLocalToken(userId: string, email: string, expiresInSec = 12 * 3600, scope?: 'two-factor-setup', pv?: string): Promise<string> {
   const header = b64urlEncode(Buffer.from(JSON.stringify({ alg: LOCAL_ALG, typ: 'JWT' })));
   const now = Math.floor(Date.now() / 1000);
   const body = b64urlEncode(
-    Buffer.from(JSON.stringify({ iss: LOCAL_ISSUER, sub: userId, email, iat: now, exp: now + expiresInSec, ...(scope ? { scope } : {}) })),
+    Buffer.from(JSON.stringify({ iss: LOCAL_ISSUER, sub: userId, email, iat: now, exp: now + expiresInSec, ...(scope ? { scope } : {}), ...(pv ? { pv } : {}) })),
   );
   const sig = createHmac('sha256', localSecret()).update(`${header}.${body}`).digest();
   return `${header}.${body}.${b64urlEncode(sig)}`;
@@ -226,6 +229,7 @@ export async function verifyLocalToken(token: string): Promise<AuthenticatedPrin
     sub: parsed.payload.sub,
     email: typeof parsed.payload.email === 'string' ? parsed.payload.email : undefined,
     ...(scope ? { scope } : {}),
+    ...(typeof parsed.payload.pv === 'string' ? { pv: parsed.payload.pv } : {}),
   };
 }
 

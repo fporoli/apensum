@@ -1,6 +1,8 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { authenticateToken, type AuthenticatedPrincipal } from './jwt';
+import { DbService } from './db.service';
+import { sessionHolds } from './session-state';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -16,7 +18,7 @@ export interface AuthenticatedRequest {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector, private readonly db?: DbService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -30,6 +32,8 @@ export class JwtAuthGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('missing-token');
     const principal = await authenticateToken(token);
     if (!principal) throw new UnauthorizedException('invalid-token');
+    // The account changed since (password, deactivated): this session is over.
+    if (!(await sessionHolds(this.db?.getDb(), principal))) throw new UnauthorizedException('session-ended');
     if (principal.scope === 'two-factor-setup') {
       const allowed = this.reflector.getAllAndOverride<boolean>(TWO_FACTOR_SETUP_KEY, [context.getHandler(), context.getClass()]);
       if (!allowed) throw new ForbiddenException('two-factor-setup-required');

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway } from '@nestjs/websockets';
 import type { WebSocket } from 'ws';
 import { authenticateToken } from './jwt';
+import { sessionHolds } from './session-state';
 import { callerUserId } from './access';
 import { DbService } from './db.service';
 
@@ -55,8 +56,9 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
         const token = (msg as { token: string }).token;
         const found = await authenticateToken(token);
         // A setup-only token (two-step login still to be set up) gets no notifications.
-        const principal = found?.scope ? null : found;
         const db = this.db.getDb();
+        // Nor does a session that has ended (password changed, account deactivated).
+        const principal = found?.scope || (found && !(await sessionHolds(db, found))) ? null : found;
         const userId = principal && db ? await callerUserId(db, principal) : null;
         if (!userId) {
           client.close(4401, 'invalid-token');

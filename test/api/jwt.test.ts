@@ -156,3 +156,22 @@ test('localSecret throws in production if API_JWT_SECRET is unset', async () => 
     if (origSecret !== undefined) process.env.API_JWT_SECRET = origSecret;
   }
 });
+
+test('a session ends when the password changes or the account is deactivated (session-state.ts)', async () => {
+  const { sessionHolds, forgetSessions } = await import('../../apps/api/src/session-state');
+  const { passwordStamp } = await import('../../apps/api/src/password-reset');
+  const id = '00000000-0000-4000-8000-00000000aa01';
+  let state = { status: 'active', hash: 'h1' };
+  const db = { execute: async () => ({ rows: [state] }) } as any;
+  const principal = (pv?: string) => ({ kind: 'local' as const, sub: id, ...(pv ? { pv } : {}) });
+  assert.equal(await sessionHolds(db, principal(passwordStamp('h1')), 0), true);
+  assert.equal(await sessionHolds(db, principal(), 0), true, 'a token from before (no pv) holds until it expires');
+  state = { status: 'active', hash: 'h2' };
+  assert.equal(await sessionHolds(db, principal(passwordStamp('h1')), 10), true, 'cached for a moment');
+  forgetSessions(id);
+  assert.equal(await sessionHolds(db, principal(passwordStamp('h1')), 20), false, 'the old password: over');
+  assert.equal(await sessionHolds(db, principal(passwordStamp('h2')), 20), true);
+  state = { status: 'inactive', hash: 'h2' };
+  assert.equal(await sessionHolds(db, principal(passwordStamp('h2')), 40_000), false, 'deactivated: over');
+  assert.equal(await sessionHolds(null, principal('x'), 0), true, 'offline: nothing to check');
+});

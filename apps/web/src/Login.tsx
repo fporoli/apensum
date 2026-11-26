@@ -7,6 +7,7 @@ import { infoUrl } from './infoUrl';
 import { ApensumMark } from './ApensumMark';
 import { useThemeMode } from './theme';
 import { demoLabel, loadDemoAccounts } from './demoAccounts';
+import { takeSessionEnded } from './sessionWatch';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const SHOW_DEMO_ACCOUNTS = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS !== 'false';
@@ -140,6 +141,8 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Signed out because the session ended (sessionWatch.ts): say so once.
+  useEffect(() => { if (takeSessionEnded()) setNotice(t('login.sessionEnded')); }, [t]);
   const [busy, setBusy] = useState(false);
   const [ssoChecking, setSsoChecking] = useState(() => isSsoCallback());
   const [ssoOffered, setSsoOffered] = useState(false);
