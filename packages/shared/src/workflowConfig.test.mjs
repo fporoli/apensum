@@ -131,7 +131,7 @@ test('reject end: rejected for good, the default where the kind has no back', ()
 
 // A request-like kind: a form block with fields, persons as assignees, steps each one on their own.
 const REQ = {
-  id: 'requests.request',
+  id: 'flows.flow',
   definitionName: 'request',
   rejectModes: ['none', 'back'],
   each: true,

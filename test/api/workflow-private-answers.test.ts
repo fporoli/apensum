@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { visibleThread } from '../../apps/api/src/request-workflow';
+import { visibleThread } from '../../apps/api/src/flow-steps';
 import { withoutInputs } from '../../apps/api/src/workflows.controller';
 
 const REQUESTER = 'u-req';

@@ -92,10 +92,10 @@
       "types": "./dist/reports.d.ts",
       "default": "./dist/reports.js"
     },
-    "./requests": {
-      "source": "./src/requests.ts",
-      "types": "./dist/requests.d.ts",
-      "default": "./dist/requests.js"
+    "./flows": {
+      "source": "./src/flows.ts",
+      "types": "./dist/flows.d.ts",
+      "default": "./dist/flows.js"
     },
     "./cases": {
       "source": "./src/cases.ts",

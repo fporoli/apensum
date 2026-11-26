@@ -76,8 +76,6 @@ export interface ApiPlugin {
    * Only for days the plan decides: a day left out keeps the schedule. WorkTimeModelService.model reads it.
    */
   plannedMinutes?: PlannedMinutesSource;
-  /** @deprecated Ignored: organizations have no ZIP export or restore any more. Goes with the next PLUGIN_API_VERSION. */
-  backup?: ApiBackup;
   /** Approvals: workflow actions, source tables and manager routing. */
   workflows?: ApiPluginWorkflows;
   /**
@@ -107,19 +105,6 @@ export type { ApiTeamView } from './team-overview.controller';
 // Import/Export
 export type { ApiPayrollItem } from './import-export.service';
 export type { PlannedMinutesSource } from './work-time-model.service';
-/** @deprecated Ignored (see ApiPlugin.backup). */
-export interface BackupRestoreContext {
-  targetOrgId: string;
-  read: (file: string) => any[];
-  userIds: ReadonlyMap<string, string>;
-  projectIds: ReadonlyMap<string, string>;
-  subprojectIds: ReadonlyMap<string, string>;
-}
-/** @deprecated Ignored (see ApiPlugin.backup). */
-export interface ApiBackup {
-  export: (db: Db, orgId: string) => Promise<{ files: Record<string, unknown[]>; counts: Record<string, number> }>;
-  restore?: (db: Db, ctx: BackupRestoreContext) => Promise<Record<string, number>>;
-}
 
 // Reports
 export type { ApiReport, ReportRowsContext } from './report-sources';
@@ -153,10 +138,10 @@ export { appBaseUrl } from './app-url';
 // Who records no working time in a period (no working-time timesheet to wait for).
 export { notRecordingUserIds } from './time-recording';
 
-// Requests as tasks: a plugin opens a task for a department (`openTask`, one per key; e.g. a deadline)
+// Flows as tasks: a plugin opens a Free Flow a task to a department (`openTask`, one per key; e.g. a deadline)
 // and resolves the ones that no longer apply (`closeTasks`); past its due date an open task alerts its
-// handlers by e-mail. `requests-off` when the organization has the Requests module off.
-export { RequestsService, type SystemTaskInput, type SystemTaskResult } from './requests.service';
+// handlers by e-mail. 'flows-off' when the organization has the flows module off.
+export { FlowsService, type SystemTaskInput, type SystemTaskResult } from './flows.service';
 
 // Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
 export { BalancesService, type YearBalances, type YearClosing } from './balances.service';

@@ -55,9 +55,9 @@ export const NAV_OBJECTS: PermissionObject[] = [
   { id: 'nav.myData', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.myData' },
   { id: 'nav.balances', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.balances' },
   { id: 'nav.approvals', kind: 'nav', scopes: PEOPLE_SCOPES, caption: 'nav.approvals' },
-  // Requests module (modules.ts): `own` = send and follow one's own requests, `all` = handle every
-  // request of the organization. Handling as manager or department member needs no extra grant.
-  { id: 'nav.requests', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.requests' },
+  // Flows module (modules.ts): `own` = start and follow one's own Free Flows and flows of own types, `all` = handle
+  // every flow of the organization. Handling as manager or department member needs no extra grant.
+  { id: 'nav.flows', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.flows' },
   // News module (modules.ts, news.ts): `see:all` reads the organization's news, `edit:all` writes and publishes.
   { id: 'nav.news', kind: 'nav', scopes: ['all'], caption: 'nav.news' },
   { id: 'nav.documents', kind: 'nav', scopes: ['own'], caption: 'nav.documents' },

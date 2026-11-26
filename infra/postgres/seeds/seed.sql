@@ -707,9 +707,9 @@ JOIN projects pr ON pr.id = t.project_id
 WHERE NOT pg_temp.seed_last_month_open(t.user_id, t.month)
 ON CONFLICT (organization_id, user_id, project_id, period_start) DO NOTHING;
 
--- Requests (module "requests"): a few demo tickets to HR and to line managers, with their threads.
+-- Flows (module "flows"): a few demo Free Flows to HR and to line managers, with their threads.
 -- Fixed ids, so re-seeding adds nothing.
-INSERT INTO requests (id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, assignee_user_id, opened_at, last_activity_at, resolved_at, archived_at) VALUES
+INSERT INTO flows (id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, assignee_user_id, opened_at, last_activity_at, resolved_at, archived_at) VALUES
   ('eeee0000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222227', 'department', 'dddddddd-0000-0000-0000-000000000002',
    'New home address', 'in_progress', '22222222-2222-2222-2222-222222222226', now() - interval '3 days', now() - interval '2 days', NULL, NULL),
   ('eeee0000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '22222222-2222-2222-2222-222222222228', 'department', 'dddddddd-0000-0000-0000-000000000002',
@@ -720,7 +720,7 @@ INSERT INTO requests (id, organization_id, requester_user_id, target_kind, targe
    'Training budget for the sales team', 'resolved', '22222222-2222-2222-2222-222222222223', now() - interval '20 days', now() - interval '14 days', now() - interval '14 days', now() - interval '14 days')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO request_messages (id, request_id, author_user_id, kind, body, data, posted_at) VALUES
+INSERT INTO flow_messages (id, flow_id, author_user_id, kind, body, data, posted_at) VALUES
   ('eeee1111-0000-0000-0000-000000000001', 'eeee0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222227', 'message',
    E'Hello HR,\nI moved last weekend. My new address is Bahnhofstrasse 12, 8001 Zürich. Could you update it?', '{}', now() - interval '3 days'),
   ('eeee1111-0000-0000-0000-000000000002', 'eeee0000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222226', 'event', NULL,
@@ -741,19 +741,19 @@ INSERT INTO request_messages (id, request_id, author_user_id, kind, body, data, 
    '{"archived": true}', now() - interval '14 days')
 ON CONFLICT DO NOTHING;
 
--- Request type, urgency and link (069). Only fills in what is still unset, so re-seeding changes nothing.
-UPDATE requests r SET request_type = v.request_type, urgent = v.urgent, link_url = v.link_url
+-- Flow type, urgency and link (069). Only fills in what is still unset, so re-seeding changes nothing.
+UPDATE flows r SET flow_type = v.flow_type, urgent = v.urgent, link_url = v.link_url
 FROM (VALUES
   ('eeee0000-0000-0000-0000-000000000001'::uuid, 'service', false, NULL),
   ('eeee0000-0000-0000-0000-000000000002'::uuid, 'support', true, 'https://intranet.acme.example/payroll/2026-10'),
   ('eeee0000-0000-0000-0000-000000000003'::uuid, 'other', false, NULL),
   ('eeee0000-0000-0000-0000-000000000004'::uuid, 'service', false, NULL)
-) AS v(id, request_type, urgent, link_url)
-WHERE r.id = v.id AND r.request_type IS NULL;
+) AS v(id, flow_type, urgent, link_url)
+WHERE r.id = v.id AND r.flow_type IS NULL;
 
--- A request type with its own fields and workflow (Admin settings -> Workflows): "Materialbestellung". Acme gets a
--- Frontdesk department (code frontdesk, led by Admin), its own copy of the request types with "material", the type's
--- fields (form request.material: article, quantity, amount) and its workflow: the manager approves, finance too above
+-- A flow type with its own fields and set steps (Admin settings -> Flow designer): "Materialbestellung". Acme gets a
+-- Frontdesk department (code frontdesk, led by Admin), its own copy of the flow types with "material", the type's
+-- fields (form flow.material: article, quantity, amount) and its workflow: the manager approves, finance too above
 -- CHF 500, then Frontdesk orders in the web shop and hands the goods over. Only where nothing is there yet.
 INSERT INTO departments (id, organization_id, name, leader_user_id, sort_order, code)
 VALUES ('dddddddd-0000-0000-0000-000000000006', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Frontdesk', '11111111-1111-1111-1111-111111111111', 6, 'frontdesk')
@@ -762,8 +762,8 @@ ON CONFLICT DO NOTHING;
 INSERT INTO static_data (organization_id, entity, enum_name, "values", translation)
 SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', g.entity, g.enum_name, g."values", g.translation
 FROM static_data g
-WHERE g.organization_id IS NULL AND g.entity = 'requests' AND g.enum_name = 'request_type'
-  AND NOT EXISTS (SELECT 1 FROM static_data o WHERE o.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND o.entity = 'requests' AND o.enum_name = 'request_type');
+WHERE g.organization_id IS NULL AND g.entity = 'flows' AND g.enum_name = 'flow_type'
+  AND NOT EXISTS (SELECT 1 FROM static_data o WHERE o.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND o.entity = 'flows' AND o.enum_name = 'flow_type');
 UPDATE static_data SET
   "values" = "values" || '{"material": {"sort": 5}}'::jsonb,
   translation = jsonb_build_object(
@@ -771,20 +771,20 @@ UPDATE static_data SET
     'en', COALESCE(translation->'en', '{}'::jsonb) || '{"material": "Material order"}'::jsonb,
     'fr', COALESCE(translation->'fr', '{}'::jsonb) || '{"material": "Commande de matériel"}'::jsonb,
     'it', COALESCE(translation->'it', '{}'::jsonb) || '{"material": "Ordine di materiale"}'::jsonb)
-WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND entity = 'requests' AND enum_name = 'request_type'
+WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND entity = 'flows' AND enum_name = 'flow_type'
   AND NOT "values" ? 'material';
 
 INSERT INTO field_config (organization_id, form_id, field_key, is_custom, config) VALUES
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request.material', 'artikel', TRUE,
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'flow.material', 'artikel', TRUE,
    '{"type": "text", "group": "custom", "order": 10, "width": "l", "required": true, "caption": {"de": "Artikel", "en": "Article", "fr": "Article", "it": "Articolo"}}'),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request.material', 'menge', TRUE,
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'flow.material', 'menge', TRUE,
    '{"type": "number", "group": "custom", "order": 20, "width": "s", "min": 1, "caption": {"de": "Menge", "en": "Quantity", "fr": "Quantité", "it": "Quantità"}}'),
-  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request.material', 'betrag', TRUE,
+  ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'flow.material', 'betrag', TRUE,
    '{"type": "number", "group": "custom", "order": 30, "width": "s", "min": 0, "caption": {"de": "Betrag (CHF)", "en": "Amount (CHF)", "fr": "Montant (CHF)", "it": "Importo (CHF)"}}')
 ON CONFLICT DO NOTHING;
 
 INSERT INTO workflow_definitions (organization_id, name, description, steps, config)
-SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request:material', 'A request of a type with its own workflow: its steps, one after the other.', '[]'::jsonb,
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'flow:material', 'A flow of a type with set steps: its steps, one after the other.', '[]'::jsonb,
   '{"version": 1, "steps": [
      {"key": "manager", "do": ["review"], "assignTo": "manager", "reject": "back",
       "label": {"de": "Freigabe Vorgesetzte", "en": "Manager approval", "fr": "Approbation du supérieur", "it": "Approvazione del superiore"}},
@@ -795,7 +795,7 @@ SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'request:material', 'A request of
      {"key": "handover", "do": ["task"], "assignTo": "department:frontdesk", "reject": "none",
       "label": {"de": "Ware übergeben", "en": "Hand over the goods", "fr": "Remettre la marchandise", "it": "Consegnare la merce"}}
    ]}'::jsonb
-WHERE NOT EXISTS (SELECT 1 FROM workflow_definitions WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND name = 'request:material');
+WHERE NOT EXISTS (SELECT 1 FROM workflow_definitions WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND name = 'flow:material');
 
 -- Open requests on the Workflow page: a vacation request each from Ueli (to Marco) and Ulla (to Marta),
 -- about six weeks ahead, with the workflow the API creates on submit (absences.controller.ts, same

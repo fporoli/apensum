@@ -259,13 +259,13 @@ export const CORE_PAGES: AppPage[] = [
     allowedByRole: () => true,
     nav: {
       group: 'organization',
-      label: 'nav.flows',
+      label: 'flows.title',
       icon: <AccountTreeIcon fontSize="small" />,
       // What waits for the caller: workflow items (a free flow's steps among them) and free flows to handle.
       badge: async ({ orgId, authHeaders }) => {
         const [items, summary] = await Promise.all([
           fetchJson(`${API}/workflows/assigned-to-me?orgId=${orgId}`, authHeaders),
-          fetchJson(`${API}/organizations/${orgId}/requests/summary`, authHeaders) as Promise<{ inboxFree?: unknown } | null>,
+          fetchJson(`${API}/organizations/${orgId}/flows/summary`, authHeaders) as Promise<{ inboxFree?: unknown } | null>,
         ]);
         return (Array.isArray(items) ? items.length : 0) + (typeof summary?.inboxFree === 'number' ? summary.inboxFree : 0);
       },
@@ -384,7 +384,7 @@ export const CORE_PAGES: AppPage[] = [
     render: (c) => <WorkflowSettings orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
 
-  { section: 'requests', hash: '#/requests', object: 'nav.requests', render: (c) => flowsPage(c, c.requestFocus ? undefined : 'mine') },
+  { section: 'requests', hash: '#/requests', object: 'nav.flows', render: (c) => flowsPage(c, c.requestFocus ? undefined : 'mine') },
   // personal
   {
     section: 'documents',
@@ -481,7 +481,7 @@ function flowsPage(c: CorePageContext, tab?: 'todo' | 'mine' | 'done') {
       userId={c.userId}
       role={c.roles.displayRole}
       canDecide={p ? holdsBeyondOwn(p, 'nav.approvals', 'edit') : c.roles.canManage}
-      hasFreeFlows={p ? holdsAny(p, 'nav.requests') : true}
+      hasFreeFlows={p ? holdsAny(p, 'nav.flows') : true}
       authHeaders={c.authHeaders}
       initialTab={tab}
       focusId={c.requestFocus}

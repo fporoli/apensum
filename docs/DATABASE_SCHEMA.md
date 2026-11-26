@@ -525,7 +525,7 @@ person and `period_start`. Approving or reopening a month issues a new
 version and sets `superseded_at` on the previous one, so at most one row per
 timesheet / person-month is current (partial unique indexes). The Documents
 page lists these with the person's absence and expense evidence, the
-attachments of their requests and the personnel-file documents shared with
+attachments of their flows and the personnel-file documents shared with
 them.
 
 Files are encrypted at rest (060): each with its own key, wrapped with the
@@ -710,38 +710,39 @@ erDiagram
 > of a row that already exists here, so a missed push is never a lost
 > notification, only a delayed one.
 
-## Requests (3 tables)
+## Flows (3 tables)
 
-The "requests" module (052): a ticket a person sends to their line manager or
-to a department, with a message thread. Who handles it is not stored: for
+The "flows" module (052, renamed from requests in 110): a Free Flow a person
+sends to their line manager or to a department, or a flow of the organization's
+own type with set steps (`target_kind = 'workflow'`), with a message thread. Who handles it is not stored: for
 `target_kind = 'manager'` it is the requester's manager in force
 (`employee_assignments`), for `'department'` everyone whose assignment in force
 is in `target_department_id` plus its leader. Changes notify the other side
-through `notifications` (`source_table = 'requests'`). Since 069 a request has
-a type (`request_type`, a key of the `requests`/`request_type` static_data row),
-an `urgent` flag (urgent open requests are listed first) and an optional
+through `notifications` (`source_table = 'flows'`). Since 069 a flow has
+a type (`flow_type`, a key of the `flows`/`flow_type` static_data row),
+an `urgent` flag (urgent open flows are listed first) and an optional
 `link_url` (http(s) only).
 
 ```mermaid
 erDiagram
-    ORGANIZATIONS ||--o{ REQUESTS : "scopes"
-    USERS ||--o{ REQUESTS : "requester_user_id"
-    USERS ||--o{ REQUESTS : "assignee_user_id"
-    DEPARTMENTS ||--o{ REQUESTS : "target_department_id"
-    REQUESTS ||--o{ REQUEST_MESSAGES : "thread"
-    REQUEST_MESSAGES ||--o{ REQUEST_MESSAGE_DOCUMENTS : "attachments"
-    DOCUMENTS ||--o{ REQUEST_MESSAGE_DOCUMENTS : "document_id"
-    USERS ||--o{ REQUEST_MESSAGES : "author_user_id"
+    ORGANIZATIONS ||--o{ FLOWS : "scopes"
+    USERS ||--o{ FLOWS : "requester_user_id"
+    USERS ||--o{ FLOWS : "assignee_user_id"
+    DEPARTMENTS ||--o{ FLOWS : "target_department_id"
+    FLOWS ||--o{ FLOW_MESSAGES : "thread"
+    FLOW_MESSAGES ||--o{ FLOW_MESSAGE_DOCUMENTS : "attachments"
+    DOCUMENTS ||--o{ FLOW_MESSAGE_DOCUMENTS : "document_id"
+    USERS ||--o{ FLOW_MESSAGES : "author_user_id"
 
-    REQUESTS {
+    FLOWS {
         uuid id PK
         uuid organization_id FK
         uuid requester_user_id FK
-        text target_kind "manager | department"
+        text target_kind "manager | department | workflow"
         uuid target_department_id FK "nullable — set iff target_kind = department"
         text subject
         text status "open | in_progress | resolved"
-        text request_type "nullable — key of static_data requests/request_type"
+        text flow_type "nullable — key of static_data flows/flow_type"
         boolean urgent
         text link_url "nullable — http(s) link, e.g. another ticket"
         uuid assignee_user_id FK "nullable — the handler who took it"
@@ -750,16 +751,16 @@ erDiagram
         timestamptz resolved_at "nullable"
         timestamptz archived_at "nullable — out of the inboxes, read-only"
     }
-    REQUEST_MESSAGES {
+    FLOW_MESSAGES {
         uuid id PK
-        uuid request_id FK
+        uuid flow_id FK
         uuid author_user_id FK "nullable"
         text kind "message | event"
         text body "nullable — a message needs text or an attachment (checked by the API)"
         jsonb data "event details: status, assignee, archived"
         timestamptz posted_at
     }
-    REQUEST_MESSAGE_DOCUMENTS {
+    FLOW_MESSAGE_DOCUMENTS {
         uuid message_id PK, FK
         uuid document_id PK, FK
     }

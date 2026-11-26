@@ -37,7 +37,7 @@ type ChipColor = 'primary' | 'secondary' | 'info' | 'success' | 'warning';
 
 /** The filter chips' order: the core's, with the plugins' put in after the category they name. */
 const CATEGORIES: Category[] = (() => {
-  const out = ['personnel', 'timesheet', 'project_timesheet', 'report', 'absence', 'request'];
+  const out = ['personnel', 'timesheet', 'project_timesheet', 'report', 'absence', 'flow'];
   for (const p of PLUGIN_DOCUMENT_CATEGORIES) {
     const at = p.after ? out.indexOf(p.after) : -1;
     if (at >= 0) out.splice(at + 1, 0, p.category);
@@ -63,7 +63,7 @@ const CATEGORY_COLOR: Record<Category, ChipColor> = {
   timesheet: 'primary',
   project_timesheet: 'secondary',
   absence: 'info',
-  request: 'warning',
+  flow: 'warning',
   personnel: 'secondary',
   report: 'primary',
   ...Object.fromEntries(PLUGIN_DOCUMENT_CATEGORIES.map((p) => [p.category, p.color])),
@@ -206,7 +206,7 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
           const end = c.dateEnd && c.dateEnd !== d.date ? ` – ${formatLocaleDate(String(c.dateEnd), locale)}` : '';
           return [label, `${formatLocaleDate(d.date, locale)}${end}`].filter(Boolean).join(' · ');
         }
-        case 'request':
+        case 'flow':
           return [c.subject, formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');
         case 'personnel':
           return [c.title, c.category ? personnelCategory(String(c.category)) : '', formatLocaleDate(d.date, locale)].filter(Boolean).join(' · ');

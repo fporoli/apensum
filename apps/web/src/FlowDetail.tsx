@@ -35,10 +35,10 @@ import { formatLocaleNumber } from './localeFormat';
 import { EmptyState, PageHeader } from './components';
 import { AddIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon, RestartAltIcon, ScheduleIcon } from './icons';
 import { stepProgress, type StepState } from './flowSteps';
-import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
-import { REQUEST_FORM, requestTypeForm } from '@worktime3/shared/fields';
+import { cleanDueDate, cleanFlowLink, flowTypeConfidential, flowTypeLabel, flowTypeOptions } from '@worktime3/shared/flows';
+import { FLOW_FORM, flowTypeForm } from '@worktime3/shared/fields';
 import { useFormTemplate, type FormTemplate } from './designMode';
-import { RequestCustomFields, checkRequestCustomAll, hasCustomValues } from './RequestCustomFields';
+import { FlowCustomFields, checkFlowCustomAll, hasCustomValues } from './FlowCustomFields';
 import ForwardMailDialog, { type Recipient } from './ForwardMailDialog';
 import { formatLocaleDate, formatLocaleDateTime, formatRelativeTime } from './localeFormat';
 import { AttachmentView, DropZone, useAttachmentDraft, type Attachment } from './attachments';
@@ -48,11 +48,11 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 export type Box_ = 'mine' | 'inbox' | 'archived';
 export type Status = 'open' | 'in_progress' | 'resolved';
 
-export interface RequestItem {
+export interface FlowItem {
   id: string;
   subject: string;
   status: Status;
-  request_type: string | null;
+  flow_type: string | null;
   urgent: boolean;
   link_url: string | null;
   target_kind: 'manager' | 'department' | 'workflow';
@@ -87,7 +87,7 @@ interface Message {
     status?: Status;
     archived?: boolean;
     assignee?: string | null;
-    details?: { request_type?: string | null; urgent?: boolean; link_url?: string | null; due_date?: string | null; subject?: string };
+    details?: { flow_type?: string | null; urgent?: boolean; link_url?: string | null; due_date?: string | null; subject?: string };
     obsolete?: boolean;
     /** A workflow request's step (request-workflow.ts threadEvent). */
     workflow?: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed';
@@ -115,7 +115,7 @@ interface StepLabel {
 }
 
 /** A workflow request's workflow (GET requests/:id `workflow`). */
-interface RequestWorkflowInfo {
+interface FlowStepsInfo {
   id: string;
   status: 'pending' | 'approved' | 'rejected';
   step: string;
@@ -140,22 +140,22 @@ const stepName = (s: StepLabel | undefined, locale: string, t: (key: string) => 
   return s.label;
 };
 
-/** A request type's own form (`request.<type>`): its fields come after every request's. */
-function useRequestTypeTemplate(orgId: string, type: string | null | undefined, authHeaders: () => Promise<Record<string, string>>): FormTemplate {
-  const def = useMemo(() => requestTypeForm(type || '_none') ?? requestTypeForm('_none')!, [type]);
+/** A request type's own form (`flow.<type>`): its fields come after every request's. */
+function useFlowTypeTemplate(orgId: string, type: string | null | undefined, authHeaders: () => Promise<Record<string, string>>): FormTemplate {
+  const def = useMemo(() => flowTypeForm(type || '_none') ?? flowTypeForm('_none')!, [type]);
   return useFormTemplate(orgId, def, authHeaders);
 }
 
 interface Detail {
-  request: RequestItem;
+  flow: FlowItem;
   messages: Message[];
   handlers: { id: string; name: string; email: string }[];
   isRequester: boolean;
   isHandler: boolean;
-  workflow: RequestWorkflowInfo | null;
+  workflow: FlowStepsInfo | null;
 }
 
-/** The org's request_type static_data row (its own copy, else the global one). */
+/** The org's flow_type static_data row (its own copy, else the global one). */
 interface TypeRow {
   values: Record<string, unknown>;
   translation: Record<string, Record<string, string>>;
@@ -198,7 +198,7 @@ function messageBody(fields: Record<string, string | undefined>, files: File[]):
 
 const STATUS_COLOR: Record<Status, 'warning' | 'info' | 'success'> = { open: 'warning', in_progress: 'info', resolved: 'success' };
 
-interface RequestsProps {
+interface FlowDetailProps {
   orgId: string;
   userId: string | null;
   authHeaders: () => Promise<Record<string, string>>;
@@ -234,11 +234,11 @@ interface RequestsProps {
  * member), "Archived" the archived ones of both. Handlers take a request, answer, set its status
  * and archive it; every change notifies the other side.
  */
-export default function Requests({ orgId, userId, authHeaders, focusId, refreshKey, onChanged, navigate, embedded }: RequestsProps) {
+export default function FlowDetail({ orgId, userId, authHeaders, focusId, refreshKey, onChanged, navigate, embedded }: FlowDetailProps) {
   const { t, locale } = useI18n();
   const [chosenBox, setBox] = useState<Box_>('mine');
   const box = embedded?.box ?? chosenBox;
-  const [items, setItems] = useState<RequestItem[]>([]);
+  const [items, setItems] = useState<FlowItem[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(focusId ?? null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -254,18 +254,18 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const [editingDetails, setEditingDetails] = useState(false);
   const [types, setTypes] = useState<TypeRow>({ values: {}, translation: {} });
   const replyFiles = useAttachmentDraft(setError);
-  const template = useFormTemplate(orgId, REQUEST_FORM, authHeaders);
+  const template = useFormTemplate(orgId, FLOW_FORM, authHeaders);
   // The shown request's type's own fields, and in design mode the form chosen to design (every request's or a type's).
   const [designType, setDesignType] = useState('');
-  const designTypeTemplate = useRequestTypeTemplate(orgId, designType, authHeaders);
+  const designTypeTemplate = useFlowTypeTemplate(orgId, designType, authHeaders);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API}/organizations/${orgId}/static-data/requests`, { headers: await authHeaders() });
+        const res = await fetch(`${API}/organizations/${orgId}/static-data/flows`, { headers: await authHeaders() });
         const rows = await res.json();
-        const row = Array.isArray(rows) ? rows.find((x: { enum_name?: string }) => x.enum_name === 'request_type') : null;
+        const row = Array.isArray(rows) ? rows.find((x: { enum_name?: string }) => x.enum_name === 'flow_type') : null;
         if (!cancelled) setTypes({ values: row?.values ?? {}, translation: row?.translation ?? {} });
       } catch {
         /* no types: the forms just don't show the field */
@@ -276,13 +276,13 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     };
   }, [orgId, authHeaders]);
 
-  const typeLabel = (key: string | null | undefined) => (key ? requestTypeLabel(types.translation, locale, key) : '');
+  const typeLabel = (key: string | null | undefined) => (key ? flowTypeLabel(types.translation, locale, key) : '');
 
   const errorText = useCallback(
     (code: string | undefined) => {
-      const key = `requests.error.${code}`;
+      const key = `flow.error.${code}`;
       const text = t(key);
-      return text === key ? t('requests.error.failed', { error: code ?? t('common.unknownError') }) : text;
+      return text === key ? t('flow.error.failed', { error: code ?? t('common.unknownError') }) : text;
     },
     [t],
   );
@@ -292,10 +292,10 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     try {
       const headers = await authHeaders();
       const [list, summary] = await Promise.all([
-        fetch(`${API}/organizations/${orgId}/requests?box=${box}`, { headers }).then((r) => r.json()),
-        fetch(`${API}/organizations/${orgId}/requests/summary`, { headers }).then((r) => r.json()),
+        fetch(`${API}/organizations/${orgId}/flows?box=${box}`, { headers }).then((r) => r.json()),
+        fetch(`${API}/organizations/${orgId}/flows/summary`, { headers }).then((r) => r.json()),
       ]);
-      setItems(Array.isArray(list?.requests) ? list.requests : []);
+      setItems(Array.isArray(list?.flows) ? list.flows : []);
       setInboxCount(typeof summary?.inbox === 'number' ? summary.inbox : 0);
     } catch {
       setError(t('common.cannotReachApi'));
@@ -307,9 +307,9 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const loadDetail = useCallback(
     async (id: string) => {
       try {
-        const res = await fetch(`${API}/organizations/${orgId}/requests/${id}`, { headers: await authHeaders() });
+        const res = await fetch(`${API}/organizations/${orgId}/flows/${id}`, { headers: await authHeaders() });
         const data = await res.json();
-        if (data?.ok && data.request) setDetail(data as Detail);
+        if (data?.ok && data.flow) setDetail(data as Detail);
         else {
           setDetail(null);
           setError(errorText(data?.error));
@@ -386,7 +386,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       const payload = files.length
         ? messageBody(fields as Record<string, string | undefined>, files)
         : { body: JSON.stringify(fields), headers: { 'Content-Type': 'application/json' } };
-      const res = await fetch(`${API}/organizations/${orgId}/requests${path}`, {
+      const res = await fetch(`${API}/organizations/${orgId}/flows${path}`, {
         method: 'POST',
         headers: { ...payload.headers, ...(await authHeaders()) },
         body: payload.body,
@@ -414,58 +414,58 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
 
   async function sendReply() {
     if (!detail || (!reply.trim() && replyFiles.files.length === 0)) return;
-    if (await post(`/${detail.request.id}/messages`, { body: reply }, replyFiles.files)) {
+    if (await post(`/${detail.flow.id}/messages`, { body: reply }, replyFiles.files)) {
       setReply('');
       replyFiles.clear();
     }
   }
 
-  const r = detail?.request;
-  const target = (item: RequestItem) =>
-    item.target_kind === 'workflow' ? t('requests.toWorkflow')
-      : item.target_kind === 'manager' ? t('requests.toManager') : t('requests.toDepartment', { department: item.department_name ?? '' });
+  const r = detail?.flow;
+  const target = (item: FlowItem) =>
+    item.target_kind === 'workflow' ? t('flow.toWorkflow')
+      : item.target_kind === 'manager' ? t('flow.toManager') : t('flow.toDepartment', { department: item.department_name ?? '' });
   /** A module's or plugin's name (its `modules.<id>` text), for the tasks it opens. */
   const sourceLabel = (source: string | null) => {
-    if (!source) return t('requests.system');
+    if (!source) return t('flow.system');
     const label = t(`modules.${source}`);
     return label === `modules.${source}` ? source : label;
   };
-  const sender = (item: RequestItem) => item.requester_name ?? item.requester_email ?? sourceLabel(item.source);
-  const dueChip = (item: RequestItem) =>
+  const sender = (item: FlowItem) => item.requester_name ?? item.requester_email ?? sourceLabel(item.source);
+  const dueChip = (item: FlowItem) =>
     item.due_date && item.status !== 'resolved' ? (
       <Chip
         size="small"
         color={item.overdue ? 'error' : 'default'}
         variant={item.overdue ? 'filled' : 'outlined'}
-        label={t(item.overdue ? 'requests.overdueSince' : 'requests.dueOn', { date: formatLocaleDate(item.due_date, locale) })}
+        label={t(item.overdue ? 'flow.overdueSince' : 'flow.dueOn', { date: formatLocaleDate(item.due_date, locale) })}
       />
     ) : null;
 
   /** A message's author: the person, or the module or plugin that opened the task. */
-  const authorOf = (m: Message) => m.author_name ?? (m.author_user_id === null && r?.source ? sourceLabel(r.source) : t('requests.someone'));
+  const authorOf = (m: Message) => m.author_name ?? (m.author_user_id === null && r?.source ? sourceLabel(r.source) : t('flow.someone'));
 
   function eventText(m: Message): string {
     const who = authorOf(m);
     if (m.data.workflow) {
       const step = stepName(m.data.step, locale, t);
       const text = m.data.automatic
-        ? t('requests.event.workflow.automatic', { step })
-        : t(`requests.event.workflow.${m.data.workflow}`, { who, step });
+        ? t('flow.event.workflow.automatic', { step })
+        : t(`flow.event.workflow.${m.data.workflow}`, { who, step });
       return m.data.note ? `${text}: ${m.data.note}` : text;
     }
-    if (m.data.obsolete) return t('requests.event.obsolete', { who });
+    if (m.data.obsolete) return t('flow.event.obsolete', { who });
     if (m.data.details) {
       const d = m.data.details;
       if (d.due_date !== undefined && Object.keys(d).every((k) => k === 'due_date' || k === 'subject')) {
-        return d.due_date ? t('requests.event.due', { who, date: formatLocaleDate(d.due_date, locale) }) : t('requests.event.noDue', { who });
+        return d.due_date ? t('flow.event.due', { who, date: formatLocaleDate(d.due_date, locale) }) : t('flow.event.noDue', { who });
       }
-      if (Object.keys(d).length === 1 && d.urgent !== undefined) return t(d.urgent ? 'requests.event.urgent' : 'requests.event.notUrgent', { who });
-      return t('requests.event.details', { who });
+      if (Object.keys(d).length === 1 && d.urgent !== undefined) return t(d.urgent ? 'flow.event.urgent' : 'flow.event.notUrgent', { who });
+      return t('flow.event.details', { who });
     }
-    if (m.data.archived === true) return t('requests.event.archived', { who });
-    if (m.data.archived === false) return t('requests.event.unarchived', { who });
-    if (m.data.assignee !== undefined) return m.data.assignee ? t('requests.event.took', { who }) : t('requests.event.released', { who });
-    if (m.data.status) return t('requests.event.status', { who, status: t(`requests.status.${m.data.status}`) });
+    if (m.data.archived === true) return t('flow.event.archived', { who });
+    if (m.data.archived === false) return t('flow.event.unarchived', { who });
+    if (m.data.assignee !== undefined) return m.data.assignee ? t('flow.event.took', { who }) : t('flow.event.released', { who });
+    if (m.data.status) return t('flow.event.status', { who, status: t(`flow.status.${m.data.status}`) });
     return who;
   }
 
@@ -473,7 +473,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     <Paper variant="outlined" sx={{ minWidth: 0 }}>
       {loading && <LinearProgress />}
       {items.length === 0 && !loading ? (
-        <EmptyState icon={<MailIcon fontSize="inherit" />} title={t(`requests.empty.${box}`)} />
+        <EmptyState icon={<MailIcon fontSize="inherit" />} title={t(`flow.empty.${box}`)} />
       ) : (
         <List disablePadding>
           {items.map((item, i) => (
@@ -485,19 +485,19 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                   primaryTypographyProps={{ noWrap: true, fontWeight: 600 }}
                   secondary={
                     <>
-                      {item.request_type ? `${typeLabel(item.request_type)} · ` : ''}
+                      {item.flow_type ? `${typeLabel(item.flow_type)} · ` : ''}
                       {box === 'mine' ? target(item) : `${sender(item)} · ${target(item)}`}
                       <br />
                       {formatRelativeTime(item.last_activity_at, locale)}
-                      {item.assignee_name ? ` · ${t('requests.handledBy', { name: item.assignee_name })}` : ''}
+                      {item.assignee_name ? ` · ${t('flow.handledBy', { name: item.assignee_name })}` : ''}
                     </>
                   }
                 />
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
-                  <Chip size="small" color={STATUS_COLOR[item.status]} label={t(`requests.status.${item.status}`)} />
-                  {item.urgent && item.status !== 'resolved' && <Chip size="small" color="error" variant="outlined" label={t('requests.urgent')} />}
+                  <Chip size="small" color={STATUS_COLOR[item.status]} label={t(`flow.status.${item.status}`)} />
+                  {item.urgent && item.status !== 'resolved' && <Chip size="small" color="error" variant="outlined" label={t('flow.urgent')} />}
                   {dueChip(item)}
-                  {item.confidential && <LockIcon fontSize="small" color="action" titleAccess={t('requests.confidential')} />}
+                  {item.confidential && <LockIcon fontSize="small" color="action" titleAccess={t('flow.confidential')} />}
                 </Box>
               </ListItemButton>
             </Box>
@@ -511,7 +511,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
    * "Send by e-mail": the server mails it (ForwardMailDialog). Suggested: the other side (the handlers
    * when the caller sent it, else the requester); the message holds the thread's latest messages.
    */
-  function forwardSuggested(req: RequestItem, d: Detail): Recipient[] {
+  function forwardSuggested(req: FlowItem, d: Detail): Recipient[] {
     return d.isRequester
       ? d.handlers.filter((h) => h.id !== userId).map((h) => ({ id: h.id, name: h.name, email: h.email }))
       : req.requester_user_id && req.requester_email
@@ -519,7 +519,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         : [];
   }
 
-  function forwardMessage(req: RequestItem, d: Detail): string {
+  function forwardMessage(req: FlowItem, d: Detail): string {
     const messages = d.messages
       .filter((m) => m.kind === 'message')
       .slice(-3)
@@ -528,17 +528,17 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         return `${m.author_name ?? '—'} · ${formatLocaleDateTime(m.posted_at, locale)}\n${m.body ?? ''}${files}`.trim();
       });
     return [
-      t('requests.mail.intro', { subject: req.subject }),
+      t('flow.mail.intro', { subject: req.subject }),
       [
-        t('requests.from', { name: sender(req) }),
+        t('flow.from', { name: sender(req) }),
         target(req),
-        req.due_date ? t('requests.dueOn', { date: formatLocaleDate(req.due_date, locale) }) : null,
-        req.request_type ? typeLabel(req.request_type) : null,
-        req.urgent ? t('requests.urgent') : null,
-        t(`requests.status.${req.status}`),
+        req.due_date ? t('flow.dueOn', { date: formatLocaleDate(req.due_date, locale) }) : null,
+        req.flow_type ? typeLabel(req.flow_type) : null,
+        req.urgent ? t('flow.urgent') : null,
+        t(`flow.status.${req.status}`),
       ].filter(Boolean).join(' · '),
       ...(req.link_url ? [req.link_url] : []),
-      ...(messages.length ? ['', t('requests.mail.latest'), '', messages.join('\n\n---\n\n')] : []),
+      ...(messages.length ? ['', t('flow.mail.latest'), '', messages.join('\n\n---\n\n')] : []),
     ].join('\n');
   }
 
@@ -546,31 +546,31 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5, minWidth: 0, alignContent: 'start' }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flexWrap: 'wrap' }}>
         <Button size="small" startIcon={<ChevronLeftIcon />} onClick={() => (embedded?.onBack ? embedded.onBack() : setSelectedId(null))} sx={{ display: { md: 'none' } }}>
-          {t('requests.back')}
+          {t('flow.back')}
         </Button>
         <Box sx={{ flex: 1, minWidth: 200 }}>
           <Typography variant="h6" sx={{ fontSize: '1.1rem', overflowWrap: 'anywhere' }}>{r.subject}</Typography>
           <Typography variant="body2" color="text.secondary">
-            {t('requests.from', { name: sender(r) })} · {target(r)}
+            {t('flow.from', { name: sender(r) })} · {target(r)}
             {r.target_kind === 'manager' && detail.handlers.length > 0 ? ` (${detail.handlers.map((h) => h.name).join(', ')})` : ''}
             {' · '}
             {formatLocaleDateTime(r.opened_at, locale)}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-          {r.urgent && <Chip size="small" color="error" label={t('requests.urgent')} />}
+          {r.urgent && <Chip size="small" color="error" label={t('flow.urgent')} />}
           {dueChip(r)}
           {r.confidential && (
-            <Tooltip title={t('requests.confidentialHint')}>
-              <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('requests.confidential')} />
+            <Tooltip title={t('flow.confidentialHint')}>
+              <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('flow.confidential')} />
             </Tooltip>
           )}
-          {r.request_type && <Chip size="small" variant="outlined" label={typeLabel(r.request_type)} />}
-          <Chip size="small" color={STATUS_COLOR[r.status]} label={t(`requests.status.${r.status}`)} />
-          {r.archived_at && <Chip size="small" label={t('requests.archived')} />}
+          {r.flow_type && <Chip size="small" variant="outlined" label={typeLabel(r.flow_type)} />}
+          <Chip size="small" color={STATUS_COLOR[r.status]} label={t(`flow.status.${r.status}`)} />
+          {r.archived_at && <Chip size="small" label={t('flow.archived')} />}
           {!r.archived_at && (detail.isHandler || detail.isRequester) && (
-            <Tooltip title={t('requests.editDetails')}>
-              <IconButton size="small" aria-label={t('requests.editDetails')} onClick={() => setEditingDetails(true)}>
+            <Tooltip title={t('flow.editDetails')}>
+              <IconButton size="small" aria-label={t('flow.editDetails')} onClick={() => setEditingDetails(true)}>
                 <EditIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -579,14 +579,14 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       </Box>
 
       {hasCustomValues(template, r.custom) && (
-        <RequestCustomFields template={{ ...template, designer: null }} values={r.custom ?? {}} editing={false} />
+        <FlowCustomFields template={{ ...template, designer: null }} values={r.custom ?? {}} editing={false} />
       )}
-      {r.request_type && <RequestTypeFields orgId={orgId} type={r.request_type} authHeaders={authHeaders} values={r.custom ?? {}} />}
+      {r.flow_type && <FlowTypeFields orgId={orgId} type={r.flow_type} authHeaders={authHeaders} values={r.custom ?? {}} />}
 
       {r.link_url && (
         <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', minWidth: 0 }}>
           <PublicIcon fontSize="small" color="action" />
-          <Tooltip title={t('requests.openLink')}>
+          <Tooltip title={t('flow.openLink')}>
             <Link href={r.link_url} target="_blank" rel="noopener noreferrer" variant="body2" noWrap sx={{ minWidth: 0 }}>
               {r.link_url.replace(/^https?:\/\//, '')}
             </Link>
@@ -597,7 +597,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       {r.source_section && navigate && (
         <Box>
           <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string)}>
-            {t('requests.openSource', { name: sourceLabel(r.source) })}
+            {t('flow.openSource', { name: sourceLabel(r.source) })}
           </Button>
         </Box>
       )}
@@ -616,47 +616,47 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
       )}
 
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-        {r.assignee_name && <Typography variant="body2" color="text.secondary">{t('requests.handledBy', { name: r.assignee_name })}</Typography>}
+        {r.assignee_name && <Typography variant="body2" color="text.secondary">{t('flow.handledBy', { name: r.assignee_name })}</Typography>}
         <Box sx={{ flex: 1 }} />
         {detail.isHandler && !r.archived_at && (
           r.assignee_user_id === userId ? (
-            <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/take`, { release: true })}>{t('requests.release')}</Button>
+            <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/take`, { release: true })}>{t('flow.release')}</Button>
           ) : (
-            <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/take`, {})}>{t('requests.take')}</Button>
+            <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/take`, {})}>{t('flow.take')}</Button>
           )
         )}
         {detail.isHandler && !r.archived_at && r.target_kind !== 'workflow' && (
           <TextField
             select
             size="small"
-            label={t('requests.statusLabel')}
+            label={t('flow.statusLabel')}
             value={r.status}
             disabled={busy}
             onChange={(e) => void post(`/${r.id}/status`, { status: e.target.value })}
             sx={{ minWidth: 150 }}
           >
             {(['open', 'in_progress', 'resolved'] as const).map((s) => (
-              <MenuItem key={s} value={s}>{t(`requests.status.${s}`)}</MenuItem>
+              <MenuItem key={s} value={s}>{t(`flow.status.${s}`)}</MenuItem>
             ))}
           </TextField>
         )}
         {!detail.isHandler && detail.isRequester && !r.archived_at && r.target_kind !== 'workflow' && (
           r.status === 'resolved' ? (
-            <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'open' })}>{t('requests.reopen')}</Button>
+            <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'open' })}>{t('flow.reopen')}</Button>
           ) : (
-            <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'resolved' })}>{t('requests.markResolved')}</Button>
+            <Button size="small" variant="outlined" disabled={busy} onClick={() => void post(`/${r.id}/status`, { status: 'resolved' })}>{t('flow.markResolved')}</Button>
           )
         )}
         {!r.confidential && (
-          <Tooltip title={t('requests.mail.hint')}>
+          <Tooltip title={t('flow.mail.hint')}>
             <Button size="small" startIcon={<MailIcon />} onClick={() => setForwarding(true)}>
-              {t('requests.mail')}
+              {t('flow.mail')}
             </Button>
           </Tooltip>
         )}
         {detail.isHandler && (
           <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/archive`, { archived: !r.archived_at })}>
-            {r.archived_at ? t('requests.unarchive') : t('requests.archive')}
+            {r.archived_at ? t('flow.unarchive') : t('flow.archive')}
           </Button>
         )}
       </Box>
@@ -697,7 +697,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
                       <AttachmentView
                         key={a.id}
                         attachment={a}
-                        url={`${API}/organizations/${orgId}/requests/${r.id}/attachments/${a.id}`}
+                        url={`${API}/organizations/${orgId}/flows/${r.id}/attachments/${a.id}`}
                         authHeaders={authHeaders}
                       />
                     ))}
@@ -717,7 +717,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
               minRows={2}
               maxRows={10}
               size="small"
-              label={t('requests.reply')}
+              label={t('flow.reply')}
               helperText={t('attachments.hint')}
               value={reply}
               onChange={(e) => setReply(e.target.value)}
@@ -730,13 +730,13 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               {replyFiles.button}
               <Button variant="contained" disabled={busy || (!reply.trim() && replyFiles.files.length === 0)} onClick={() => void sendReply()}>
-                {t('requests.send')}
+                {t('flow.send')}
               </Button>
             </Box>
           </Box>
         </DropZone>
       ) : (
-        <Typography variant="body2" color="text.secondary">{t('requests.archivedReadOnly')}</Typography>
+        <Typography variant="body2" color="text.secondary">{t('flow.archivedReadOnly')}</Typography>
       )}
     </Paper>
   );
@@ -745,23 +745,23 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const designPanel = template.designer ? (
         <Paper variant="outlined" sx={{ p: 2, display: 'grid', gap: 1.5 }}>
           {/* Which form to design: every request's fields, or a type's own. */}
-          <TextField select size="small" label={t('requests.designForm')} value={designType} onChange={(e) => setDesignType(e.target.value)} sx={{ maxWidth: 360 }}>
-            <MenuItem value="">{t('requests.designFormAll')}</MenuItem>
-            {requestTypeOptions(types.values, types.translation, locale).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+          <TextField select size="small" label={t('flow.designForm')} value={designType} onChange={(e) => setDesignType(e.target.value)} sx={{ maxWidth: 360 }}>
+            <MenuItem value="">{t('flow.designFormAll')}</MenuItem>
+            {flowTypeOptions(types.values, types.translation, locale).map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
           </TextField>
-          <RequestCustomFields key={designType || 'all'} template={designType ? designTypeTemplate : template} values={{}} withPanel>
+          <FlowCustomFields key={designType || 'all'} template={designType ? designTypeTemplate : template} values={{}} withPanel>
             {(fields, title) => (
               <Box sx={{ display: 'grid', gap: 1 }}>
                 <Typography variant="subtitle2">{title}</Typography>
-                <Typography variant="body2" color="text.secondary">{t(designType ? 'requests.typeFieldsDesign' : 'requests.customFieldsDesign')}</Typography>
+                <Typography variant="body2" color="text.secondary">{t(designType ? 'flow.typeFieldsDesign' : 'flow.customFieldsDesign')}</Typography>
                 {fields}
               </Box>
             )}
-          </RequestCustomFields>
+          </FlowCustomFields>
         </Paper>
   ) : null;
   const newFlowDialog = (
-      <NewRequestDialog
+      <NewFlowDialog
         open={composeOpen}
         preset={embedded?.composePreset}
         types={types}
@@ -786,11 +786,11 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
     <Box sx={{ display: 'grid', gap: 2 }}>
       {!embedded && (
         <PageHeader
-          title={t('requests.title')}
-          subtitle={t('requests.subtitle')}
+          title={t('flow.title')}
+          subtitle={t('flow.subtitle')}
           end={
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => setComposeOpen(true)}>
-              {t('requests.new')}
+              {t('flow.new')}
             </Button>
           }
         />
@@ -810,16 +810,16 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         variant="scrollable"
         allowScrollButtonsMobile
       >
-        <Tab value="mine" label={t('requests.box.mine')} />
+        <Tab value="mine" label={t('flow.box.mine')} />
         <Tab
           value="inbox"
           label={
             <Badge color="error" badgeContent={inboxCount} sx={{ '& .MuiBadge-badge': { right: -12 } }}>
-              {t('requests.box.inbox')}
+              {t('flow.box.inbox')}
             </Badge>
           }
         />
-        <Tab value="archived" label={t('requests.box.archived')} />
+        <Tab value="archived" label={t('flow.box.archived')} />
       </Tabs>}
 
       {embedded?.detailOnly ? (thread ?? <LinearProgress />) : (
@@ -828,7 +828,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
         <Box sx={{ display: { xs: selectedId ? 'block' : 'none', md: 'block' }, minWidth: 0 }}>
           {thread ?? (
             <Paper variant="outlined">
-              <EmptyState title={t('requests.pick')} />
+              <EmptyState title={t('flow.pick')} />
             </Paper>
           )}
         </Box>
@@ -841,9 +841,9 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           onClose={() => setForwarding(false)}
           onSent={(count) => setNotice(t('mail.sent', { count: String(count) }))}
           orgId={orgId}
-          endpoint={`/organizations/${orgId}/requests/${r.id}/forward`}
+          endpoint={`/organizations/${orgId}/flows/${r.id}/forward`}
           suggested={forwardSuggested(r, detail)}
-          defaultSubject={t('requests.mail.subject', { subject: r.subject })}
+          defaultSubject={t('flow.mail.subject', { subject: r.subject })}
           defaultMessage={forwardMessage(r, detail)}
           authHeaders={authHeaders}
         />
@@ -884,8 +884,8 @@ function DetailsFields({
   keepType?: string | null;
 }) {
   const { t, locale } = useI18n();
-  const options = requestTypeOptions(types.values, types.translation, locale, [keepType]);
-  const linkInvalid = cleanRequestLink(value.link) === undefined;
+  const options = flowTypeOptions(types.values, types.translation, locale, [keepType]);
+  const linkInvalid = cleanFlowLink(value.link) === undefined;
   return (
     <>
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -894,7 +894,7 @@ function DetailsFields({
             select
             size="small"
             required
-            label={t('requests.type')}
+            label={t('flow.type')}
             value={value.type}
             onChange={(e) => onChange({ ...value, type: e.target.value })}
             sx={{ minWidth: 220, flex: 1 }}
@@ -904,36 +904,36 @@ function DetailsFields({
             ))}
           </TextField>
         )}
-        {requestTypeConfidential(types.values, value.type) && (
-          <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('requests.confidential')} />
+        {flowTypeConfidential(types.values, value.type) && (
+          <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('flow.confidential')} />
         )}
-        <Tooltip title={t('requests.urgentHint')}>
+        <Tooltip title={t('flow.urgentHint')}>
           <FormControlLabel
             control={<Checkbox size="small" color="error" checked={value.urgent} onChange={(e) => onChange({ ...value, urgent: e.target.checked })} />}
-            label={t('requests.urgent')}
+            label={t('flow.urgent')}
           />
         </Tooltip>
       </Box>
-      {requestTypeConfidential(types.values, value.type) && (
-        <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>{t('requests.confidentialHint')}</Typography>
+      {flowTypeConfidential(types.values, value.type) && (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>{t('flow.confidentialHint')}</Typography>
       )}
       <TextField
         size="small"
-        label={t('requests.link')}
+        label={t('flow.link')}
         placeholder="https://"
         value={value.link}
         error={linkInvalid}
-        helperText={linkInvalid ? t('requests.linkInvalid') : t('requests.linkHint')}
+        helperText={linkInvalid ? t('flow.linkInvalid') : t('flow.linkHint')}
         onChange={(e) => onChange({ ...value, link: e.target.value })}
         slotProps={{ htmlInput: { maxLength: 2000, inputMode: 'url', autoComplete: 'off', spellCheck: false } }}
       />
       <TextField
         type="date"
         size="small"
-        label={t('requests.due')}
+        label={t('flow.due')}
         value={value.due}
         error={cleanDueDate(value.due) === undefined}
-        helperText={t('requests.dueHint')}
+        helperText={t('flow.dueHint')}
         onChange={(e) => onChange({ ...value, due: e.target.value })}
         slotProps={{ inputLabel: { shrink: true } }}
         sx={{ maxWidth: 240 }}
@@ -944,7 +944,7 @@ function DetailsFields({
 
 /** Whether the drafted details can be sent: a type when the org has types, and a usable link. */
 function detailsReady(d: DetailsDraft, types: TypeRow): boolean {
-  return (Object.keys(types.values).length === 0 || !!d.type) && cleanRequestLink(d.link) !== undefined && cleanDueDate(d.due) !== undefined;
+  return (Object.keys(types.values).length === 0 || !!d.type) && cleanFlowLink(d.link) !== undefined && cleanDueDate(d.due) !== undefined;
 }
 
 function EditDetailsDialog({
@@ -959,7 +959,7 @@ function EditDetailsDialog({
   onSave,
 }: {
   open: boolean;
-  request: RequestItem;
+  request: FlowItem;
   types: TypeRow;
   template: FormTemplate;
   orgId: string;
@@ -974,13 +974,13 @@ function EditDetailsDialog({
   const [customErrors, setCustomErrors] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!open) return;
-    setDraft({ type: request.request_type ?? '', urgent: request.urgent, link: request.link_url ?? '', due: request.due_date ?? '' });
+    setDraft({ type: request.flow_type ?? '', urgent: request.urgent, link: request.link_url ?? '', due: request.due_date ?? '' });
     setCustom(request.custom ?? {});
     setCustomErrors({});
   }, [open, request]);
-  const typeTemplate = useRequestTypeTemplate(orgId, draft.type, authHeaders);
+  const typeTemplate = useFlowTypeTemplate(orgId, draft.type, authHeaders);
   function save() {
-    const checked = checkRequestCustomAll([template, typeTemplate], custom);
+    const checked = checkFlowCustomAll([template, typeTemplate], custom);
     if (!checked.ok) {
       setCustomErrors(checked.errors);
       return;
@@ -988,14 +988,14 @@ function EditDetailsDialog({
     void onSave(draft, checked.value);
   }
   // A request from before types existed may be saved without choosing one.
-  const ready = cleanRequestLink(draft.link) !== undefined && cleanDueDate(draft.due) !== undefined && (!!draft.type || !request.request_type);
+  const ready = cleanFlowLink(draft.link) !== undefined && cleanDueDate(draft.due) !== undefined && (!!draft.type || !request.flow_type);
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t('requests.editDetails')}</DialogTitle>
+      <DialogTitle>{t('flow.editDetails')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
-        <DetailsFields value={draft} onChange={setDraft} types={types} keepType={request.request_type} />
-        <RequestCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
-        <RequestCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
+        <DetailsFields value={draft} onChange={setDraft} types={types} keepType={request.flow_type} />
+        <FlowCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
+        <FlowCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
@@ -1005,7 +1005,7 @@ function EditDetailsDialog({
   );
 }
 
-function NewRequestDialog({
+function NewFlowDialog({
   open,
   types,
   template,
@@ -1038,10 +1038,10 @@ function NewRequestDialog({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const draft = useAttachmentDraft(setError);
-  const typeTemplate = useRequestTypeTemplate(orgId, details.type, authHeaders);
+  const typeTemplate = useFlowTypeTemplate(orgId, details.type, authHeaders);
   // The first type in the org's order (Service request by default) is preselected; for a free flow (the Flows page's
   // menu) the first without set steps, so it stays free.
-  const typeOptions = requestTypeOptions(types.values, types.translation, locale);
+  const typeOptions = flowTypeOptions(types.values, types.translation, locale);
   const firstType = !preset?.target && !preset?.free ? typeOptions[0]?.value ?? ''
     : !targets.workflows ? '' // the types with set steps are not known yet
       : typeOptions.find((o) => !targets.workflows![o.value])?.value ?? '';
@@ -1057,7 +1057,7 @@ function NewRequestDialog({
     draft.clear();
     (async () => {
       try {
-        const res = await fetch(`${API}/organizations/${orgId}/requests/targets`, { headers: await authHeaders() });
+        const res = await fetch(`${API}/organizations/${orgId}/flows/targets`, { headers: await authHeaders() });
         const data = await res.json();
         const next: Targets = { manager: data?.manager ?? null, departments: Array.isArray(data?.departments) ? data.departments : [], workflows: data?.workflows ?? {} };
         setTargets(next);
@@ -1078,7 +1078,7 @@ function NewRequestDialog({
   }, [open, firstType]);
 
   async function submit() {
-    const checked = checkRequestCustomAll([template, typeTemplate], custom);
+    const checked = checkFlowCustomAll([template, typeTemplate], custom);
     if (!checked.ok) {
       setCustomErrors(checked.errors);
       return;
@@ -1101,7 +1101,7 @@ function NewRequestDialog({
         },
         draft.files,
       );
-      const res = await fetch(`${API}/organizations/${orgId}/requests`, {
+      const res = await fetch(`${API}/organizations/${orgId}/flows`, {
         method: 'POST',
         headers: { ...payload.headers, ...(await authHeaders()) },
         body: payload.body,
@@ -1130,18 +1130,18 @@ function NewRequestDialog({
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t('requests.new')}</DialogTitle>
+      <DialogTitle>{t('flow.new')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
         {workflowSteps ? (
           <Alert severity="info" icon={false}>
-            <Typography variant="body2" sx={{ mb: 0.75 }}>{t('requests.workflowHint')}</Typography>
+            <Typography variant="body2" sx={{ mb: 0.75 }}>{t('flow.workflowHint')}</Typography>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
               {workflowSteps.map((s, i) => (
                 <Box key={s.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   {i > 0 && <ChevronRightIcon fontSize="small" color="action" />}
                   {s.conditional ? (
-                    <Tooltip title={t('requests.workflowConditional')}>
+                    <Tooltip title={t('flow.workflowConditional')}>
                       <Chip size="small" variant="outlined" sx={{ borderStyle: 'dashed' }} label={stepName(s, locale, t)} />
                     </Tooltip>
                   ) : (
@@ -1158,12 +1158,12 @@ function NewRequestDialog({
             value="manager"
             disabled={!targets.manager}
             control={<Radio size="small" />}
-            label={targets.manager ? t('requests.toManagerNamed', { name: targets.manager.name }) : t('requests.noManager')}
+            label={targets.manager ? t('flow.toManagerNamed', { name: targets.manager.name }) : t('flow.noManager')}
           />
-          <FormControlLabel value="department" disabled={targets.departments.length === 0} control={<Radio size="small" />} label={t('requests.toADepartment')} />
+          <FormControlLabel value="department" disabled={targets.departments.length === 0} control={<Radio size="small" />} label={t('flow.toADepartment')} />
         </RadioGroup>
         {kind === 'department' && (
-          <TextField select size="small" label={t('requests.department')} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
+          <TextField select size="small" label={t('flow.department')} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
             {targets.departments.map((d) => (
               <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
             ))}
@@ -1171,17 +1171,17 @@ function NewRequestDialog({
         )}
         </>
         )}
-        <TextField size="small" label={t('requests.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
+        <TextField size="small" label={t('flow.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
         <DetailsFields value={details} onChange={setDetails} types={types} />
-        <RequestCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
-        <RequestCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
+        <FlowCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
+        <FlowCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
         <DropZone dragging={draft.dragging} dropProps={draft.dropProps}>
           <Box sx={{ display: 'grid', gap: 1 }}>
             <TextField
               multiline
               minRows={4}
               fullWidth
-              label={t('requests.message')}
+              label={t('flow.message')}
               helperText={t('attachments.hint')}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -1194,7 +1194,7 @@ function NewRequestDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
-        <Button variant="contained" disabled={busy || !ready} onClick={() => void submit()}>{t('requests.send')}</Button>
+        <Button variant="contained" disabled={busy || !ready} onClick={() => void submit()}>{t('flow.send')}</Button>
       </DialogActions>
     </Dialog>
   );
@@ -1224,7 +1224,7 @@ function stepTotals(messages: Message[], locale: string): string[] {
 }
 
 function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw, totals, events }: {
-  workflow: RequestWorkflowInfo;
+  workflow: FlowStepsInfo;
   /** The thread's events: who did which step when. */
   events: Message[];
   isRequester: boolean;
@@ -1286,19 +1286,19 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
           );
         })}
       </Box>
-      {workflow.status === 'pending' && workflow.each && <Typography variant="caption" color="text.secondary">{t('requests.workflow.each')}</Typography>}
-      {totals.length > 0 && <Typography variant="body2">{t('requests.workflow.totals', { totals: totals.join(' · ') })}</Typography>}
-      {workflow.returned && <Alert severity="warning">{t(isRequester ? 'requests.workflow.returnedToYou' : 'requests.workflow.returned')}</Alert>}
+      {workflow.status === 'pending' && workflow.each && <Typography variant="caption" color="text.secondary">{t('flow.workflow.each')}</Typography>}
+      {totals.length > 0 && <Typography variant="body2">{t('flow.workflow.totals', { totals: totals.join(' · ') })}</Typography>}
+      {workflow.returned && <Alert severity="warning">{t(isRequester ? 'flow.workflow.returnedToYou' : 'flow.workflow.returned')}</Alert>}
       {workflow.canDecide && workflow.fields?.length ? <StepFieldsForm fields={workflow.fields} values={values} onChange={setValues} disabled={busy} privateAnswers={workflow.privateAnswers} /> : null}
       {(workflow.canDecide || (isRequester && (workflow.returned || workflow.status === 'pending'))) && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {(workflow.canDecide || workflow.returned) && (
-            <TextField size="small" label={t('requests.workflow.note')} value={note} onChange={(e) => setNote(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
+            <TextField size="small" label={t('flow.workflow.note')} value={note} onChange={(e) => setNote(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
           )}
           {workflow.canDecide && (
             <>
               <Button size="small" variant="contained" disabled={busy} onClick={() => { void onDecide('approve', note, values).then((ok) => { if (ok) { setNote(''); setValues({}); } }); }}>
-                {t(workflow.actionKey ?? 'requests.workflow.approve')}
+                {t(workflow.actionKey ?? 'flow.workflow.approve')}
               </Button>
               {workflow.returns && (
                 <Button size="small" color="error" disabled={busy} onClick={() => { void onDecide('reject', note).then((ok) => { if (ok) setNote(''); }); }}>{t('approvals.return')}</Button>
@@ -1306,10 +1306,10 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
             </>
           )}
           {isRequester && workflow.returned && (
-            <Button size="small" variant="contained" disabled={busy} onClick={() => { onResubmit(note); setNote(''); }}>{t('requests.workflow.resubmit')}</Button>
+            <Button size="small" variant="contained" disabled={busy} onClick={() => { onResubmit(note); setNote(''); }}>{t('flow.workflow.resubmit')}</Button>
           )}
           {isRequester && (workflow.returned || workflow.status === 'pending') && !workflow.canDecide && (
-            <Button size="small" disabled={busy} onClick={onWithdraw}>{t('requests.workflow.withdraw')}</Button>
+            <Button size="small" disabled={busy} onClick={onWithdraw}>{t('flow.workflow.withdraw')}</Button>
           )}
         </Box>
       )}
@@ -1318,7 +1318,7 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
 }
 
 /** A request's values in its type's own fields (read only; nothing when there are none). */
-function RequestTypeFields({ orgId, type, authHeaders, values }: { orgId: string; type: string; authHeaders: () => Promise<Record<string, string>>; values: Record<string, unknown> }) {
-  const template = useRequestTypeTemplate(orgId, type, authHeaders);
-  return hasCustomValues(template, values) ? <RequestCustomFields template={{ ...template, designer: null }} values={values} editing={false} /> : null;
+function FlowTypeFields({ orgId, type, authHeaders, values }: { orgId: string; type: string; authHeaders: () => Promise<Record<string, string>>; values: Record<string, unknown> }) {
+  const template = useFlowTypeTemplate(orgId, type, authHeaders);
+  return hasCustomValues(template, values) ? <FlowCustomFields template={{ ...template, designer: null }} values={values} editing={false} /> : null;
 }

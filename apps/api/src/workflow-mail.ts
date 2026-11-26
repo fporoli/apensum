@@ -55,6 +55,6 @@ export function workflowMail(
     }
     for (const s of sums.values()) lines.push(`${x.total} ${s.label}: ${number(s.total)}`);
   }
-  lines.push('', `${x.open}: ${appBaseUrl()}/#/requests?id=${input.request.id}`);
+  lines.push('', `${x.open}: ${appBaseUrl()}/#/flows?id=${input.request.id}`);
   return { subject: messageText(input.message.subject, lang).slice(0, 250), text: `${lines.join('\n')}\n` };
 }

@@ -32,7 +32,7 @@ export default function ForwardMailDialog({
   onClose: () => void;
   onSent?: (count: number) => void;
   orgId: string;
-  /** e.g. `/organizations/:orgId/requests/:id/forward` or `/workflows/:id/forward`. */
+  /** e.g. `/organizations/:orgId/flows/:id/forward` or `/workflows/:id/forward`. */
   endpoint: string;
   suggested: Recipient[];
   defaultSubject: string;

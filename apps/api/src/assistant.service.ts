@@ -55,7 +55,7 @@ export function assistantSystemPrompt(input: { today: string; timeZone: string; 
       : '',
     has('absences') ? '- ABSENCES (vacation, sickness, ...): requested days, approved by the manager. Tools absences_*.' : '',
     has('approvals') ? '- APPROVALS: items waiting for the user to approve or reject.' : '',
-    has('requests') ? '- REQUESTS: tickets to the manager or a department, with messages.' : '',
+    has('flows') ? '- FLOWS: Free Flows to the manager or a department and flows of the organization\'s own types, with messages.' : '',
     has('expenses') ? '- EXPENSES: receipts and mileage; expense reports go to the manager.' : '',
     'Work out dates yourself ("last Monday", "next week") from today and use them; say which dates you used.',
     'Every tool is checked on the server with the user\'s own rights: an error such as forbidden or period-locked (month already submitted or approved) is final, explain it plainly. ' +

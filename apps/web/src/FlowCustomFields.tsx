@@ -10,7 +10,7 @@ import { FormDesignPanel } from './FormDesigner';
  * in design mode on the Requests page, filled in when sending and in "Edit details". Shows nothing while
  * there are none, except in design mode, where the empty section is there to add the first field.
  */
-export function RequestCustomFields({
+export function FlowCustomFields({
   template, values, onChange, errors, editing = true, withPanel = false, children,
 }: {
   template: FormTemplate;
@@ -51,12 +51,12 @@ export function hasCustomValues(template: FormTemplate, values: Record<string, u
 }
 
 /** Checks the values against several templates (every request's, the type's own) and returns what to send together. */
-export function checkRequestCustomAll(templates: FormTemplate[], values: Record<string, unknown>):
+export function checkFlowCustomAll(templates: FormTemplate[], values: Record<string, unknown>):
   { ok: true; value: Record<string, unknown> } | { ok: false; errors: Record<string, string> } {
   let value: Record<string, unknown> = {};
   let errors: Record<string, string> = {};
   for (const template of templates) {
-    const checked = checkRequestCustom(template, values);
+    const checked = checkFlowCustom(template, values);
     if (checked.ok) value = { ...value, ...checked.value };
     else errors = { ...errors, ...checked.errors };
   }
@@ -64,7 +64,7 @@ export function checkRequestCustomAll(templates: FormTemplate[], values: Record<
 }
 
 /** Checks the values against the saved template (as the API does) and returns what to send, or the errors by field. */
-export function checkRequestCustom(template: FormTemplate, values: Record<string, unknown>):
+export function checkFlowCustom(template: FormTemplate, values: Record<string, unknown>):
   { ok: true; value: Record<string, unknown> } | { ok: false; errors: Record<string, string> } {
   const value = customValuesToSave(template.savedForm, values);
   const errors = customValuesErrors(template.savedForm, value);

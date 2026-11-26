@@ -6,7 +6,7 @@
   "description": "Notes: personal notes per organization, the example plugin to start a new module from (bundled Apensum plugin)",
   "apensum": {
     "id": "notes",
-    "apensumApi": 2,
+    "apensumApi": 3,
     "dbSchema": "notes",
     "permissions": [
       { "id": "nav.notes", "kind": "nav", "scopes": ["own"], "caption": "nav.notes" }

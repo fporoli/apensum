@@ -1,7 +1,7 @@
 /**
- * Requests (module "requests"): rules the API and the browser share.
+ * Flows (module "flows"; Free Flows and flows of the organization's own types): rules the API and the browser share.
  *
- * Request types live only in static_data (entity "requests", enum_name "request_type"): the org's
+ * Flow types live only in static_data (entity "flows", enum_name "flow_type"): the org's
  * own row, else the global one (069-request-type-urgency-link.sql). `values` maps each type key to
  * its attributes (`{"sort": 1}` orders the dropdown); labels are in `translation` per language.
  * The code keeps no list of types.
@@ -14,7 +14,7 @@ export const MAX_REQUEST_LINK = 2000;
  * A request's link (to another ticket, a document, ...): trimmed, `null` when empty, `undefined`
  * when it is not an absolute http(s) URL or is too long. A bare `www.` / host name gets `https://`.
  */
-export function cleanRequestLink(value: unknown): string | null | undefined {
+export function cleanFlowLink(value: unknown): string | null | undefined {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'string') return undefined;
   let text = value.trim();
@@ -33,32 +33,32 @@ export function cleanRequestLink(value: unknown): string | null | undefined {
   return text;
 }
 
-export interface RequestTypeOption {
+export interface FlowTypeOption {
   value: string;
   label: string;
 }
 
-/** The type keys of a request_type row's `values`. */
-export function requestTypeKeys(values: unknown): string[] {
+/** The type keys of a flow_type row's `values`. */
+export function flowTypeKeys(values: unknown): string[] {
   return values && typeof values === 'object' && !Array.isArray(values) ? Object.keys(values) : [];
 }
 
 /** A type's label in `locale`, else English, else its key. */
-export function requestTypeLabel(translation: Record<string, Record<string, string>> | null | undefined, locale: string, key: string): string {
+export function flowTypeLabel(translation: Record<string, Record<string, string>> | null | undefined, locale: string, key: string): string {
   return translation?.[locale]?.[key] ?? translation?.en?.[key] ?? key;
 }
 
 /**
- * The dropdown options of a request_type row: ordered by the `sort` attribute (types without one
+ * The dropdown options of a flow_type row: ordered by the `sort` attribute (types without one
  * last), then by label. `keep` (the value of a request being edited) is added when the row lacks it,
  * so an older request still shows its type.
  */
-export function requestTypeOptions(
+export function flowTypeOptions(
   values: unknown,
   translation: Record<string, Record<string, string>> | null | undefined,
   locale: string,
   keep: (string | null | undefined)[] = [],
-): RequestTypeOption[] {
+): FlowTypeOption[] {
   const attrs = (values && typeof values === 'object' && !Array.isArray(values) ? values : {}) as Record<string, unknown>;
   const keys = new Set(Object.keys(attrs));
   for (const k of keep) if (k) keys.add(k);
@@ -68,7 +68,7 @@ export function requestTypeOptions(
     return typeof s === 'number' ? s : Number.POSITIVE_INFINITY;
   };
   return [...keys]
-    .map((k) => ({ value: k, label: requestTypeLabel(translation, locale, k), sort: sortOf(k) }))
+    .map((k) => ({ value: k, label: flowTypeLabel(translation, locale, k), sort: sortOf(k) }))
     .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label, locale))
     .map(({ value, label }) => ({ value, label }));
 }
@@ -87,16 +87,16 @@ export function cleanDueDate(value: unknown): string | null | undefined {
 }
 
 /** Whether an open request's due date has passed (`today` = the local day, YYYY-MM-DD). */
-export function isRequestOverdue(r: { due_date: string | null; status: string; archived_at?: string | null }, today: string): boolean {
+export function isFlowOverdue(r: { due_date: string | null; status: string; archived_at?: string | null }, today: string): boolean {
   return !!r.due_date && r.due_date < today && r.status !== 'resolved' && !r.archived_at;
 }
 
 /**
  * Whether requests of type `key` are confidential (its attributes in the static_data row: `{"confidential": true}`):
- * only the requester and the handlers see them, not `nav.requests:edit:all`, notifications carry no text,
+ * only the requester and the handlers see them, not `nav.flows:edit:all`, notifications carry no text,
  * and neither "Send by e-mail" nor the AI assistant touch them.
  */
-export function requestTypeConfidential(values: unknown, key: string | null | undefined): boolean {
+export function flowTypeConfidential(values: unknown, key: string | null | undefined): boolean {
   if (!key || !values || typeof values !== 'object' || Array.isArray(values)) return false;
   const attrs = (values as Record<string, unknown>)[key];
   return !!attrs && typeof attrs === 'object' && (attrs as Record<string, unknown>).confidential === true;

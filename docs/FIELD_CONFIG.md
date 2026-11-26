@@ -25,7 +25,7 @@ mode, the expense form, custom fields).
 
 **Form**: one edit form in the app, with a stable id such as `basicdata` or
 `expense`.\
-Some forms have no fields of their own, only the custom ones an organization adds: `request` (the Requests page, values in `requests.custom`) and the Cases plugin's `cases.case` / `cases.assessment`; their values are checked as one object with `customValuesErrors` (`fields.ts`).
+Some forms have no fields of their own, only the custom ones an organization adds: `flow` (the Flows page, values in `flows.custom`; a type's own fields are `flow.<type>`) and the Cases plugin's `cases.case` / `cases.assessment`; their values are checked as one object with `customValuesErrors` (`fields.ts`).
 
 **Field**: one input on a form, with a stable id inside that form such as
 `middleName` or `placeOfBirth`.

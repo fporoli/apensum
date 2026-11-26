@@ -97,11 +97,11 @@ export class DocumentsController {
         WHERE a.organization_id = ${orgId} AND a.user_id = ${userId}
         UNION ALL
         -- Attachments of the requests the person sent (theirs and the handlers' answers).
-        SELECT d.id, 'request', r.id::text, d.file_name, d.mime_type, d.size_bytes, to_char(m.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
+        SELECT d.id, 'flow', r.id::text, d.file_name, d.mime_type, d.size_bytes, to_char(m.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'),
                ${iso('d.created_at')}, false, jsonb_build_object('subject', r.subject)
-        FROM requests r
-        JOIN request_messages m ON m.request_id = r.id
-        JOIN request_message_documents md ON md.message_id = m.id
+        FROM flows r
+        JOIN flow_messages m ON m.flow_id = r.id
+        JOIN flow_message_documents md ON md.message_id = m.id
         JOIN documents d ON d.id = md.document_id
         WHERE r.organization_id = ${orgId} AND r.requester_user_id = ${userId}
       ) docs

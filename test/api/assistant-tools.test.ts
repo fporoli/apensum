@@ -70,7 +70,7 @@ test('only the tools of pages the caller may see are offered', async () => {
   assert.ok(names.includes('absences_request'));
   assert.ok(names.includes('balances_get'), 'own balances are always visible');
   assert.ok(!names.includes('project_time_add'));
-  assert.ok(!names.includes('requests_create'));
+  assert.ok(!names.includes('flows_create'));
   assert.equal(asked.length, new Set(asked).size, 'each permission object is checked once');
 });
 

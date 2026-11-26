@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { sql, type SQL } from 'drizzle-orm';
 import { resolveModules } from '@worktime3/shared/modules';
-import { cleanDueDate } from '@worktime3/shared/requests';
+import { cleanDueDate } from '@worktime3/shared/flows';
 import { DbService, type Db } from './db.service';
 import type { Executor } from './access';
 import { membershipManagerId } from './access';
@@ -10,7 +10,7 @@ import { VersionsService } from './versions.service';
 import { sendMail } from './mailer';
 import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
-import { workflowParticipants } from './request-workflow';
+import { workflowParticipants } from './flow-steps';
 
 /** Assignments in force today, one row per person of the organization. */
 export function currentAssignments(orgId: string): SQL {
@@ -20,7 +20,7 @@ export function currentAssignments(orgId: string): SQL {
 }
 
 /** What `handlerIds` needs of a request. */
-export interface RequestTarget {
+export interface FlowTarget {
   organization_id: string;
   requester_user_id: string | null;
   target_kind: 'manager' | 'department' | 'workflow';
@@ -28,7 +28,7 @@ export interface RequestTarget {
   id?: string;
 }
 
-/** A task a module or plugin opens (`RequestsService.openTask`). */
+/** A task a module or plugin opens (`FlowsService.openTask`). */
 export interface SystemTaskInput {
   organizationId: string;
   /** The module or plugin id (e.g. 'hr'); shown as the sender. */
@@ -42,13 +42,13 @@ export interface SystemTaskInput {
   message: string;
   /** YYYY-MM-DD; after it, an open task alerts its handlers by e-mail. */
   dueDate?: string | null;
-  /** Only the department sees it, not `nav.requests:edit:all`; notifications and alert mails carry neither subject nor text. */
+  /** Only the department sees it, not `nav.flows:edit:all`; notifications and alert mails carry neither subject nor text. */
   confidential?: boolean;
 }
 
 export type SystemTaskResult =
   | { ok: true; id: string; created: boolean; changed: boolean }
-  | { ok: false; error: 'requests-off' | 'unknown-department' | 'invalid-task' };
+  | { ok: false; error: 'flows-off' | 'unknown-department' | 'invalid-task' };
 
 const MAX_SUBJECT = 200;
 const MAX_BODY = 10_000;
@@ -112,7 +112,7 @@ export function overdueMail(r: { subject: string; confidential?: boolean; due_da
   const date = new Date(`${r.due_date}T12:00:00Z`).toLocaleDateString(SWISS[lang], { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' });
   const shown = r.confidential ? m.confidential : r.subject;
   const vars = { subject: shown, date };
-  const link = `${appBaseUrl()}/#/requests?id=${r.id}`;
+  const link = `${appBaseUrl()}/#/flows?id=${r.id}`;
   return {
     subject: fill(m.subject, vars).slice(0, 250),
     title: fill(m.title, vars),
@@ -127,8 +127,8 @@ export function overdueMail(r: { subject: string; confidential?: boolean; due_da
  * a second instance). An alert goes once per due date: changing the date arms it again.
  */
 @Injectable()
-export class RequestsService implements OnModuleInit, OnModuleDestroy {
-  private readonly log = new Logger('RequestsService');
+export class FlowsService implements OnModuleInit, OnModuleDestroy {
+  private readonly log = new Logger('FlowsService');
   private timer: NodeJS.Timeout | null = null;
   private running = false;
 
@@ -148,8 +148,8 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** Who handles `r` today (ids), not counting `nav.requests:edit:all`. */
-  async handlerIds(db: Executor, r: RequestTarget): Promise<string[]> {
+  /** Who handles `r` today (ids), not counting `nav.flows:edit:all`. */
+  async handlerIds(db: Executor, r: FlowTarget): Promise<string[]> {
     // A request with a workflow: whoever its steps went or go to (not the requester).
     if (r.target_kind === 'workflow') return r.id ? (await workflowParticipants(db as Db, r.id)).filter((x) => x !== r.requester_user_id) : [];
     if (r.target_kind === 'manager') {
@@ -170,7 +170,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
   /** Whether the organization has the Requests module on. */
   async enabled(db: Executor, orgId: string): Promise<boolean> {
     const rows = (await db.execute(sql`SELECT settings -> 'modules' AS modules FROM organizations WHERE id = ${orgId}`)).rows as { modules: unknown }[];
-    return rows.length > 0 && resolveModules(rows[0].modules).requests === true;
+    return rows.length > 0 && resolveModules(rows[0].modules).flows === true;
   }
 
   /**
@@ -185,7 +185,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     if (!subject || !message || due === undefined || !/^[a-z][a-zA-Z0-9]*$/.test(input.source) || !input.key?.startsWith(input.source)) {
       return { ok: false, error: 'invalid-task' };
     }
-    if (!(await this.enabled(db, input.organizationId))) return { ok: false, error: 'requests-off' };
+    if (!(await this.enabled(db, input.organizationId))) return { ok: false, error: 'flows-off' };
     const department = await db.execute(
       sql`SELECT id FROM departments WHERE id = ${input.departmentId}::uuid AND organization_id = ${input.organizationId} AND is_active`,
     );
@@ -193,7 +193,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
 
     const existing = (
       await db.execute(
-        sql`SELECT id, subject, due_date::text AS due_date, status, archived_at, target_department_id FROM requests
+        sql`SELECT id, subject, due_date::text AS due_date, status, archived_at, target_department_id FROM flows
             WHERE organization_id = ${input.organizationId} AND source_key = ${input.key}`,
       )
     ).rows as { id: string; subject: string; due_date: string | null; status: string; archived_at: string | null; target_department_id: string }[];
@@ -201,25 +201,25 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     if (old) {
       if (old.status === 'resolved' || old.archived_at) return { ok: true, id: old.id, created: false, changed: false };
       // Confidentiality follows the source's wish (also for tasks opened before it asked for it).
-      await db.execute(sql`UPDATE requests SET confidential = ${input.confidential === true} WHERE id = ${old.id} AND confidential <> ${input.confidential === true}`);
+      await db.execute(sql`UPDATE flows SET confidential = ${input.confidential === true} WHERE id = ${old.id} AND confidential <> ${input.confidential === true}`);
       const changed = old.subject !== subject || old.due_date !== due || old.target_department_id !== input.departmentId;
       if (!changed) return { ok: true, id: old.id, created: false, changed: false };
       await db.execute(
-        sql`UPDATE requests SET subject = ${subject}, due_date = ${due}::date, target_department_id = ${input.departmentId}::uuid, last_activity_at = now(),
+        sql`UPDATE flows SET subject = ${subject}, due_date = ${due}::date, target_department_id = ${input.departmentId}::uuid, last_activity_at = now(),
               overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${due}::date THEN NULL ELSE overdue_alerted_at END
             WHERE id = ${old.id}`,
       );
       await db.execute(
-        sql`INSERT INTO request_messages (request_id, author_user_id, kind, data)
+        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data)
             VALUES (${old.id}, NULL, 'event', ${JSON.stringify({ details: { due_date: due, subject } })}::jsonb)`,
       );
-      void this.versions.record('requests', old.id, 'update_delta', null, { subject, due_date: due }).catch(() => {});
+      void this.versions.record('flows', old.id, 'update_delta', null, { subject, due_date: due }).catch(() => {});
       return { ok: true, id: old.id, created: false, changed: true };
     }
 
     const inserted = (
       await db.execute(
-        sql`INSERT INTO requests (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section, confidential)
+        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section, confidential)
             VALUES (${input.organizationId}, NULL, 'department', ${input.departmentId}::uuid, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null},
                     ${input.confidential === true})
             ON CONFLICT (organization_id, source_key) WHERE source_key IS NOT NULL DO NOTHING
@@ -228,12 +228,12 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     ).rows as { id: string }[];
     if (inserted.length === 0) {
       // Another run opened it at the same moment.
-      const again = (await db.execute(sql`SELECT id FROM requests WHERE organization_id = ${input.organizationId} AND source_key = ${input.key}`)).rows as { id: string }[];
+      const again = (await db.execute(sql`SELECT id FROM flows WHERE organization_id = ${input.organizationId} AND source_key = ${input.key}`)).rows as { id: string }[];
       return { ok: true, id: again[0]?.id ?? '', created: false, changed: false };
     }
     const id = inserted[0].id;
-    await db.execute(sql`INSERT INTO request_messages (request_id, author_user_id, kind, body) VALUES (${id}, NULL, 'message', ${message})`);
-    void this.versions.record('requests', id, 'insert', null, { source: input.source, source_key: input.key, subject, due_date: due, message }).catch(() => {});
+    await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body) VALUES (${id}, NULL, 'message', ${message})`);
+    void this.versions.record('flows', id, 'insert', null, { source: input.source, source_key: input.key, subject, due_date: due, message }).catch(() => {});
     const handlers = await this.handlerIds(db, {
       organization_id: input.organizationId,
       requester_user_id: null,
@@ -244,10 +244,10 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       .notifyMany({
         organizationId: input.organizationId,
         recipientUserIds: handlers,
-        type: 'request.created',
+        type: 'flow.created',
         title: noticeSubject({ subject, confidential: input.confidential }),
         body: input.confidential ? undefined : message.slice(0, 200),
-        sourceTable: 'requests',
+        sourceTable: 'flows',
         sourceTableUuid: id,
         data: { requestId: id },
       })
@@ -264,7 +264,7 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     const keepList = `{${keep.map((k) => `"${k.replace(/["\\]/g, '')}"`).join(',')}}`;
     const closed = (
       await db.execute(
-        sql`UPDATE requests SET status = 'resolved', resolved_at = now(), last_activity_at = now()
+        sql`UPDATE flows SET status = 'resolved', resolved_at = now(), last_activity_at = now()
             WHERE organization_id = ${orgId} AND source = ${source} AND status <> 'resolved' AND archived_at IS NULL
               AND (due_date IS NULL OR due_date >= ${dueFrom}::date) AND NOT (source_key = ANY(${keepList}::text[]))
             RETURNING id`,
@@ -272,9 +272,9 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
     ).rows as { id: string }[];
     for (const r of closed) {
       await db.execute(
-        sql`INSERT INTO request_messages (request_id, author_user_id, kind, data) VALUES (${r.id}, NULL, 'event', ${JSON.stringify({ status: 'resolved', obsolete: true })}::jsonb)`,
+        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data) VALUES (${r.id}, NULL, 'event', ${JSON.stringify({ status: 'resolved', obsolete: true })}::jsonb)`,
       );
-      void this.versions.record('requests', r.id, 'update_delta', null, { status: 'resolved', obsolete: true }).catch(() => {});
+      void this.versions.record('flows', r.id, 'update_delta', null, { status: 'resolved', obsolete: true }).catch(() => {});
     }
     return closed.length;
   }
@@ -293,11 +293,11 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
       // Claim them first, so a second instance or the next tick never mails twice.
       const due = (
         await db.execute(
-          sql`UPDATE requests SET overdue_alerted_at = now()
+          sql`UPDATE flows SET overdue_alerted_at = now()
               WHERE due_date < ${today}::date AND overdue_alerted_at IS NULL AND status <> 'resolved' AND archived_at IS NULL
               RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, due_date::text AS due_date`,
         )
-      ).rows as unknown as (RequestTarget & { id: string; assignee_user_id: string | null; subject: string; confidential: boolean; due_date: string })[];
+      ).rows as unknown as (FlowTarget & { id: string; assignee_user_id: string | null; subject: string; confidential: boolean; due_date: string })[];
       for (const r of due) {
         if (!(await this.enabled(db, r.organization_id))) continue;
         const recipients = r.assignee_user_id ? [r.assignee_user_id] : await this.handlerIds(db, r);
@@ -315,9 +315,9 @@ export class RequestsService implements OnModuleInit, OnModuleDestroy {
             .notifyMany({
               organizationId: r.organization_id,
               recipientUserIds: [u.id],
-              type: 'request.overdue',
+              type: 'flow.overdue',
               title: mail.title,
-              sourceTable: 'requests',
+              sourceTable: 'flows',
               sourceTableUuid: r.id,
               data: { requestId: r.id },
             })

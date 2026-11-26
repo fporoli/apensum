@@ -28,7 +28,7 @@ import { VacationController } from './vacation.controller';
 import { TeamOverviewController } from './team-overview.controller';
 import { EmploymentController } from './employment.controller';
 import { LocationsController } from './locations.controller';
-import { RequestsController } from './requests.controller';
+import { FlowsController } from './flows.controller';
 import { NewsController } from './news.controller';
 import { PublicNewsController } from './public-news.controller';
 import { DocumentsController } from './documents.controller';
@@ -44,14 +44,14 @@ import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { ForwardMailService } from './forward-mail.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
-import { RequestsService } from './requests.service';
+import { FlowsService } from './flows.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
 import { SiteContactController } from './site-contact.controller';
 import { SiteNewsletterController } from './site-newsletter.controller';
 import { WorkflowsController } from './workflows.controller';
 import { WorkflowConfigsController } from './workflow-configs.controller';
-import { RequestWorkflow } from './request-workflow';
+import { FlowSteps } from './flow-steps';
 import { StaticDataController } from './static-data.controller';
 import { AuditController } from './audit.controller';
 import { AssistantController } from './assistant.controller';
@@ -105,7 +105,7 @@ const plugins = loadApiPlugins();
     TeamOverviewController,
     EmploymentController,
     LocationsController,
-    RequestsController,
+    FlowsController,
     NewsController,
     PublicNewsController,
     DocumentsController,
@@ -135,7 +135,7 @@ const plugins = loadApiPlugins();
     ...plugins.controllers,
   ],
   providers: [
-    RequestWorkflow,
+    FlowSteps,
     DbService,
     AiBudgetService,
     ImportExportService,
@@ -143,7 +143,7 @@ const plugins = loadApiPlugins();
     ProjectTimeService,
     WorkTimeService,
     BalancesService,
-    RequestsService,
+    FlowsService,
     ReportsService,
     ReportSchedulesService,
     WorkTimeModelService,

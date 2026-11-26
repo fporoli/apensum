@@ -48,7 +48,7 @@ const pretty = (config: WorkflowConfig) => JSON.stringify(config, null, 2);
 
 /** A step to copy into the configuration, fitting the kind (its blocks and facts). */
 function exampleOf(kind: KindInfo): string {
-  if (kind.id === 'requests.request') {
+  if (kind.id === 'flows.flow') {
     return JSON.stringify({ key: 'order', do: ['task'], assignTo: 'department:frontdesk', when: { urgent: true }, reject: 'back', label: { de: 'Bestellen', en: 'Order' } }, null, 2);
   }
   return JSON.stringify({

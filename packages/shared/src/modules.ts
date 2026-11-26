@@ -26,7 +26,7 @@ export interface ModuleDefinition {
 /** The core's modules, then the plugins' (registerModule). */
 export const MODULES: ModuleDefinition[] = [
   // Requests: tickets to one's line manager or a department (HR, ...), with a message thread.
-  { id: 'requests', caption: 'modules.requests', defaultEnabled: true, objects: ['nav.requests'] },
+  { id: 'flows', caption: 'modules.flows', defaultEnabled: true, objects: ['nav.flows'] },
   // Reports: project hours, attendance and overtime, absences, with filters, chart and export.
   { id: 'reports', caption: 'modules.reports', defaultEnabled: true, objects: ['nav.reports'] },
   // News: posts by admin or HR to the organization or some departments, with optional read confirmation.

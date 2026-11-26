@@ -11,7 +11,10 @@
 // Keep this file erasable TypeScript (no enums, no imports) so Node scripts and tests can load it.
 
 // 2: instanceCaseClient, aiClient, aiModel and aiProvider removed (AI is Azure OpenAI in Switzerland only).
-export const PLUGIN_API_VERSION = 2;
+// 3: requests are flows: RequestsService is FlowsService (its error 'requests-off' is 'flows-off'), the tables
+//    requests/request_messages are flows/flow_messages (@worktime3/api/schema), the module and permission object are
+//    flows/nav.flows; the deprecated ApiPlugin.backup is gone.
+export const PLUGIN_API_VERSION = 3;
 
 /** Why a plugin's manifest does not fit this core, or null when it does. */
 export function pluginApiMismatch(id: string, declared: unknown): string | null {

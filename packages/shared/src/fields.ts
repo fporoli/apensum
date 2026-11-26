@@ -196,43 +196,43 @@ export const BASICDATA_FORM: FormDef = {
 };
 
 // ---------------------------------------------------------------------------
-// Requests: the organization's own fields on a request (no fields of its own, only custom ones a
-// template adds in design mode on the Requests page; values in requests.custom).
+// Flows: the organization's own fields on a flow (no fields of its own, only custom ones a
+// template adds in design mode on the Flows page; values in flows.custom).
 // ---------------------------------------------------------------------------
 
-export const REQUEST_FORM: FormDef = {
-  id: 'request',
-  groups: [{ key: 'custom', caption: 'requests.customFields', order: 10 }],
+export const FLOW_FORM: FormDef = {
+  id: 'flow',
+  groups: [{ key: 'custom', caption: 'flow.customFields', order: 10 }],
   fields: [],
-  customStorage: { table: 'requests', column: 'custom' },
+  customStorage: { table: 'flows', column: 'custom' },
 };
 
 /** The configurable forms: the core's, then the plugins' (registerForm; expenses: its expense form). */
 export const FORMS: Record<string, FormDef> = {
   [BASICDATA_FORM.id]: BASICDATA_FORM,
-  [REQUEST_FORM.id]: REQUEST_FORM,
+  [FLOW_FORM.id]: FLOW_FORM,
 };
 
-/** A request type's key as a form id may carry it (static data keys). */
+/** A flow type's key as a form id may carry it (static data keys). */
 const REQUEST_TYPE_KEY = /^[A-Za-z0-9_-]{1,40}$/;
 
 /**
- * A request type's own form (`request.<type>`, e.g. `request.material`): its fields come after the ones every request
- * has (`request`) and are stored with them (`requests.custom`). Designed per type on the Requests page.
+ * A flow type's own form (`flow.<type>`, e.g. `flow.material`): its fields come after the ones every flow
+ * has (`flow`) and are stored with them (`flows.custom`). Designed per type on the Flows page.
  */
-export function requestTypeForm(type: string): FormDef | null {
+export function flowTypeForm(type: string): FormDef | null {
   if (!REQUEST_TYPE_KEY.test(type)) return null;
-  return { ...REQUEST_FORM, id: `request.${type}`, groups: [{ key: 'custom', caption: 'requests.typeFields', order: 20 }] };
+  return { ...FLOW_FORM, id: `flow.${type}`, groups: [{ key: 'custom', caption: 'flow.typeFields', order: 20 }] };
 }
 
-/** A configurable form by its id: a registered one, or a request type's own (`request.<type>`). */
+/** A configurable form by its id: a registered one, or a flow type's own (`flow.<type>`). */
 export function formById(id: string): FormDef | undefined {
   if (FORMS[id]) return FORMS[id];
-  return id.startsWith('request.') ? requestTypeForm(id.slice('request.'.length)) ?? undefined : undefined;
+  return id.startsWith('flow.') ? flowTypeForm(id.slice('flow.'.length)) ?? undefined : undefined;
 }
 
 // ---------------------------------------------------------------------------
-// Forms made of custom fields only (requests, the Cases plugin's cases and assessments): their values
+// Forms made of custom fields only (flows, the Cases plugin's cases and assessments): their values
 // are one JSON object, checked as a whole.
 // ---------------------------------------------------------------------------
 

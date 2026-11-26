@@ -8,9 +8,9 @@ import {
   Alert, Box, Button, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
   Tab, Tabs, TextField,
 } from '@mui/material';
-import { requestTypeLabel } from '@worktime3/shared/requests';
+import { flowTypeLabel } from '@worktime3/shared/flows';
 import Approvals, { actionItemLabel, correspondingObject, itemPerson, type ActionItem, type Scope, type StatusFilter } from './Approvals';
-import Requests, { type Box_, type ComposePreset, type RequestItem } from './Requests';
+import FlowDetail, { type Box_, type ComposePreset, type FlowItem } from './FlowDetail';
 import { EmptyState, PageHeader } from './components';
 import { useI18n } from './i18n';
 import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon } from './icons';
@@ -26,12 +26,12 @@ interface FlowsProps {
   role: 'admin' | 'manager' | 'user';
   /** Decides on others' items (managers, HR). */
   canDecide: boolean;
-  /** The requests module is on and the caller may use it (`nav.requests`): free flows and own types. */
+  /** The requests module is on and the caller may use it (`nav.flows`): free flows and own types. */
   hasFreeFlows: boolean;
   authHeaders: () => Promise<Record<string, string>>;
   /** The tab to open on (an old link to the Workflow or Requests page, a notification). */
   initialTab?: FlowsTab;
-  /** A free flow to open (a notification, `#/requests?id=`). */
+  /** A free flow to open (a notification, `#/flows?id=`). */
   focusId?: string | null;
   refreshKey?: unknown;
   onChanged?: () => void;
@@ -52,12 +52,12 @@ export default function Flows(props: FlowsProps) {
   const { t, locale } = useI18n();
   const { orgId, userId, authHeaders, hasFreeFlows } = props;
   const [tab, setTab] = useState<FlowsTab>(props.focusId ? 'mine' : props.initialTab ?? (props.canDecide ? 'todo' : 'mine'));
-  const [requests, setRequests] = useState<(RequestItem & { box: Box_ })[]>([]);
+  const [requests, setRequests] = useState<(FlowItem & { box: Box_ })[]>([]);
   const [items, setItems] = useState<ActionItem[]>([]);
   const [types, setTypes] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<{ source: FlowRow['source']; id: string } | null>(props.focusId ? { source: 'request', id: props.focusId } : null);
+  const [selected, setSelected] = useState<{ source: FlowRow['source']; id: string } | null>(props.focusId ? { source: 'flow', id: props.focusId } : null);
   const [typeFilter, setTypeFilter] = useState('');
   const [search, setSearch] = useState('');
   const [composeSignal, setComposeSignal] = useState(0);
@@ -68,7 +68,7 @@ export default function Flows(props: FlowsProps) {
   const openNewMenu = async (anchor: HTMLElement) => {
     setNewMenu(anchor);
     try {
-      const data = await (await fetch(`${API}/organizations/${orgId}/requests/targets`, { headers: await authHeaders() })).json();
+      const data = await (await fetch(`${API}/organizations/${orgId}/flows/targets`, { headers: await authHeaders() })).json();
       setFlowTypes({
         withSteps: Object.keys(data?.workflows ?? {}),
         manager: !!data?.manager,
@@ -86,17 +86,17 @@ export default function Flows(props: FlowsProps) {
   const shown = TABS[tab];
 
   useEffect(() => {
-    if (props.focusId) setSelected({ source: 'request', id: props.focusId });
+    if (props.focusId) setSelected({ source: 'flow', id: props.focusId });
   }, [props.focusId]);
 
-  // The request types' labels (static data `requests`/`request_type`).
+  // The request types' labels (static data `requests`/`flow_type`).
   useEffect(() => {
     if (!hasFreeFlows) return;
     let cancelled = false;
     (async () => {
       try {
-        const rows = await (await fetch(`${API}/organizations/${orgId}/static-data/requests`, { headers: await authHeaders() })).json();
-        const row = Array.isArray(rows) ? rows.find((x: { enum_name?: string }) => x.enum_name === 'request_type') : null;
+        const rows = await (await fetch(`${API}/organizations/${orgId}/static-data/flows`, { headers: await authHeaders() })).json();
+        const row = Array.isArray(rows) ? rows.find((x: { enum_name?: string }) => x.enum_name === 'flow_type') : null;
         if (!cancelled) setTypes(row?.translation ?? {});
       } catch {
         /* the type's key is shown instead */
@@ -111,10 +111,10 @@ export default function Flows(props: FlowsProps) {
       const headers = await authHeaders();
       const [wf, ...boxes] = await Promise.all([
         fetch(`${API}/workflows/assigned-to-me?scope=${shown.scope}&status=${shown.status}&orgId=${orgId}`, { headers }).then((r) => r.json()),
-        ...(hasFreeFlows ? shown.boxes.map((box) => fetch(`${API}/organizations/${orgId}/requests?box=${box}`, { headers }).then((r) => r.json())) : []),
+        ...(hasFreeFlows ? shown.boxes.map((box) => fetch(`${API}/organizations/${orgId}/flows?box=${box}`, { headers }).then((r) => r.json())) : []),
       ]);
       setItems(Array.isArray(wf) ? wf : []);
-      setRequests(boxes.flatMap((b, k) => (Array.isArray(b?.requests) ? (b.requests as RequestItem[]).map((r) => ({ ...r, box: shown.boxes[k] })) : [])));
+      setRequests(boxes.flatMap((b, k) => (Array.isArray(b?.flows) ? (b.flows as FlowItem[]).map((r) => ({ ...r, box: shown.boxes[k] })) : [])));
       setError(null);
     } catch {
       setError(t('common.cannotReachApi'));
@@ -133,20 +133,20 @@ export default function Flows(props: FlowsProps) {
   };
 
   const rows = useMemo(() => {
-    const target = (r: RequestItem) =>
-      r.target_kind === 'manager' ? t('requests.toManager')
-        : r.target_kind === 'department' ? t('requests.toDepartment', { department: r.department_name ?? '' }) : '';
-    const from = (r: RequestItem) => {
+    const target = (r: FlowItem) =>
+      r.target_kind === 'manager' ? t('flow.toManager')
+        : r.target_kind === 'department' ? t('flow.toDepartment', { department: r.department_name ?? '' }) : '';
+    const from = (r: FlowItem) => {
       if (r.requester_name || r.requester_email) return r.requester_name ?? r.requester_email ?? '';
-      const label = r.source ? t(`modules.${r.source}`) : t('requests.system');
+      const label = r.source ? t(`modules.${r.source}`) : t('flow.system');
       return label === `modules.${r.source}` ? r.source ?? '' : label;
     };
     return flowRows(tab, requests, items, {
-      request: (r) => ({
+      flow: (r) => ({
         title: r.subject,
-        type: r.request_type ? requestTypeLabel(types, locale, r.request_type) : t('flows.kind.free'),
+        type: r.flow_type ? flowTypeLabel(types, locale, r.flow_type) : t('flows.kind.free'),
         line: [r.box === 'mine' ? '' : from(r), target(r)].filter(Boolean).join(' · '),
-        status: { label: t(`requests.status.${r.status}`), color: REQUEST_COLOR[r.status] },
+        status: { label: t(`flow.status.${r.status}`), color: REQUEST_COLOR[r.status] },
       }),
       item: (i) => ({
         title: correspondingObject(i, t),
@@ -192,8 +192,8 @@ export default function Flows(props: FlowsProps) {
                 />
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
                   <Chip size="small" color={row.status.color} label={row.status.label} />
-                  {row.urgent && <Chip size="small" color="error" variant="outlined" label={t('requests.urgent')} />}
-                  {row.confidential && <LockIcon fontSize="small" color="action" titleAccess={t('requests.confidential')} />}
+                  {row.urgent && <Chip size="small" color="error" variant="outlined" label={t('flow.urgent')} />}
+                  {row.confidential && <LockIcon fontSize="small" color="action" titleAccess={t('flow.confidential')} />}
                 </Box>
               </ListItemButton>
             </Box>
@@ -205,9 +205,9 @@ export default function Flows(props: FlowsProps) {
 
   const detail = !selected ? (
     <Paper variant="outlined"><EmptyState title={t('flows.pick')} /></Paper>
-  ) : selected.source === 'request' ? (
-    <Requests
-      key={`request:${selected.id}`}
+  ) : selected.source === 'flow' ? (
+    <FlowDetail
+      key={`flow:${selected.id}`}
       orgId={orgId}
       userId={userId}
       authHeaders={authHeaders}
@@ -219,7 +219,7 @@ export default function Flows(props: FlowsProps) {
     />
   ) : (
     <Box sx={{ display: 'grid', gap: 1 }}>
-      <Button size="small" onClick={() => setSelected(null)} sx={{ display: { md: 'none' }, justifySelf: 'start' }}>{t('requests.back')}</Button>
+      <Button size="small" onClick={() => setSelected(null)} sx={{ display: { md: 'none' }, justifySelf: 'start' }}>{t('flow.back')}</Button>
       <Approvals
         key={`workflow:${selected.id}`}
         orgId={orgId}
@@ -250,7 +250,7 @@ export default function Flows(props: FlowsProps) {
               {flowTypes && flowTypes.withSteps.length > 0 && <Divider />}
               {flowTypes && flowTypes.withSteps.length > 0 && <ListSubheader>{t('flows.new.withSteps')}</ListSubheader>}
               {flowTypes?.withSteps
-                .map((key) => ({ key, label: requestTypeLabel(types, locale, key) }))
+                .map((key) => ({ key, label: flowTypeLabel(types, locale, key) }))
                 .sort((a, b) => a.label.localeCompare(b.label, locale))
                 .map((x) => <MenuItem key={x.key} onClick={() => compose({ type: x.key })}>{x.label}</MenuItem>)}
             </Menu>
@@ -262,7 +262,7 @@ export default function Flows(props: FlowsProps) {
 
       {/* The request forms' design mode, and the new-flow dialog. */}
       {hasFreeFlows && (
-        <Requests
+        <FlowDetail
           orgId={orgId}
           userId={userId}
           authHeaders={authHeaders}
@@ -274,7 +274,7 @@ export default function Flows(props: FlowsProps) {
             composePreset,
             onCreated: (id) => {
               setTab('mine');
-              setSelected({ source: 'request', id });
+              setSelected({ source: 'flow', id });
             },
           }}
         />

@@ -14,7 +14,7 @@ export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 export interface PersonalDocument {
   /** The `documents` row. */
   documentId: string;
-  /** The core's ('timesheet', 'project_timesheet', 'absence', 'request', 'personnel', 'report') or a plugin's. */
+  /** The core's ('timesheet', 'project_timesheet', 'absence', 'flow', 'personnel', 'report') or a plugin's. */
   category: string;
   /** The record it belongs to (timesheet period, absence, request, ...; the month for a project report). */
   sourceId: string;

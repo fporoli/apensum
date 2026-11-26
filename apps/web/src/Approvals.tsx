@@ -134,7 +134,7 @@ export interface ActionItem {
   absence: AbsenceRow | null;
   project_time_period: ProjectPeriodRow | null;
   /** A request with its own workflow (its subject is null when it is confidential). */
-  request?: { id: string; user_display_name: string; user_email: string; subject: string | null; request_type: string | null } | null;
+  flow?: { id: string; user_display_name: string; user_email: string; subject: string | null; flow_type: string | null } | null;
 }
 
 /** The plugin approval kind of an item (PLUGIN_WORKFLOW_KINDS) with its record, if it is one. */
@@ -153,8 +153,8 @@ export function actionItemLabel(definitionName: string, t: TFunction): string {
   if (definitionName === 'reopen approved timesheet') return t('approvals.kind.reopen');
   if (definitionName === 'approve absence') return t('approvals.kind.absence');
   if (definitionName === 'approve project timesheet') return t('approvals.kind.projectTimesheet');
-  // A request type's own workflow (`request:<type>`).
-  if (definitionName.startsWith('request:')) return t('approvals.kind.request');
+  // A request type's own workflow (`flow:<type>`).
+  if (definitionName.startsWith('flow:')) return t('approvals.kind.flow');
   return definitionName;
 }
 
@@ -166,14 +166,14 @@ function actionItemDetail(item: ActionItem): string {
 
 /** The person an action item is about, whatever kind of record it is. */
 export function itemPerson(item: ActionItem): { name: string; email: string } | null {
-  const row = item.timesheet_period ?? pluginRecord(item)?.record ?? item.absence ?? item.project_time_period ?? item.request;
+  const row = item.timesheet_period ?? pluginRecord(item)?.record ?? item.absence ?? item.project_time_period ?? item.flow;
   return row ? { name: row.user_display_name, email: row.user_email } : null;
 }
 
 const SOURCE_TITLE_FNS: Record<string, (item: ActionItem) => string | null> = {
   getSourceTitle: (item) => (item.timesheet_period ? getSourceTitle(item.timesheet_period.period_start) : null),
   getAbsenceTitle: (item) => (item.absence ? getAbsenceTitle(item.absence) : null),
-  getRequestTitle: (item) => item.request?.subject ?? null,
+  getFlowTitle: (item) => item.flow?.subject ?? null,
   getProjectTimesheetTitle: (item) =>
     item.project_time_period ? `${item.project_time_period.project_name} · ${getSourceTitle(item.project_time_period.period_start)}` : null,
 };
@@ -183,7 +183,7 @@ const SOURCE_KEYS: Record<string, string> = {
   'Vacation Request': 'approvals.source.absence',
   'Project time': 'approvals.source.projectTimesheet',
   'Timesheet Period': 'approvals.source.timesheet',
-  Request: 'approvals.source.request',
+  Flow: 'approvals.source.flow',
 };
 
 export function correspondingObject(item: ActionItem, t: TFunction): string {
@@ -577,8 +577,8 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                       {item.absence?.document_id && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void viewAbsenceDocument(item.absence!)}>{t('approvals.documents')}</Button>
                       )}
-                      {item.request && (
-                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => { window.location.hash = `#/requests?id=${item.source_table_uuid}`; }}>
+                      {item.flow && (
+                        <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => { window.location.hash = `#/flows?id=${item.source_table_uuid}`; }}>
                           {t('approvals.open')}
                         </Button>
                       )}

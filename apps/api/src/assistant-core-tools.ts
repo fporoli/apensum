@@ -9,7 +9,7 @@ import { BalancesController } from './balances.controller';
 import { organization_memberships, project_times, team_members, teams, users } from './db/schema';
 import { ProjectTimeController } from './project-time.controller';
 import { ProjectsController } from './projects.controller';
-import { RequestsController, REQUEST_STATUSES } from './requests.controller';
+import { FlowsController, REQUEST_STATUSES } from './flows.controller';
 import { WorkTimeController } from './work-time.controller';
 import { WorkflowsController } from './workflows.controller';
 
@@ -436,48 +436,48 @@ const approvalsDecide: AssistantTool = {
   },
 };
 
-// ---- Requests ----
+// ---- Flows ----
 
-const requestsList: AssistantTool = {
-  name: 'requests_list',
-  object: 'nav.requests',
-  description: "REQUESTS (tickets to the manager or a department): box 'mine' = the user's own, 'inbox' = the ones they handle, 'archived'.",
+const flowsList: AssistantTool = {
+  name: 'flows_list',
+  object: 'nav.flows',
+  description: "FLOWS (Free Flows to the manager or a department, and flows of the organization's own types): box 'mine' = the user's own, 'inbox' = the ones they handle, 'archived'.",
   parameters: { type: 'object', properties: { box: { type: 'string', enum: ['mine', 'inbox', 'archived'] } } },
   async run(args, ctx) {
-    const res = await ctx.get(RequestsController).list(ctx.orgId, str(args.box), ctx.req) as { requests: Record<string, unknown>[] };
-    // Confidential requests stay out of the assistant (they would go to the model).
-    const requests = res.requests.filter((r) => r.confidential !== true).slice(0, 40).map((r) => ({
-      id: r.id, subject: r.subject, status: r.status, type: r.request_type, urgent: r.urgent, to: r.target_kind === 'manager' ? 'manager' : r.department_name,
+    const res = await ctx.get(FlowsController).list(ctx.orgId, str(args.box), ctx.req) as { flows: Record<string, unknown>[] };
+    // Confidential flows stay out of the assistant (they would go to the model).
+    const flows = res.flows.filter((r) => r.confidential !== true).slice(0, 40).map((r) => ({
+      id: r.id, subject: r.subject, status: r.status, type: r.flow_type, urgent: r.urgent, to: r.target_kind === 'manager' ? 'manager' : r.department_name,
       from: r.requester_name, takenBy: r.assignee_name, lastActivity: r.last_activity_at, messages: r.message_count,
     }));
-    return { data: { requests } };
+    return { data: { flows } };
   },
 };
 
-const requestsGet: AssistantTool = {
-  name: 'requests_get',
-  object: 'nav.requests',
-  description: 'REQUESTS: one request with its messages, by id (requests_list).',
+const flowsGet: AssistantTool = {
+  name: 'flows_get',
+  object: 'nav.flows',
+  description: 'FLOWS: one flow with its messages, by id (flows_list).',
   parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   async run(args, ctx) {
-    const res = await ctx.get(RequestsController).get(ctx.orgId, String(args.id ?? ''), ctx.req) as {
-      ok: boolean; error?: string; request?: Record<string, unknown>; messages?: Record<string, unknown>[];
+    const res = await ctx.get(FlowsController).get(ctx.orgId, String(args.id ?? ''), ctx.req) as {
+      ok: boolean; error?: string; flow?: Record<string, unknown>; messages?: Record<string, unknown>[];
     };
     if (!res.ok) return { data: res };
-    if (res.request?.confidential === true) return { data: { ok: false, error: 'request-confidential' } };
+    if (res.flow?.confidential === true) return { data: { ok: false, error: 'flow-confidential' } };
     return {
       data: {
-        request: { subject: res.request?.subject, status: res.request?.status, type: res.request?.request_type, from: res.request?.requester_name, link: res.request?.link_url },
+        flow: { subject: res.flow?.subject, status: res.flow?.status, type: res.flow?.flow_type, from: res.flow?.requester_name, link: res.flow?.link_url },
         messages: (res.messages ?? []).slice(-30).map((m) => ({ kind: m.kind, author: m.author_name, at: m.posted_at, text: m.body, event: m.kind === 'event' ? m.data : undefined })),
       },
     };
   },
 };
 
-const requestsCreate: AssistantTool = {
-  name: 'requests_create',
-  object: 'nav.requests',
-  description: "REQUESTS: send a new request to the user's manager or to a department. type is one of the organization's request types (e.g. service, support, other).",
+const flowsCreate: AssistantTool = {
+  name: 'flows_create',
+  object: 'nav.flows',
+  description: "FLOWS: start a new Free Flow to the user's manager or to a department. type is one of the organization's flow types (e.g. service, support, other).",
   parameters: {
     type: 'object',
     properties: {
@@ -492,7 +492,7 @@ const requestsCreate: AssistantTool = {
     required: ['to', 'subject', 'message'],
   },
   async run(args, ctx) {
-    const controller = ctx.get(RequestsController);
+    const controller = ctx.get(FlowsController);
     let departmentId: string | undefined;
     if (args.to === 'department') {
       const targets = await controller.targets(ctx.orgId, ctx.req) as { departments: { id: string; name: string }[] };
@@ -508,29 +508,29 @@ const requestsCreate: AssistantTool = {
       target: String(args.to ?? ''), departmentId, subject: str(args.subject), message: str(args.message), type: str(args.type) ?? 'other',
       urgent: args.urgent === true, link: str(args.link),
     }, [], ctx.req) as { ok: boolean; error?: string; id?: string };
-    return { data: res, action: res.ok ? `Request "${args.subject}" sent.` : undefined };
+    return { data: res, action: res.ok ? `Flow "${args.subject}" started.` : undefined };
   },
 };
 
-const requestsReply: AssistantTool = {
-  name: 'requests_reply',
-  object: 'nav.requests',
-  description: 'REQUESTS: add a message to a request, by id.',
+const flowsReply: AssistantTool = {
+  name: 'flows_reply',
+  object: 'nav.flows',
+  description: 'FLOWS: add a message to a flow, by id.',
   parameters: { type: 'object', properties: { id: { type: 'string' }, message: { type: 'string' } }, required: ['id', 'message'] },
   async run(args, ctx) {
-    const res = await ctx.get(RequestsController).reply(ctx.orgId, String(args.id ?? ''), { body: str(args.message) }, [], ctx.req) as { ok: boolean; error?: string };
-    return { data: res, action: res.ok ? 'Replied to a request.' : undefined };
+    const res = await ctx.get(FlowsController).reply(ctx.orgId, String(args.id ?? ''), { body: str(args.message) }, [], ctx.req) as { ok: boolean; error?: string };
+    return { data: res, action: res.ok ? 'Replied to a flow.' : undefined };
   },
 };
 
-const requestsStatus: AssistantTool = {
-  name: 'requests_set_status',
-  object: 'nav.requests',
-  description: 'REQUESTS: set the status of a request (open, in_progress, resolved), by id.',
+const flowsStatus: AssistantTool = {
+  name: 'flows_set_status',
+  object: 'nav.flows',
+  description: 'FLOWS: set the status of a flow (open, in_progress, resolved), by id.',
   parameters: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: [...REQUEST_STATUSES] } }, required: ['id', 'status'] },
   async run(args, ctx) {
-    const res = await ctx.get(RequestsController).setStatus(ctx.orgId, String(args.id ?? ''), { status: str(args.status) }, ctx.req) as { ok: boolean; error?: string };
-    return { data: res, action: res.ok ? `Request set to ${args.status}.` : undefined };
+    const res = await ctx.get(FlowsController).setStatus(ctx.orgId, String(args.id ?? ''), { status: str(args.status) }, ctx.req) as { ok: boolean; error?: string };
+    return { data: res, action: res.ok ? `Flow set to ${args.status}.` : undefined };
   },
 };
 
@@ -539,7 +539,7 @@ export const CORE_ASSISTANT_TOOLS: AssistantTool[] = [
   projectsList, projectTimeList, projectTimeAdd, projectTimeDelete, teamHours,
   absencesList, absencesTypes, absencesRequest, absencesCancel, balancesGet,
   approvalsList, approvalsDecide,
-  requestsList, requestsGet, requestsCreate, requestsReply, requestsStatus,
+  flowsList, flowsGet, flowsCreate, flowsReply, flowsStatus,
 ];
 
 /** Registers the core's tools (AssistantService does at start). */

@@ -146,11 +146,11 @@ export default function App() {
     }
   }, []);
 
-  // A link to one request (`#/requests?id=...`, e.g. from a forwarded e-mail) opens it.
+  // A link to one request (`#/flows?id=...`, e.g. from a forwarded e-mail) opens it.
   useEffect(() => {
     const focusFromHash = () => {
       const [path, query] = window.location.hash.split('?');
-      const id = path === '#/requests' ? new URLSearchParams(query ?? '').get('id') : null;
+      const id = path === '#/requests' || path === '#/flows' ? new URLSearchParams(query ?? '').get('id') : null;
       if (id) setRequestFocus(id);
     };
     focusFromHash();
@@ -327,7 +327,7 @@ export default function App() {
       window.location.hash = `#/news?id=${n.source_table_uuid}`;
       return;
     }
-    if (n.source_table === 'requests') {
+    if (n.source_table === 'flows') {
       setRequestFocus(n.source_table_uuid);
       navigate('flows');
       return;

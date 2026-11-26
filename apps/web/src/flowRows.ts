@@ -1,13 +1,13 @@
 // The Flows page's list (Flows.tsx): one row per flow, whichever source it comes from. Plain TypeScript so Node tests
 // import it (flowRows.test.mjs).
 import type { ActionItem } from './Approvals';
-import type { Box_, RequestItem } from './Requests';
+import type { Box_, FlowItem } from './FlowDetail';
 
 export type FlowsTab = 'todo' | 'mine' | 'done';
 
 /** One row of the list, whichever source it comes from. */
 export interface FlowRow {
-  source: 'request' | 'workflow';
+  source: 'flow' | 'workflow';
   id: string;
   title: string;
   /** The flow's type (Art), also the filter. */
@@ -21,7 +21,7 @@ export interface FlowRow {
 }
 
 export type RowLabels = {
-  request: (r: RequestItem & { box: Box_ }) => Pick<FlowRow, 'title' | 'type' | 'line' | 'status'>;
+  flow: (r: FlowItem & { box: Box_ }) => Pick<FlowRow, 'title' | 'type' | 'line' | 'status'>;
   item: (i: ActionItem) => Pick<FlowRow, 'title' | 'type' | 'line' | 'status'>;
 };
 
@@ -31,7 +31,7 @@ export type RowLabels = {
  */
 export function flowRows(
   tab: FlowsTab,
-  requests: readonly (RequestItem & { box: Box_ })[],
+  requests: readonly (FlowItem & { box: Box_ })[],
   items: readonly ActionItem[],
   label: RowLabels,
   requestsListed: boolean,
@@ -43,10 +43,10 @@ export function flowRows(
     if (tab === 'todo' && r.status === 'resolved') continue;
     if (tab === 'done' && r.box === 'inbox' && r.status !== 'resolved') continue;
     seen.add(r.id);
-    rows.push({ source: 'request', id: r.id, at: r.last_activity_at, urgent: r.urgent && r.status !== 'resolved', confidential: r.confidential, ...label.request(r) });
+    rows.push({ source: 'flow', id: r.id, at: r.last_activity_at, urgent: r.urgent && r.status !== 'resolved', confidential: r.confidential, ...label.flow(r) });
   }
   for (const i of items) {
-    if (requestsListed && i.source_table === 'requests') continue;
+    if (requestsListed && i.source_table === 'flows') continue;
     if (tab === 'done' && i.step_status === 'pending') continue;
     rows.push({ source: 'workflow', id: i.id, at: i.finished ?? i.started ?? '', ...label.item(i) });
   }
