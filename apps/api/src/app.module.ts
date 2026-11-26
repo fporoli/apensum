@@ -48,6 +48,7 @@ import { FlowsService } from './flows.service';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
 import { SiteContactController } from './site-contact.controller';
+import { SiteChatController } from './site-chat.controller';
 import { SiteNewsletterController } from './site-newsletter.controller';
 import { WorkflowsController } from './workflows.controller';
 import { WorkflowConfigsController } from './workflow-configs.controller';
@@ -118,6 +119,7 @@ const plugins = loadApiPlugins();
     TimesheetsController,
     ProjectTimesheetsController,
     SiteContactController,
+    SiteChatController,
     SiteNewsletterController,
     WorkflowsController, WorkflowConfigsController,
     StaticDataController,

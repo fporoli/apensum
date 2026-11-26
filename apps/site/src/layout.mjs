@@ -31,6 +31,12 @@ export function translator(dict, lang) {
     if (typeof v !== 'string') throw new Error(`site: ${lang} "${key}" is a list`);
     return esc(fill(v, vars, key));
   };
+  /** The text as written (not escaped), for JSON that is escaped as a whole (the chatbot's texts). */
+  t.raw = (key) => {
+    const v = raw(key);
+    if (typeof v !== 'string') throw new Error(`site: ${lang} "${key}" is a list`);
+    return v;
+  };
   t.list = (key, vars) => {
     const v = raw(key);
     if (!Array.isArray(v)) throw new Error(`site: ${lang} "${key}" is not a list`);
@@ -236,6 +242,20 @@ export function structuredData(ctx, description, faq = null) {
   return `<script type="application/ld+json">${json}</script>`;
 }
 
+/**
+ * The chatbot (static/assets/chat.js), on every page when the site has the API's address (SITE_CONTACT_URL): its
+ * endpoint next to the contact form's, the language and its texts.
+ */
+function chatScript(ctx) {
+  const { config, assets, t, lang } = ctx;
+  if (!config.contactUrl || !assets.chat) return '';
+  const api = config.contactUrl.replace(/\/public\/contact\/?$/, '/public/chat');
+  if (api === config.contactUrl) return '';
+  const keys = ['open', 'title', 'subtitle', 'greeting', 'placeholder', 'send', 'close', 'thinking', 'person', 'personIntro', 'name', 'email', 'message', 'submit', 'back', 'handed', 'about', 'error_rate-limited', 'error_chat-unavailable', 'error_chat-failed', 'error_invalid', 'error_mail-failed', 'error_failed'];
+  const raw = Object.fromEntries(keys.map((k) => [k, t.raw(`chat.${k}`)]));
+  return `<script src="${assets.chat}" data-api="${esc(api)}" data-lang="${lang}" data-about="${ctx.link('support')}#chatbot" data-texts="${esc(JSON.stringify(raw))}" defer></script>`;
+}
+
 /** A full HTML document. `alternates` maps language -> path of this page. */
 export function layout(ctx, { title, description, body, noindex = false, reveal = false, form = false, news = false, faq = null }) {
   const { lang, page, config, assets, t } = ctx;
@@ -268,6 +288,7 @@ export function layout(ctx, { title, description, body, noindex = false, reveal 
   ${news ? `<script src="${assets.news}" defer></script>` : ''}
   ${news || body.includes('class="shot') ? `<script src="${assets.zoom}" data-close="${t('shot.close')}" defer></script>` : ''}
   ${noindex ? '' : structuredData(ctx, description, faq)}
+  ${chatScript(ctx)}
 </head>
 <body>
   <a class="skip" href="#main">${t('nav.skip')}</a>

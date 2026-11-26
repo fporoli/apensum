@@ -80,7 +80,7 @@ export function build({
   cpSync(join(ROOT, 'static'), outDir, { recursive: true });
   // Assets are cached for a year (infra/site/Caddyfile): the ?v= content hash makes a change visible.
   const versioned = (name) => `/assets/${name}?v=${createHash('sha256').update(readFileSync(join(ROOT, 'static', 'assets', name))).digest('hex').slice(0, 10)}`;
-  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), contact: versioned('contact.js'), news: versioned('news.js'), zoom: versioned('zoom.js'), media: {}, mediaSize: {} };
+  const assets = { css: versioned('site.css'), reveal: versioned('reveal.js'), contact: versioned('contact.js'), news: versioned('news.js'), zoom: versioned('zoom.js'), chat: versioned('chat.js'), media: {}, mediaSize: {} };
   // Demo videos and posters (apps/site/media, not in git: recorded by videos/record.mjs, deployed
   // from the site-media release). Pages show only what is there.
   if (existsSync(mediaDir)) {

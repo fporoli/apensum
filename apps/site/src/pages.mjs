@@ -700,11 +700,11 @@ export function impressum(ctx) {
   return layout(ctx, { title: t('impressum.meta.title'), description: t('impressum.meta.description'), body, reveal: true });
 }
 
-export const PRIVACY_SECTIONS = ['controller', 'visit', 'contact', 'newsletter', 'app', 'rights', 'changes'];
+export const PRIVACY_SECTIONS = ['controller', 'visit', 'contact', 'newsletter', 'chat', 'app', 'rights', 'changes'];
 
 export function privacy(ctx) {
   const { t, config, locale } = ctx;
-  const updated = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 10, 15)));
+  const updated = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 10, 26)));
   const sections = PRIVACY_SECTIONS.map(
     (s) => `<h2 id="${s}">${t(`privacy.${s}.title`)}</h2>
     ${t.list(`privacy.${s}.text`).map((p) => `<p>${p.replace('{{email}}', ctx.email)}</p>`).join('\n    ')}`,
@@ -1194,6 +1194,7 @@ export const SUPPORT_ARTICLES = [
   ['staticData', 'sliders', ['support-staticdata-1', 'support-staticdata-2']],
   ['roster', 'calendar', ['support-roster-1', 'support-roster-2']],
   ['operator', 'key', ['support-operator-1', 'support-operator-2', 'support-operator-3']],
+  ['chatbot', 'chat', []],
 ];
 
 export function support(ctx) {

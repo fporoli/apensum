@@ -142,7 +142,8 @@ export class AiBudgetService {
   /** Reserves the estimated cost or throws the refusal. Returns the usage row's id for finish(). */
   async reserve(input: {
     orgId: string;
-    userId: string;
+    /** Null for a call nobody signed in made (the website's chatbot): no per-user limits then, the caller has its own. */
+    userId: string | null;
     /** The record the call is about (e.g. `{ table: 'cases.cases', id }`), kept with the usage row; none for receipt reading. */
     subject?: { table: string; id: string } | null;
     kind: AiUsageKind;
