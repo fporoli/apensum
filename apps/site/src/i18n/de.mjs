@@ -986,6 +986,20 @@ export default {
   'brochure.customers': "Für Unternehmen",
   'brochure.partners': "Für IT-Partner",
   'brochure.format': "PDF, Deutsch",
+  'slug.brochures': "broschueren",
+  'nav.brochures': "Broschüren",
+  'brochures.meta.title': "Broschüren zum Herunterladen | Apensum",
+  'brochures.meta.description': "Apensum auf zwei Seiten, als PDF: für Unternehmen, für Treuhänder und für IT-Partner.",
+  'brochures.title': "Apensum auf zwei Seiten",
+  'brochures.lead': "Zum Weiterleiten, Ausdrucken oder fürs nächste Gespräch – in drei Fassungen, je nachdem, wem Sie Apensum zeigen.",
+  'brochures.customers.text': "Was Apensum für Mitarbeitende, Vorgesetzte und HR leistet, und wie Sie in drei Schritten starten.",
+  'brochures.trustees.text': "Lohnfertige Daten von Ihren Mandanten, die Module von der Rechnung bis zur Meldestelle und wie wir zusammenarbeiten können.",
+  'brochures.partners.text': "Technik, Open Core und die Partnermodelle für Informatikfirmen und IT-Dienstleister.",
+  'brochures.download': "PDF herunterladen",
+  'brochures.preview': "Erste Seite der Broschüre «{{name}}»",
+  'support.brochures.title': "Broschüren",
+  'support.brochures.text': "Apensum auf zwei Seiten, zum Weiterleiten an Kolleginnen, Geschäftsleitung oder Mandanten.",
+  'support.brochures.cta': "Zu den Broschüren",
 
 
   // Open-source time recording (page opensource).

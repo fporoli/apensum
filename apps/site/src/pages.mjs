@@ -771,7 +771,8 @@ ${ctaBand(ctx)}`;
 
 /**
  * The brochure to download (static/downloads, PDF in German, the online version of the printed one: without the
- * investment box and the phone number). Shown on About and Pricing.
+ * investment box and the phone number, `npm run` nothing: rendered from the design, see the brochures page). Shown on
+ * Pricing; all three with a preview of their first page (the .jpg beside each PDF) on the Brochures page.
  */
 const BROCHURES = [
   ['trustees', 'apensum-broschuere-treuhaender.pdf'],
@@ -795,6 +796,39 @@ function brochures(ctx) {
     </div>
   </div>
 </section>`;
+}
+
+/** The three brochures: who each is for, what it says, a preview of its first page, the PDF. Footer and Support link here. */
+const BROCHURE_ORDER = ['customers', 'trustees', 'partners'];
+export function brochuresPage(ctx) {
+  const { t } = ctx;
+  const files = Object.fromEntries(BROCHURES);
+  const cards = BROCHURE_ORDER.map((k) => {
+    const pdf = `/downloads/${files[k]}`;
+    const name = t(`brochure.${k}`);
+    return `<article class="card brochure-card">
+      <a class="brochure-preview" href="${pdf}" download><img src="${pdf.replace(/\.pdf$/, '.jpg')}" alt="${esc(t('brochures.preview', { name }))}" width="476" height="674" loading="lazy"></a>
+      <h2 class="h3">${name}</h2>
+      <p class="muted">${t(`brochures.${k}.text`)}</p>
+      <a class="btn btn-primary btn-sm" href="${pdf}" download>${icon('doc')}${t('brochures.download')}</a>
+      <p class="muted small">${t('brochure.format')}</p>
+    </article>`;
+  }).join('\n    ');
+  const body = `
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">${t('nav.brochures')}</p>
+    <h1>${t('brochures.title')}</h1>
+    <p class="lead">${t('brochures.lead')}</p>
+  </div>
+</section>
+<section class="section tight">
+  <div class="wrap grid grid-3 brochure-grid">
+    ${cards}
+  </div>
+</section>
+${ctaBand(ctx)}`;
+  return layout(ctx, { title: t('brochures.meta.title'), description: t('brochures.meta.description'), body });
 }
 
 export function about(ctx) {
@@ -848,8 +882,7 @@ export function about(ctx) {
       </div>
     </div>
   </div>
-</section>
-${brochures(ctx)}`;
+</section>`;
   return layout(ctx, { title: t('about.meta.title'), description: t('about.meta.description'), body, reveal: true });
 }
 
@@ -1246,6 +1279,13 @@ export function support(ctx) {
   ${articles}
     <div class="card pricing-teaser">
       <div>
+        <h2>${t('support.brochures.title')}</h2>
+        <p class="lead">${t('support.brochures.text')}</p>
+      </div>
+      <div class="actions"><a class="btn btn-ghost" href="${ctx.link('brochures')}">${icon('doc')}${t('support.brochures.cta')}</a></div>
+    </div>
+    <div class="card pricing-teaser">
+      <div>
         <h2>${t('support.contact.title')}</h2>
         <p class="lead">${t('support.contact.text')}</p>
       </div>
@@ -1497,4 +1537,4 @@ export function newsResult(ctx, kind) {
   return layout(ctx, { title: `${t(`news.${kind}.title`)} – Apensum`, description: t('news.meta.description'), body, noindex: true });
 }
 
-export const RENDER = { home, features, opensource, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, support, pricing, security, law, about, references, contact, news, impressum, privacy };
+export const RENDER = { home, features, opensource, cases, expenses, roster, hr, hrplus, billing, whistle, plugins, brochures: brochuresPage, support, pricing, security, law, about, references, contact, news, impressum, privacy };
