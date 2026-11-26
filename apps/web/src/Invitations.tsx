@@ -21,6 +21,7 @@ import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { MailIcon, PeopleIcon } from './icons';
 import { swissLocale } from './localeFormat';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -141,6 +142,15 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
     }
   }
 
+  const columns: TableColumn<InvitationItem>[] = [
+    { key: 'email', value: (i) => i.email },
+    { key: 'role', value: (i) => i.role_name },
+    { key: 'status', value: (i) => t(`invitations.status.${i.status}`) },
+    { key: 'invitedBy', value: (i) => i.invited_by },
+    { key: 'expires', value: (i) => i.expires_at, search: false },
+  ];
+  const view = useTableView('core.invitations', invitations, columns);
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader
@@ -201,22 +211,25 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
       </Paper>
 
       <Paper sx={{ p: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{t('invitations.sentList', { count: invitations.length })}</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', mb: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('invitations.sentList', { count: invitations.length })}</Typography>
+          {invitations.length > 0 && <TableSearch view={view} />}
+        </Box>
         {loading && <LinearProgress sx={{ mb: 1 }} />}
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('common.email')}</TableCell>
-                <TableCell>{t('common.role')}</TableCell>
-                <TableCell>{t('common.status')}</TableCell>
-                <TableCell>{t('invitations.invitedBy')}</TableCell>
-                <TableCell>{t('invitations.expires')}</TableCell>
+                <SortHeader view={view} column="email">{t('common.email')}</SortHeader>
+                <SortHeader view={view} column="role">{t('common.role')}</SortHeader>
+                <SortHeader view={view} column="status">{t('common.status')}</SortHeader>
+                <SortHeader view={view} column="invitedBy">{t('invitations.invitedBy')}</SortHeader>
+                <SortHeader view={view} column="expires">{t('invitations.expires')}</SortHeader>
                 <TableCell align="right">{t('common.actions')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {invitations.map((inv) => (
+              {view.rows.map((inv) => (
                 <TableRow key={inv.id} hover>
                   <TableCell>{inv.email}</TableCell>
                   <TableCell>{inv.role_name}</TableCell>
@@ -237,8 +250,8 @@ export default function Invitations({ orgId, authHeaders }: InvitationsProps) {
                   </TableCell>
                 </TableRow>
               ))}
-              {invitations.length === 0 && (
-                <TableEmptyRow colSpan={6} icon={<MailIcon fontSize="inherit" />} title={t('invitations.empty')} />
+              {view.rows.length === 0 && (
+                <TableEmptyRow colSpan={6} icon={<MailIcon fontSize="inherit" />} title={t(invitations.length ? 'table.noMatch' : 'invitations.empty')} />
               )}
             </TableBody>
           </Table>

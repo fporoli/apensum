@@ -37,6 +37,7 @@ import {
   type TeamAbsence,
 } from './teamOverview';
 import { PLUGIN_TEAM_VIEWS } from './plugins';
+import { SortHeader, TableSearch, useTableView } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -292,6 +293,11 @@ function TeamTable({
   const money = (pairs: [string, number][]) => (pairs.length ? pairs.map(([c, v]) => `${c} ${formatLocaleNumber(Math.round(v * 100) / 100, locale)}`).join(' · ') : '—');
   const date = (iso: string | null) => (iso ? formatLocaleDate(iso.slice(0, 10), locale) : '—');
 
+  // Search and sort by person (the cells are rendered, not values); the caller first otherwise.
+  const view = useTableView(`core.team.${kind}`, data.people, [
+    { key: 'person', value: (p: Person) => p.name ?? p.email },
+    { key: 'email', value: (p: Person) => p.email },
+  ]);
   const byUser = <T extends { user_id?: string; userId?: string }>(rows: T[], id: string) => rows.filter((r) => (r.user_id ?? r.userId) === id);
   const rows = data.rows as never[];
 
@@ -405,18 +411,20 @@ function TeamTable({
   }
 
   return (
+    <>
+    {data.people.length > 5 && <TableSearch view={view} sx={{ mb: 1 }} />}
     <TableContainer>
       <Table size="small">
         <TableHead>
           <TableRow>
-            <TableCell>{t('people.person')}</TableCell>
+            <SortHeader view={view} column="person">{t('people.person')}</SortHeader>
             {headers.map((h) => <TableCell key={h}>{h}</TableCell>)}
             {expandable && <TableCell padding="checkbox" />}
           </TableRow>
         </TableHead>
         <TableBody>
-          {data.people.length === 0 && <TableEmptyRow colSpan={headers.length + 2} title={t('team.empty')} />}
-          {data.people.map((p) => {
+          {view.rows.length === 0 && <TableEmptyRow colSpan={headers.length + 2} title={t(data.people.length ? 'table.noMatch' : 'team.empty')} />}
+          {view.rows.map((p) => {
             const open = expandable && expanded === p.id;
             return (
               <Fragment key={p.id}>
@@ -439,6 +447,7 @@ function TeamTable({
         </TableBody>
       </Table>
     </TableContainer>
+    </>
   );
 }
 

@@ -29,6 +29,7 @@ import { DeleteIcon, DescriptionIcon, DownloadIcon, EditIcon, VisibilityIcon } f
 import { DropZone, useAttachmentDraft } from './attachments';
 import { formatFileSize, formatLocaleDate } from './localeFormat';
 import { DateInput } from './ConfigField';
+import { TableSearch, useTableView } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -319,6 +320,13 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, on
     );
   }
 
+  // A file grows over the years: a search over title, category and file name (the list keeps its own order).
+  const view = useTableView(`core.personnelDocs`, docs, [
+    { key: 'title', value: (doc: PersonnelDocument) => doc.title },
+    { key: 'category', value: (doc: PersonnelDocument) => label(doc.category) },
+    { key: 'file', value: (doc: PersonnelDocument) => doc.file_name },
+  ]);
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <Box>
@@ -357,11 +365,14 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, on
       ) : docs.length === 0 ? (
         <EmptyState icon={<DescriptionIcon fontSize="inherit" />} title={asManager ? t('personnelDocs.managerEmpty') : t('personnelDocs.empty')} />
       ) : (
+        <>
+        {docs.length > 5 && <TableSearch view={view} sx={{ mb: 1 }} />}
+        {view.rows.length === 0 && <EmptyState icon={<DescriptionIcon fontSize="inherit" />} title={t('table.noMatch')} />}
         <List disablePadding>
-          {docs.map((doc, i) => (
+          {view.rows.map((doc, i) => (
             <ListItem
               key={doc.id}
-              divider={i < docs.length - 1}
+              divider={i < view.rows.length - 1}
               sx={{ pr: 1, gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}
               secondaryAction={
                 <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -430,6 +441,7 @@ export default function PersonnelDocumentsPanel({ orgId, userId, authHeaders, on
             </ListItem>
           ))}
         </List>
+        </>
       )}
 
       <Dialog open={!!editing} onClose={() => setEditing(null)} fullWidth maxWidth="md">

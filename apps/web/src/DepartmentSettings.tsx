@@ -21,6 +21,7 @@ import { useT } from './i18n';
 import { ConfirmDialog, TableEmptyRow } from './components';
 import { AddIcon, BusinessIcon, CheckIcon, CloseIcon, DeleteIcon, EditIcon } from './icons';
 import { SectionPaper } from './SettingsSection';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -132,30 +133,40 @@ export default function DepartmentSettings({ orgId, authHeaders }: { orgId: stri
     </TextField>
   );
 
+  const columns: TableColumn<Department>[] = [
+    { key: 'name', value: (d) => d.name },
+    { key: 'code', value: (d) => d.code },
+    { key: 'leader', value: (d) => d.leader_name },
+    { key: 'members', value: (d) => d.members, search: false },
+    { key: 'active', value: (d) => (d.is_active ? 0 : 1), search: false },
+  ];
+  const view = useTableView('core.departments', departments, columns);
+
   return (
     <SectionPaper title={t('departments.title')} subtitle={t('departments.subtitle')}>
 
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
 
+      {departments.length > 5 && <TableSearch view={view} sx={{ mb: 1 }} />}
       <TableContainer>
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>{t('departments.name')}</TableCell>
-              <TableCell>
+              <SortHeader view={view} column="name">{t('departments.name')}</SortHeader>
+              <SortHeader view={view} column="code">
                 <Tooltip title={t('units.codeHint')}><span>{t('units.code')}</span></Tooltip>
-              </TableCell>
-              <TableCell>{t('departments.leader')}</TableCell>
-              <TableCell align="right">{t('departments.members')}</TableCell>
-              <TableCell>{t('departments.active')}</TableCell>
+              </SortHeader>
+              <SortHeader view={view} column="leader">{t('departments.leader')}</SortHeader>
+              <SortHeader view={view} column="members" align="right">{t('departments.members')}</SortHeader>
+              <SortHeader view={view} column="active">{t('departments.active')}</SortHeader>
               {canEdit && <TableCell />}
             </TableRow>
           </TableHead>
           <TableBody>
-            {departments.length === 0 && (
-              <TableEmptyRow colSpan={canEdit ? 6 : 5} icon={<BusinessIcon fontSize="inherit" />} title={t('departments.empty')} />
+            {view.rows.length === 0 && (
+              <TableEmptyRow colSpan={canEdit ? 6 : 5} icon={<BusinessIcon fontSize="inherit" />} title={t(departments.length ? 'table.noMatch' : 'departments.empty')} />
             )}
-            {departments.map((d) => {
+            {view.rows.map((d) => {
               const isEditing = editing?.id === d.id;
               return (
                 <TableRow key={d.id} sx={{ opacity: d.is_active ? 1 : 0.6 }}>
