@@ -35,7 +35,7 @@ test('it knows the website\'s pages about Apensum, not its menus, forms or legal
   assert.doesNotMatch(k, /<[a-z]/);
   const prompt = chatSystemPrompt('de', k, { email: 'info@apensum.ch', demoUrl: 'https://appdemo.apensum.ch' });
   assert.match(prompt, /Answer ONLY from the WEBSITE TEXTS/);
-  assert.match(prompt, /German \(Swiss spelling, no ß\)/);
+  assert.match(prompt, /umlauts ä, ö, ü/);
 });
 
 test('the hand-over mail: Reply-To the visitor, the message and the conversation', () => {
@@ -111,4 +111,54 @@ test('an optional phone number for a call back: in the mail, never in the push',
   assert.doesNotMatch(JSON.stringify(pushes), /79 123/);
   assert.deepEqual(await c.handover({ name: 'Bea', email: 'bea@example.ch', phone: '', message: 'Ohne Nummer' }, req('https://apensum.ch', '9.9.9.9')), { ok: true });
   assert.doesNotMatch(sent[1].text, /Telefon/);
+});
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { CHAT_DOCS, DocIndex, chunkMarkdown, docsPayload, tokenize } from '../../apps/api/src/site-chat-docs';
+
+test('the documentation in sections under their headings, never CLAUDE.md or the internal docs', () => {
+  assert.ok(!CHAT_DOCS.some((f) => /CLAUDE|BUILD_PROMPT|SYSTEM_REVIEW/.test(f)));
+  const chunks = chunkMarkdown('x.md', '# Title\nintro\n## Backups\nnightly\n\nhourly\n```sh\n# not a heading\n```\n### Restore\nRESTORE prod\n## Other\ntext');
+  assert.deepEqual(chunks.map((c) => c.heading), ['Title', 'Title › Backups', 'Title › Backups › Restore', 'Title › Other']);
+  assert.match(chunks[1].text, /# not a heading/);
+  assert.deepEqual(tokenize('The Backups are encrypted with AGE'), ['backups', 'encrypted', 'age']);
+});
+
+test('searching the real README and docs finds what a visitor asks about', () => {
+  const root = join(__dirname, '../..');
+  const index = new DocIndex(CHAT_DOCS.flatMap((f) => chunkMarkdown(f, readFileSync(join(root, f), 'utf8'))));
+  assert.ok(index.size > 50);
+  const backup = index.search('backup restore encrypted', 3);
+  assert.ok(backup.some((c) => /Backups/.test(c.heading)), backup.map((c) => c.heading).join(' | '));
+  const plugin = index.search('write own plugin module', 3);
+  assert.ok(plugin.some((c) => c.source === 'docs/PLUGINS.md'));
+  assert.ok(index.search('backup', 6, 3000).reduce((n, c) => n + c.text.length, 0) <= 3000);
+  assert.deepEqual(index.search('the and'), []);
+  assert.equal(docsPayload([]), 'No matching documentation.');
+});
+
+test('a technical question: the model searches the documentation once, then answers from it', async () => {
+  const { c, usage } = controller();
+  const rounds: { withSearch: boolean; last: unknown }[] = [];
+  c.complete = async (messages, withSearch) => {
+    rounds.push({ withSearch, last: messages[messages.length - 1] });
+    if (rounds.length === 1) {
+      return {
+        text: '', search: { id: 'call1', query: 'backup restore' },
+        message: { role: 'assistant', content: null, tool_calls: [{ id: 'call1', type: 'function', function: { name: 'search_docs', arguments: '{"query":"backup restore"}' } }] },
+        inputTokens: 1000, outputTokens: 20,
+      };
+    }
+    return { text: 'Laut Dokumentation auf GitHub gibt es nächtliche Backups, regelmäßig.', inputTokens: 3000, outputTokens: 60 };
+  };
+  await withEnv(AZURE, async () => {
+    const res = await c.ask({ lang: 'de', messages: [{ role: 'user', content: 'Wie werden die Daten gesichert?' }] }, req());
+    assert.deepEqual(res, { ok: true, answer: 'Laut Dokumentation auf GitHub gibt es nächtliche Backups, regelmässig.' });
+  });
+  assert.deepEqual(rounds.map((r) => r.withSearch), [true, false]);
+  const tool = rounds[1].last as { role: string; content: string };
+  assert.equal(tool.role, 'tool');
+  assert.match(tool.content, /\[README\.md — .*Backups/);
+  assert.equal((usage.finish[0] as { inputTokens: number }).inputTokens, 4000);
 });

@@ -1,6 +1,8 @@
 import { Body, Controller, Logger, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
 import { pathToFileURL } from 'node:url';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { AiBudgetService, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
@@ -11,6 +13,7 @@ import { Public } from './jwt.guard';
 import { sendMail, type MailOptions } from './mailer';
 import { pushToOperator, type OperatorPush } from './operator-push';
 import { allowedOrigins } from './site-contact.controller';
+import { CHAT_DOCS, DocIndex, chunkMarkdown, docsPayload } from './site-chat-docs';
 import { chatLang, chatSystemPrompt, cleanHistory, cleanPhone, handoverMail, siteKnowledge, type ChatLang, type ChatMessage } from './site-chat';
 
 const HOUR = 60 * 60 * 1000;
@@ -22,6 +25,28 @@ export const HANDOVER_PER_IP_HOUR = 3;
 export const HANDOVER_PER_DAY = 50;
 const MAX_ANSWER_TOKENS = 600;
 const SITE_CHAT_KIND = 'site_chat';
+/** What one documentation search may add to the second round (characters). */
+const DOCS_MAX_CHARS = 8000;
+
+/** The tool the model calls when the website's texts do not answer a technical question (site-chat-docs.ts). */
+const SEARCH_DOCS: ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'search_docs',
+    description: "Searches the documentation of Apensum's open-source core on GitHub (README and docs). Use English keywords.",
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'English keywords, e.g. "backup restore encryption"' } }, required: ['query'] },
+  },
+};
+
+export interface ChatRound {
+  text: string;
+  /** The model asked to search the documentation (round one only). */
+  search?: { id: string; query: string };
+  /** The model's message as it is to be sent back with the search's result. */
+  message?: ChatCompletionMessageParam;
+  inputTokens: number;
+  outputTokens: number;
+}
 
 /** `import()` that TypeScript leaves alone (the API is CommonJS; the website's texts are ES modules). */
 const importModule = new Function('specifier', 'return import(specifier)') as (specifier: string) => Promise<{ default: Record<string, unknown> }>;
@@ -45,20 +70,27 @@ export class SiteChatController {
   now: () => number = () => Date.now();
   send: (mail: MailOptions) => Promise<void> = (mail) => sendMail(mail, 10_000);
   push: (push: OperatorPush) => Promise<boolean> = (push) => pushToOperator(push);
-  /** The model's answer to the conversation (Azure OpenAI); replaceable in tests. */
-  complete: (messages: { role: 'system' | 'user' | 'assistant'; content: string }[]) => Promise<{ text: string; inputTokens: number; outputTokens: number }> =
-    async (messages) => {
-      const config = azureOpenAiConfig();
-      if (!config) throw new Error('not configured');
-      const completion = await retryStaleConnection(() => azureOpenAiClient(config, 45_000).chat.completions.create({
-        model: config.deployment, messages, max_completion_tokens: MAX_ANSWER_TOKENS,
-      }));
-      return {
-        text: completion.choices[0]?.message?.content?.trim() ?? '',
-        inputTokens: completion.usage?.prompt_tokens ?? 0,
-        outputTokens: completion.usage?.completion_tokens ?? 0,
-      };
+  /** One round with the model (Azure OpenAI), offering the documentation search or not; replaceable in tests. */
+  complete: (messages: ChatCompletionMessageParam[], withSearch: boolean) => Promise<ChatRound> = async (messages, withSearch) => {
+    const config = azureOpenAiConfig();
+    if (!config) throw new Error('not configured');
+    const completion = await retryStaleConnection(() => azureOpenAiClient(config, 45_000).chat.completions.create({
+      model: config.deployment, messages, max_completion_tokens: MAX_ANSWER_TOKENS, ...(withSearch ? { tools: [SEARCH_DOCS] } : {}),
+    }));
+    const message = completion.choices[0]?.message;
+    const call = message?.tool_calls?.find((c): c is typeof c & { type: 'function' } => c.type === 'function' && c.function.name === 'search_docs');
+    let query = '';
+    try {
+      query = call ? String(JSON.parse(call.function.arguments || '{}').query ?? '') : '';
+    } catch { /* no usable query: answered without the documentation */ }
+    return {
+      text: message?.content?.trim() ?? '',
+      ...(call && query ? { search: { id: call.id, query }, message: message as ChatCompletionMessageParam } : {}),
+      inputTokens: completion.usage?.prompt_tokens ?? 0,
+      outputTokens: completion.usage?.completion_tokens ?? 0,
     };
+  };
+  private docsIndex: DocIndex | null = null;
 
   constructor(private readonly budget: AiBudgetService) {}
 
@@ -71,6 +103,22 @@ export class SiteChatController {
     if (!text) this.logger.warn(`The website's texts (${lang}) were not found at ${file}: the chatbot is off.`);
     this.knowledge.set(lang, text);
     return text;
+  }
+
+  /** The documentation to search (README and docs as they are in the image), read once; empty when none is there. */
+  docs(): DocIndex {
+    if (this.docsIndex) return this.docsIndex;
+    const root = resolve(__dirname, '../../..');
+    const chunks = CHAT_DOCS.flatMap((file) => {
+      try {
+        return chunkMarkdown(file, readFileSync(resolve(root, file), 'utf8'));
+      } catch {
+        return [];
+      }
+    });
+    if (!chunks.length) this.logger.warn(`No documentation found under ${root}: the chatbot answers from the website only.`);
+    this.docsIndex = new DocIndex(chunks);
+    return this.docsIndex;
   }
 
   private originAllowed(req: Request): boolean {
@@ -103,19 +151,21 @@ export class SiteChatController {
     if (!today) return { ok: false, error: 'rate-limited' };
     this.today = today;
 
+    const docs = this.docs();
     const system = chatSystemPrompt(lang, knowledge, {
       email: process.env.CONTACT_EMAIL || 'info@apensum.ch',
       demoUrl: process.env.SITE_DEMO_URL || 'https://appdemo.apensum.ch',
-    });
-    const messages = [{ role: 'system' as const, content: system }, ...history];
-    const inputChars = messages.reduce((n, m) => n + m.content.length, 0);
+    }, docs.size > 0);
+    const messages: ChatCompletionMessageParam[] = [{ role: 'system', content: system }, ...history];
+    // Two rounds when the model searches the documentation: the conversation twice and the search's result.
+    const inputChars = (system.length + history.reduce((n, m) => n + m.content.length, 0)) * (docs.size ? 2 : 1) + (docs.size ? DOCS_MAX_CHARS : 0);
     let usageId: string;
     let orgLimitChf: number;
     try {
       orgLimitChf = await this.budget.orgMonthlyLimitChf(OPERATOR_ORG_ID);
       usageId = await this.budget.reserve({
         orgId: OPERATOR_ORG_ID, userId: null, kind: SITE_CHAT_KIND, provider: 'azure-openai',
-        estimateChf: estimateChatChf(inputChars, MAX_ANSWER_TOKENS, prices), orgLimitChf,
+        estimateChf: estimateChatChf(inputChars, MAX_ANSWER_TOKENS * (docs.size ? 2 : 1), prices), orgLimitChf,
       });
     } catch (error) {
       // The budget is used up, or the instance has no operators' organization yet.
@@ -123,11 +173,22 @@ export class SiteChatController {
       return { ok: false, error: 'chat-unavailable' };
     }
     try {
-      const answer = await this.complete(messages);
+      let answer = await this.complete(messages, docs.size > 0);
+      let inputTokens = answer.inputTokens;
+      let outputTokens = answer.outputTokens;
+      if (answer.search && answer.message) {
+        // One search at most: the documentation's best sections, then the answer.
+        const found = docs.search(answer.search.query, 6, DOCS_MAX_CHARS);
+        messages.push(answer.message, { role: 'tool', tool_call_id: answer.search.id, content: docsPayload(found) });
+        answer = await this.complete(messages, false);
+        inputTokens += answer.inputTokens;
+        outputTokens += answer.outputTokens;
+      }
       await this.budget.finish(usageId, {
-        ok: true, inputTokens: answer.inputTokens, outputTokens: answer.outputTokens, actualChf: chatChf(answer.inputTokens, answer.outputTokens, prices),
+        ok: true, inputTokens, outputTokens, actualChf: chatChf(inputTokens, outputTokens, prices),
       }, { orgId: OPERATOR_ORG_ID, orgLimitChf });
-      return answer.text ? { ok: true, answer: answer.text } : { ok: false, error: 'chat-failed' };
+      // Swiss German has no ß (the model slips into it when it translates the English documentation).
+      return answer.text ? { ok: true, answer: answer.text.replace(/ß/g, 'ss') } : { ok: false, error: 'chat-failed' };
     } catch (error) {
       const status = (error as { status?: number }).status;
       this.logger.warn(`Website chat call failed: ${error instanceof Error ? error.message : error}`);
