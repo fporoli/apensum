@@ -45,6 +45,10 @@ plugins/<id>/
   `PLUGIN_API_VERSION`). The API's start, the web build and `scripts/plugins.mjs` refuse a plugin with
   none or another one. The core bumps it when a change can break a plugin built against the previous
   version (something removed or renamed, a type or behavior changed), not for additions.
+- `requires` (optional) lists the ids of the plugins this one needs, e.g. Billing's `["expenses"]` (it bills expenses and reads their tables).\
+  The plugin then loads, migrates and seeds after them (otherwise every step goes by id), and the API's start, the web build and `scripts/plugins.mjs` stop with a clear message when one is not installed or when plugins require each other in a circle (`pluginOrder` in `packages/shared/src/pluginApi.ts`).\
+  The order reaches the migrate image and the VPS seeder as an `ORDER` file written by `stage-changelogs` / `stage-seeds`.\
+  It is about installation, not about the module switch: a required plugin's module may still be off in an organization, so code that reads another plugin's data copes with none.
 - `module` (optional) appears under Organization settings -> Modules. Switching it off removes the
   listed permission objects for everyone in the organization, so the plugin's pages disappear and its
   endpoints refuse (`can()` fails). Its texts are `modules.<id>` and `modules.<id>.description`.

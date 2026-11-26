@@ -17,6 +17,28 @@ fi
 
 only="${APENSUM_CHANGELOG:-}"
 
+# The plugins' changelog masters in their order: APENSUM_PLUGIN_ORDER (migrate.mjs, from the manifests' `requires`),
+# else the ORDER file `plugins.mjs stage-changelogs` writes into the image, else by folder name.
+plugin_masters() {
+  local ids=()
+  if [[ -n "${APENSUM_PLUGIN_ORDER:-}" ]]; then
+    read -r -a ids <<< "$APENSUM_PLUGIN_ORDER"
+  elif [[ -f /liquibase/plugins/ORDER ]]; then
+    while IFS= read -r id; do [[ -n "$id" ]] && ids+=("$id"); done < /liquibase/plugins/ORDER
+  else
+    for m in /liquibase/plugins/*/changelog/db.changelog-master.xml; do
+      [[ -f "$m" ]] || continue
+      m="${m#/liquibase/plugins/}"
+      ids+=("${m%%/*}")
+    done
+  fi
+  local id
+  for id in "${ids[@]}"; do
+    [[ -f "/liquibase/plugins/$id/changelog/db.changelog-master.xml" ]] && echo "/liquibase/plugins/$id/changelog/db.changelog-master.xml"
+  done
+  return 0
+}
+
 # `update` of everything runs Liquibase once (one JVM start instead of one per changelog): a master in /tmp
 # includes the core's master and each plugin's through two search paths, so every changeset is recorded under
 # the same name as when they run one by one (the core's "NNN-name.sql", a plugin's "<id>/changelog/<file>").
@@ -27,11 +49,10 @@ if [[ -z "$only" && " $* " == *" update "* ]]; then
     echo '<?xml version="1.0" encoding="UTF-8"?>'
     echo '<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">'
     echo '  <include file="db.changelog-master.xml"/>'
-    for master in /liquibase/plugins/*/changelog/db.changelog-master.xml; do
-      [[ -f "$master" ]] || continue
+    while IFS= read -r master; do
       echo "  <include file=\"${master#/liquibase/plugins/}\"/>"
       echo "Plugin changelog: ${master#/liquibase/plugins/}" >&2
-    done
+    done < <(plugin_masters)
     echo '</databaseChangeLog>'
   } > "$all/apensum-all.xml"
   args=()
@@ -59,8 +80,7 @@ for a in "$@"; do
 done
 
 found=false
-for master in /liquibase/plugins/*/changelog/db.changelog-master.xml; do
-  [[ -f "$master" ]] || continue
+while IFS= read -r master; do
   rel="${master#/liquibase/plugins/}"
   id="${rel%%/*}"
   [[ -z "$only" || "$only" == "$id" ]] || continue
@@ -68,7 +88,7 @@ for master in /liquibase/plugins/*/changelog/db.changelog-master.xml; do
   echo "Plugin changelog: $rel"
   (cd /liquibase/plugins && /liquibase/liquibase --defaultsFile=/liquibase/liquibase.docker.properties \
     --search-path=/liquibase/plugins --changelog-file="$rel" "${args[@]}")
-done
+done < <(plugin_masters)
 
 if [[ -n "$only" && "$found" == false ]]; then
   echo "No changelog for plugin \"$only\" under /liquibase/plugins" >&2

@@ -262,9 +262,17 @@ load_seed() {
   local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   local files=("$ROOT/infra/postgres/seeds/seed.sql")
   local plugin
-  for plugin in "$ROOT"/infra/postgres/seeds/plugins/*.sql; do
-    [ -f "$plugin" ] && files+=("$plugin")
-  done
+  # In the plugins' order (ORDER, written by `plugins.mjs stage-seeds`: a plugin after those it requires), else by name.
+  if [ -f "$ROOT/infra/postgres/seeds/plugins/ORDER" ]; then
+    local id
+    while IFS= read -r id; do
+      [ -n "$id" ] && [ -f "$ROOT/infra/postgres/seeds/plugins/$id.sql" ] && files+=("$ROOT/infra/postgres/seeds/plugins/$id.sql")
+    done < "$ROOT/infra/postgres/seeds/plugins/ORDER"
+  else
+    for plugin in "$ROOT"/infra/postgres/seeds/plugins/*.sql; do
+      [ -f "$plugin" ] && files+=("$plugin")
+    done
+  fi
   local args=() copied=() f target
   for f in "${files[@]}"; do
     target="/tmp/$PREFIX-seed-$stamp-$(basename "$f")"

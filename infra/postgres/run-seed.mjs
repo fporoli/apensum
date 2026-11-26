@@ -7,9 +7,10 @@
 // passes "$DATABASE_URL" through literally and psql silently falls back to
 // its defaults (localhost:5432). Reading the env var in Node sidesteps that.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inPluginOrder } from '../../packages/shared/src/pluginApi.ts';
 
 // No env-file fallback here: run it through `npm run dev:seed` / `local:seed`
 // (scripts/with-env.mjs), or with DATABASE_URL set (CI, VPS), so the seed can't
@@ -28,8 +29,14 @@ if (!sqlFile) {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const pluginsDir = process.env.APENSUM_PLUGINS_DIR?.trim() ? resolve(process.env.APENSUM_PLUGINS_DIR.trim()) : join(root, 'plugins');
+// A plugin's seed after the seeds of the plugins it requires (their rows may be referenced), else by id.
 const pluginSeeds = existsSync(pluginsDir)
-  ? readdirSync(pluginsDir).sort().map((id) => join(pluginsDir, id, 'seed.sql')).filter((f) => existsSync(f))
+  ? inPluginOrder(
+      readdirSync(pluginsDir)
+        .filter((id) => existsSync(join(pluginsDir, id, 'package.json')))
+        .map((id) => ({ id, manifest: JSON.parse(readFileSync(join(pluginsDir, id, 'package.json'), 'utf8')).apensum }))
+        .filter((p) => p.manifest),
+    ).map((p) => join(pluginsDir, p.id, 'seed.sql')).filter((f) => existsSync(f))
   : [];
 for (const f of pluginSeeds) console.log(`seed: plugin ${f}`);
 

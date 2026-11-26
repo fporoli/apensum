@@ -5,7 +5,7 @@ import { Logger, type Provider, type Type } from '@nestjs/common';
 import { registerModule, type ModuleDefinition } from '@worktime3/shared/modules';
 import { registerForm } from '@worktime3/shared/fields';
 import { registerPermissionObjects, type PermissionObject } from '@worktime3/shared/permissions';
-import { namespaceMismatch, pluginApiMismatch, type PluginName } from '@worktime3/shared/pluginApi';
+import { inPluginOrder, namespaceMismatch, pluginApiMismatch, type PluginName } from '@worktime3/shared/pluginApi';
 import type { ApiPlugin } from './plugin';
 import { registerApiReport } from './report-sources';
 import { registerTeamView } from './team-overview.controller';
@@ -44,6 +44,11 @@ export interface PluginManifest {
    * plugin carved out of the core with its old names (expenses); a new plugin never sets it.
    */
   legacyNames?: boolean;
+  /**
+   * The plugins this one needs (their ids): it loads, migrates and seeds after them, and the start stops with a
+   * clear message when one is not installed (pluginOrder in packages/shared/src/pluginApi.ts).
+   */
+  requires?: string[];
   /** Built API entry, relative to the plugin folder; its default export is an ApiPlugin. */
   api?: string;
   /** Web entry (TypeScript source, bundled by Vite; see apps/web/vite.config.ts). */
@@ -55,7 +60,10 @@ export function pluginsDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.APENSUM_PLUGINS_DIR?.trim() || resolve(__dirname, '../../../plugins');
 }
 
-/** The manifests of the plugin folders in `dir`, sorted by id. Folders without one are skipped. */
+/**
+ * The manifests of the plugin folders in `dir`, a plugin after those it requires and otherwise by id (pluginOrder;
+ * throws when a required one is missing). Folders without one are skipped.
+ */
 export function readPluginManifests(dir: string): { dir: string; manifest: PluginManifest }[] {
   if (!existsSync(dir)) return [];
   const out: { dir: string; manifest: PluginManifest }[] = [];
@@ -70,7 +78,7 @@ export function readPluginManifests(dir: string): { dir: string; manifest: Plugi
     }
     out.push({ dir: join(dir, entry.name), manifest });
   }
-  return out.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
+  return inPluginOrder(out);
 }
 
 export interface LoadedPlugins {

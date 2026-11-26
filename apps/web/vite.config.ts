@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { defineConfig, defaultClientConditions, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
-import { pluginApiMismatch } from '../../packages/shared/src/pluginApi.ts';
+import { inPluginOrder, pluginApiMismatch } from '../../packages/shared/src/pluginApi.ts';
 
 /**
  * `virtual:apensum-plugins`: imports the web entry (package.json `apensum.web`) of every plugin
@@ -19,15 +19,15 @@ function apensumPlugins(): Plugin {
     return readdirSync(dir, { withFileTypes: true })
       .filter((e) => (e.isDirectory() || e.isSymbolicLink()) && existsSync(join(dir, e.name, 'package.json')))
       .map((e) => ({ name: e.name, manifest: JSON.parse(readFileSync(join(dir, e.name, 'package.json'), 'utf8')).apensum }))
-      .filter((p) => p.manifest)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .filter((p) => p.manifest);
   };
   return {
     name: 'apensum-plugins',
     resolveId: (source) => (source === id ? resolved : undefined),
     load(source) {
       if (source !== resolved) return undefined;
-      const found = manifests();
+      // A plugin after the plugins it requires (apensum.requires); a missing one stops the build.
+      const found = inPluginOrder(manifests());
       // A changed manifest (permissions, version, names) rebuilds this module; a new plugin folder needs a restart.
       for (const p of found) this.addWatchFile(join(dir, p.name, 'package.json'));
       for (const p of found) {

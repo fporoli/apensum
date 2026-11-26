@@ -21,7 +21,8 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { pluginApiMismatch } from '../packages/shared/src/pluginApi.ts';
+import { inPluginOrder, pluginApiMismatch } from '../packages/shared/src/pluginApi.ts';
+import { writeFileSync } from 'node:fs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dir = process.env.APENSUM_PLUGINS_DIR?.trim() || join(root, 'plugins');
@@ -34,8 +35,17 @@ function plugins() {
     .map((e) => join(dir, e.name))
     .filter((p) => existsSync(join(p, 'package.json')))
     .map((p) => ({ dir: p, manifest: JSON.parse(readFileSync(join(p, 'package.json'), 'utf8')).apensum }))
-    .filter((p) => p.manifest)
-    .sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
+    .filter((p) => p.manifest);
+}
+
+/** The plugins in their order (a plugin after those it requires); a missing required one stops every command. */
+function ordered() {
+  try {
+    return inPluginOrder(plugins());
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
 }
 
 function run(cmd, args, cwd) {
@@ -43,7 +53,7 @@ function run(cmd, args, cwd) {
   if (r.status !== 0) process.exit(r.status ?? 1);
 }
 
-const list = plugins();
+const list = ordered();
 for (const p of list) {
   const mismatch = pluginApiMismatch(p.manifest.id, p.manifest.apensumApi);
   if (mismatch && command !== 'list') {
@@ -82,6 +92,8 @@ if (command === 'list') {
     cpSync(changelog, join(dest, p.manifest.id, 'changelog'), { recursive: true });
     console.log(`plugin ${p.manifest.id}: changelog staged in ${join(dest, p.manifest.id)}`);
   }
+  // The order to run them in (apensum-migrate.sh reads it; the folders alone would run by name).
+  writeFileSync(join(dest, 'ORDER'), list.filter((p) => existsSync(join(p.dir, 'changelog/db.changelog-master.xml'))).map((p) => p.manifest.id).join('\n') + '\n');
 } else if (command === 'stage-seeds') {
   const dest = resolve(process.argv[3] ?? join(root, 'infra/postgres/seeds/plugins'));
   mkdirSync(dest, { recursive: true });
@@ -92,6 +104,8 @@ if (command === 'list') {
     cpSync(seed, join(dest, `${p.manifest.id}.sql`));
     console.log(`plugin ${p.manifest.id}: seed staged in ${join(dest, `${p.manifest.id}.sql`)}`);
   }
+  // The order to load them in (remote.sh reads it).
+  writeFileSync(join(dest, 'ORDER'), list.filter((p) => existsSync(join(p.dir, 'seed.sql'))).map((p) => p.manifest.id).join('\n') + '\n');
 } else {
   console.error(`Unknown command "${command}" (list, build, test, stage-changelogs or stage-seeds).`);
   process.exit(2);

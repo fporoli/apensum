@@ -12,15 +12,21 @@
 //                             checkout doesn't have (it is ahead, or on another branch), or an
 //                             applied changeset was edited afterwards (checksum mismatch).
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
+import { inPluginOrder } from '../../packages/shared/src/pluginApi.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pluginsDir = process.env.APENSUM_PLUGINS_DIR?.trim() ? resolve(process.env.APENSUM_PLUGINS_DIR.trim()) : join(here, '../../plugins');
-/** Plugins with a changelog (plugins/<id>/changelog/db.changelog-master.xml). */
+/** Plugins with a changelog (plugins/<id>/changelog/db.changelog-master.xml), a plugin after those it requires. */
 const pluginChangelogs = existsSync(pluginsDir)
-  ? readdirSync(pluginsDir).filter((id) => existsSync(join(pluginsDir, id, 'changelog/db.changelog-master.xml'))).sort()
+  ? inPluginOrder(
+      readdirSync(pluginsDir)
+        .filter((id) => existsSync(join(pluginsDir, id, 'package.json')))
+        .map((id) => ({ id, manifest: JSON.parse(readFileSync(join(pluginsDir, id, 'package.json'), 'utf8')).apensum }))
+        .filter((p) => p.manifest),
+    ).map((p) => p.id).filter((id) => existsSync(join(pluginsDir, id, 'changelog/db.changelog-master.xml')))
   : [];
 const command = process.argv[2] ?? 'update';
 if (!['update', 'status'].includes(command)) {
@@ -51,6 +57,8 @@ const liquibaseArgs = (cmd, changelog) => [
   '-v', `${here}/changelog:/liquibase/changelog:ro`,
   ...(existsSync(pluginsDir) ? ['-v', `${pluginsDir}:/liquibase/plugins:ro`] : []),
   ...(changelog ? ['-e', `APENSUM_CHANGELOG=${changelog}`] : []),
+  // The plugins' order (a plugin after those it requires); apensum-migrate.sh runs them so, not by folder name.
+  '-e', `APENSUM_PLUGIN_ORDER=${pluginChangelogs.join(' ')}`,
   image,
   '--changelog-file=db.changelog-master.xml',
   `--url=jdbc:postgresql://${host}:${port}/${dbName}`,

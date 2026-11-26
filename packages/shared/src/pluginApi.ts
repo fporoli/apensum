@@ -58,3 +58,60 @@ export function namespaceMismatch(id: string, names: readonly PluginName[], lega
   if (bad.length === 0) return null;
   return `Plugin ${id}: these names must start with "${id}" (docs/PLUGINS.md, "Names"): ${bad.map((n) => `${n.kind} ${n.name}`).join(', ')}`;
 }
+
+/** A plugin's id and the plugins it needs (`apensum.requires`), for `pluginOrder`. */
+export interface PluginRequires {
+  id: string;
+  requires?: unknown;
+}
+
+/**
+ * The order the plugins load, migrate and seed in: a plugin after the plugins it requires (package.json
+ * `apensum.requires`: their ids), otherwise by id (as before `requires` existed). The error when one is not
+ * installed (`billing` requires `expenses`: without it, Billing's queries of the expense tables would fail at
+ * some later call), when `requires` is not a list of ids, or when plugins require each other in a circle.
+ */
+export function pluginOrder(plugins: readonly PluginRequires[]): { order: string[] } | { error: string } {
+  const byId = new Map(plugins.map((p) => [p.id, p]));
+  const needs = new Map<string, string[]>();
+  for (const p of plugins) {
+    const r = p.requires;
+    if (r !== undefined && (!Array.isArray(r) || r.some((x) => typeof x !== 'string' || !x))) {
+      return { error: `Plugin ${p.id}: apensum.requires must be a list of plugin ids` };
+    }
+    const list = [...new Set((r as string[] | undefined) ?? [])];
+    if (list.includes(p.id)) return { error: `Plugin ${p.id}: apensum.requires names the plugin itself` };
+    const missing = list.filter((id) => !byId.has(id));
+    if (missing.length) return { error: `Plugin ${p.id} requires ${missing.join(', ')}, which ${missing.length === 1 ? 'is' : 'are'} not installed (plugins/<id>, docs/PLUGINS.md)` };
+    needs.set(p.id, list);
+  }
+  // Each step: the first plugin by id whose required plugins are all placed (so without `requires`, plain id order).
+  const order: string[] = [];
+  const left = new Set([...byId.keys()].sort());
+  while (left.size) {
+    const next = [...left].find((id) => needs.get(id)!.every((dep) => !left.has(dep)));
+    if (!next) return { error: `Plugins require each other in a circle: ${circle(needs, left)}` };
+    order.push(next);
+    left.delete(next);
+  }
+  return { order };
+}
+
+/** A circle among the plugins `left` (each requires one of the others), as "a -> b -> a". */
+function circle(needs: Map<string, string[]>, left: Set<string>): string {
+  const path: string[] = [];
+  let id = [...left][0];
+  while (!path.includes(id)) {
+    path.push(id);
+    id = needs.get(id)!.find((dep) => left.has(dep))!;
+  }
+  return [...path.slice(path.indexOf(id)), id].join(' -> ');
+}
+
+/** `list` sorted by `pluginOrder` of its manifests; throws its error. */
+export function inPluginOrder<T extends { manifest: PluginRequires }>(list: readonly T[]): T[] {
+  const result = pluginOrder(list.map((p) => p.manifest));
+  if ('error' in result) throw new Error(result.error);
+  const index = new Map(result.order.map((id, i) => [id, i]));
+  return [...list].sort((a, b) => index.get(a.manifest.id)! - index.get(b.manifest.id)!);
+}
