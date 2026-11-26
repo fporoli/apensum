@@ -185,7 +185,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
           assignedToUserId: [approver],
           workflowData: { note },
           actorUserId: callerId,
-          notification: { title: `Project time to review: ${t.project_name ?? ''}`.trim(), body: note ?? undefined },
+          notification: { title: `Project time to review: ${t.project_name ?? ''}`.trim(), text: { key: 'notice.projectTime.review', vars: { project: t.project_name ?? '' } }, body: note ?? undefined },
         });
       }
       if (!approver) await this.timesheetDocs.issue(db, 'project_timesheet', periodId, callerId);

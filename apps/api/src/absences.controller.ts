@@ -189,7 +189,7 @@ export class AbsencesController implements OnModuleInit {
         sourceTableUuid: created.id,
         actorUserId: callerId,
         workflowData: { note: note || null },
-        notification: { title: 'New absence request to review', body: [probationWarning, note].filter(Boolean).join('\n') || undefined },
+        notification: { title: 'New absence request to review', text: { key: 'notice.absence.review' }, body: [probationWarning, note].filter(Boolean).join('\n') || undefined },
       });
       autoApproved = !!started?.finished;
     }
@@ -199,12 +199,17 @@ export class AbsencesController implements OnModuleInit {
       const [person] = await db.select({ name: users.display_name, email: users.email }).from(users).where(eq(users.id, callerId));
       const who = person?.name || person?.email || 'Someone';
       const range = dateStart === dateEnd ? dateStart : `${dateStart} – ${dateEnd}`;
+      // The type's name in every language (the organization's list, else the one for all), for the reader's.
+      const typeRow = (await db.execute(sql`SELECT translation FROM static_data WHERE entity = 'absences' AND enum_name = 'absence_type'
+        AND (organization_id = ${orgId}::uuid OR organization_id IS NULL) ORDER BY organization_id NULLS LAST LIMIT 1`)).rows[0] as { translation?: Record<string, Record<string, string>> } | undefined;
+      const typeNames = Object.fromEntries(Object.entries(typeRow?.translation ?? {}).flatMap(([lang, t]) => (t?.[absenceType] ? [[lang, t[absenceType]]] : [])));
       void this.notifications
         .notifyMany({
           organizationId: orgId,
           recipientUserIds: [managerUserId],
           type: 'absence.recorded',
           title: `${who} reported an absence: ${absenceType}`,
+          text: { key: 'notice.absence.recorded', vars: { who, type: Object.keys(typeNames).length ? { en: absenceType, ...typeNames } : absenceType } },
           body: [range + (halfDay ? ' (half day)' : ''), probationWarning, note].filter(Boolean).join('\n'),
           sourceTable: 'absences',
           sourceTableUuid: created.id,

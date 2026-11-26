@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
+import type { NoticeText, NoticeValue } from './notification-text';
 import { reachesAll } from './access';
 import {
   compileWorkflow, nextApplicableStep, stepFieldValues, validateWorkflowConfig,
@@ -276,7 +277,7 @@ export class WorkflowsService {
       sourceTableUuid: string;
       actorUserId: string;
       workflowData: Record<string, unknown>;
-      notification: { title: string; body?: string };
+      notification: { title: string; body?: string; text?: NoticeText };
     },
   ): Promise<{ id: string; autoApproved: boolean; finished: boolean } | null> {
     const kind = this.kindsById.get(params.kind);
@@ -313,7 +314,7 @@ export class WorkflowsService {
     if (placed.index >= 0) {
       void this.notifyAssignees(db, {
         organizationId: params.organizationId, sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
-        title: params.notification.title, body: params.notification.body, sourceTableUuid: params.sourceTableUuid, workflowId: workflow.id,
+        title: params.notification.title, body: params.notification.body, text: params.notification.text, sourceTableUuid: params.sourceTableUuid, workflowId: workflow.id,
       }).catch((err) => console.error('notify-assignees-failed', err));
     }
     return { id: workflow.id, autoApproved: placed.autoApproved.includes(steps[0].key), finished: placed.index < 0 };
@@ -474,7 +475,7 @@ export class WorkflowsService {
       workflowData: Record<string, unknown>;
       actorUserId: string;
       /** Human copy for the notification sent to every resolved assignee. */
-      notification: { title: string; body?: string };
+      notification: { title: string; body?: string; text?: NoticeText };
     },
   ) {
     const now = new Date().toISOString();
@@ -514,6 +515,7 @@ export class WorkflowsService {
       type: 'workflow.assigned',
       title: params.notification.title,
       body: params.notification.body,
+      text: params.notification.text,
       sourceTableUuid: params.sourceTableUuid,
       workflowId: workflow.id,
     }).catch((err) => console.error('notify-assignees-failed', err));
@@ -533,6 +535,7 @@ export class WorkflowsService {
       type: string;
       title: string;
       body?: string;
+      text?: NoticeText;
       sourceTableUuid: string;
       workflowId: string;
     },
@@ -555,6 +558,7 @@ export class WorkflowsService {
       type: params.type,
       title: params.title,
       body: params.body,
+      text: params.text,
       sourceTable: params.sourceTable,
       sourceTableUuid: params.sourceTableUuid,
       workflowId: params.workflowId,
@@ -618,7 +622,8 @@ export class WorkflowsService {
           organizationId: r.organization_id,
           recipientUserIds: [r.manager],
           type: 'workflow.assigned',
-          title: 'A request was passed on to you as the new manager',
+          title: 'A flow was passed on to you as the new manager',
+          text: { key: 'notice.workflow.rerouted' },
           sourceTable: r.source_table,
           sourceTableUuid: r.source_table_uuid,
           workflowId: r.workflow_id,
@@ -820,6 +825,7 @@ export class WorkflowsService {
           excludeUserId: callerId,
           type: 'workflow.assigned',
           title: `A flow needs your step: ${next.label}`,
+          text: { key: 'notice.workflow.step', vars: { step: stepNameValue(next) } },
           sourceTableUuid: workflow.source_table_uuid,
           workflowId: workflow.id,
         }).catch((err) => console.error('notify-assignees-failed', err));
@@ -833,6 +839,7 @@ export class WorkflowsService {
             recipientUserIds: [submittedByUserId],
             type: outcome === 'approved' ? 'workflow.approved' : returned ? 'workflow.returned' : 'workflow.rejected',
             title: outcome === 'approved' ? 'Your submission was approved' : returned ? 'Your submission was sent back to you' : 'Your submission was rejected',
+            text: { key: outcome === 'approved' ? 'notice.workflow.approved' : returned ? 'notice.workflow.returned' : 'notice.workflow.rejected' },
             body: decisionNote ?? undefined,
             sourceTable: workflow.source_table,
             sourceTableUuid: workflow.source_table_uuid,
@@ -959,4 +966,11 @@ export class WorkflowsService {
     if (!handler) return;
     await handler(db, ctx);
   }
+}
+
+/** A step's name for a notification: its own name per language, else its block's (`workflowDesigner.block.<block>`). */
+function stepNameValue(step: { label: string; labels?: Record<string, string | undefined>; blocks?: string[] }): NoticeValue {
+  const own = Object.fromEntries(Object.entries(step.labels ?? {}).filter(([, v]) => typeof v === 'string' && v.trim())) as Record<string, string>;
+  if (Object.keys(own).length) return { en: step.label, ...own };
+  return step.blocks?.length === 1 ? { t: `workflowDesigner.block.${step.blocks[0]}` } : step.label;
 }

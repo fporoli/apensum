@@ -4,6 +4,7 @@ import { useI18n } from './i18n';
 import { NotificationsIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';
 import type { Notification } from './useNotifications';
+import { notificationText } from './notificationText';
 
 interface NotificationBellProps {
   items: Notification[];
@@ -75,8 +76,15 @@ export default function NotificationBell({ items, unreadCount, live, clearLive, 
                 }}
               />
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="body2" sx={{ fontWeight: n.read_at ? 400 : 700 }}>{n.title}</Typography>
-                {n.body && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{n.body}</Typography>}
+                {(() => {
+                  const shown = notificationText(n, t, locale);
+                  return (
+                    <>
+                      <Typography variant="body2" sx={{ fontWeight: n.read_at ? 400 : 700 }}>{shown.title}</Typography>
+                      {shown.body && <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{shown.body}</Typography>}
+                    </>
+                  );
+                })()}
                 <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.25 }}>
                   {formatRelativeTime(n.created_at, locale)}
                 </Typography>
@@ -90,7 +98,7 @@ export default function NotificationBell({ items, unreadCount, live, clearLive, 
         open={!!live}
         autoHideDuration={6000}
         onClose={clearLive}
-        message={live?.title}
+        message={live ? notificationText(live, t, locale).title : undefined}
         action={
           live && (
             <Button color="inherit" size="small" onClick={() => { openItem(live); clearLive(); }}>

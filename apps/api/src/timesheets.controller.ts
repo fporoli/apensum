@@ -192,7 +192,7 @@ export class TimesheetsController implements OnModuleInit {
         // The employee's optional note to their manager lives right here, on the workflow row.
         workflowData: { note: note || null },
         actorUserId: callerId,
-        notification: { title: 'New timesheet to review', body: note || undefined },
+        notification: { title: 'New monthly report to review', text: { key: 'notice.timesheet.review' }, body: note || undefined },
       });
     }
 
@@ -354,7 +354,7 @@ export class TimesheetsController implements OnModuleInit {
       // The requester's text lives right here, on the workflow row.
       workflowData: { reason },
       actorUserId: callerId,
-      notification: { title: 'Reopen request for an approved timesheet', body: reason },
+      notification: { title: 'Reopen request for an approved monthly report', text: { key: 'notice.timesheet.reopen' }, body: reason },
     });
     void this.audit.record(period.organization_id, callerId, 'timesheet.request-reopen', 'timesheet_period', id, {}).catch(() => {});
     return { ok: true, workflowId: workflow.id };

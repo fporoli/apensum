@@ -3,6 +3,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { resolveModules } from '@worktime3/shared/modules';
 import { cleanDueDate } from '@worktime3/shared/flows';
 import { DbService, type Db } from './db.service';
+import { subjectValue } from './notification-text';
 import type { Executor } from './access';
 import { membershipManagerId } from './access';
 import { NotificationsService } from './notifications.service';
@@ -246,6 +247,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
         recipientUserIds: handlers,
         type: 'flow.created',
         title: noticeSubject({ subject, confidential: input.confidential }),
+        text: { key: 'notice.flow.task', vars: { subject: subjectValue({ subject, confidential: input.confidential }) } },
         body: input.confidential ? undefined : message.slice(0, 200),
         sourceTable: 'flows',
         sourceTableUuid: id,

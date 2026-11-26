@@ -132,6 +132,7 @@ export { WorkflowsService, type WorkflowEvent, type SourceRecordLoader, type Wor
 // Notifications (the bell; a click opens the section the web part's `notificationSections` names
 // for the source table) and mail (best effort: catch and log, never fail a request on it).
 export { NotificationsService } from './notifications.service';
+export type { NoticeText, NoticeValue } from './notification-text';
 export { sendMail, type MailOptions } from './mailer';
 export { appBaseUrl } from './app-url';
 

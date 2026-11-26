@@ -3,6 +3,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { DbService } from './db.service';
 import { notifications } from './db/schema';
 import { NotificationsGateway } from './notifications.gateway';
+import type { NoticeText } from './notification-text';
 
 /**
  * Persisted, per-recipient notification feed — source of truth for the bell icon.
@@ -28,6 +29,8 @@ export class NotificationsService {
     sourceTableUuid: string;
     workflowId?: string;
     data?: Record<string, unknown>;
+    /** The title (and a fixed body) as a text key: shown in the reader's language (notification-text.ts). */
+    text?: NoticeText;
   }): Promise<void> {
     const db = this.db.getDb();
     if (!db || params.recipientUserIds.length === 0) return;
@@ -43,7 +46,7 @@ export class NotificationsService {
           source_table: params.sourceTable,
           source_table_uuid: params.sourceTableUuid,
           workflow_id: params.workflowId ?? null,
-          data: params.data ?? {},
+          data: params.text ? { ...(params.data ?? {}), text: params.text } : params.data ?? {},
         })),
       )
       .returning();

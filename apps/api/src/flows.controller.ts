@@ -3,6 +3,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { sql, type SQL } from 'drizzle-orm';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
+import { subjectValue, type NoticeText } from './notification-text';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
 import { callerUserId, can, isOrgMember, membershipManagerId, reachesAll, type Executor } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
@@ -318,7 +319,7 @@ export class FlowsController {
   }
 
   /** Notifies everyone on the other side of `actorId`: the requester, or the assignee (else every handler). */
-  private async notifyOthers(db: Executor, r: FlowRecord, actorId: string, type: string, title: string, body?: string) {
+  private async notifyOthers(db: Executor, r: FlowRecord, actorId: string, type: string, title: string, body?: string, text?: NoticeText) {
     const recipients = new Set<string>();
     if (r.requester_user_id && r.requester_user_id !== actorId) recipients.add(r.requester_user_id);
     if (r.assignee_user_id) recipients.add(r.assignee_user_id);
@@ -329,6 +330,7 @@ export class FlowsController {
       recipientUserIds: [...recipients],
       type,
       title,
+      text,
       // A confidential request's notifications carry no text; the callers' titles no subject (noticeSubject).
       body: r.confidential ? undefined : body,
       sourceTable: 'flows',
@@ -527,15 +529,16 @@ export class FlowsController {
     void this.versions.record('flows', created.id, 'insert', callerId, { ...created, custom: custom.value ?? {}, message, attachments: fileNames }).catch(() => {});
     const who = await this.displayName(db, callerId);
     const named = noticeSubject({ subject, confidential });
-    const title = created.urgent ? `Urgent request from ${who}: ${named}` : `New request from ${who}: ${named}`;
+    const title = created.urgent ? `Urgent flow from ${who}: ${named}` : `New flow from ${who}: ${named}`;
+    const text = { key: created.urgent ? 'notice.flow.urgent' : 'notice.flow.new', vars: { who, subject: subjectValue({ subject, confidential }) } };
     if (viaWorkflow) {
       // The workflow's first step is assigned and notified by the engine.
       await this.workflowsSvc.start(db, {
         kind: FLOW_STEPS_KIND, variant: flow_type!, organizationId: orgId, sourceTableUuid: created.id, actorUserId: callerId,
-        workflowData: {}, notification: { title, body: confidential ? undefined : messagePreview(message, fileNames) },
+        workflowData: {}, notification: { title, text, body: confidential ? undefined : messagePreview(message, fileNames) },
       });
     } else {
-      await this.notifyOthers(db, created, callerId, 'flow.created', title, messagePreview(message, fileNames)).catch(() => {});
+      await this.notifyOthers(db, created, callerId, 'flow.created', title, messagePreview(message, fileNames), text).catch(() => {});
     }
     return { ok: true, id: created.id };
   }
@@ -575,7 +578,8 @@ export class FlowsController {
     );
     void this.versions.record('flows', id, 'update_delta', callerId, { status, message: text, attachments: fileNames }).catch(() => {});
     const who = await this.displayName(db, callerId);
-    await this.notifyOthers(db, a.r, callerId, 'flow.message', `${who} replied: ${noticeSubject(a.r)}`, messagePreview(text, fileNames)).catch(() => {});
+    await this.notifyOthers(db, a.r, callerId, 'flow.message', `${who} replied: ${noticeSubject(a.r)}`, messagePreview(text, fileNames),
+      { key: 'notice.flow.reply', vars: { who, subject: subjectValue(a.r) } }).catch(() => {});
     return { ok: true, status };
   }
 
@@ -604,7 +608,8 @@ export class FlowsController {
     void this.versions.record('flows', id, 'update_delta', callerId, { status: to }).catch(() => {});
     const who = await this.displayName(db, callerId);
     const label = to === 'resolved' ? 'resolved' : to === 'in_progress' ? 'in progress' : 'reopened';
-    await this.notifyOthers(db, a.r, callerId, 'flow.status', `${who} set "${noticeSubject(a.r)}" to ${label}`).catch(() => {});
+    await this.notifyOthers(db, a.r, callerId, 'flow.status', `${who} set "${noticeSubject(a.r)}" to ${label}`, undefined,
+      { key: `notice.flow.status.${to}`, vars: { who, subject: subjectValue(a.r) } }).catch(() => {});
     return { ok: true, status: to };
   }
 
@@ -657,7 +662,8 @@ export class FlowsController {
     const notified = { ...a.r, confidential: a.r.confidential || confidential };
     const named = noticeSubject(notified);
     const title = changed.urgent === true ? `${who} marked "${named}" as urgent` : `${who} updated "${named}"`;
-    await this.notifyOthers(db, notified, callerId, 'flow.status', title).catch(() => {});
+    await this.notifyOthers(db, notified, callerId, 'flow.status', title, undefined,
+      { key: changed.urgent === true ? 'notice.flow.markedUrgent' : 'notice.flow.updated', vars: { who, subject: subjectValue(notified) } }).catch(() => {});
     return { ok: true };
   }
 
@@ -679,7 +685,7 @@ export class FlowsController {
     const who = await this.displayName(db, callerId);
     const started = await this.workflowsSvc.start(db, {
       kind: FLOW_STEPS_KIND, variant: a.r.flow_type ?? '', organizationId: orgId, sourceTableUuid: id, actorUserId: callerId,
-      workflowData: {}, notification: { title: `${who} submitted "${noticeSubject(a.r)}" again` },
+      workflowData: {}, notification: { title: `${who} submitted "${noticeSubject(a.r)}" again`, text: { key: 'notice.flow.resubmitted', vars: { who, subject: subjectValue(a.r) } } },
     });
     if (!started) return { ok: false, error: 'no-workflow' };
     void this.versions.record('flows', id, 'update_delta', callerId, { status: 'open', resubmitted: true }).catch(() => {});
@@ -721,7 +727,8 @@ export class FlowsController {
     void this.versions.record('flows', id, 'update_delta', callerId, { assignee_user_id: assignee, status }).catch(() => {});
     if (!body.release) {
       const who = await this.displayName(db, callerId);
-      await this.notifyOthers(db, { ...a.r, assignee_user_id: null }, callerId, 'flow.status', `${who} is handling "${noticeSubject(a.r)}"`).catch(() => {});
+      await this.notifyOthers(db, { ...a.r, assignee_user_id: null }, callerId, 'flow.status', `${who} is handling "${noticeSubject(a.r)}"`, undefined,
+        { key: 'notice.flow.taken', vars: { who, subject: subjectValue(a.r) } }).catch(() => {});
     }
     return { ok: true, assigneeUserId: assignee, status };
   }
