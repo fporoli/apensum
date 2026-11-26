@@ -48,6 +48,7 @@ import {
   UploadIcon,
   VisibilityIcon,
 } from './icons';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -425,6 +426,15 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
     }
   }
 
+  const requestColumns: TableColumn<AbsenceRow>[] = [
+    { key: 'from', value: (r) => r.date_start, search: false },
+    { key: 'to', value: (r) => r.date_end, search: false },
+    { key: 'type', value: (r) => typeLabel(r.absence_type) },
+    { key: 'status', value: (r) => t(`absences.status.${r.status}`) },
+    { key: 'comment', value: (r) => (r.status === 'rejected' && r.review_note ? r.review_note : r.note) ?? null },
+  ];
+  const requestView = useTableView('core.absences.mine', requests, requestColumns);
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader
@@ -510,22 +520,26 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
       </Paper>
 
       <Paper sx={{ p: 2 }}>
-        <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{t('absences.myRequests')}</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 1 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{t('absences.myRequests')}</Typography>
+          <TableSearch view={requestView} />
+        </Box>
         {loading && <LinearProgress sx={{ mb: 1 }} />}
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('absences.dateFrom')}</TableCell>
-                <TableCell>{t('absences.dateTo')}</TableCell>
-                <TableCell>{t('absences.type')}</TableCell>
-                <TableCell>{t('timesheet.status')}</TableCell>
-                <TableCell>{t('time.comment')}</TableCell>
+                <SortHeader view={requestView} column="from">{t('absences.dateFrom')}</SortHeader>
+                <SortHeader view={requestView} column="to">{t('absences.dateTo')}</SortHeader>
+                <SortHeader view={requestView} column="type">{t('absences.type')}</SortHeader>
+                <SortHeader view={requestView} column="status">{t('timesheet.status')}</SortHeader>
+                <SortHeader view={requestView} column="comment">{t('time.comment')}</SortHeader>
                 <TableCell align="right">{t('common.actions')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {requests.map((r) => (
+              {requests.length > 0 && requestView.rows.length === 0 && <TableEmptyRow colSpan={6} title={t('table.noMatch')} />}
+              {requestView.rows.map((r) => (
                 <TableRow key={r.id} hover>
                   <TableCell>{formatLocaleDate(r.date_start, locale)}</TableCell>
                   <TableCell>{formatLocaleDate(r.date_end, locale)}</TableCell>

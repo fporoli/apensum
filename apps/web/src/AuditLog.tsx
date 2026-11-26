@@ -17,6 +17,7 @@ import {
 import { useI18n } from './i18n';
 import { PageHeader, TableEmptyRow } from './components';
 import { HistoryIcon, RefreshIcon, SearchIcon } from './icons';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 import { swissLocale } from './localeFormat';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -49,7 +50,6 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
   const [entries, setEntries] = useState<AuditLogItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
 
   async function reloadEntries() {
     setError(null);
@@ -70,17 +70,15 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((entry) =>
-      [entry.actor_display_name, entry.actor_email, entry.action, entry.target_type, entry.target_id, formatMetadata(entry.metadata)]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q),
-    );
-  }, [entries, search]);
+  const columns: TableColumn<AuditLogItem>[] = [
+    { key: 'when', value: (e) => e.created_at, search: false },
+    { key: 'actor', value: (e) => [e.actor_display_name, e.actor_email].filter(Boolean).join(' ') || null },
+    { key: 'action', value: (e) => e.action },
+    { key: 'target', value: (e) => [e.target_type, e.target_id].filter(Boolean).join(' ') },
+    { key: 'details', value: (e) => formatMetadata(e.metadata) },
+  ];
+  const view = useTableView('core.audit', entries, columns);
+  const filtered = view.rows;
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -98,22 +96,7 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ mb: 2 }}>
-          <TextField
-            size="small"
-            placeholder={t('audit.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ minWidth: { xs: '100%', sm: 320 } }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+          <TableSearch view={view} placeholder={t('audit.searchPlaceholder')} sx={{ minWidth: { xs: '100%', sm: 320 } }} />
         </Box>
 
         {loading && <LinearProgress sx={{ mb: 1.5 }} />}
@@ -122,11 +105,11 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('audit.col.when')}</TableCell>
-                <TableCell>{t('audit.col.actor')}</TableCell>
-                <TableCell>{t('audit.col.action')}</TableCell>
-                <TableCell>{t('audit.col.target')}</TableCell>
-                <TableCell>{t('audit.col.details')}</TableCell>
+                <SortHeader view={view} column="when">{t('audit.col.when')}</SortHeader>
+                <SortHeader view={view} column="actor">{t('audit.col.actor')}</SortHeader>
+                <SortHeader view={view} column="action">{t('audit.col.action')}</SortHeader>
+                <SortHeader view={view} column="target">{t('audit.col.target')}</SortHeader>
+                <SortHeader view={view} column="details">{t('audit.col.details')}</SortHeader>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -140,7 +123,7 @@ export default function AuditLog({ orgId, authHeaders }: AuditLogProps) {
                 </TableRow>
               ))}
               {filtered.length === 0 && !loading && (
-                <TableEmptyRow colSpan={5} icon={<HistoryIcon fontSize="inherit" />} title={t('audit.empty')} />
+                <TableEmptyRow colSpan={5} icon={<HistoryIcon fontSize="inherit" />} title={t(entries.length ? 'table.noMatch' : 'audit.empty')} />
               )}
             </TableBody>
           </Table>

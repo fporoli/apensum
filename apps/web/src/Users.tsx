@@ -34,7 +34,8 @@ import { SettingsSection } from './SettingsSection';
 import { useI18n } from './i18n';
 import { assignableRoles, roleLabel, type OrgRole } from './roleLabel';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, MailIcon, PeopleIcon, PersonIcon, ScheduleIcon, SearchIcon, VisibilityIcon } from './icons';
+import { AccountBalanceWalletIcon, BusinessIcon, CloseIcon, DescriptionIcon, MailIcon, PeopleIcon, PersonIcon, ScheduleIcon, VisibilityIcon } from './icons';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -90,7 +91,6 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
   const [makeOwnerFor, setMakeOwnerFor] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
   const [basicDataFor, setBasicDataFor] = useState<Member | null>(null);
   const [balancesFor, setBalancesFor] = useState<Member | null>(null);
   const [scheduleFor, setScheduleFor] = useState<Member | null>(null);
@@ -199,22 +199,21 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
     }
   }
 
-  const filteredMembers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return members;
-    return members.filter(
-      (m) =>
-        m.display_name.toLowerCase().includes(q) ||
-        m.email.toLowerCase().includes(q) ||
-        m.role_names.some((r) => r.toLowerCase().includes(q)),
-    );
-  }, [members, search]);
-
   function statusLabel(status: string): string {
     const key = `users.status.${status}`;
     const translated = t(key);
     return translated === key ? status : translated;
   }
+  const columns: TableColumn<Member>[] = [
+    { key: 'name', value: (m) => m.display_name },
+    { key: 'email', value: (m) => m.email },
+    { key: 'status', value: (m) => statusLabel(m.status) },
+    { key: 'department', value: (m) => m.department_name },
+    { key: 'manager', value: (m) => m.manager_display_name },
+    { key: 'roles', value: (m) => m.role_names.join(', ') },
+  ];
+  const view = useTableView('core.users', members, columns);
+  const filteredMembers = view.rows;
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
@@ -253,22 +252,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
 
       <Paper sx={{ p: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
-          <TextField
-            size="small"
-            placeholder={t('users.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            sx={{ minWidth: { xs: '100%', sm: 300 } }}
-            slotProps={{
-              input: {
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
+          <TableSearch view={view} placeholder={t('users.searchPlaceholder')} sx={{ minWidth: { xs: '100%', sm: 300 } }} />
         </Box>
 
         {loading && <LinearProgress sx={{ mb: 2 }} />}
@@ -277,12 +261,12 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('common.name')}</TableCell>
-                <TableCell>{t('common.email')}</TableCell>
-                <TableCell>{t('common.status')}</TableCell>
-                <TableCell>{t('users.col.department')}</TableCell>
-                <TableCell>{t('users.col.manager')}</TableCell>
-                <TableCell>{t('users.col.roles')}</TableCell>
+                <SortHeader view={view} column="name">{t('common.name')}</SortHeader>
+                <SortHeader view={view} column="email">{t('common.email')}</SortHeader>
+                <SortHeader view={view} column="status">{t('common.status')}</SortHeader>
+                <SortHeader view={view} column="department">{t('users.col.department')}</SortHeader>
+                <SortHeader view={view} column="manager">{t('users.col.manager')}</SortHeader>
+                <SortHeader view={view} column="roles">{t('users.col.roles')}</SortHeader>
                 {isAdmin && <TableCell>{t('users.col.addRole')}</TableCell>}
                 {(canAskScreen || canAccessBasicData || canViewBalances || canSeeWorkSchedules || canSeeEmployment || canSeePersonnelDocs) && <TableCell align="right">{t('common.actions')}</TableCell>}
               </TableRow>
@@ -390,7 +374,7 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
                 );
               })}
               {filteredMembers.length === 0 && !loading && (
-                <TableEmptyRow colSpan={isAdmin ? 8 : 7} icon={<PeopleIcon fontSize="inherit" />} title={t('users.empty')} />
+                <TableEmptyRow colSpan={isAdmin ? 8 : 7} icon={<PeopleIcon fontSize="inherit" />} title={t(members.length ? 'table.noMatch' : 'users.empty')} />
               )}
             </TableBody>
           </Table>

@@ -26,6 +26,7 @@ import type { Session } from './Login';
 import { useT } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { AddIcon, DeleteIcon, EditIcon, PeopleIcon, WorkspacesIcon } from './icons';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -522,6 +523,24 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     }
   }
 
+  const teamColumns: TableColumn<TeamItem>[] = [
+    { key: 'name', value: (x) => x.name },
+    { key: 'code', value: (x) => x.code ?? null },
+    { key: 'description', value: (x) => x.description ?? null },
+    { key: 'lead', value: (x) => x.lead_display_name ?? null },
+    { key: 'members', value: (x) => x.member_count ?? 0, search: false },
+  ];
+  const teamView = useTableView('core.teams', teams, teamColumns);
+  const projectColumns: TableColumn<ProjectItem>[] = [
+    { key: 'name', value: (x) => x.name },
+    { key: 'type', value: (x) => t(`management.projectType.${x.type}`) },
+    { key: 'costItem', value: (x) => x.cost_item ?? null },
+    { key: 'owner', value: (x) => x.owner_name ?? x.owner_email ?? null },
+    { key: 'teams', value: (x) => (x.team_ids ?? []).map((id) => teams.find((tm) => tm.id === id)?.name ?? '').filter(Boolean).join(', ') || null },
+    { key: 'subprojects', value: (x) => subprojectsByProject[x.id]?.length ?? x.subproject_count ?? 0, search: false },
+  ];
+  const projectView = useTableView('core.projects', projects, projectColumns);
+
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <PageHeader
@@ -544,7 +563,8 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
       <Paper sx={{ p: 2 }}>
         {tab === 'teams' && (
           <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+              <TableSearch view={teamView} />
               <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={openCreateTeam}>
                 {t('management.createTeam')}
               </Button>
@@ -554,16 +574,17 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>{t('management.teamName')}</TableCell>
-                    <TableCell>{t('units.code')}</TableCell>
-                    <TableCell>{t('management.description')}</TableCell>
-                    <TableCell>{t('management.lead')}</TableCell>
-                    <TableCell align="center">{t('management.members')}</TableCell>
+                    <SortHeader view={teamView} column="name">{t('management.teamName')}</SortHeader>
+                    <SortHeader view={teamView} column="code">{t('units.code')}</SortHeader>
+                    <SortHeader view={teamView} column="description">{t('management.description')}</SortHeader>
+                    <SortHeader view={teamView} column="lead">{t('management.lead')}</SortHeader>
+                    <SortHeader view={teamView} column="members" align="center">{t('management.members')}</SortHeader>
                     <TableCell align="right">{t('common.actions')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {teams.map((team) => (
+                  {teams.length > 0 && teamView.rows.length === 0 && <TableEmptyRow colSpan={6} title={t('table.noMatch')} />}
+                  {teamView.rows.map((team) => (
                     <TableRow key={team.id} hover>
                       <TableCell sx={{ fontWeight: 600 }}>{team.name}</TableCell>
                       <TableCell sx={{ fontFamily: 'monospace' }}>{team.code ?? '—'}</TableCell>
@@ -614,7 +635,8 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
 
         {tab === 'projects' && (
           <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+              <TableSearch view={projectView} />
               <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={openCreateProject}>
                 {t('management.createProject')}
               </Button>
@@ -624,17 +646,18 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>{t('management.projectName')}</TableCell>
-                    <TableCell>{t('approvals.col.type')}</TableCell>
-                    <TableCell>{t('management.costItem')}</TableCell>
-                    <TableCell>{t('management.owner')}</TableCell>
-                    <TableCell>{t('management.projectTeams')}</TableCell>
-                    <TableCell align="center">{t('management.subprojects')}</TableCell>
+                    <SortHeader view={projectView} column="name">{t('management.projectName')}</SortHeader>
+                    <SortHeader view={projectView} column="type">{t('approvals.col.type')}</SortHeader>
+                    <SortHeader view={projectView} column="costItem">{t('management.costItem')}</SortHeader>
+                    <SortHeader view={projectView} column="owner">{t('management.owner')}</SortHeader>
+                    <SortHeader view={projectView} column="teams">{t('management.projectTeams')}</SortHeader>
+                    <SortHeader view={projectView} column="subprojects" align="center">{t('management.subprojects')}</SortHeader>
                     <TableCell align="right">{t('common.actions')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {projects.map((p) => {
+                  {projects.length > 0 && projectView.rows.length === 0 && <TableEmptyRow colSpan={7} title={t('table.noMatch')} />}
+                  {projectView.rows.map((p) => {
                     const isExpanded = expandedProjectId === p.id;
                     const pSubprojects = subprojectsByProject[p.id];
                     const isOwner = p.owner_user_id === session.userId;

@@ -9,6 +9,7 @@ import { ConfirmDialog, PageHeader } from './components';
 import { useI18n, useT } from './i18n';
 import { formatFileSize, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatMoney, parseLocaleNumber } from './localeFormat';
 import News from './News';
+import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 
 /**
  * The Super Admin pages, shown in the Admin organization (OPERATOR_ORG_ID) to its members, the
@@ -56,7 +57,6 @@ export function SuperAdminLicenses({ authHeaders }: { authHeaders: AuthHeaders }
   const errorText = useErrorText();
   const [orgs, setOrgs] = useState<Organization[] | null>(null);
   const [modules, setModules] = useState<Module[]>([]);
-  const [filter, setFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [granting, setGranting] = useState<Organization | null>(null);
   const [revoking, setRevoking] = useState<{ org: Organization; moduleId: string } | null>(null);
@@ -84,17 +84,21 @@ export function SuperAdminLicenses({ authHeaders }: { authHeaders: AuthHeaders }
     [modules, t],
   );
 
-  const shown = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return (orgs ?? []).filter((o) => !q || o.name.toLowerCase().includes(q) || o.slug.toLowerCase().includes(q) || o.owners.some((e) => e.includes(q)));
-  }, [orgs, filter]);
+  const columns: TableColumn<Organization>[] = [
+    { key: 'organization', value: (o) => `${o.name} ${o.slug}` },
+    { key: 'members', value: (o) => o.members, search: false },
+    { key: 'owners', value: (o) => o.owners.join(', ') || null },
+    { key: 'licenses', value: (o) => o.licenses.map((l) => moduleName(l.moduleId)).join(', ') || null },
+  ];
+  const view = useTableView('operator.licenses', orgs, columns);
+  const shown = view.rows;
 
   return (
     <Stack spacing={2}>
       <PageHeader
         title={`${t('superAdmin.licenses.title')}${orgs ? ` (${orgs.length})` : ''}`}
         subtitle={t('superAdmin.licenses.subtitle')}
-        end={<TextField size="small" label={t('superAdmin.filter')} value={filter} onChange={(e) => setFilter(e.target.value)} />}
+        end={<TableSearch view={view} placeholder={t('superAdmin.filter')} />}
       />
       {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
       {!orgs ? (
@@ -104,10 +108,10 @@ export function SuperAdminLicenses({ authHeaders }: { authHeaders: AuthHeaders }
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>{t('superAdmin.organization')}</TableCell>
-                <TableCell align="right">{t('superAdmin.members')}</TableCell>
-                <TableCell>{t('superAdmin.owners')}</TableCell>
-                <TableCell>{t('superAdmin.licenses.title')}</TableCell>
+                <SortHeader view={view} column="organization">{t('superAdmin.organization')}</SortHeader>
+                <SortHeader view={view} column="members" align="right">{t('superAdmin.members')}</SortHeader>
+                <SortHeader view={view} column="owners">{t('superAdmin.owners')}</SortHeader>
+                <SortHeader view={view} column="licenses">{t('superAdmin.licenses.title')}</SortHeader>
                 <TableCell />
               </TableRow>
             </TableHead>
@@ -349,6 +353,13 @@ export function SuperAdminAi({ authHeaders }: { authHeaders: AuthHeaders }) {
   const { locale } = useI18n();
   const errorText = useErrorText();
   const [data, setData] = useState<{ azure: boolean; instanceBudgetChf: number | null; instanceSpentChf: number; organizations: AiRow[] } | null>(null);
+  const aiColumns: TableColumn<AiRow>[] = [
+    { key: 'organization', value: (o) => `${o.name} ${o.slug}` },
+    { key: 'calls', value: (o) => o.calls, search: false },
+    { key: 'spent', value: (o) => o.spentChf, search: false },
+    { key: 'limit', value: (o) => o.limitChf, search: false },
+  ];
+  const aiView = useTableView('operator.ai', data?.organizations, aiColumns);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<AiRow | null>(null);
   const [limit, setLimit] = useState('');
@@ -395,19 +406,20 @@ export function SuperAdminAi({ authHeaders }: { authHeaders: AuthHeaders }) {
               ? t('superAdmin.ai.instance', { spent: formatMoney(data.instanceSpentChf, locale), budget: formatMoney(data.instanceBudgetChf ?? 0, locale) })
               : t('superAdmin.ai.off')}
           </Alert>
+          <TableSearch view={aiView} />
           <Paper variant="outlined" sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>{t('superAdmin.organization')}</TableCell>
-                  <TableCell align="right">{t('superAdmin.ai.calls')}</TableCell>
-                  <TableCell align="right">{t('superAdmin.ai.spent')}</TableCell>
-                  <TableCell align="right">{t('superAdmin.ai.limit')}</TableCell>
+                  <SortHeader view={aiView} column="organization">{t('superAdmin.organization')}</SortHeader>
+                  <SortHeader view={aiView} column="calls" align="right">{t('superAdmin.ai.calls')}</SortHeader>
+                  <SortHeader view={aiView} column="spent" align="right">{t('superAdmin.ai.spent')}</SortHeader>
+                  <SortHeader view={aiView} column="limit" align="right">{t('superAdmin.ai.limit')}</SortHeader>
                   <TableCell />
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.organizations.map((o) => (
+                {aiView.rows.map((o) => (
                   <TableRow key={o.id} hover>
                     <TableCell>
                       <Typography variant="body2" sx={{ fontWeight: 600 }}>{o.name}</Typography>
