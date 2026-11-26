@@ -623,23 +623,25 @@ a.card.feature:hover { border-color: var(--brand, #1a56db); }
 .chat-launcher:hover { background: var(--brand-strong); }
 .chat-launcher-dot { width: 9px; height: 9px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.3); }
 .chat-panel {
-  position: fixed; right: 20px; bottom: 20px; z-index: 20; width: min(380px, calc(100vw - 32px)); max-height: min(620px, calc(100vh - 40px));
+  position: fixed; right: 20px; bottom: 20px; z-index: 20; width: min(380px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 40px)); max-height: min(620px, calc(100dvh - 40px));
   display: flex; flex-direction: column; background: var(--bg); color: var(--text);
   border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden;
 }
 .chat-panel[hidden], .chat-launcher[hidden], .chat-handover[hidden], .chat-form[hidden] { display: none; }
-.chat-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--bg-alt); }
+.chat-head { flex-shrink: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--bg-alt); }
 .chat-head strong { color: var(--ink); }
 .chat-sub { margin: 2px 0 0; font-size: 0.82rem; color: var(--muted); }
 .chat-close { border: 0; background: none; color: var(--muted); font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 0 4px; }
-.chat-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 160px; }
+/* The conversation gives way (down to a few lines) so the form below it always fits; each scrolls on its own. */
+.chat-log { flex: 1 1 auto; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-height: 72px; }
 .chat-msg { margin: 0; padding: 9px 12px; border-radius: 12px; max-width: 88%; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.95rem; line-height: 1.45; }
 .chat-assistant { align-self: flex-start; background: var(--bg-alt); color: var(--text); border-bottom-left-radius: 4px; }
 .chat-user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
 .chat-thinking { color: var(--muted); font-style: italic; }
 .chat-form, .chat-handover { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
 .chat-form { align-items: flex-end; }
-.chat-handover { flex-direction: column; }
+.chat-handover { flex-direction: column; flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-handover p { margin: 0; font-size: 0.9rem; }
 .chat-input, .chat-field input, .chat-field textarea {
   flex: 1; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px;
@@ -647,12 +649,12 @@ a.card.feature:hover { border-color: var(--brand, #1a56db); }
 }
 .chat-field { display: grid; gap: 4px; font-size: 0.85rem; color: var(--muted); }
 .chat-actions { display: flex; gap: 12px; align-items: center; }
-.chat-foot { display: flex; justify-content: space-between; gap: 12px; padding: 8px 16px 12px; font-size: 0.82rem; }
+.chat-foot { flex-shrink: 0; display: flex; justify-content: space-between; gap: 12px; padding: 8px 16px 12px; font-size: 0.82rem; }
 .chat-foot a { color: var(--muted); }
 .chat-link { border: 0; background: none; padding: 0; color: var(--brand); font: inherit; font-weight: 600; cursor: pointer; }
 .chat-error { color: #b42318; }
 .chat-hp { position: absolute; left: -9999px; width: 1px; height: 1px; }
 @media (max-width: 520px) {
   .chat-launcher { right: 12px; bottom: 12px; }
-  .chat-panel { right: 8px; left: 8px; bottom: 8px; width: auto; max-height: calc(100vh - 16px); }
+  .chat-panel { right: 8px; left: 8px; bottom: 8px; width: auto; max-height: calc(100vh - 16px); max-height: calc(100dvh - 16px); }
 }

@@ -173,6 +173,17 @@ const SHOTS = {
     await row.getByRole('button').first().click();
     await p.getByRole('dialog').waitFor();
   } },
+  // Support: the Flow-Designer (the material order's card with its first steps, then the dialog of a new flow type).
+  'support-flowdesigner-1': { user: 'alice', hash: '#/admin/workflows', element: (p) => p.locator('main .MuiPaper-root')
+    .filter({ has: p.getByRole('heading', { name: /Materialbestellung|Material order|Commande de matériel|Ordine di materiale/ }) }).first(), maxHeight: 820 },
+  'support-flowdesigner-2': { user: 'alice', hash: '#/admin/workflows', dialog: true, async go(p) {
+    await p.locator('main').getByRole('button', { name: /^(Neue Flow-Art|Nouveau type de flow|Nuovo tipo di flow|New flow type)$/ }).click();
+    await p.getByRole('dialog').waitFor();
+    // A name in the page's language, in that language's field (the dialog lists DE, FR, IT, EN).
+    const title = (await p.getByRole('dialog').getByRole('heading').first().textContent()) ?? '';
+    const [field, name] = /Nouveau/.test(title) ? [1, 'Collecte pour un cadeau'] : /Nuovo/.test(title) ? [2, 'Raccolta per un regalo'] : /New/.test(title) ? [3, 'Gift collection'] : [0, 'Geschenk-Sammlung'];
+    await p.getByRole('dialog').locator('input').nth(field).fill(name);
+  } },
   // Support: shift planning (shift types and demand, then a person's planning data).
   'support-roster-1': { user: 'ulla', hash: '#/roster', tab: 1 },
   'support-roster-2': { user: 'ulla', hash: '#/roster', dialog: true, async go(p) {
@@ -286,6 +297,19 @@ async function shoot(page, id, shot, file) {
     const m = 24;
     await page.screenshot({ path: file, type: 'jpeg', quality: 82, clip: { x: d.x - m, y: Math.max(0, d.y - m), width: d.width + 2 * m, height: Math.min(vp.height, d.height + 2 * m) } });
     await page.keyboard.press('Escape');
+    return;
+  }
+  if (shot.element) {
+    // One element (a card), from its top, at most `maxHeight` high.
+    const el = shot.element(page);
+    await el.scrollIntoViewIfNeeded();
+    // Its top just below the app bar, so the card is shown from its heading.
+    const at = await el.boundingBox();
+    await page.evaluate((dy) => window.scrollBy(0, dy), at.y - bar - 16);
+    await sleep(600);
+    const e = await el.boundingBox();
+    const top = Math.max(e.y - 12, bar);
+    await page.screenshot({ path: file, type: 'jpeg', quality: 82, clip: { x: e.x - 12, y: top, width: e.width + 24, height: Math.min(shot.maxHeight ?? vp.height, e.height + 24, vp.height - top) } });
     return;
   }
   const clip = shot.full
