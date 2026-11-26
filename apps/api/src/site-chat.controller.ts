@@ -11,7 +11,7 @@ import { Public } from './jwt.guard';
 import { sendMail, type MailOptions } from './mailer';
 import { pushToOperator, type OperatorPush } from './operator-push';
 import { allowedOrigins } from './site-contact.controller';
-import { chatLang, chatSystemPrompt, cleanHistory, handoverMail, siteKnowledge, type ChatLang, type ChatMessage } from './site-chat';
+import { chatLang, chatSystemPrompt, cleanHistory, cleanPhone, handoverMail, siteKnowledge, type ChatLang, type ChatMessage } from './site-chat';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -137,10 +137,10 @@ export class SiteChatController {
     }
   }
 
-  /** Passing the question on to a person: `{ lang, name, email, message, messages, website }` -> `{ ok }`. */
+  /** Passing the question on to a person: `{ lang, name, email, phone?, message, messages, website }` -> `{ ok }`. */
   @Public()
   @Post('public/chat/handover')
-  async handover(@Body() body: { lang?: string; name?: unknown; email?: unknown; message?: unknown; messages?: unknown; website?: unknown }, @Req() req: Request) {
+  async handover(@Body() body: { lang?: string; name?: unknown; email?: unknown; phone?: unknown; message?: unknown; messages?: unknown; website?: unknown }, @Req() req: Request) {
     if (!this.originAllowed(req)) return { ok: false, error: 'forbidden' };
     // The hidden field a bot fills in: look successful, send nothing.
     if (typeof body?.website === 'string' && body.website.trim()) return { ok: true };
@@ -148,12 +148,15 @@ export class SiteChatController {
     const name = line(body?.name, 120);
     const email = line(body?.email, 200);
     const message = typeof body?.message === 'string' ? body.message.trim().slice(0, 3000) : '';
-    if (!name || !isValidEmail(email) || message.length < 2) return { ok: false, error: 'invalid' };
+    // The phone is optional; one that is given has to look like a number.
+    const phone = cleanPhone(body?.phone);
+    const phoneGiven = typeof body?.phone === 'string' && body.phone.trim() !== '';
+    if (!name || !isValidEmail(email) || message.length < 2 || (phoneGiven && !phone)) return { ok: false, error: 'invalid' };
     const today = this.allow(clientIp(req), this.handoversPerIp, this.handoversToday, HANDOVER_PER_IP_HOUR, HANDOVER_PER_DAY);
     if (!today) return { ok: false, error: 'rate-limited' };
     this.handoversToday = today;
     const history = (cleanHistory([...(Array.isArray(body?.messages) ? body.messages : []), { role: 'user', content: '…' }]) ?? []).slice(0, -1) as ChatMessage[];
-    const mail = handoverMail({ name, email, message, history, lang: chatLang(body?.lang) }, process.env.CONTACT_EMAIL || 'info@apensum.ch');
+    const mail = handoverMail({ name, email, phone, message, history, lang: chatLang(body?.lang) }, process.env.CONTACT_EMAIL || 'info@apensum.ch');
     try {
       await this.send(mail);
     } catch {

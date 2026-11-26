@@ -1,7 +1,7 @@
 // A short hint on the operator's phone through ntfy (https://ntfy.sh; the ntfy app subscribes to one topic), in
 // addition to the mail and the notification in the Admin organization: a message through the website's contact form,
-// a new registration, the API's own monitor. Optional: NTFY_TOPIC_URL (e.g. https://ntfy.sh/apensum-<random>, a
-// GitHub secret: whoever knows a public topic reads and writes it), unset = nothing is sent.
+// a new registration, the API's own monitor. Optional: NTFY_TOPIC_URL (e.g. https://ntfy.sh/apensum-<random>, or the
+// topic alone for one on ntfy.sh; a GitHub secret: whoever knows a public topic reads and writes it), unset = nothing.
 //
 // The public server is not in Switzerland: a push never carries personal data (no names, addresses or texts of
 // people), only what happened; the details stay in the mail and in Apensum. Best effort: it never fails a request.
@@ -19,9 +19,11 @@ export interface OperatorPush {
 
 /** The request ntfy's JSON publishing takes (`POST <server>/` with the topic in the body: UTF-8 titles stay intact). */
 export function ntfyRequest(topicUrl: string, push: OperatorPush): { url: string; body: Record<string, unknown> } | null {
+  // A topic name alone is a topic on the public server.
+  const value = /^[-_A-Za-z0-9]{1,64}$/.test(topicUrl) ? `https://ntfy.sh/${topicUrl}` : topicUrl;
   let parsed: URL;
   try {
-    parsed = new URL(topicUrl);
+    parsed = new URL(value);
   } catch {
     return null;
   }
@@ -50,7 +52,7 @@ export async function pushToOperator(
   if (!topicUrl) return false;
   const request = ntfyRequest(topicUrl, push);
   if (!request) {
-    console.warn('operator push: NTFY_TOPIC_URL is not a topic URL (https://<server>/<topic>)');
+    console.warn('operator push: NTFY_TOPIC_URL is neither a topic URL (https://<server>/<topic>) nor a topic name');
     return false;
   }
   try {

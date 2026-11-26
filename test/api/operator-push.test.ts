@@ -8,6 +8,9 @@ test('the request ntfy takes: the server, and the topic in a JSON body (UTF-8 ti
     url: 'https://ntfy.sh/',
     body: { topic: 'apensum-7f3k9q', title: 'Neue Registrierung', message: 'Über die Website', tags: ['tada'] },
   });
+  // A topic name alone is one on ntfy.sh.
+  assert.equal(ntfyRequest('apensum-7f3k9q', { title: 't', message: 'm' })?.url, 'https://ntfy.sh/');
+  assert.equal(ntfyRequest('apensum-7f3k9q', { title: 't', message: 'm' })?.body.topic, 'apensum-7f3k9q');
   assert.equal(ntfyRequest('https://ntfy.example.ch/a/b', { title: 't', message: 'm' }), null);
   assert.equal(ntfyRequest('ftp://ntfy.sh/topic', { title: 't', message: 'm' }), null);
   assert.equal(ntfyRequest('not a url', { title: 't', message: 'm' }), null);

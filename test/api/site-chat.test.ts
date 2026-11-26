@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { chatLang, chatSystemPrompt, cleanHistory, handoverMail, siteKnowledge } from '../../apps/api/src/site-chat';
+import { chatLang, chatSystemPrompt, cleanHistory, cleanPhone, handoverMail, siteKnowledge } from '../../apps/api/src/site-chat';
 import { SiteChatController, CHAT_PER_IP_HOUR } from '../../apps/api/src/site-chat.controller';
 import de from '../../apps/site/src/i18n/de.mjs';
 
@@ -97,4 +97,18 @@ test('the hand-over mails Apensum and pushes a hint without personal data', asyn
   assert.match(sent[0].text, /30 Personen[\s\S]*Besucher: Preis\?/);
   assert.equal(pushes.length, 1);
   assert.doesNotMatch(JSON.stringify(pushes[0]), /Anna|anna@|30 Personen/);
+});
+
+test('an optional phone number for a call back: in the mail, never in the push', async () => {
+  assert.equal(cleanPhone('+41 79 123 45 67'), '+41 79 123 45 67');
+  assert.equal(cleanPhone('052 (741) 12-34'), '052 (741) 12-34');
+  assert.equal(cleanPhone('call me'), '');
+  assert.equal(cleanPhone('12'), '');
+  const { c, sent, pushes } = controller();
+  assert.deepEqual(await c.handover({ name: 'Anna', email: 'anna@example.ch', phone: 'abends', message: 'Hallo' }, req()), { ok: false, error: 'invalid' });
+  assert.deepEqual(await c.handover({ name: 'Anna', email: 'anna@example.ch', phone: '+41 79 123 45 67', message: 'Bitte zurückrufen' }, req()), { ok: true });
+  assert.match(sent[0].text, /Telefon \(Rückruf erwünscht\): \+41 79 123 45 67/);
+  assert.doesNotMatch(JSON.stringify(pushes), /79 123/);
+  assert.deepEqual(await c.handover({ name: 'Bea', email: 'bea@example.ch', phone: '', message: 'Ohne Nummer' }, req('https://apensum.ch', '9.9.9.9')), { ok: true });
+  assert.doesNotMatch(sent[1].text, /Telefon/);
 });

@@ -529,7 +529,7 @@ The app supports year-end snapshots starting in 2000; earlier attendance and mon
 | `DEX_CONNECTORS` | Optional, with `SSO_PROVIDER=dex`: Dex's connectors, a YAML list (see Single sign-on) |
 | `API_JWT_SECRET` | |
 | `SMTP_PASSWORD` | Optional |
-| `NTFY_TOPIC_URL` | Optional, prod: the operator's phone gets a short hint through ntfy (`https://ntfy.sh/<long random topic>`, the ntfy app subscribed to it; `apps/api/src/operator-push.ts`) on a message through the website's contact form, a registration and a finding of the API's monitor. A secret: whoever knows a public topic reads and writes it. The push carries no personal data, only what happened (the public server is not in Switzerland). |
+| `NTFY_TOPIC_URL` | Optional, prod: the operator's phone gets a short hint through ntfy (`https://ntfy.sh/<long random topic>`, or the topic alone for one on ntfy.sh; the ntfy app subscribed to it; `apps/api/src/operator-push.ts`) on a message through the website's contact form, a registration and a finding of the API's monitor. A secret: whoever knows a public topic reads and writes it. The push carries no personal data, only what happened (the public server is not in Switzerland). |
 | `GHCR_TOKEN` | Optional, `read:packages`, only for private images |
 
 **Variables**

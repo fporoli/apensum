@@ -126,6 +126,7 @@
       el('p', { text: t.personIntro }),
       field('name', t.name, { required: '', maxlength: '120', autocomplete: 'name' }),
       field('email', t.email, { type: 'email', required: '', maxlength: '200', autocomplete: 'email' }),
+      field('phone', t.phone, { type: 'tel', maxlength: '30', autocomplete: 'tel' }),
       field('message', t.message, { tag: 'textarea', rows: '3', required: '', maxlength: '3000' }),
       // A field people don't see: a bot that fills it in sends nothing.
       el('input', { name: 'website', class: 'chat-hp', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' }),

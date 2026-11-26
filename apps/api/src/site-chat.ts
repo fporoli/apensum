@@ -70,8 +70,16 @@ export function chatSystemPrompt(lang: ChatLang, knowledge: string, contact: { e
   ].join('\n');
 }
 
-/** The hand-over's mail to Apensum: who asks (Reply-To), their message and the conversation so far. */
-export function handoverMail(input: { name: string; email: string; message: string; history: ChatMessage[]; lang: ChatLang }, to: string) {
+/** An optional phone number for a call back: digits, spaces and + ( ) / . -, 6 to 20 digits; '' when none or not one. */
+export function cleanPhone(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const phone = value.trim().slice(0, 30);
+  const digits = phone.replace(/\D/g, '').length;
+  return /^[+\d][\d\s()./-]*$/.test(phone) && digits >= 6 && digits <= 20 ? phone : '';
+}
+
+/** The hand-over's mail to Apensum: who asks (Reply-To), how to call back, their message and the conversation so far. */
+export function handoverMail(input: { name: string; email: string; phone?: string; message: string; history: ChatMessage[]; lang: ChatLang }, to: string) {
   const transcript = input.history.map((m) => `${m.role === 'user' ? 'Besucher' : 'Chatbot'}: ${m.content}`).join('\n\n');
   return {
     to,
@@ -80,6 +88,7 @@ export function handoverMail(input: { name: string; email: string; message: stri
     text: [
       `Name: ${input.name}`,
       `E-Mail: ${input.email}`,
+      ...(input.phone ? [`Telefon (Rückruf erwünscht): ${input.phone}`] : []),
       `Sprache: ${input.lang}`,
       '',
       input.message,

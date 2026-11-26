@@ -251,7 +251,7 @@ function chatScript(ctx) {
   if (!config.contactUrl || !assets.chat) return '';
   const api = config.contactUrl.replace(/\/public\/contact\/?$/, '/public/chat');
   if (api === config.contactUrl) return '';
-  const keys = ['open', 'title', 'subtitle', 'greeting', 'placeholder', 'send', 'close', 'thinking', 'person', 'personIntro', 'name', 'email', 'message', 'submit', 'back', 'handed', 'about', 'error_rate-limited', 'error_chat-unavailable', 'error_chat-failed', 'error_invalid', 'error_mail-failed', 'error_failed'];
+  const keys = ['open', 'title', 'subtitle', 'greeting', 'placeholder', 'send', 'close', 'thinking', 'person', 'personIntro', 'name', 'email', 'phone', 'message', 'submit', 'back', 'handed', 'about', 'error_rate-limited', 'error_chat-unavailable', 'error_chat-failed', 'error_invalid', 'error_mail-failed', 'error_failed'];
   const raw = Object.fromEntries(keys.map((k) => [k, t.raw(`chat.${k}`)]));
   return `<script src="${assets.chat}" data-api="${esc(api)}" data-lang="${lang}" data-about="${ctx.link('support')}#chatbot" data-texts="${esc(JSON.stringify(raw))}" defer></script>`;
 }
