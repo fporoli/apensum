@@ -10,10 +10,11 @@
 #
 # Security headers. The app (no inline scripts; MUI's styles are inline, hence style-src 'unsafe-inline') may load and
 # connect only to itself, its API (REST and the notifications' WebSocket) and its sign-on host; it is never framed by
-# another site; HTTPS only. The session is in localStorage, so the CSP is what stops injected script from reaching it.
+# another site; HTTPS only. Frames and objects may show blob: URLs the app made itself (a document's preview, a PDF
+# in the browser's viewer); nothing else. The session is in localStorage, so the CSP is what stops injected script from reaching it.
 __WEB_HOST__ {
   header {
-    Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://__API_HOST__; font-src 'self' data:; connect-src 'self' https://__API_HOST__ wss://__API_HOST__ https://__AUTH_HOST__; media-src 'self' blob:; worker-src 'self'; frame-src https://__AUTH_HOST__; frame-ancestors 'none'; form-action 'self' https://__AUTH_HOST__; base-uri 'self'; object-src 'none'"
+    Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://__API_HOST__; font-src 'self' data:; connect-src 'self' https://__API_HOST__ wss://__API_HOST__ https://__AUTH_HOST__; media-src 'self' blob:; worker-src 'self'; frame-src https://__AUTH_HOST__ blob:; frame-ancestors 'none'; form-action 'self' https://__AUTH_HOST__; base-uri 'self'; object-src blob:"
     Strict-Transport-Security "max-age=31536000"
     X-Content-Type-Options "nosniff"
     Referrer-Policy "strict-origin-when-cross-origin"

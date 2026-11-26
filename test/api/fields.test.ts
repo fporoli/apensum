@@ -190,7 +190,7 @@ test('validateFields: required, types, bounds, validators, patterns', () => {
 
 test('basic data: employees request changes to every section; only the personnel number is HR-only', () => {
   const adminOnly = ['personnelNumber'];
-  const selfService = ['gender', 'birthDate', 'socialSecurityNumber', 'languageCode', 'placeOfOrigin', 'nationality', 'residencePermitCode', 'displayName', 'firstName', 'middleName', 'lastName', 'salutation', 'street', 'postalCode', 'city', 'country', 'canton', 'phone1', 'phone2', 'mobile', 'email', 'bankAccounts', 'emergencyContacts', 'civilStatus', 'civilStatusSince', 'partner', 'children'];
+  const selfService = ['gender', 'birthDate', 'socialSecurityNumber', 'languageCode', 'placeOfOrigin', 'nationality', 'residencePermitCode', 'residencePermitValidUntil', 'displayName', 'firstName', 'middleName', 'lastName', 'salutation', 'street', 'postalCode', 'city', 'country', 'canton', 'phone1', 'phone2', 'mobile', 'email', 'bankAccounts', 'emergencyContacts', 'civilStatus', 'civilStatusSince', 'partner', 'children'];
   assert.deepEqual([...BASICDATA_SELF_KEYS].sort(), [...selfService].sort());
   assert.deepEqual([...BASICDATA_HR_KEYS].sort(), [...adminOnly, ...selfService].sort());
   assert.deepEqual(BASICDATA_USER_COLUMNS, { displayName: 'display_name', firstName: 'first_name', middleName: 'middle_name', lastName: 'last_name' });

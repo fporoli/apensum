@@ -168,14 +168,17 @@ export const BASICDATA_FORM: FormDef = {
     usersColumn('lastName', 'last_name', 40),
     // Assigned by the company, so HR only; the other Personalien fields go through a request.
     basicdataJson('personnelNumber', 'personalien', 50, { editableBy: 'hr' }),
-    basicdataJson('gender', 'personalien', 60),
+    // Lists in static data (entity `users`, 118): kept by the organization in Admin settings; text stays possible.
+    basicdataJson('gender', 'personalien', 60, { type: 'select', options: 'genders', allowedTypes: ['select', 'text'] }),
     basicdataJson('birthDate', 'personalien', 70, { type: 'date', allowedTypes: ['date'] }),
     basicdataJson('socialSecurityNumber', 'personalien', 80),
     basicdataJson('languageCode', 'personalien', 90, { type: 'select', options: 'locales' }),
     basicdataJson('placeOfOrigin', 'personalien', 100),
     // Same country list as the address (`countries`); the separate `nations` list was merged in 039.
     basicdataJson('nationality', 'personalien', 110, { type: 'select', options: 'countries' }),
-    basicdataJson('residencePermitCode', 'personalien', 120),
+    basicdataJson('residencePermitCode', 'personalien', 120, { type: 'select', options: 'residencePermits', allowedTypes: ['select', 'text'] }),
+    // When the permit ends: HR and the person are reminded ahead (workflow-dues.service.ts).
+    basicdataJson('residencePermitValidUntil', 'personalien', 125, { type: 'date', allowedTypes: ['date'] }),
     usersColumn('companyEmail', 'email', 130, { readOnly: true }),
 
     basicdataJson('salutation', 'address', 10),
@@ -187,9 +190,9 @@ export const BASICDATA_FORM: FormDef = {
     basicdataJson('phone1', 'address', 70),
     basicdataJson('phone2', 'address', 80),
     basicdataJson('mobile', 'address', 90),
-    basicdataJson('email', 'address', 100),
+    basicdataJson('email', 'address', 100, { validator: 'email', locked: ['validator'] }),
 
-    basicdataJson('civilStatus', 'civilStatus', 10),
+    basicdataJson('civilStatus', 'civilStatus', 10, { type: 'select', options: 'civilStatuses', allowedTypes: ['select', 'text'] }),
     // Stored as free text so far; switching it to `date` needs existing values cleaned first.
     basicdataJson('civilStatusSince', 'civilStatus', 20),
   ],

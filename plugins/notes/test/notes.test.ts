@@ -68,7 +68,8 @@ test('without nav.notes (or with the module off) nothing is read or written', as
 test('the caller reads, writes and deletes only their own notes', async () => {
   const { controller, req, statements } = setup(['nav.notes:edit:own']);
   await controller.list(ORG, req);
-  assert.deepEqual(statements.at(-1)?.params, [ORG, ME], 'listed for this organization and the caller only');
+  // The shared ones (the last statement): whether the caller hid each, for this organization and the caller only.
+  assert.deepEqual(statements.at(-1)?.params, [ME, ORG, ME], 'listed for this organization and the caller only');
   assert.deepEqual(await controller.create(ORG, { text: ' Idee ' }, req), { ok: true, note: { id: NOTE, text: 'Idee', created_at: '2026-11-23 10:00:00+01' } });
   assert.deepEqual(await controller.create(ORG, { text: '' }, req), { ok: false, error: 'invalid-note' });
   assert.deepEqual(await controller.update(ORG, NOTE, { text: ' Neu ' }, req), { ok: true, note: { id: NOTE, text: 'Neu', created_at: '2026-11-23 10:00:00+01' } });

@@ -401,6 +401,8 @@ export const CORE_PAGES: AppPage[] = [
     object: 'nav.myData',
     nav: {
       group: 'personal',
+      // Seldom changed: at the end of the group.
+      last: true,
       label: 'nav.myData',
       icon: <PersonIcon fontSize="small" />,
       // Change requests waiting for review, for whoever reviews them.

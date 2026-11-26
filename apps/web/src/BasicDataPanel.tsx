@@ -144,6 +144,8 @@ interface EditableGroup {
   draft: BasicData;
   setDraft: (d: BasicData) => void;
   canEdit: boolean;
+  /** A change goes to HR as a request (a flow), not straight in: the buttons say so. */
+  viaRequest: boolean;
   start: () => void;
   cancel: () => void;
   save: () => void;
@@ -222,7 +224,7 @@ function useEditableGroup(params: {
     }
   }
 
-  return { errors, readOnlyKeys, editing, draft, setDraft, canEdit: canEditDirectly || canRequest, start, cancel, save, saving };
+  return { errors, readOnlyKeys, editing, draft, setDraft, canEdit: canEditDirectly || canRequest, viaRequest: !canEditDirectly, start, cancel, save, saving };
 }
 
 function GroupActions({ t, group }: { t: T; group: EditableGroup }) {
@@ -230,12 +232,12 @@ function GroupActions({ t, group }: { t: T; group: EditableGroup }) {
     <Box sx={{ display: 'flex', gap: 1 }}>
       {!group.editing && group.canEdit && (
         <Button size="small" variant="outlined" startIcon={<EditIcon fontSize="small" />} onClick={group.start}>
-          {t('home.edit')}
+          {t(group.viaRequest ? 'home.editViaHr' : 'home.edit')}
         </Button>
       )}
       {group.editing && (
         <>
-          <Button size="small" variant="contained" onClick={group.save} disabled={group.saving}>{t('home.save')}</Button>
+          <Button size="small" variant="contained" onClick={group.save} disabled={group.saving}>{t(group.viaRequest ? 'home.submitRequest' : 'home.save')}</Button>
           <Button size="small" onClick={group.cancel} disabled={group.saving}>{t('home.cancel')}</Button>
         </>
       )}
@@ -337,6 +339,12 @@ export function BasicDataPanel({ orgId, userId, isSelf, embedded = false, authHe
   const localeOptions = useMemo(() => optionsFromRow(staticRows.find((r) => r.enum_name === 'locales'), locale), [staticRows, locale]);
   const countryOptions = useMemo(() => optionsFromRow(staticRows.find((r) => r.enum_name === 'countries'), locale), [staticRows, locale]);
   const cantonOptions = useMemo(() => SWISS_CANTONS.map((c) => ({ value: c, label: c })), []);
+  // The dropdowns kept in static data (entity `users`): gender, permit, civil status.
+  const listOptions = useMemo(() => ({
+    genders: optionsFromRow(staticRows.find((r) => r.enum_name === 'genders'), locale),
+    residencePermits: optionsFromRow(staticRows.find((r) => r.enum_name === 'residence_permits'), locale),
+    civilStatuses: optionsFromRow(staticRows.find((r) => r.enum_name === 'civil_statuses'), locale),
+  }), [staticRows, locale]);
 
   const access = (group: string): SectionAccess =>
     sections?.[group] ?? { see: true, request: isSelf && !canEditDirectly, direct: canEditDirectly };
@@ -433,6 +441,7 @@ export function BasicDataPanel({ orgId, userId, isSelf, embedded = false, authHe
               companyEmail={companyEmail}
               localeOptions={localeOptions}
               countryOptions={countryOptions}
+              listOptions={listOptions}
             />
             <Box sx={{ mt: 1 }}><GroupActions t={t} group={personalien} /></Box>
           </Box>
@@ -457,7 +466,7 @@ export function BasicDataPanel({ orgId, userId, isSelf, embedded = false, authHe
         </Box>
       ) : (
         <Box>
-          <FamilySection t={t} locale={locale} form={form} group={family} data={family.editing ? family.draft : data} editing={family.editing} onChange={family.setDraft} />
+          <FamilySection t={t} locale={locale} form={form} group={family} data={family.editing ? family.draft : data} editing={family.editing} onChange={family.setDraft} listOptions={listOptions} />
           <Box sx={{ mt: 1 }}><GroupActions t={t} group={family} /></Box>
         </Box>
       )}
@@ -575,9 +584,9 @@ function DateOrTextField({
 }
 
 function PersonalienSection({
-  form, group, data, editing, onChange, companyEmail, localeOptions, countryOptions,
+  form, group, data, editing, onChange, companyEmail, localeOptions, countryOptions, listOptions,
 }: {
-  form: ResolvedForm; group: EditableGroup; data: BasicData; editing: boolean; onChange: (d: BasicData) => void; companyEmail: string | null; localeOptions: Option[]; countryOptions: Option[];
+  form: ResolvedForm; group: EditableGroup; data: BasicData; editing: boolean; onChange: (d: BasicData) => void; companyEmail: string | null; localeOptions: Option[]; countryOptions: Option[]; listOptions: Record<string, Option[]>;
 }) {
   const title = useGroupTitle(form, 'personalien');
   return (
@@ -591,7 +600,7 @@ function PersonalienSection({
         values={{ ...data, companyEmail: companyEmail ?? '' }}
         editing={editing}
         onChange={(key, value) => onChange({ ...data, [key]: value })}
-        options={{ locales: localeOptions, countries: countryOptions }}
+        options={{ locales: localeOptions, countries: countryOptions, ...listOptions }}
       />
     </Box>
   );
@@ -691,7 +700,7 @@ function AddressSection({
   );
 }
 
-function FamilySection({ t, locale, form, group, data, editing, onChange }: { t: T; locale: string; form: ResolvedForm; group: EditableGroup; data: BasicData; editing: boolean; onChange: (d: BasicData) => void }) {
+function FamilySection({ t, locale, form, group, data, editing, onChange, listOptions }: { t: T; locale: string; form: ResolvedForm; group: EditableGroup; data: BasicData; editing: boolean; onChange: (d: BasicData) => void; listOptions: Record<string, Option[]> }) {
   const title = useGroupTitle(form, 'civilStatus');
   const partner = data.partner ?? { lastName: '', firstName: '', birthDate: '', socialSecurityNumber: '' };
   const children = data.children ?? [];
@@ -713,6 +722,7 @@ function FamilySection({ t, locale, form, group, data, editing, onChange }: { t:
           values={data as Record<string, unknown>}
           editing={editing}
           onChange={(key, value) => onChange({ ...data, [key]: value })}
+          options={listOptions}
         />
       </Box>
 

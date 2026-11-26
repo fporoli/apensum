@@ -10,6 +10,7 @@ import { ScreenShareService } from './screen-share.service';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { WorkflowsService } from './workflows.service';
+import { WorkflowDuesService } from './workflow-dues.service';
 import { AuthController } from './auth.controller';
 import { UsersController } from './users.controller';
 import { OrgsController } from './orgs.controller';
@@ -158,6 +159,7 @@ const plugins = loadApiPlugins();
     MonitorService,
     VersionsService,
     WorkflowsService,
+    WorkflowDuesService,
     AssistantService,
     NotificationsService,
     NotificationsGateway,

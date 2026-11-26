@@ -134,6 +134,20 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
 
+  // A link to one person's personal data (`#/users?basicdata=<user id>`, e.g. a residence permit ending) opens it.
+  useEffect(() => {
+    const onHash = () => {
+      const id = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('basicdata');
+      const member = id ? members.find((m) => m.user_id === id) : undefined;
+      if (!member) return;
+      setBasicDataFor(member);
+      window.history.replaceState(null, '', '#/users');
+    };
+    onHash();
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [members]);
+
   async function grantRole(membershipId: string, roleId = addRoleFor[membershipId]) {
     if (!roleId) return;
     setError(null);

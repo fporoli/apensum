@@ -59,6 +59,9 @@ interface Employment {
   currentId: string | null;
   assignments: Assignment[];
   canEdit: boolean;
+  /** Who takes the person's flow steps while they are away; the person sets it, HR for anyone. */
+  deputy: { userId: string; name: string } | null;
+  canSetDeputy: boolean;
 }
 
 interface Department {
@@ -71,6 +74,7 @@ interface Department {
 interface Member {
   user_id: string;
   display_name: string;
+  status?: string;
 }
 
 interface Draft {
@@ -113,6 +117,8 @@ export default function EmploymentPanel({
   const [exitDraft, setExitDraft] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Assignment | null>(null);
   const [probationDraft, setProbationDraft] = useState<string | null>(null);
+  // The deputy being chosen ('' = none).
+  const [deputyDraft, setDeputyDraft] = useState<string | null>(null);
 
   async function reload() {
     try {
@@ -123,7 +129,7 @@ export default function EmploymentPanel({
         return;
       }
       setForbidden(false);
-      setData({ startDate: body.startDate ?? null, exitDate: body.exitDate ?? null, probationUntil: body.probationUntil ?? null, probationSet: !!body.probationSet, currentId: body.currentId ?? null, assignments: body.assignments ?? [], canEdit: !!body.canEdit });
+      setData({ startDate: body.startDate ?? null, exitDate: body.exitDate ?? null, probationUntil: body.probationUntil ?? null, probationSet: !!body.probationSet, currentId: body.currentId ?? null, assignments: body.assignments ?? [], canEdit: !!body.canEdit, deputy: body.deputy ?? null, canSetDeputy: !!body.canSetDeputy });
     } catch {
       setError(t('common.cannotReachApi'));
     }
@@ -135,9 +141,9 @@ export default function EmploymentPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, userId]);
 
-  // Choices for editing: only loaded for people who may edit.
+  // Choices for editing: only loaded for people who may edit (the deputy: the person too).
   useEffect(() => {
-    if (!data?.canEdit) return;
+    if (!data?.canEdit && !data?.canSetDeputy) return;
     let cancelled = false;
     (async () => {
       try {
@@ -157,7 +163,7 @@ export default function EmploymentPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orgId, data?.canEdit]);
+  }, [orgId, data?.canEdit, data?.canSetDeputy]);
 
   // The location column and field only once the organization has locations (or an assignment names one).
   const hasLocations = locations.length > 0 || !!data?.assignments.some((a) => a.location_id);
@@ -280,6 +286,23 @@ export default function EmploymentPanel({
               {data.canEdit && (
                 <Tooltip title={t('employment.editExitDate')}>
                   <IconButton size="small" aria-label={t('employment.editExitDate')} onClick={() => setExitDraft(data.exitDate ?? '')}>
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Box>
+          </Box>
+        )}
+        {(data.deputy || data.canSetDeputy) && (
+          <Box>
+            <Tooltip title={t('employment.deputyHint')}>
+              <Typography variant="caption" color="text.secondary">{t('employment.deputy')}</Typography>
+            </Tooltip>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>{data.deputy?.name ?? t('employment.noDeputy')}</Typography>
+              {data.canSetDeputy && (
+                <Tooltip title={t('employment.editDeputy')}>
+                  <IconButton size="small" aria-label={t('employment.editDeputy')} onClick={() => setDeputyDraft(data.deputy?.userId ?? '')}>
                     <EditIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
@@ -547,6 +570,32 @@ export default function EmploymentPanel({
             disabled={busy || !probationDraft}
             onClick={async () => {
               if (await send(`/organizations/${orgId}/users/${userId}/probation`, 'PUT', { until: probationDraft })) setProbationDraft(null);
+            }}
+          >
+            {t('common.save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={deputyDraft !== null} onClose={() => setDeputyDraft(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('employment.deputy')}</DialogTitle>
+        <DialogContent sx={{ pt: '8px !important', display: 'grid', gap: 1 }}>
+          <TextField select size="small" fullWidth label={t('employment.deputy')} value={deputyDraft ?? ''} onChange={(e) => setDeputyDraft(e.target.value)}>
+            <MenuItem value=""><em>{t('employment.noDeputy')}</em></MenuItem>
+            {/* Active members, each once (the list has a row per role). */}
+            {[...new Map(members.filter((m) => m.user_id !== userId && (m.status ?? 'active') === 'active').map((m) => [m.user_id, m])).values()]
+              .sort((a, b) => (a.display_name ?? '').localeCompare(b.display_name ?? ''))
+              .map((m) => <MenuItem key={m.user_id} value={m.user_id}>{m.display_name}</MenuItem>)}
+          </TextField>
+          <Typography variant="caption" color="text.secondary">{t('employment.deputyHint')}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeputyDraft(null)}>{t('common.cancel')}</Button>
+          <Button
+            variant="contained"
+            disabled={busy}
+            onClick={async () => {
+              if (await send(`/organizations/${orgId}/users/${userId}/deputy`, 'PUT', { deputyUserId: deputyDraft || null })) setDeputyDraft(null);
             }}
           >
             {t('common.save')}

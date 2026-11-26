@@ -132,6 +132,8 @@
     <include file="114-flow-type-description.sql" relativeToChangelogFile="true"/>
     <include file="115-link-tables-folded.sql" relativeToChangelogFile="true"/>
     <include file="116-unused-and-second-history.sql" relativeToChangelogFile="true"/>
+    <include file="117-membership-deputy.sql" relativeToChangelogFile="true"/>
+    <include file="118-basicdata-lists.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

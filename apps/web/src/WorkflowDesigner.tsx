@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Box, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
 import { Button } from './Button';
 import {
-  assigneeKind, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type StepMessage, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
+  assigneeKind, MAX_DUE_DAYS, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type StepMessage, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
 } from '@worktime3/shared/workflowConfig';
 import { PERMISSION_OBJECTS } from '@worktime3/shared/permissions';
 import { useT } from './i18n';
@@ -320,7 +320,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
         {canEach && (
           <Tooltip title={t('workflowDesigner.eachHint')}>
             <FormControlLabel
-              control={<Checkbox size="small" checked={!!step.each} disabled={!editable} onChange={(e) => { const { each: _old, ...rest } = step; onChange(e.target.checked ? { ...rest, each: true } : rest); }} />}
+              control={<Checkbox size="small" checked={!!step.each} disabled={!editable} onChange={(e) => { const { each: _old, escalateDays: _esc, ...rest } = step; onChange(e.target.checked ? { ...rest, each: true } : { ...rest, ...(_esc ? { escalateDays: _esc } : {}) }); }} />}
               label={<Typography variant="body2">{t('workflowDesigner.each')}</Typography>}
             />
           </Tooltip>
@@ -348,6 +348,33 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
           {kind.rejectModes.filter((m) => m === 'none' || canReturn).map((m) => <MenuItem key={m} value={m}>{t(`workflowDesigner.reject.${m}`)}</MenuItem>)}
         </TextField>
       </Box>
+
+      {/* Waiting too long: a reminder to the assignees, then the step goes to their managers as well (working days). */}
+      {!step.do.some((b) => kind.blocks[b]?.automatic) && (
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Tooltip title={t('workflowDesigner.dueHint')}>
+            <Typography variant="body2" sx={{ minWidth: 110 }}>{t('workflowDesigner.due')}</Typography>
+          </Tooltip>
+          {(['remindDays', 'escalateDays'] as const).filter((f) => f === 'remindDays' || !step.each).map((f) => (
+            <TextField
+              key={f}
+              type="number"
+              size="small"
+              label={t(`workflowDesigner.${f}`)}
+              value={step[f] ?? ''}
+              disabled={!editable}
+              onChange={(e) => {
+                const { [f]: _old, ...rest } = step;
+                const n = Number(e.target.value);
+                onChange(e.target.value === '' || !Number.isFinite(n) ? rest : { ...rest, [f]: Math.trunc(n) });
+              }}
+              slotProps={{ htmlInput: { min: 1, max: MAX_DUE_DAYS, step: 1 } }}
+              sx={{ width: 200 }}
+              helperText={t('workflowDesigner.workingDays')}
+            />
+          ))}
+        </Box>
+      )}
 
       {/* A step with the last block (e.g. "paid") always comes: it has no condition. */}
       {step.do.some((b) => kind.blocks[b]?.last) ? (

@@ -9,6 +9,7 @@ Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere 
   Password logins count failures only (`password-reset.ts`: 10 per account and address, 50 per address, 200 per account from anywhere, per hour, then `too-many-attempts`), registrations 5 per address and hour; in memory, per API process.\
   CORS allows the web app (`APP_BASE_URL`), the website (`CONTACT_SITE_ORIGINS`) and `CORS_EXTRA_ORIGINS` (`cors.ts`; without `APP_BASE_URL` every origin).\
   The edge Caddy sends the app's security headers (`infra/caddy/edge/sites/worktime3.caddy.tpl`: a strict CSP, no framing, HSTS): never add inline scripts, and a new origin the app talks to goes into its CSP.\
+  Frames and objects allow only `blob:` (besides the sign-on host): the Documents page previews a PDF from a blob the app made, and the browser's PDF viewer counts as an object.\
   `sql.raw` gets only text written in the code (`test/api/sql-raw.test.ts`).\
   A session token carries its password's stamp (`pv`, `session-state.ts` `mintSessionToken`); the guard and the WebSocket check that the account is active and the password the same (`sessionHolds`, cached 30 s, `forgetSessions` after a reset): changing the password or deactivating the account ends every other session; tokens without `pv` (older) hold until they expire. Mint session tokens only with `mintSessionToken`.\
   The web app signs out on a 401 to a request that carried the token and the login page says why (`sessionWatch.ts`).\

@@ -311,7 +311,8 @@ holidays (the canton in `organizations.settings.holidayRegion` plus
 A schedule with `time_recording = 'none'` (095, with `exemption_reason`
 `senior_executive` or `waiver`) has no target, timesheet or overtime; `daily`
 is reserved. `organization_memberships.probation_until` is a person's end of
-probation where it differs from `settings.vacation.probationMonths`.
+probation where it differs from `settings.vacation.probationMonths`;
+`deputy_user_id` (117) is who takes the person's flow steps while they are away.
 
 Balances are derived (`apps/api/src/balances.service.ts`). Approving a
 working-time timesheet closes its month: `work_time_months` freezes target,

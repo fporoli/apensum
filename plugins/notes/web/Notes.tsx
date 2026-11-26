@@ -24,7 +24,7 @@ import { isMailAddress, MAX_MAIL_ADDRESSES, splitAddresses } from '../shared/mai
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
 interface Note { id: string; text: string; created_at: string; shared_with?: { userId: string; name: string }[] }
-interface SharedNote { id: string; text: string; created_at: string; author: string }
+interface SharedNote { id: string; text: string; created_at: string; author: string; hidden?: boolean }
 interface Person { userId: string; name: string; departmentId: string | null; department: string | null }
 
 /** Lower case, without accents: "Müller" finds "muller". */
@@ -63,16 +63,20 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
   const [focus, setFocus] = useState<string | null>(linkedId);
   const [query, setQuery] = useState('');
   const [showShared, setShowShared] = useState(storedShowShared);
+  // The ones the caller hid: shown again (to show them in the list again) only on demand.
+  const [showHidden, setShowHidden] = useState(false);
+  const hiddenCount = shared.filter((n) => n.hidden).length;
   const toggleShared = (on: boolean) => {
     setShowShared(on);
     try { localStorage.setItem(SHOW_SHARED, on ? '1' : '0'); } catch { /* not remembered */ }
   };
   // Searched: one's own notes by their text and with whom they are shared, the others' by text and author.
   const shownNotes = useMemo(() => (notes ?? []).filter((n) => matches(query, n.text, ...(n.shared_with ?? []).map((s) => s.name))), [notes, query]);
-  const shownShared = useMemo(() => (showShared ? shared.filter((n) => matches(query, n.text, n.author)) : []), [shared, showShared, query]);
+  const shownShared = useMemo(() => (showShared ? shared.filter((n) => (showHidden || !n.hidden) && matches(query, n.text, n.author)) : []), [shared, showShared, showHidden, query]);
   // A link or a notification to a note shared with the caller shows the shared ones, the search cleared.
   useEffect(() => {
-    if (focus && shared.some((n) => n.id === focus)) { setShowShared(true); setQuery(''); }
+    const linked = focus ? shared.find((n) => n.id === focus) : undefined;
+    if (linked) { setShowShared(true); setQuery(''); if (linked.hidden) setShowHidden(true); }
   }, [focus, shared]);
   // Writing: the text or its preview (like VS Code's Markdown preview); a saved note shows formatted, its source on demand.
   // A note being changed: its id and the text so far.
@@ -152,6 +156,13 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
     }
   }
 
+  /** Hides a note shared with the caller, or shows it again: it stays shared with them. */
+  async function setHidden(noteId: string, hidden: boolean) {
+    setError(null);
+    const data = await call(`/${noteId}/hidden`, { method: 'PUT', body: JSON.stringify({ hidden }) });
+    if (data?.ok) await load();
+  }
+
   async function unshare(noteId: string, userId: string) {
     setError(null);
     const data = await call(`/${noteId}/share/${userId}`, { method: 'DELETE' });
@@ -184,7 +195,13 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
           {shared.length > 0 && (
             <FormControlLabel
               control={<Checkbox size="small" checked={showShared} onChange={(e) => toggleShared(e.target.checked)} />}
-              label={t('notes.showShared', { count: String(shared.length) })}
+              label={t('notes.showShared', { count: String(shared.length - hiddenCount) })}
+            />
+          )}
+          {showShared && hiddenCount > 0 && (
+            <FormControlLabel
+              control={<Checkbox size="small" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />}
+              label={t('notes.showHidden', { count: String(hiddenCount) })}
             />
           )}
         </Box>
@@ -232,14 +249,14 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
         <>
           <Typography variant="h6" sx={{ pt: 1 }}>{t('notes.sharedWithMe')}</Typography>
           {shownShared.map((n) => (
-            <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', ...mark(n.id) }}>
+            <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', opacity: n.hidden ? 0.6 : 1, ...mark(n.id) }}>
               <Typography variant="caption" color="text.secondary">{t('notes.from', { name: n.author })}</Typography>
               <Box sx={{ mt: 0.5 }}>{body(n.id, n.text)}</Box>
               <Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
                 <Typography variant="caption" color="text.secondary">{formatLocaleDateTime(n.created_at, locale)}</Typography>
                 <Box sx={{ display: 'flex', gap: 0.5 }}>
                   <Button size="small" onClick={() => toggleSource(n.id)}>{t(source.has(n.id) ? 'notes.preview' : 'notes.source')}</Button>
-                  <Button size="small" onClick={() => void unshare(n.id, 'me')}>{t('notes.hide')}</Button>
+                  <Button size="small" onClick={() => void setHidden(n.id, !n.hidden)}>{t(n.hidden ? 'notes.unhide' : 'notes.hide')}</Button>
                 </Box>
               </Box>
             </Paper>

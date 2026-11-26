@@ -3,6 +3,7 @@ import { namespaceMismatch, type PluginName } from '@worktime3/shared/pluginApi'
 import { registerPermissionObjects } from '@worktime3/shared/permissions';
 import { registerReport } from '@worktime3/shared/reports';
 import { DICTIONARIES, type Locale } from './dictionaries';
+import { CORE_WORKFLOW_KINDS } from './coreWorkflowKinds';
 import type { PluginDocumentCategory, PluginTeamView, PluginNavGroup, PluginPage, PluginPublicRoute, PluginSettingsSection, PluginWorkflowKind, WebPlugin } from './plugin';
 
 /**
@@ -52,7 +53,11 @@ export const PLUGIN_PAGES: readonly PluginPage[] = WEB_PLUGINS.flatMap((p) => p.
 export const PLUGIN_NAV_GROUPS: readonly PluginNavGroup[] = WEB_PLUGINS.flatMap((p) => p.navGroups ?? []);
 export const PLUGIN_ORG_SETTINGS: readonly PluginSettingsSection[] = WEB_PLUGINS.flatMap((p) => p.orgSettings ?? []);
 export const PLUGIN_PUBLIC_ROUTES: readonly PluginPublicRoute[] = WEB_PLUGINS.flatMap((p) => p.publicRoutes ?? []);
-export const PLUGIN_WORKFLOW_KINDS: readonly PluginWorkflowKind[] = WEB_PLUGINS.flatMap((p) => p.workflowKinds ?? []);
+/**
+ * The flow kinds the Flows page shows with their own record, label and review dialog: the core's that work like a
+ * plugin's (a change of personal data, coreWorkflowKinds.tsx) and the plugins'.
+ */
+export const PLUGIN_WORKFLOW_KINDS: readonly PluginWorkflowKind[] = [...CORE_WORKFLOW_KINDS, ...WEB_PLUGINS.flatMap((p) => p.workflowKinds ?? [])];
 export const PLUGIN_TEAM_VIEWS: readonly PluginTeamView[] = WEB_PLUGINS.flatMap((p) => p.teamViews ?? []);
 export const PLUGIN_DOCUMENT_CATEGORIES: readonly PluginDocumentCategory[] = WEB_PLUGINS.flatMap((p) => p.documentCategories ?? []);
 export const PLUGIN_NOTIFICATION_SECTIONS: Readonly<Record<string, string>> = Object.assign({}, ...WEB_PLUGINS.map((p) => p.notificationSections ?? {}));

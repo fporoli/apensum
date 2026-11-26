@@ -51,3 +51,14 @@ test('sections and hashes map both ways', () => {
   assert.equal(toHash.expenses, '#/expenses');
   assert.equal(toSection['#/home'], 'home');
 });
+
+test('an entry with `last` goes to the end of its group, behind the ones that follow others', async () => {
+  const { buildNavTree } = await import('./navigation.ts');
+  const tree = buildNavTree([{ id: 'g', header: '' }], [
+    { section: 'docs', nav: { group: 'g' } },
+    { section: 'mine', nav: { group: 'g', last: true } },
+    { section: 'notes', nav: { group: 'g', after: 'docs' } },
+    { section: 'more', nav: { group: 'g' } },
+  ]);
+  assert.deepEqual(tree[0].items.map((i) => i.page.section), ['docs', 'notes', 'more', 'mine']);
+});

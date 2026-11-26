@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Post, Put, Req } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { Body, Controller, Get, Logger, Param, Post, Put, Req, type OnModuleInit } from '@nestjs/common';
+import { eq, sql } from 'drizzle-orm';
+import type { WorkflowKindCatalogue } from '@worktime3/shared/workflowConfig';
 import { DbService } from './db.service';
 import { callerUserId, can, isOrgMember, permissionIdsOf } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
@@ -8,6 +9,8 @@ import { VersionsService } from './versions.service';
 import { BasicDataService, nestOrgKeys, scopeToOrg } from './basicdata.service';
 import { users } from './db/schema';
 import { FieldsService } from './fields.service';
+import { WorkflowsService } from './workflows.service';
+import type { Db } from './db.service';
 import { BASICDATA_FORM, BASICDATA_NESTED_KEYS_BY_GROUP, basicdataGroupOfKey, editableKeys, mergeForm, orgCustomKeys, validateFields, type ResolvedForm } from '@worktime3/shared/fields';
 import type { Executor } from './access';
 
@@ -143,15 +146,115 @@ function sanitizePatch(body: unknown, keys: readonly string[]): Record<string, u
   return patch;
 }
 
+/** The workflows of change requests: source table `basicdata`, the person's user id (one open request at a time). */
+export const BASICDATA_SOURCE = 'basicdata';
+
+/**
+ * A change of one's own personal data (My Data -> "Request a correction"): a flow, reviewed by the steps the
+ * organization set (Flow-Designer; default HR, `section.basicdata.personalien` edit on everyone), each a decision;
+ * rejecting is final (the person asks anew). The change is applied once the last step approved it. Facts: the
+ * changed fields and their sections, e.g. a second step only when the bank details change.
+ */
+export const BASICDATA_CHANGE_CATALOGUE: WorkflowKindCatalogue = {
+  id: 'basicdata.change',
+  definitionName: 'basicdata change',
+  rejectModes: ['none', 'end'],
+  facts: { fields: 'strings', sections: 'strings' },
+  blocks: {
+    review: {
+      label: 'Review', action: 'basicdata.reviewed', returnAction: 'basicdata.reject', decides: true,
+      assignees: ['department', 'team', 'person', ...BASICDATA_GROUPS.map((g) => `permission:section.basicdata.${g}`), 'permission:section.people.employment'],
+    },
+  },
+  defaultConfig: {
+    version: 1,
+    steps: [{ key: 'hr_review', do: ['review'], assignTo: 'permission:section.basicdata.personalien', reject: 'end', label: { de: 'Prüfung HR', fr: 'Contrôle RH', it: 'Verifica RH', en: 'HR review' } }],
+  },
+  source: 'Personal data',
+  source_name: 'getBasicDataChangeTitle',
+};
+
+/** The keys a request changes (an organization's own section's keys too), and their sections. */
+export function changedFieldsOf(data: Record<string, unknown>, form: ResolvedForm): { fields: string[]; sections: string[] } {
+  const keys = new Set<string>();
+  for (const [key, value] of Object.entries(data)) {
+    if (key === 'orgs' && value && typeof value === 'object') {
+      for (const section of Object.values(value as Record<string, unknown>)) {
+        for (const inner of Object.keys((section ?? {}) as Record<string, unknown>)) keys.add(inner);
+      }
+    } else keys.add(key);
+  }
+  const fields = [...keys].sort();
+  const sections = [...new Set(fields.map((k) => basicdataGroupOfKey(form, k)).filter((g): g is string => !!g))].sort();
+  return { fields, sections };
+}
+
 @Controller()
-export class BasicDataController {
+export class BasicDataController implements OnModuleInit {
+  private readonly log = new Logger('BasicDataController');
+
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
     private readonly versionsService: VersionsService,
     private readonly basicData: BasicDataService,
     private readonly fields: FieldsService,
+    private readonly workflowsSvc: WorkflowsService,
   ) {}
+
+  /** The change request is a flow: its kind, what its steps do, and its records on the Flows page. */
+  onModuleInit() {
+    this.workflowsSvc.registerKind({
+      catalogue: BASICDATA_CHANGE_CATALOGUE,
+      description: 'A change of personal data a person asked for: reviewed by the steps the organization set (HR by default).',
+      sourceTable: BASICDATA_SOURCE,
+      facts: async (_db, userId) => {
+        const pending = await this.basicData.pending(userId);
+        return pending ? changedFieldsOf(pending.data, mergeForm(BASICDATA_FORM)) : {};
+      },
+      // The last approval applies the change (in the organization the flow belongs to: its own section only).
+      onFinished: async (db, userId, actorUserId) => {
+        const pending = await this.basicData.pending(userId);
+        const orgId = await this.flowOrganization(db, userId, false);
+        if (!pending || !orgId) return;
+        const result = await this.basicData.resolveRequest(userId, pending.version, 'approved', actorUserId, null, orgId, USER_COLUMN_MAP);
+        if (result.ok) void this.audit.record(orgId, actorUserId, 'basicdata.approve', 'user', userId, { version: pending.version }).catch(() => {});
+      },
+    });
+    // An approval with more to come changes nothing yet.
+    this.workflowsSvc.registerAction('basicdata.reviewed', async () => {});
+    this.workflowsSvc.registerAction('basicdata.reject', async (db, ctx) => {
+      const pending = await this.basicData.pending(ctx.sourceTableUuid);
+      const orgId = await this.flowOrganization(db, ctx.sourceTableUuid, true);
+      if (!pending || !orgId) return;
+      const result = await this.basicData.resolveRequest(ctx.sourceTableUuid, pending.version, 'rejected', ctx.actorUserId, ctx.decisionNote, orgId);
+      if (result.ok) void this.audit.record(orgId, ctx.actorUserId, 'basicdata.reject', 'user', ctx.sourceTableUuid, { version: pending.version }).catch(() => {});
+    });
+    // On the Flows page: whose data, and which fields (the values only in the review dialog, by the caller's sections).
+    this.workflowsSvc.registerSourceRecords(BASICDATA_SOURCE, 'basicdata_change', async (db, ids) => {
+      if (!ids.length) return [];
+      const rows = (await db.execute(sql`
+        SELECT u.id, u.display_name, u.email,
+          (SELECT bv.history -> (jsonb_array_length(bv.history) - 1) FROM versions bv
+            WHERE bv.source_table = ${BASICDATA_SOURCE} AND bv.source_table_uuid = u.id AND jsonb_array_length(bv.history) > 0) AS latest
+        FROM users u WHERE u.id = ANY(${`{${ids.join(',')}}`}::uuid[])`)).rows as { id: string; display_name: string | null; email: string; latest: { status?: string; data?: Record<string, unknown>; requested_at?: string } | null }[];
+      const form = mergeForm(BASICDATA_FORM);
+      return rows.map((r) => ({
+        id: r.id, user_id: r.id, user_display_name: r.display_name ?? r.email, user_email: r.email,
+        requested_at: r.latest?.requested_at ?? null,
+        ...(r.latest?.status === 'changerequested' && r.latest.data ? changedFieldsOf(r.latest.data, form) : { fields: [], sections: [] }),
+      }));
+    });
+  }
+
+  /** The organization of the person's newest change-request flow (`pending`: only one still waiting). */
+  private async flowOrganization(db: Db, userId: string, pending: boolean): Promise<string | null> {
+    const [row] = (await db.execute(sql`
+      SELECT organization_id FROM workflows WHERE source_table = ${BASICDATA_SOURCE} AND source_table_uuid = ${userId}::uuid
+        ${pending ? sql`AND step_status = 'pending'` : sql``}
+      ORDER BY workflow_started DESC NULLS LAST LIMIT 1`)).rows as { organization_id: string | null }[];
+    return row?.organization_id ?? null;
+  }
 
   @Get('organizations/:orgId/users/:userId/basicdata')
   async get(@Param('orgId') orgId: string, @Param('userId') userId: string, @Req() req: AuthenticatedRequest) {
@@ -272,7 +375,21 @@ export class BasicDataController {
     const patch = nestOrgKeys(checked.patch, orgOwnedKeys(form), orgId);
 
     const result = await this.basicData.requestChange(userId, patch, callerId);
-    if (result.ok) void this.audit.record(orgId, callerId, 'basicdata.request', 'user', userId, { fields: Object.keys(patch) }).catch(() => {});
+    if (!result.ok) return result;
+    void this.audit.record(orgId, callerId, 'basicdata.request', 'user', userId, { fields: Object.keys(patch) }).catch(() => {});
+    // It goes to HR as a flow (Flows: "To do" for the reviewers, "Mine" for the person).
+    try {
+      await this.workflowsSvc.start(db, {
+        kind: BASICDATA_CHANGE_CATALOGUE.id,
+        organizationId: orgId,
+        sourceTableUuid: userId,
+        actorUserId: callerId,
+        workflowData: {},
+        notification: { title: 'A change of personal data to review', text: { key: 'notice.basicdata.review' } },
+      });
+    } catch (err) {
+      this.log.error(`basic data request flow for ${userId} failed: ${err instanceof Error ? err.message : err}`);
+    }
     return result;
   }
 
@@ -287,6 +404,9 @@ export class BasicDataController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
+    // A request with a flow is decided there (its steps, who decides).
+    const flow = await this.workflowsSvc.findPending(db, BASICDATA_SOURCE, userId);
+    if (flow) return this.workflowsSvc.resolve(db, flow.id, callerId, 'approved', undefined);
     if (!(await this.mayResolve(db, orgId, callerId, userId))) return { ok: false, error: 'forbidden' };
 
     const result = await this.basicData.resolveRequest(userId, Number(versionNr), 'approved', callerId, null, orgId, USER_COLUMN_MAP);
@@ -306,6 +426,8 @@ export class BasicDataController {
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
+    const flow = await this.workflowsSvc.findPending(db, BASICDATA_SOURCE, userId);
+    if (flow) return this.workflowsSvc.resolve(db, flow.id, callerId, 'rejected', body.note);
     if (!(await this.mayResolve(db, orgId, callerId, userId))) return { ok: false, error: 'forbidden' };
 
     const note = (body.note ?? '').trim() || null;
@@ -346,6 +468,8 @@ export class BasicDataController {
     const rows = await this.basicData.pendingForOrg(orgId);
     const out = [];
     for (const r of rows) {
+      // A request with a flow is on the Flows page (older ones, from before, stay here).
+      if (await this.workflowsSvc.findPending(db, BASICDATA_SOURCE, r.user_id)) continue;
       if (await this.mayResolve(db, orgId, callerId, r.user_id)) out.push({ ...r, entry: { ...r.entry, data: scopeToOrg(r.entry.data, orgId) } });
     }
     return out;

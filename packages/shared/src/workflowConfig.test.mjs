@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanUnitCode, codeFromName, compileWorkflow, evaluateCondition, nextApplicableStep, stepFieldValues, validateWorkflowConfig } from './workflowConfig.ts';
+import { cleanUnitCode, codeFromName, compileWorkflow, evaluateCondition, nextApplicableStep, stepFieldValues, validateWorkflowConfig, workingDaysSince } from './workflowConfig.ts';
 
 const KIND = {
   id: 'expenses.report',
@@ -256,4 +256,27 @@ test('one block per step; a review may ask fields where its block allows them', 
     { key: 'a', do: ['review'], assignTo: 'manager' },
     { key: 'b', do: ['process'], assignTo: 'permission:nav.expenseProcessing', fields: [AMOUNT] },
   ] })), ['steps[1].fields fields-not-allowed']);
+});
+
+test('reminder and escalation: whole working days, the escalation after the reminder, kept when compiled', () => {
+  const step = (extra) => ({ version: 1, steps: [{ key: 'manager', do: ['review'], assignTo: 'manager', ...extra }, { key: 'pay', do: ['pay'], assignTo: 'permission:nav.expensePayout' }] });
+  const kind = { ...KIND, blocks: { ...KIND.blocks, pay: { ...KIND.blocks.pay, after: [] } } };
+  const r = validateWorkflowConfig(kind, step({ remindDays: 2, escalateDays: 4 }));
+  assert.deepEqual(codes(r), []);
+  const [compiled] = compileWorkflow(kind, r.value);
+  assert.equal(compiled.remindDays, 2);
+  assert.equal(compiled.escalateDays, 4);
+  assert.deepEqual(codes(validateWorkflowConfig(kind, step({ remindDays: 0 }))), ['steps[0].remindDays invalid-days']);
+  assert.deepEqual(codes(validateWorkflowConfig(kind, step({ escalateDays: 31 }))), ['steps[0].escalateDays invalid-days']);
+  assert.deepEqual(codes(validateWorkflowConfig(kind, step({ remindDays: 1.5 }))), ['steps[0].remindDays invalid-days']);
+  assert.deepEqual(codes(validateWorkflowConfig(kind, step({ remindDays: 3, escalateDays: 3 }))), ['steps[0].escalateDays escalate-before-remind']);
+  assert.deepEqual(codes(validateWorkflowConfig(kind, step({ escalateDays: 2 }))), []);
+});
+
+test('working days count Monday to Friday after the start day, today included', () => {
+  assert.equal(workingDaysSince('2026-11-27', '2026-11-27'), 0); // Friday, the same day
+  assert.equal(workingDaysSince('2026-11-27', '2026-11-29'), 0); // the weekend
+  assert.equal(workingDaysSince('2026-11-27', '2026-11-30'), 1); // Monday
+  assert.equal(workingDaysSince('2026-11-23', '2026-11-27'), 4); // Monday to Friday
+  assert.equal(workingDaysSince('2026-11-27', '2026-12-04'), 5);
 });

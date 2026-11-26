@@ -831,3 +831,20 @@ WHERE a.id IN (pg_temp.seed_id('22222222-2222-2222-2222-222222222227:pending-vac
   AND NOT EXISTS (SELECT 1 FROM workflows w WHERE w.source_table = 'absences' AND w.source_table_uuid = a.id)
 ORDER BY a.id, d.workflow_def_id
 ON CONFLICT (workflow_id) DO NOTHING;
+
+-- Deputies (117): while one of them is away, the steps of flows waiting for them go to the other as well
+-- (workflow-dues.service.ts). Marta and Marco stand in for each other, as do Ulla and Fido; set only where none is.
+UPDATE organization_memberships m SET deputy_user_id = d.deputy::uuid
+FROM (VALUES
+  ('22222222-2222-2222-2222-222222222224', '22222222-2222-2222-2222-222222222225'),
+  ('22222222-2222-2222-2222-222222222225', '22222222-2222-2222-2222-222222222224'),
+  ('22222222-2222-2222-2222-222222222226', '22222222-2222-2222-2222-222222222229'),
+  ('22222222-2222-2222-2222-222222222229', '22222222-2222-2222-2222-222222222226')
+) AS d(person, deputy)
+WHERE m.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND m.user_id = d.person::uuid AND m.deputy_user_id IS NULL;
+
+-- A residence permit ending soon (118): Uma's B permit ends 45 days after the seed runs, so the reminder to her and to
+-- HR (workflow-dues.service.ts, 60 days ahead) shows on the demo; set only where she has none.
+UPDATE users SET basicdata = COALESCE(basicdata, '{}'::jsonb)
+  || jsonb_build_object('residencePermitCode', 'B', 'residencePermitValidUntil', to_char(CURRENT_DATE + 45, 'YYYY-MM-DD'))
+WHERE email = 'uma@acme.com' AND NOT COALESCE(basicdata, '{}'::jsonb) ? 'residencePermitCode';

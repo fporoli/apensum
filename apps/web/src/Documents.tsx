@@ -11,12 +11,15 @@ import {
   DialogTitle,
   IconButton,
   InputAdornment,
-  List,
   MenuItem,
-  ListItem,
-  ListItemText,
   Paper,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   TextField,
   Tooltip,
   Typography,
@@ -25,7 +28,8 @@ import { Button } from './Button';
 import { useI18n } from './i18n';
 import { EmptyState, PageHeader } from './components';
 import { DescriptionIcon, DownloadIcon, SearchIcon, VisibilityIcon } from './icons';
-import { formatFileSize, formatLocaleDate, swissLocale } from './localeFormat';
+import { formatFileSize, formatLocaleDate, formatLocaleDateTime, swissLocale } from './localeFormat';
+import { SortHeader, useTableView } from './TableView';
 
 import { PLUGIN_DOCUMENT_CATEGORIES } from './plugins';
 
@@ -234,8 +238,16 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return inYear.filter((d) => (category === 'all' || d.category === category) && (!q || `${d.fileName} ${describe(d)}`.toLowerCase().includes(q)));
-  }, [inYear, category, query, describe]);
+    return inYear.filter((d) => (category === 'all' || d.category === category) && (!q || `${d.fileName} ${describe(d)} ${formatLocaleDate(d.date, locale)} ${d.addedAt ? formatLocaleDateTime(d.addedAt, locale) : ''}`.toLowerCase().includes(q)));
+  }, [inYear, category, query, describe, locale]);
+
+  // Sortable by each column (the documents' own order, newest first, after a third click): the document, its date
+  // (the month or day it is about) and when it was added (made or uploaded).
+  const view = useTableView('documents', visible, [
+    { key: 'document', value: (d: PersonalDocument) => describe(d) },
+    { key: 'date', value: (d: PersonalDocument) => d.date },
+    { key: 'added', value: (d: PersonalDocument) => d.addedAt },
+  ]);
 
   const counts = useMemo(() => {
     const out: Partial<Record<Category, number>> = {};
@@ -348,74 +360,76 @@ export default function Documents({ orgId, authHeaders }: { orgId: string; authH
             description={docs.length === 0 ? t('documents.emptyHint') : undefined}
           />
         ) : (
-          <List disablePadding>
-            {visible.map((d, i) => {
-              const key = keyOf(d);
-              const busy = busyKey === key;
-              return (
-                <ListItem
-                  key={key}
-                  divider={i < visible.length - 1}
-                  sx={{ gap: 1.5, alignItems: 'flex-start', opacity: d.superseded ? 0.6 : 1, pr: 1 }}
-                  secondaryAction={
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      {busy && <CircularProgress size={18} sx={{ mr: 1 }} />}
-                      {previewable(d) && (
-                        <Tooltip title={t('documents.preview')}>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <SortHeader view={view} column="document">{t('documents.col.document')}</SortHeader>
+                  <SortHeader view={view} column="date" sx={{ display: { xs: 'none', md: 'table-cell' }, whiteSpace: 'nowrap', width: '1%' }}>{t('documents.col.date')}</SortHeader>
+                  <SortHeader view={view} column="added" sx={{ display: { xs: 'none', sm: 'table-cell' }, whiteSpace: 'nowrap', width: '1%' }}>{t('documents.col.added')}</SortHeader>
+                  <TableCell />
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {view.rows.map((d) => {
+                  const key = keyOf(d);
+                  const busy = busyKey === key;
+                  return (
+                    <TableRow key={key} hover sx={{ opacity: d.superseded ? 0.6 : 1, verticalAlign: 'top' }}>
+                      <TableCell sx={{ minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
+                            {describe(d)}
+                          </Typography>
+                          <Chip size="small" label={t(`documents.category.${d.category}`)} color={CATEGORY_COLOR[d.category]} variant="outlined" />
+                          {d.superseded && (
+                            <Tooltip title={t('documents.superseded.hint')}>
+                              <Chip size="small" label={t('documents.superseded')} />
+                            </Tooltip>
+                          )}
+                          {d.category === 'personnel' && d.context.effectiveDate && (
+                            <Chip size="small" variant="outlined" label={t('personnelDocs.keyDateOn', { date: formatLocaleDate(String(d.context.effectiveDate), locale) })} />
+                          )}
+                          {d.category === 'personnel' && d.context.requireAck && (d.context.acknowledgedAt ? (
+                            <Chip size="small" color="success" label={t('personnelDocs.confirmedOn', { date: formatLocaleDate(String(d.context.acknowledgedAt).slice(0, 10), locale) })} />
+                          ) : (
+                            <Button size="small" variant="contained" disabled={busy || !me} onClick={() => void acknowledge(d)}>
+                              {t('personnelDocs.confirm')}
+                            </Button>
+                          ))}
+                        </Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere', display: 'block' }}>
+                          {d.fileName}
+                          {` · ${formatFileSize(d.sizeBytes, locale)}`}
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' }, whiteSpace: 'nowrap' }}>{formatLocaleDate(d.date, locale)}</TableCell>
+                      <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' }, whiteSpace: 'nowrap' }}>{d.addedAt ? formatLocaleDateTime(d.addedAt, locale) : '—'}</TableCell>
+                      <TableCell align="right" sx={{ whiteSpace: 'nowrap', width: '1%' }}>
+                        {busy && <CircularProgress size={18} sx={{ mr: 1, verticalAlign: 'middle' }} />}
+                        {previewable(d) && (
+                          <Tooltip title={t('documents.preview')}>
+                            <span>
+                              <IconButton aria-label={t('documents.preview')} disabled={busy} onClick={() => void open(d)}>
+                                <VisibilityIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
+                        <Tooltip title={t('documents.download')}>
                           <span>
-                            <IconButton aria-label={t('documents.preview')} disabled={busy} onClick={() => void open(d)}>
-                              <VisibilityIcon fontSize="small" />
+                            <IconButton aria-label={t('documents.download')} disabled={busy} onClick={() => void download(d)}>
+                              <DownloadIcon fontSize="small" />
                             </IconButton>
                           </span>
                         </Tooltip>
-                      )}
-                      <Tooltip title={t('documents.download')}>
-                        <span>
-                          <IconButton aria-label={t('documents.download')} disabled={busy} onClick={() => void download(d)}>
-                            <DownloadIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    </Box>
-                  }
-                >
-                  <DescriptionIcon color="action" sx={{ mt: 0.75, display: { xs: 'none', sm: 'block' } }} />
-                  <ListItemText
-                    sx={{ pr: 10, minWidth: 0 }}
-                    primary={
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
-                          {describe(d)}
-                        </Typography>
-                        <Chip size="small" label={t(`documents.category.${d.category}`)} color={CATEGORY_COLOR[d.category]} variant="outlined" />
-                        {d.superseded && (
-                          <Tooltip title={t('documents.superseded.hint')}>
-                            <Chip size="small" label={t('documents.superseded')} />
-                          </Tooltip>
-                        )}
-                        {d.category === 'personnel' && d.context.effectiveDate && (
-                          <Chip size="small" variant="outlined" label={t('personnelDocs.keyDateOn', { date: formatLocaleDate(String(d.context.effectiveDate), locale) })} />
-                        )}
-                        {d.category === 'personnel' && d.context.requireAck && (d.context.acknowledgedAt ? (
-                          <Chip size="small" color="success" label={t('personnelDocs.confirmedOn', { date: formatLocaleDate(String(d.context.acknowledgedAt).slice(0, 10), locale) })} />
-                        ) : (
-                          <Button size="small" variant="contained" disabled={busy || !me} onClick={() => void acknowledge(d)}>
-                            {t('personnelDocs.confirm')}
-                          </Button>
-                        ))}
-                      </Box>
-                    }
-                    secondary={
-                      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                        {d.fileName}
-                        {` · ${formatFileSize(d.sizeBytes, locale)}`}
-                      </Typography>
-                    }
-                  />
-                </ListItem>
-              );
-            })}
-          </List>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
       </Paper>
 

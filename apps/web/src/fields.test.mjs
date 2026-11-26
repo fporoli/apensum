@@ -21,7 +21,7 @@ test('every caption, tooltip, placeholder and group title in the field registry 
 test('basic-data sections save the same keys as before the move to the registry', () => {
   assert.deepEqual(writableKeys(BASICDATA_FORM, 'personalien'), [
     'displayName', 'firstName', 'middleName', 'lastName', 'personnelNumber', 'gender', 'birthDate',
-    'socialSecurityNumber', 'languageCode', 'placeOfOrigin', 'nationality', 'residencePermitCode',
+    'socialSecurityNumber', 'languageCode', 'placeOfOrigin', 'nationality', 'residencePermitCode', 'residencePermitValidUntil',
   ]);
   assert.deepEqual(writableKeys(BASICDATA_FORM, 'address'), [
     'salutation', 'street', 'postalCode', 'city', 'country', 'canton', 'phone1', 'phone2', 'mobile', 'email',

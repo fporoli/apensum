@@ -366,6 +366,8 @@ export default function App() {
     else if (n.source_table === 'absences') navigate('absences');
     // One's own year closed or reopened (balances.controller.ts) opens Work time, which shows one's balances.
     else if (n.source_table === 'balance_years') navigate('workTime');
+    // A colleague's residence permit ending (HR): their personal data on the Employees page; one's own: My Data.
+    else if (n.type === 'basicdata.permit' && n.source_table_uuid !== session?.userId) window.location.hash = `#/users?basicdata=${n.source_table_uuid}`;
     else if (n.source_table === 'basicdata' || n.source_table === 'users') navigate('myData');
     // Operators: a new registration (registration-notice.ts) opens the organizations under Super Admin.
     else if (n.source_table === 'organizations') navigate('superAdminLicenses');

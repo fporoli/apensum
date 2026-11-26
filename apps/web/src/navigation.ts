@@ -2,7 +2,8 @@
  * The navbar as a tree, built the same way from the core's pages (corePages.tsx) and the plugins'
  * (plugins.ts): groups in order (a group with `after` goes behind that group), each page's entry in
  * its group (behind `nav.after`, wherever that page is listed; entries without one in list order first),
- * sub-entries under their `nav.parent`. Pure, so Node tests import it.
+ * sub-entries under their `nav.parent`; `nav.last` puts an entry at the end of its group, behind the plugins' too.
+ * Pure, so Node tests import it.
  */
 
 export interface NavGroupDef {
@@ -15,7 +16,7 @@ export interface NavGroupDef {
 
 interface NavPage {
   section: string;
-  nav?: { group: string; after?: string; parent?: string };
+  nav?: { group: string; after?: string; parent?: string; last?: boolean };
 }
 
 export interface NavTreeItem<P> {
@@ -41,7 +42,7 @@ export function buildNavTree<P extends NavPage>(groups: readonly NavGroupDef[], 
     const group: NavTreeGroup<P> = { id: g.id, header: g.header, items: [] };
     insertAfter(tree, group, g.after ? tree.findIndex((x) => x.id === g.after) : -1);
   }
-  const top = pages.filter((p) => p.nav && !p.nav.parent);
+  const top = pages.filter((p) => p.nav && !p.nav.parent && !p.nav.last);
   const groupOf = (page: P) => tree.find((x) => x.id === page.nav!.group);
   for (const page of top) if (!page.nav!.after) groupOf(page)?.items.push({ page, children: [] });
   // Entries behind another one: placed as soon as that one is, the rest (missing target) at the end.
@@ -59,6 +60,7 @@ export function buildNavTree<P extends NavPage>(groups: readonly NavGroupDef[], 
     });
   }
   for (const page of pending) groupOf(page)?.items.push({ page, children: [] });
+  for (const page of pages) if (page.nav?.last && !page.nav.parent) groupOf(page)?.items.push({ page, children: [] });
   for (const page of pages) {
     const parent = page.nav?.parent;
     if (!parent) continue;

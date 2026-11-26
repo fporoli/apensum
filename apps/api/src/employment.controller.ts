@@ -221,10 +221,13 @@ export class EmploymentController {
     if (!(await canSeeUserData(db, orgId, callerId, EMPLOYMENT_OBJECT, userId))) return { ok: false, error: 'forbidden', assignments: [] };
 
     const [membership] = await db
-      .select({ start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at, probation_until: organization_memberships.probation_until })
+      .select({ start_date: organization_memberships.start_date, joined_at: organization_memberships.joined_at, probation_until: organization_memberships.probation_until, deputy_user_id: organization_memberships.deputy_user_id })
       .from(organization_memberships)
       .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId)));
     if (!membership) return { ok: false, error: 'unknown-user', assignments: [] };
+    const [deputy] = membership.deputy_user_id
+      ? await db.select({ id: users.id, name: users.display_name, email: users.email }).from(users).where(eq(users.id, membership.deputy_user_id))
+      : [];
     const lastDay = await lastWorkingDay(db, orgId, userId);
 
     const manager = alias(users, 'manager');
@@ -258,7 +261,48 @@ export class EmploymentController {
       currentId: assignments.find((a) => a.valid_from <= today)?.id ?? null,
       assignments,
       canEdit: await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId),
+      /** Who takes the person's flow steps while they are away (workflow-dues.service.ts). */
+      deputy: deputy ? { userId: deputy.id, name: deputy.name || deputy.email } : null,
+      /** The person sets their own deputy; HR (employment edit) anyone's. */
+      canSetDeputy: callerId === userId || (await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId)),
     };
+  }
+
+  /**
+   * The person's deputy (`deputyUserId`, null = none): while they are away, the steps of flows waiting for them go to
+   * the deputy as well. The person sets it for themselves, HR (employment edit) for anyone; the deputy is an active
+   * member of the organization and not the person.
+   */
+  @Put('organizations/:orgId/users/:userId/deputy')
+  async setDeputy(
+    @Param('orgId') orgId: string,
+    @Param('userId') userId: string,
+    @Body() body: { deputyUserId?: string | null },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden' };
+    if (callerId !== userId && !(await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId))) return { ok: false, error: 'forbidden' };
+    const deputyUserId = body.deputyUserId ?? null;
+    if (deputyUserId !== null) {
+      if (typeof deputyUserId !== 'string' || !/^[0-9a-f-]{36}$/i.test(deputyUserId)) return { ok: false, error: 'unknown-user' };
+      if (deputyUserId === userId) return { ok: false, error: 'deputy-self' };
+      const [member] = (await db.execute(sql`
+        SELECT 1 FROM organization_memberships WHERE organization_id = ${orgId}::uuid AND user_id = ${deputyUserId}::uuid
+          AND status = 'active' AND (exit_at IS NULL OR exit_at > now())`)).rows;
+      if (!member) return { ok: false, error: 'unknown-user' };
+    }
+    const [membership] = await db
+      .select({ id: organization_memberships.id })
+      .from(organization_memberships)
+      .where(and(eq(organization_memberships.organization_id, orgId), eq(organization_memberships.user_id, userId)));
+    if (!membership) return { ok: false, error: 'unknown-user' };
+    await db.update(organization_memberships).set({ deputy_user_id: deputyUserId }).where(eq(organization_memberships.id, membership.id));
+    void this.versions.record('organization_memberships', membership.id, 'update_delta', callerId, { deputy_user_id: deputyUserId }).catch(() => {});
+    void this.audit.record(orgId, callerId, 'membership.deputy', 'membership', membership.id).catch(() => {});
+    return { ok: true };
   }
 
   @Put('organizations/:orgId/users/:userId/start-date')

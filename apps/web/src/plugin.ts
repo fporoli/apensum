@@ -50,6 +50,8 @@ export interface PageNav<R extends PluginRoles = PluginRoles> {
   /** i18n key of the label. */
   label: string;
   icon?: ReactNode;
+  /** At the end of its group, behind every other entry (the core's and the plugins'). */
+  last?: boolean;
   /** The entry (section) it follows in its group, or among its parent's sub-entries; at the end when unknown. */
   after?: string;
   /** Shows it as a sub-entry of another page's entry (that page's section), e.g. Users -> Invitations. */

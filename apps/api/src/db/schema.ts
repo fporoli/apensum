@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, unique, uuid, varchar, jsonb, timestamp, boolean, check, date, uniqueIndex, text, integer, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, unique, uuid, varchar, jsonb, timestamp, check, boolean, date, uniqueIndex, text, integer, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -37,6 +37,43 @@ export const user_identities = pgTable("user_identities", {
 	unique("uq_provider_user_id").on(table.provider, table.provider_user_id),
 ]);
 
+export const organization_memberships = pgTable("organization_memberships", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	status: membership_status().default('active').notNull(),
+	scim_external_id: varchar({ length: 255 }),
+	joined_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
+	is_active: boolean().default(true).notNull(),
+	settings: jsonb().default({}).notNull(),
+	exit_at: timestamp({ withTimezone: true, mode: 'string' }),
+	start_date: date(),
+	probation_until: date(),
+	deputy_user_id: uuid(),
+}, (table) => [
+	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast()),
+	index("idx_memberships_user").using("btree", table.user_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.deputy_user_id],
+			foreignColumns: [users.id],
+			name: "organization_memberships_deputy_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "organization_memberships_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "organization_memberships_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_org_user_membership").on(table.organization_id, table.user_id),
+	check("chk_membership_deputy_not_self", sql`(deputy_user_id IS NULL) OR (deputy_user_id <> user_id)`),
+	check("chk_membership_exit_after_joined", sql`(exit_at IS NULL) OR (joined_at IS NULL) OR (exit_at > joined_at)`),
+]);
+
 export const organization_domains = pgTable("organization_domains", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -52,36 +89,6 @@ export const organization_domains = pgTable("organization_domains", {
 			name: "organization_domains_organization_id_fkey"
 		}).onDelete("cascade"),
 	unique("uq_org_domain").on(table.domain),
-]);
-
-export const organization_memberships = pgTable("organization_memberships", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	status: membership_status().default('active').notNull(),
-	scim_external_id: varchar({ length: 255 }),
-	joined_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
-	is_active: boolean().default(true).notNull(),
-	settings: jsonb().default({}).notNull(),
-	exit_at: timestamp({ withTimezone: true, mode: 'string' }),
-	start_date: date(),
-	probation_until: date(),
-}, (table) => [
-	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast()),
-	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast()),
-	index("idx_memberships_user").using("btree", table.user_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "organization_memberships_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "organization_memberships_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_org_user_membership").on(table.organization_id, table.user_id),
-	check("chk_membership_exit_after_joined", sql`(exit_at IS NULL) OR (joined_at IS NULL) OR (exit_at > joined_at)`),
 ]);
 
 export const permissions = pgTable("permissions", {

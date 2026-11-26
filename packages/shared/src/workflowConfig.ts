@@ -85,7 +85,17 @@ export interface WorkflowStepConfig {
   privateAnswers?: boolean;
   /** What an automatic message block sends (only with a block that has `message`). */
   message?: StepMessage;
+  /** Working days (Monday to Friday) after the step started that its assignees are reminded (by the bell and by mail). */
+  remindDays?: number;
+  /**
+   * Working days after the step started that it goes to the assignees' managers as well (escalated; the assignees keep
+   * it). Later than the reminder; not on a step every assignee does on their own.
+   */
+  escalateDays?: number;
 }
+
+/** The most working days a reminder or an escalation waits. */
+export const MAX_DUE_DAYS = 30;
 
 /** A message step's mail: subject and text per language, and whether the form steps' answers go with it. */
 export interface StepMessage {
@@ -332,7 +342,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
   steps.forEach((s, i) => {
     const at = `steps[${i}]`;
     if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
-    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'privateAnswers', 'message'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'privateAnswers', 'message', 'remindDays', 'escalateDays'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
     const key = typeof s.key === 'string' ? s.key : '';
     if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
     else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
@@ -398,10 +408,20 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     const privateAnswers = s.privateAnswers === true;
     if (s.privateAnswers !== undefined && typeof s.privateAnswers !== 'boolean') errors.push({ path: `${at}.privateAnswers`, code: 'invalid-private' });
     else if (privateAnswers && !asks) errors.push({ path: `${at}.privateAnswers`, code: 'private-not-allowed' });
+    // Reminder and escalation: whole working days, the escalation after the reminder; nobody acts on an automatic step.
+    const dueDays = (v: unknown) => v === undefined || (Number.isInteger(v) && (v as number) >= 1 && (v as number) <= MAX_DUE_DAYS);
+    const automaticStep = blocks.some((b: string) => kind.blocks[b]?.automatic);
+    if (!dueDays(s.remindDays)) errors.push({ path: `${at}.remindDays`, code: 'invalid-days' });
+    if (!dueDays(s.escalateDays)) errors.push({ path: `${at}.escalateDays`, code: 'invalid-days' });
+    if (automaticStep && (s.remindDays !== undefined || s.escalateDays !== undefined)) errors.push({ path: `${at}.remindDays`, code: 'due-not-allowed' });
+    if (each && s.escalateDays !== undefined) errors.push({ path: `${at}.escalateDays`, code: 'escalate-not-allowed' });
+    if (typeof s.remindDays === 'number' && typeof s.escalateDays === 'number' && s.escalateDays <= s.remindDays) errors.push({ path: `${at}.escalateDays`, code: 'escalate-before-remind' });
     out.push({
       key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}),
       ...(each ? { each: true } : {}), ...(fields ? { fields } : {}), ...(fields && privateAnswers ? { privateAnswers: true } : {}),
       ...(message ? { message } : {}),
+      ...(typeof s.remindDays === 'number' ? { remindDays: s.remindDays } : {}),
+      ...(typeof s.escalateDays === 'number' ? { escalateDays: s.escalateDays } : {}),
     });
   });
   for (const [name, block] of Object.entries(kind.blocks)) if (block.required && !done.has(name)) errors.push({ path: 'steps', code: 'block-required' });
@@ -461,6 +481,9 @@ export interface CompiledWorkflowStep {
   automatic?: boolean;
   /** What it sends. */
   message?: StepMessage;
+  /** Working days until its assignees are reminded, and until it goes to their managers as well. */
+  remindDays?: number;
+  escalateDays?: number;
   source?: string;
   source_name?: string;
 }
@@ -493,6 +516,8 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       ...(s.fields && s.privateAnswers ? { privateAnswers: true } : {}),
       ...(blocks.some((b) => b.automatic) ? { automatic: true } : {}),
       ...(s.message ? { message: s.message } : {}),
+      ...(s.remindDays ? { remindDays: s.remindDays } : {}),
+      ...(s.escalateDays ? { escalateDays: s.escalateDays } : {}),
       ...(kind.source ? { source: kind.source } : {}),
       ...(kind.source_name ? { source_name: kind.source_name } : {}),
     };
@@ -518,4 +543,19 @@ export async function nextApplicableStep(
     skipped.push(steps[i].key);
   }
   return { index: -1, skipped };
+}
+
+/**
+ * Working days (Monday to Friday) from the day `start` to the day `today` (both `YYYY-MM-DD`, the organization's
+ * dates): the start day does not count, today does. Holidays are not left out (they differ per person); a reminder may
+ * come a day early around one.
+ */
+export function workingDaysSince(start: string, today: string): number {
+  const day = (d: string) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8, 10)));
+  let n = 0;
+  for (let t = day(start) + 86_400_000; t <= day(today); t += 86_400_000) {
+    const wd = new Date(t).getUTCDay();
+    if (wd !== 0 && wd !== 6) n++;
+  }
+  return n;
 }

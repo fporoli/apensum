@@ -32,5 +32,5 @@ test('writableKeys leaves out read-only fields and keeps display order', () => {
   const keys = writableKeys(FORMS.basicdata, 'personalien');
   assert.ok(!keys.includes('companyEmail'));
   assert.equal(keys[0], 'displayName');
-  assert.equal(keys.at(-1), 'residencePermitCode');
+  assert.equal(keys.at(-1), 'residencePermitValidUntil');
 });

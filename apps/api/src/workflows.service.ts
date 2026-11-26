@@ -969,7 +969,7 @@ export class WorkflowsService {
 }
 
 /** A step's name for a notification: its own name per language, else its block's (`workflowDesigner.block.<block>`). */
-function stepNameValue(step: { label: string; labels?: Record<string, string | undefined>; blocks?: string[] }): NoticeValue {
+export function stepNameValue(step: { label: string; labels?: Record<string, string | undefined>; blocks?: string[] }): NoticeValue {
   const own = Object.fromEntries(Object.entries(step.labels ?? {}).filter(([, v]) => typeof v === 'string' && v.trim())) as Record<string, string>;
   if (Object.keys(own).length) return { en: step.label, ...own };
   return step.blocks?.length === 1 ? { t: `workflowDesigner.block.${step.blocks[0]}` } : step.label;

@@ -60,7 +60,8 @@ export class NotesController {
         WHERE n.organization_id = ${orgId}::uuid AND n.user_id = ${userId}::uuid
         ORDER BY n.created_at DESC LIMIT 500`),
       db.execute(sql`
-        SELECT n.id, n.text, n.created_at::text AS created_at, COALESCE(u.display_name, u.email) AS author
+        SELECT n.id, n.text, n.created_at::text AS created_at, COALESCE(u.display_name, u.email) AS author,
+          ${userId}::uuid = ANY(n.hidden_by) AS hidden
         FROM notes.notes n JOIN users u ON u.id = n.user_id
         WHERE n.organization_id = ${orgId}::uuid AND n.shared_with @> ARRAY[${userId}::uuid]
         ORDER BY n.created_at DESC LIMIT 500`),
@@ -140,10 +141,28 @@ export class NotesController {
     const target = who === 'me' ? userId : who;
     if (!UUID.test(id) || !UUID.test(target)) return { ok: false, error: 'not-found' };
     if (target !== userId && !(await this.ownNote(db, orgId, userId, id))) return { ok: false, error: 'forbidden' };
-    const removed = await db.execute(sql`UPDATE notes.notes SET shared_with = array_remove(shared_with, ${target}::uuid)
+    const removed = await db.execute(sql`UPDATE notes.notes SET shared_with = array_remove(shared_with, ${target}::uuid), hidden_by = array_remove(hidden_by, ${target}::uuid)
       WHERE id = ${id}::uuid AND organization_id = ${orgId}::uuid AND ${target}::uuid = ANY(shared_with) RETURNING id`);
     if (!removed.rows.length) return { ok: false, error: 'not-found' };
     void this.versions.record('notes.notes', id, 'update_delta', userId, { shared_with_removed: target }).catch(() => {});
+    return { ok: true };
+  }
+
+  /**
+   * A recipient hides a note shared with them, or shows it again (`{hidden}`): it stays shared, only their list changes.
+   */
+  @Put(':id/hidden')
+  async hide(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: { hidden?: unknown }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const userId = await this.caller(db, orgId, req, 'see');
+    if (!userId) return { ok: false, error: 'forbidden' };
+    if (!UUID.test(id) || typeof body?.hidden !== 'boolean') return { ok: false, error: 'not-found' };
+    const changed = await db.execute(sql`UPDATE notes.notes
+      SET hidden_by = ${body.hidden ? sql`array_append(array_remove(hidden_by, ${userId}::uuid), ${userId}::uuid)` : sql`array_remove(hidden_by, ${userId}::uuid)`}
+      WHERE id = ${id}::uuid AND organization_id = ${orgId}::uuid AND ${userId}::uuid = ANY(shared_with) RETURNING id`);
+    if (!changed.rows.length) return { ok: false, error: 'not-found' };
+    void this.versions.record('notes.notes', id, 'update_delta', userId, body.hidden ? { hidden_by_added: userId } : { hidden_by_removed: userId }).catch(() => {});
     return { ok: true };
   }
 
