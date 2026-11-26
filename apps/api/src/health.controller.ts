@@ -1,4 +1,8 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Res } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
+import type { Response } from 'express';
+import type { Db } from './db.service';
+import { DbService } from './db.service';
 import { Public } from './jwt.guard';
 import { lastSmtpStatus } from './mailer';
 
@@ -15,13 +19,39 @@ export function demoResetEveryHours(env: NodeJS.ProcessEnv = process.env): numbe
   return Number.isInteger(hours) && hours >= 1 && hours <= 24 && 24 % hours === 0 ? hours : null;
 }
 
+/**
+ * Whether the database answers `SELECT 1` within `timeoutMs`; no database (offline mode) counts as not.
+ * Nothing else is told: an outside monitor (README "Monitoring") only sees ok or not.
+ */
+export async function databaseAnswers(db: Pick<Db, 'execute'> | null, timeoutMs = 3000): Promise<boolean> {
+  if (!db) return false;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
+  try {
+    return await Promise.race([db.execute(sql`SELECT 1`).then(() => true, () => false), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 @Controller()
 export class HealthController {
+  constructor(private readonly db: DbService) {}
+
   @Public()
   @Get('health')
   health() {
     // smtp: the mail relay as last seen (startup check, then each send); details only in the log.
     const everyHours = demoResetEveryHours();
     return { status: 'ok', time: new Date().toISOString(), startedAt: STARTED_AT, smtp: lastSmtpStatus(), demoReset: everyHours ? { everyHours } : null };
+  }
+
+  /** For outside monitors (HTTP status only): 200 while the database answers, else 503. */
+  @Public()
+  @Get('health/db')
+  async database(@Res({ passthrough: true }) res: Response) {
+    const ok = await databaseAnswers(this.db.getDb());
+    if (!ok) res.status(503);
+    return { status: ok ? 'ok' : 'unavailable' };
   }
 }

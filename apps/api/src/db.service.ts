@@ -14,7 +14,11 @@ export class DbService {
   getPool(): Pool | null {
     if (this.pool) return this.pool;
     if (!process.env.DATABASE_URL) return null;
-    this.pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    // A connection that can't be made within 5 s fails the query instead of waiting forever (a database that is away).
+    this.pool = new Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 5000 });
+    // An idle connection the database drops (a restart of Postgres) is only logged: without a listener the
+    // pool's 'error' event would end the whole process. The pool opens a new connection on the next query.
+    this.pool.on('error', (err) => console.warn(`database connection lost: ${err.message}`));
     return this.pool;
   }
 
