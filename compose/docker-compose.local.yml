@@ -70,6 +70,9 @@ services:
       JWT_AUDIENCE: worktime-web
       JWT_JWKS_URL: http://dex:5556/keys
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3002}
+      # As on the demo instance: no session = this account, the user menu switches people (scripts/with-env.mjs
+      # sets ueli@acme.com unless .env.local says otherwise; empty = off).
+      DEMO_AUTO_LOGIN: ${DEMO_AUTO_LOGIN:-}
       # AI (assistant, Cases, receipts) on Azure OpenAI in Switzerland (optional, paid; see env.example.*.cfg).
       # Off unless keys, budget and prices are set.
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}

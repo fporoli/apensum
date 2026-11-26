@@ -38,6 +38,9 @@ const derived = { PGHOST: 'POSTGRES_HOST', PGPORT: 'POSTGRES_PORT', PGUSER: 'POS
 for (const [pg, source] of Object.entries(derived)) {
   if (values[pg] === undefined && values[source] !== undefined) env[pg] = values[source];
 }
+// As on the demo instance: a browser without a session is signed in as Ueli, and the user menu switches between the
+// demo seed's people (demo-switch.ts). The file's DEMO_AUTO_LOGIN wins; empty there turns it off.
+if (values.DEMO_AUTO_LOGIN === undefined) env.DEMO_AUTO_LOGIN = 'ueli@acme.com';
 
 // On Windows `npm` and `docker` are resolved through the shell (npm.cmd).
 const child = spawn(command, args, { cwd: root, env, stdio: 'inherit', shell: process.platform === 'win32' });

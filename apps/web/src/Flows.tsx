@@ -243,14 +243,16 @@ export default function Flows(props: FlowsProps) {
               {t('flows.new')}
             </Button>
             <Menu anchorEl={newMenu} open={!!newMenu} onClose={() => setNewMenu(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+              {/* A Free Flow first: whom it goes to (the manager or a department) is chosen in the dialog. */}
+              <MenuItem disabled={flowTypes ? !flowTypes.manager && !flowTypes.departments : false} onClick={() => compose({ free: true })}>
+                <ListItemText primary={t('flows.new.free')} secondary={t('flows.new.freeHint')} />
+              </MenuItem>
+              {flowTypes && flowTypes.withSteps.length > 0 && <Divider />}
               {flowTypes && flowTypes.withSteps.length > 0 && <ListSubheader>{t('flows.new.withSteps')}</ListSubheader>}
               {flowTypes?.withSteps
                 .map((key) => ({ key, label: requestTypeLabel(types, locale, key) }))
                 .sort((a, b) => a.label.localeCompare(b.label, locale))
                 .map((x) => <MenuItem key={x.key} onClick={() => compose({ type: x.key })}>{x.label}</MenuItem>)}
-              <ListSubheader>{t('flows.kind.free')}</ListSubheader>
-              <MenuItem disabled={flowTypes ? !flowTypes.manager : false} onClick={() => compose({ target: 'manager' })}>{t('requests.toManager')}</MenuItem>
-              <MenuItem disabled={flowTypes ? !flowTypes.departments : false} onClick={() => compose({ target: 'department' })}>{t('requests.toADepartment')}</MenuItem>
             </Menu>
           </>
         ) : undefined}

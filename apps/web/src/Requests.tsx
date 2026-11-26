@@ -175,6 +175,8 @@ const EMPTY_DETAILS: DetailsDraft = { type: '', urgent: false, link: '', due: ''
 /** What the new-flow dialog opens with (the Flows page's menu): a type (with its own steps), or a free flow's target. */
 export interface ComposePreset {
   type?: string;
+  /** A Free Flow: a type without set steps is preselected; the person picks whom it goes to. */
+  free?: boolean;
   target?: 'manager' | 'department';
 }
 
@@ -1040,7 +1042,7 @@ function NewRequestDialog({
   // The first type in the org's order (Service request by default) is preselected; for a free flow (the Flows page's
   // menu) the first without set steps, so it stays free.
   const typeOptions = requestTypeOptions(types.values, types.translation, locale);
-  const firstType = !preset?.target ? typeOptions[0]?.value ?? ''
+  const firstType = !preset?.target && !preset?.free ? typeOptions[0]?.value ?? ''
     : !targets.workflows ? '' // the types with set steps are not known yet
       : typeOptions.find((o) => !targets.workflows![o.value])?.value ?? '';
 

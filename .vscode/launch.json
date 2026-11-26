@@ -8,6 +8,8 @@
       "cwd": "${workspaceFolder}/apps/api",
       "program": "${workspaceFolder}/apps/api/dist/main.js",
       "envFile": "${workspaceFolder}/.env.dev",
+      // As on the demo instance (and `npm run dev:*`): no session = Ueli, and the user menu switches people.
+      "env": { "DEMO_AUTO_LOGIN": "ueli@acme.com" },
       "preLaunchTask": "api: prepare",
       "outFiles": ["${workspaceFolder}/apps/api/dist/**/*.js", "${workspaceFolder}/plugins/*/dist/**/*.js"],
       "sourceMaps": true,
