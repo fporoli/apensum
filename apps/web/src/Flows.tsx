@@ -5,15 +5,15 @@
 // of an own type is a request with a workflow: it is listed once, as the request.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, MenuItem, Paper, Tab, Tabs,
-  TextField,
+  Alert, Box, Button, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
+  Tab, Tabs, TextField,
 } from '@mui/material';
 import { requestTypeLabel } from '@worktime3/shared/requests';
 import Approvals, { actionItemLabel, correspondingObject, itemPerson, type ActionItem, type Scope, type StatusFilter } from './Approvals';
-import Requests, { type Box_, type RequestItem } from './Requests';
+import Requests, { type Box_, type ComposePreset, type RequestItem } from './Requests';
 import { EmptyState, PageHeader } from './components';
 import { useI18n } from './i18n';
-import { AccountTreeIcon, AddIcon, LockIcon, SearchIcon } from './icons';
+import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';
 import { flowRows, type FlowRow, type FlowsTab } from './flowRows';
 
@@ -61,6 +61,28 @@ export default function Flows(props: FlowsProps) {
   const [typeFilter, setTypeFilter] = useState('');
   const [search, setSearch] = useState('');
   const [composeSignal, setComposeSignal] = useState(0);
+  const [composePreset, setComposePreset] = useState<ComposePreset | undefined>(undefined);
+  // "New flow": the types with their own steps, then a free flow to the manager or a department.
+  const [newMenu, setNewMenu] = useState<HTMLElement | null>(null);
+  const [flowTypes, setFlowTypes] = useState<{ withSteps: string[]; manager: boolean; departments: boolean } | null>(null);
+  const openNewMenu = async (anchor: HTMLElement) => {
+    setNewMenu(anchor);
+    try {
+      const data = await (await fetch(`${API}/organizations/${orgId}/requests/targets`, { headers: await authHeaders() })).json();
+      setFlowTypes({
+        withSteps: Object.keys(data?.workflows ?? {}),
+        manager: !!data?.manager,
+        departments: Array.isArray(data?.departments) && data.departments.length > 0,
+      });
+    } catch {
+      setFlowTypes({ withSteps: [], manager: true, departments: true });
+    }
+  };
+  const compose = (preset: ComposePreset) => {
+    setNewMenu(null);
+    setComposePreset(preset);
+    setComposeSignal((n) => n + 1);
+  };
   const shown = TABS[tab];
 
   useEffect(() => {
@@ -216,9 +238,21 @@ export default function Flows(props: FlowsProps) {
         title={t('flows.title')}
         subtitle={t('flows.subtitle')}
         end={hasFreeFlows ? (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setComposeSignal((n) => n + 1)}>
-            {t('flows.new')}
-          </Button>
+          <>
+            <Button variant="contained" startIcon={<AddIcon />} endIcon={<ArrowDropDownIcon />} onClick={(e) => void openNewMenu(e.currentTarget)}>
+              {t('flows.new')}
+            </Button>
+            <Menu anchorEl={newMenu} open={!!newMenu} onClose={() => setNewMenu(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
+              {flowTypes && flowTypes.withSteps.length > 0 && <ListSubheader>{t('flows.new.withSteps')}</ListSubheader>}
+              {flowTypes?.withSteps
+                .map((key) => ({ key, label: requestTypeLabel(types, locale, key) }))
+                .sort((a, b) => a.label.localeCompare(b.label, locale))
+                .map((x) => <MenuItem key={x.key} onClick={() => compose({ type: x.key })}>{x.label}</MenuItem>)}
+              <ListSubheader>{t('flows.kind.free')}</ListSubheader>
+              <MenuItem disabled={flowTypes ? !flowTypes.manager : false} onClick={() => compose({ target: 'manager' })}>{t('requests.toManager')}</MenuItem>
+              <MenuItem disabled={flowTypes ? !flowTypes.departments : false} onClick={() => compose({ target: 'department' })}>{t('requests.toADepartment')}</MenuItem>
+            </Menu>
+          </>
         ) : undefined}
       />
 
@@ -235,6 +269,7 @@ export default function Flows(props: FlowsProps) {
             box: 'mine',
             designOnly: true,
             composeSignal,
+            composePreset,
             onCreated: (id) => {
               setTab('mine');
               setSelected({ source: 'request', id });

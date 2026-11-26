@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Alert,
   Badge,
@@ -33,7 +33,8 @@ import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shar
 import { StepAnswers, StepFieldsForm, type StepAnswer, type StepValues } from './StepFieldsForm';
 import { formatLocaleNumber } from './localeFormat';
 import { EmptyState, PageHeader } from './components';
-import { AddIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon } from './icons';
+import { AddIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon, RestartAltIcon, ScheduleIcon } from './icons';
+import { stepProgress, type StepState } from './flowSteps';
 import { cleanDueDate, cleanRequestLink, requestTypeConfidential, requestTypeLabel, requestTypeOptions } from '@worktime3/shared/requests';
 import { REQUEST_FORM, requestTypeForm } from '@worktime3/shared/fields';
 import { useFormTemplate, type FormTemplate } from './designMode';
@@ -171,7 +172,13 @@ interface DetailsDraft {
 
 const EMPTY_DETAILS: DetailsDraft = { type: '', urgent: false, link: '', due: '' };
 
-interface Targets {
+/** What the new-flow dialog opens with (the Flows page's menu): a type (with its own steps), or a free flow's target. */
+export interface ComposePreset {
+  type?: string;
+  target?: 'manager' | 'department';
+}
+
+export interface Targets {
   manager: { id: string; name: string } | null;
   departments: { id: string; name: string }[];
   /** Request types with their own workflow, and its steps (`conditional`: only when its condition holds). */
@@ -208,6 +215,8 @@ interface RequestsProps {
   embedded?: {
     box: Box_;
     composeSignal?: number;
+    /** What the new-flow dialog opens with: a type, or a free flow's target. */
+    composePreset?: ComposePreset;
     onCreated?: (id: string) => void;
     /** Only the thread of `focusId` (the Flows page's list is its own); `onBack` closes it on a phone. */
     detailOnly?: boolean;
@@ -598,6 +607,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
           busy={busy}
           onDecide={(what, note, values) => decide(detail.workflow!.id, what, note, values, detail.workflow!.fields)}
           totals={stepTotals(detail.messages, locale)}
+          events={detail.messages.filter((m) => m.kind === 'event')}
           onResubmit={(note) => void post(`/${r.id}/resubmit`, { note })}
           onWithdraw={() => void post(`/${r.id}/withdraw`, {})}
         />
@@ -751,6 +761,7 @@ export default function Requests({ orgId, userId, authHeaders, focusId, refreshK
   const newFlowDialog = (
       <NewRequestDialog
         open={composeOpen}
+        preset={embedded?.composePreset}
         types={types}
         template={template}
         orgId={orgId}
@@ -1001,6 +1012,7 @@ function NewRequestDialog({
   errorText,
   onClose,
   onCreated,
+  preset,
 }: {
   open: boolean;
   types: TypeRow;
@@ -1010,6 +1022,7 @@ function NewRequestDialog({
   errorText: (code: string | undefined) => string;
   onClose: () => void;
   onCreated: (id: string) => void | Promise<void>;
+  preset?: ComposePreset;
 }) {
   const { t, locale } = useI18n();
   const [targets, setTargets] = useState<Targets>({ manager: null, departments: [] });
@@ -1024,15 +1037,19 @@ function NewRequestDialog({
   const [busy, setBusy] = useState(false);
   const draft = useAttachmentDraft(setError);
   const typeTemplate = useRequestTypeTemplate(orgId, details.type, authHeaders);
-  // The first type in the org's order (Service request by default) is preselected.
-  const firstType = requestTypeOptions(types.values, types.translation, locale)[0]?.value ?? '';
+  // The first type in the org's order (Service request by default) is preselected; for a free flow (the Flows page's
+  // menu) the first without set steps, so it stays free.
+  const typeOptions = requestTypeOptions(types.values, types.translation, locale);
+  const firstType = !preset?.target ? typeOptions[0]?.value ?? ''
+    : !targets.workflows ? '' // the types with set steps are not known yet
+      : typeOptions.find((o) => !targets.workflows![o.value])?.value ?? '';
 
   useEffect(() => {
     if (!open) return;
     setError(null);
     setSubject('');
     setMessage('');
-    setDetails(EMPTY_DETAILS);
+    setDetails(preset?.type ? { ...EMPTY_DETAILS, type: preset.type } : EMPTY_DETAILS);
     setCustom({});
     setCustomErrors({});
     draft.clear();
@@ -1042,7 +1059,7 @@ function NewRequestDialog({
         const data = await res.json();
         const next: Targets = { manager: data?.manager ?? null, departments: Array.isArray(data?.departments) ? data.departments : [], workflows: data?.workflows ?? {} };
         setTargets(next);
-        setKind(next.manager ? 'manager' : 'department');
+        setKind(preset?.target === 'department' || !next.manager ? 'department' : 'manager');
         // HR is the usual department to ask; preselect it when there is one.
         const hr = next.departments.find((d) => /^(hr|human resources|personal|ressources humaines|risorse umane)/i.test(d.name));
         setDepartmentId(hr?.id ?? next.departments[0]?.id ?? '');
@@ -1204,8 +1221,10 @@ function stepTotals(messages: Message[], locale: string): string[] {
   return [...sums.values()].filter((s) => s.count > 1).map((s) => `${s.label}: ${formatLocaleNumber(s.total, locale)}`);
 }
 
-function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw, totals }: {
+function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw, totals, events }: {
   workflow: RequestWorkflowInfo;
+  /** The thread's events: who did which step when. */
+  events: Message[];
   isRequester: boolean;
   busy: boolean;
   onDecide: (what: 'approve' | 'reject', note: string, values?: StepValues) => Promise<boolean>;
@@ -1217,27 +1236,54 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
   const { t, locale } = useI18n();
   const [note, setNote] = useState('');
   const [values, setValues] = useState<StepValues>({});
-  const current = workflow.steps.findIndex((s) => s.key === workflow.step);
-  const doneUpTo = workflow.status === 'approved' ? workflow.steps.length : workflow.status === 'pending' ? current : -1;
+  const progress = stepProgress(workflow.steps, events, workflow);
+  const date = (at: string | null) => (at ? formatLocaleDateTime(at, locale) : '');
+  /** What a step's line says beside its name. */
+  const stepNote = (p: (typeof progress)[number]) => {
+    switch (p.state) {
+      case 'done':
+        return p.automatic ? t('flows.step.system', { date: date(p.at) }) : t('flows.step.doneBy', { names: p.by.join(', '), date: date(p.at) });
+      case 'current': {
+        const waiting = workflow.waitingFor.join(', ');
+        if (!workflow.each || p.by.length === 0) return waiting ? t('flows.step.waiting', { names: waiting }) : '';
+        const progressText = t('flows.step.progress', { done: String(p.by.length), total: String(p.by.length + workflow.waitingFor.length) });
+        return waiting ? `${progressText} · ${t('flows.step.waiting', { names: waiting })}` : progressText;
+      }
+      case 'returned':
+        return t('flows.step.returned', { date: date(p.at) });
+      case 'skipped':
+        return t('flows.step.skipped');
+      default:
+        return '';
+    }
+  };
+  const mark: Record<StepState, ReactNode> = {
+    done: <CheckCircleIcon fontSize="small" color="success" />,
+    current: <ScheduleIcon fontSize="small" color="primary" />,
+    returned: <RestartAltIcon fontSize="small" color="warning" />,
+    skipped: <Box component="span" sx={{ width: 20, textAlign: 'center', color: 'text.disabled' }}>–</Box>,
+    upcoming: <Box component="span" sx={{ width: 14, height: 14, m: '3px', borderRadius: '50%', border: 2, borderColor: 'text.disabled' }} />,
+  };
   return (
     <Paper variant="outlined" sx={{ p: 1.5, display: 'grid', gap: 1, bgcolor: 'action.hover' }}>
-      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-        {workflow.steps.map((s, i) => (
-          <Box key={s.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            {i > 0 && <ChevronRightIcon fontSize="small" color="action" />}
-            <Chip
-              size="small"
-              icon={i < doneUpTo ? <CheckIcon fontSize="small" /> : undefined}
-              color={workflow.status === 'pending' && i === current ? 'primary' : i < doneUpTo ? 'success' : 'default'}
-              variant={workflow.status === 'pending' && i === current ? 'filled' : 'outlined'}
-              label={stepName(s, locale, t)}
-            />
-          </Box>
-        ))}
+      {/* The steps one under the other: done (who, when), the current one (who did it so far, who is missing), to come. */}
+      <Box component="ol" sx={{ m: 0, p: 0, listStyle: 'none', display: 'grid', gap: 0.75 }}>
+        {workflow.steps.map((s, i) => {
+          const p = progress[i];
+          const text = stepNote(p);
+          return (
+            <Box component="li" key={s.key} sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <Box sx={{ display: 'flex', width: 20, justifyContent: 'center', pt: '1px', flexShrink: 0 }}>{mark[p.state]}</Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" sx={{ fontWeight: p.state === 'current' ? 600 : 400, color: p.state === 'upcoming' || p.state === 'skipped' ? 'text.secondary' : 'text.primary' }}>
+                  {stepName(s, locale, t)}
+                </Typography>
+                {text && <Typography variant="caption" color="text.secondary" component="div">{text}</Typography>}
+              </Box>
+            </Box>
+          );
+        })}
       </Box>
-      {workflow.status === 'pending' && workflow.waitingFor.length > 0 && (
-        <Typography variant="body2" color="text.secondary">{t('requests.workflow.waitingFor', { names: workflow.waitingFor.join(', ') })}</Typography>
-      )}
       {workflow.status === 'pending' && workflow.each && <Typography variant="caption" color="text.secondary">{t('requests.workflow.each')}</Typography>}
       {totals.length > 0 && <Typography variant="body2">{t('requests.workflow.totals', { totals: totals.join(' · ') })}</Typography>}
       {workflow.returned && <Alert severity="warning">{t(isRequester ? 'requests.workflow.returnedToYou' : 'requests.workflow.returned')}</Alert>}

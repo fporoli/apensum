@@ -253,10 +253,11 @@ After the seed, `npm run db:close-years` (`apps/api/src/cli/close-demo-years.ts`
 - Each page calls the API directly with `fetch(\`${API}/...\`, { headers: await authHeaders() })`, where `const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1'` is declared per file.
 - Terms (one thing, one word, in the app, on the website, in the brochures and the support articles; new texts use only these):\
   **Flow** (der Flow, die Flows; FR le flow, IT il flow) = everything someone starts and others work on (an absence, an expense report, a timesheet, a request of the organization's own type); never Anfrage, Anliegen, Workflow or Freigabe for the thing.\
-  **Art** (type) = what kind of flow; **freier Flow** (free flow) = one without a set course, to the manager or a department; **Schritt** (step), **Baustein** (block), **Verlauf** (history).\
-  **Flows** is the one page (`Flows.tsx`, `#/flows`, tabs Zu erledigen / Meine / Erledigt, "Neuer Flow"; `#/approvals` and `#/requests?id=` open it); **Flow-Designer** is where an owner sets up the types and their steps (Admin settings).\
+  **Art** (type) = what kind of flow; **Free Flow** (so in every language) = one without set steps, to the manager or a department; **Schritt** (step), **Baustein** (block), **Verlauf** (history).\
+  **Flows** is the one page (`Flows.tsx`, `#/flows`, tabs Zu erledigen / Meine / Erledigt, "Neuer Flow" = a menu of the types with set steps, then a Free Flow to the manager or a department (`ComposePreset`); `#/approvals` and `#/requests?id=` open it); **Flow-Designer** is where an owner sets up the types and their steps (Admin settings).\
   The code keeps its names (`requests`, `workflows`, `nav.approvals`, `nav.requests`, `requests.*` texts): a free flow is a row of `requests`.\
   The page's list is its own (`flowRows.ts`: requests and workflow items of the tab, a request's workflow item once, newest first, filter by type and search); the right side shows a request's thread (`Requests` `embedded.detailOnly`) or one workflow item as a card (`Approvals` `embedded.onlyId`), and the request forms' design mode and the new-flow dialog come from `Requests` `embedded.designOnly`.\
+  A flow with set steps shows them one under the other (`flowSteps.ts`, from the thread's step events since the last submission: done by whom and when, the current one with who did it so far and who is missing, sent back, skipped, to come).\
   The rename of the remaining texts is in progress.
  `const t = useT()` from `i18n.tsx`.\
   When you add a key, add it to all four dictionaries in `dictionaries.ts` (en/de/fr/it); `dictionaries.test.mjs` fails on missing keys or mismatched `{{placeholders}}`.
