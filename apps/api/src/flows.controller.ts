@@ -138,6 +138,7 @@ function handlesCondition(orgId: string, callerId: string, handlesAll: boolean):
 
 function ownHandlesCondition(orgId: string, callerId: string): SQL {
   return sql`((r.target_kind = 'manager' AND ram.manager_user_id = ${callerId})
+          OR (r.target_kind = 'person' AND r.about_user_id = ${callerId})
           OR (r.target_kind = 'department' AND (d.leader_user_id = ${callerId}
               OR r.target_department_id = (SELECT department_id FROM (${currentAssignments(orgId)}) me WHERE me.user_id = ${callerId})))
           OR (r.target_kind = 'workflow' AND EXISTS (
@@ -160,7 +161,7 @@ const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.flow_type, r.urgent, r.lin
 
 const LIST_FROM = (orgId: string) => sql`FROM flows r
   LEFT JOIN (${currentAssignments(orgId)}) rc ON rc.user_id = r.requester_user_id
-  LEFT JOIN (${actingManagers(orgId)}) ram ON ram.user_id = r.requester_user_id
+  LEFT JOIN (${actingManagers(orgId)}) ram ON ram.user_id = COALESCE(r.requester_user_id, r.about_user_id)
   LEFT JOIN departments d ON d.id = r.target_department_id
   LEFT JOIN users ru ON ru.id = r.requester_user_id
   LEFT JOIN users au ON au.id = r.assignee_user_id`;
@@ -169,7 +170,8 @@ interface FlowRecord {
   id: string;
   organization_id: string;
   requester_user_id: string | null;
-  target_kind: 'manager' | 'department' | 'workflow';
+  about_user_id: string | null;
+  target_kind: 'manager' | 'department' | 'workflow' | 'person';
   target_department_id: string | null;
   subject: string;
   status: FlowStatus;
@@ -182,7 +184,7 @@ interface FlowRecord {
   archived_at: string | null;
 }
 
-const ROW_COLUMNS = sql`id, organization_id, requester_user_id, target_kind, target_department_id, subject, status, flow_type, urgent, link_url,
+const ROW_COLUMNS = sql`id, organization_id, requester_user_id, about_user_id, target_kind, target_department_id, subject, status, flow_type, urgent, link_url,
   due_date::text AS due_date, confidential, assignee_user_id, archived_at`;
 
 @Controller('organizations/:orgId/flows')

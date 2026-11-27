@@ -8,6 +8,7 @@ import { sendMail } from './mailer';
 import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
 import { API_PLUGINS } from './plugin-registrar';
+import { PERMIT_EVENT } from './triggers';
 import type { ApiPlugin } from './plugin';
 import { WorkflowsService, stepNameValue, workflowHistory, type WorkflowEvent, type WorkflowStepDefinition } from './workflows.service';
 import { clock, sqlNow } from './clock';
@@ -139,6 +140,12 @@ interface DueState { step: string; started: string; reminded?: boolean; escalate
  * a step waiting its `remindDays` working days reminds them (bell and mail), and one waiting its `escalateDays` goes to
  * their managers as well (else to HR). Each is written into the flow's history.
  */
+/** Whether the organization has an enabled trigger for a residence permit ending (Auslöser): its flows replace the reminder. */
+export async function permitTriggered(db: Db, orgId: string): Promise<boolean> {
+  const rows = (await db.execute(sql`SELECT 1 FROM flow_triggers WHERE organization_id = ${orgId}::uuid AND event = ${PERMIT_EVENT} AND enabled LIMIT 1`)).rows;
+  return rows.length > 0;
+}
+
 @Injectable()
 export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('WorkflowDuesService');
@@ -302,12 +309,13 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
         AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.type = 'basicdata.permit' AND n.organization_id = m.organization_id
                           AND n.source_table_uuid = u.id AND n.data->>'validUntil' = u.basicdata->>'residencePermitValidUntil')`)).rows as { user_id: string; name: string; organization_id: string; until: string }[];
     let sent = 0;
-    // An organization where a plugin reminds of permits itself (HR-Prozesse's tasks) gets none from here.
+    // An organization whose trigger opens a flow for a permit ending (Auslöser, event permitExpires), or where a plugin
+    // still says it reminds itself (the deprecated `permitReminders`), gets none from here.
     const pluginReminds = new Map<string, boolean>();
     const remindedByPlugin = async (orgId: string) => {
       if (!pluginReminds.has(orgId)) {
         const answers = await Promise.all(this.plugins.map((pl) => pl.permitReminders?.(db, orgId).catch(() => false) ?? false));
-        pluginReminds.set(orgId, answers.some(Boolean));
+        pluginReminds.set(orgId, answers.some(Boolean) || (await permitTriggered(db, orgId)));
       }
       return pluginReminds.get(orgId)!;
     };

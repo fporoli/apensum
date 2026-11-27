@@ -277,3 +277,5 @@ export { totalsByCurrency } from './teamOverview';
 export { default as WeekReport } from './WeekReport';
 export { default as BalanceOverview } from './BalanceOverview';
 export { default as PersonnelDocumentsPanel } from './PersonnelDocumentsPanel';
+// Auslöser (triggers): a plugin's settings show the triggers of its own events (e.g. HR-Prozesse's deadlines).
+export { default as FlowTriggers } from './FlowTriggers';

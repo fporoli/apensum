@@ -237,8 +237,9 @@ export default function Flows(props: FlowsProps) {
 
   const rows = useMemo(() => {
     const target = (r: FlowItem) =>
-      r.target_kind === 'manager' ? t('flow.toManager')
-        : r.target_kind === 'department' ? t('flow.toDepartment', { department: r.department_name ?? '' }) : '';
+      r.target_kind === 'manager' ? t(r.requester_user_id ? 'flow.toManager' : 'flow.toAboutManager')
+        : r.target_kind === 'person' ? t('flow.toAboutPerson')
+          : r.target_kind === 'department' ? t('flow.toDepartment', { department: r.department_name ?? '' }) : '';
     const from = (r: FlowItem) => {
       if (r.requester_name || r.requester_email) return r.requester_name ?? r.requester_email ?? '';
       const label = r.source ? t(`modules.${r.source}`) : t('flow.system');

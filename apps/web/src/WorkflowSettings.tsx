@@ -10,7 +10,8 @@ import {
 } from '@worktime3/shared/workflowConfig';
 import { useI18n, useT } from './i18n';
 import { ConfirmDialog, PageHeader } from './components';
-import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon, AccountTreeIcon, CodeIcon } from './icons';
+import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon, AccountTreeIcon, CodeIcon, BoltIcon } from './icons';
+import FlowTriggers from './FlowTriggers';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -97,6 +98,9 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
   // The organization's flow types: added or renamed here, so a new type gets its steps on the same page.
   const [flowTypes, setFlowTypes] = useState<FlowType[]>([]);
   const [typeDialog, setTypeDialog] = useState<{ isNew: boolean; type: FlowType } | null>(null);
+  // Flow types and their steps, or the triggers that open flows (Auslöser); `#/admin/workflows?tab=triggers` opens those.
+  const [tab, setTab] = useState<'types' | 'triggers'>(() =>
+    new URLSearchParams(typeof window === 'undefined' ? '' : window.location.hash.split('?')[1] ?? '').get('tab') === 'triggers' ? 'triggers' : 'types');
 
   const load = useCallback(async () => {
     try {
@@ -116,15 +120,22 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
       <PageHeader
         title={t('workflowConfig.title')}
         subtitle={t('workflowConfig.subtitle')}
-        end={editable && kinds.some((k) => k.id === FLOWS_KIND) ? (
+        end={tab === 'types' && editable && kinds.some((k) => k.id === FLOWS_KIND) ? (
           <Button variant="contained" size="small" startIcon={<AddIcon fontSize="small" />} onClick={() => setTypeDialog({ isNew: true, type: { key: '', names: {}, confidential: false } })}>
             {t('workflowConfig.flowType.new')}
           </Button>
         ) : undefined}
       />
-      {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
-      {!editable && kinds.length > 0 && <Alert severity="info">{t('workflowConfig.ownerOnly')}</Alert>}
-      {kinds.map((kind) => (
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tab value="types" icon={<AccountTreeIcon />} label={t('workflowConfig.tab.types')} />
+        <Tab value="triggers" icon={<BoltIcon />} label={t('flowTriggers.tab')} />
+      </Tabs>
+      {tab === 'triggers' && (
+        <FlowTriggers orgId={orgId} authHeaders={authHeaders} onTypesChanged={load} />
+      )}
+      {tab === 'types' && error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+      {tab === 'types' && !editable && kinds.length > 0 && <Alert severity="info">{t('workflowConfig.ownerOnly')}</Alert>}
+      {tab === 'types' && kinds.map((kind) => (
         <KindEditor
           key={`${kind.id}:${kind.variant ?? ''}`} orgId={orgId} kind={kind} units={units} editable={editable} authHeaders={authHeaders} onSaved={load}
           onRename={editable && kind.id === FLOWS_KIND && kind.variant ? () => {
@@ -133,7 +144,7 @@ export default function WorkflowSettings({ orgId, authHeaders }: { orgId: string
           } : undefined}
         />
       ))}
-      {kinds.length === 0 && !error && <Typography color="text.secondary">{t('workflowConfig.none')}</Typography>}
+      {tab === 'types' && kinds.length === 0 && !error && <Typography color="text.secondary">{t('workflowConfig.none')}</Typography>}
       {typeDialog && (
         <FlowTypeDialog
           orgId={orgId} authHeaders={authHeaders} isNew={typeDialog.isNew} type={typeDialog.type} taken={flowTypes.map((f) => f.key)}

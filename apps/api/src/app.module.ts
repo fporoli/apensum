@@ -47,6 +47,8 @@ import { ForwardMailService } from './forward-mail.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { FlowsService } from './flows.service';
+import { TriggersService } from './triggers.service';
+import { FlowTriggersController } from './flow-triggers.controller';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
 import { TimesheetsController } from './timesheets.controller';
 import { SiteContactController } from './site-contact.controller';
@@ -110,6 +112,7 @@ const plugins = loadApiPlugins();
     EmploymentController,
     LocationsController,
     FlowsController,
+    FlowTriggersController,
     NewsController,
     PublicNewsController,
     DocumentsController,
@@ -150,6 +153,7 @@ const plugins = loadApiPlugins();
     WorkTimeService,
     BalancesService,
     FlowsService,
+    TriggersService,
     ReportsService,
     ReportSchedulesService,
     WorkTimeModelService,

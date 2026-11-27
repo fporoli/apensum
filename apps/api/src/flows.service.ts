@@ -26,8 +26,10 @@ export function currentAssignments(orgId: string): SQL {
 export interface FlowTarget {
   organization_id: string;
   requester_user_id: string | null;
-  target_kind: 'manager' | 'department' | 'workflow';
+  target_kind: 'manager' | 'department' | 'workflow' | 'person';
   target_department_id: string | null;
+  /** Whom it is about: a system task's manager is theirs, a task to a person goes to them. */
+  about_user_id?: string | null;
   id?: string;
 }
 
@@ -40,7 +42,13 @@ export interface SystemTaskInput {
   key: string;
   /** The section of the web app that shows what the task is about (e.g. 'hr'). */
   section?: string | null;
-  departmentId: string;
+  /**
+   * Whom a task without its own steps goes to: `department` (default, `departmentId`), `manager` = the acting manager
+   * of the person it is about, `person` = that person.
+   */
+  target?: 'department' | 'manager' | 'person';
+  /** Required for the target `department` (also when a flow type's steps take it: kept as a fallback). */
+  departmentId?: string | null;
   subject: string;
   message: string;
   /** YYYY-MM-DD; after it, an open task alerts its handlers by e-mail. */
@@ -60,7 +68,7 @@ export interface SystemTaskInput {
 
 export type SystemTaskResult =
   | { ok: true; id: string; created: boolean; changed: boolean }
-  | { ok: false; error: 'flows-off' | 'unknown-department' | 'invalid-task' };
+  | { ok: false; error: 'flows-off' | 'unknown-department' | 'invalid-task' | 'unknown-person' };
 
 const MAX_SUBJECT = 200;
 const MAX_BODY = 10_000;
@@ -192,10 +200,13 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     // A request with a workflow: whoever its steps went or go to (not the requester).
     if (r.target_kind === 'workflow') return r.id ? (await workflowParticipants(db as Db, r.id)).filter((x) => x !== r.requester_user_id) : [];
     if (r.target_kind === 'manager') {
-      if (!r.requester_user_id) return [];
-      const manager = await actingManagerId(db, r.organization_id, r.requester_user_id);
+      // Someone's own flow: their manager; a system task: the manager of the person it is about.
+      const subject = r.requester_user_id ?? r.about_user_id ?? null;
+      if (!subject) return [];
+      const manager = await actingManagerId(db, r.organization_id, subject);
       return manager ? [manager] : [];
     }
+    if (r.target_kind === 'person') return r.about_user_id ? [r.about_user_id] : [];
     const rows = await db.execute(
       // Whoever is in the department today, and its leader, while they are still there (not past their exit).
       sql`SELECT a.user_id FROM (${currentAssignments(r.organization_id)}) a
@@ -230,14 +241,20 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       return { ok: false, error: 'invalid-task' };
     }
     if (!(await this.enabled(db, input.organizationId))) return { ok: false, error: 'flows-off' };
-    const department = await db.execute(
-      sql`SELECT id FROM departments WHERE id = ${input.departmentId}::uuid AND organization_id = ${input.organizationId} AND is_active`,
-    );
-    if (department.rows.length === 0) return { ok: false, error: 'unknown-department' };
+    const target = input.target ?? 'department';
+    const departmentId = input.departmentId ?? null;
+    if (departmentId) {
+      const department = await db.execute(
+        sql`SELECT id FROM departments WHERE id = ${departmentId}::uuid AND organization_id = ${input.organizationId} AND is_active`,
+      );
+      if (department.rows.length === 0) return { ok: false, error: 'unknown-department' };
+    }
     // Whom it is about: a member of the organization, else nobody.
     const about = input.aboutUserId
       ? ((await db.execute(sql`SELECT user_id FROM organization_memberships WHERE organization_id = ${input.organizationId}::uuid AND user_id::text = ${input.aboutUserId}`)).rows[0] as { user_id: string } | undefined)?.user_id ?? null
       : null;
+    // A task to a manager or a person is about someone; one to a department needs the department.
+    if ((target === 'manager' || target === 'person') && !about) return { ok: false, error: 'unknown-person' };
     const taskData = input.data && typeof input.data === 'object' ? JSON.stringify(input.data) : null;
 
     const existing = (
@@ -250,6 +267,10 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     // A type with its own steps: the task goes through them (the workflow decides who does what).
     const flowType = typeof input.flowType === 'string' && input.flowType.trim() ? input.flowType.trim() : null;
     const viaWorkflow = !!flowType && !!this.workflows && !!(await this.workflows.ownConfig(db, input.organizationId, FLOW_STEPS_KIND, flowType));
+    if (!viaWorkflow && target === 'department' && !departmentId) return { ok: false, error: 'unknown-department' };
+    // Without steps: to the department, or to the manager of / the person it is about.
+    const freeKind: 'department' | 'manager' | 'person' = target;
+    const freeDepartment = freeKind === 'department' ? departmentId : null;
     if (old) {
       if (old.status === 'resolved' || old.archived_at) return { ok: true, id: old.id, created: false, changed: false };
       // Its kind got a type with steps since it opened, and nobody took it yet: from now on it goes through them.
@@ -264,11 +285,11 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       await db.execute(sql`UPDATE flows SET about_user_id = ${about}, task_data = ${taskData}::jsonb, source_section = ${input.section ?? null} WHERE id = ${old.id}
                            AND (about_user_id IS DISTINCT FROM ${about}::uuid OR task_data IS DISTINCT FROM ${taskData}::jsonb OR source_section IS DISTINCT FROM ${input.section ?? null})`);
       // A task that went through its type's steps keeps its steps: no department to move it to.
-      const changed = old.subject !== subject || old.due_date !== due || (old.target_department_id !== null && old.target_department_id !== input.departmentId);
+      const changed = old.subject !== subject || old.due_date !== due || (old.target_kind === 'department' && freeDepartment !== null && old.target_department_id !== freeDepartment);
       if (!changed) return { ok: true, id: old.id, created: false, changed: false };
       await db.execute(
         sql`UPDATE flows SET subject = ${subject}, due_date = ${due}::date,
-              target_department_id = CASE WHEN target_kind = 'department' THEN ${input.departmentId}::uuid ELSE target_department_id END, last_activity_at = ${sqlNow()},
+              target_department_id = CASE WHEN target_kind = 'department' AND ${freeDepartment}::uuid IS NOT NULL THEN ${freeDepartment}::uuid ELSE target_department_id END, last_activity_at = ${sqlNow()},
               overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${due}::date THEN NULL ELSE overdue_alerted_at END
             WHERE id = ${old.id}`,
       );
@@ -283,7 +304,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     const inserted = (
       await db.execute(
         sql`INSERT INTO flows (organization_id, requester_user_id, about_user_id, task_data, target_kind, target_department_id, flow_type, subject, due_date, source, source_key, source_section, confidential, opened_at, last_activity_at)
-            VALUES (${input.organizationId}, NULL, ${about}, ${taskData}::jsonb, ${viaWorkflow ? 'workflow' : 'department'}, ${viaWorkflow ? null : input.departmentId}::uuid,
+            VALUES (${input.organizationId}, NULL, ${about}, ${taskData}::jsonb, ${viaWorkflow ? 'workflow' : freeKind}, ${viaWorkflow ? null : freeDepartment}::uuid,
                     ${viaWorkflow ? flowType : null}, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null},
                     ${input.confidential === true}, ${sqlNow()}, ${sqlNow()})
             ON CONFLICT (organization_id, source_key) WHERE source_key IS NOT NULL DO NOTHING
@@ -305,8 +326,9 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     const handlers = await this.handlerIds(db, {
       organization_id: input.organizationId,
       requester_user_id: null,
-      target_kind: 'department',
-      target_department_id: input.departmentId,
+      target_kind: freeKind,
+      target_department_id: freeDepartment,
+      about_user_id: about,
     });
     await this.notifications
       .notifyMany({
@@ -341,13 +363,15 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
    * an absence shortened), only those due on or after `dueFrom` (past ones stay for the handlers).
    * Returns how many it resolved.
    */
-  async closeTasks(db: Db, orgId: string, source: string, keep: readonly string[], dueFrom: string): Promise<number> {
+  async closeTasks(db: Db, orgId: string, source: string, keep: readonly string[], dueFrom: string, keyPrefix?: string): Promise<number> {
     const keepList = `{${keep.map((k) => `"${k.replace(/["\\]/g, '')}"`).join(',')}}`;
+    // Only the keys under a prefix (one trigger's flows), else all of the source's.
+    const prefixed = keyPrefix ? sql`AND left(source_key, ${keyPrefix.length}) = ${keyPrefix}` : sql``;
     const closed = (
       await db.execute(
         sql`UPDATE flows SET status = 'resolved', resolved_at = ${sqlNow()}, last_activity_at = ${sqlNow()}
             WHERE organization_id = ${orgId} AND source = ${source} AND status <> 'resolved' AND archived_at IS NULL
-              AND (due_date IS NULL OR due_date >= ${dueFrom}::date) AND NOT (source_key = ANY(${keepList}::text[]))
+              AND (due_date IS NULL OR due_date >= ${dueFrom}::date) AND NOT (source_key = ANY(${keepList}::text[])) ${prefixed}
             RETURNING id`,
       )
     ).rows as { id: string }[];
@@ -378,7 +402,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
         await db.execute(
           sql`UPDATE flows SET overdue_alerted_at = ${sqlNow()}
               WHERE due_date < ${today}::date AND overdue_alerted_at IS NULL AND status <> 'resolved' AND archived_at IS NULL
-              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, urgent, due_date::text AS due_date`,
+              RETURNING id, organization_id, requester_user_id, about_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, urgent, due_date::text AS due_date`,
         )
       ).rows as unknown as (FlowTarget & { id: string; assignee_user_id: string | null; subject: string; confidential: boolean; urgent: boolean; due_date: string })[];
       for (const r of due) {
@@ -438,8 +462,8 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
         await db.execute(
           sql`UPDATE flows SET urgent_alerted_at = ${sqlNow()}
               WHERE urgent AND urgent_alerted_at IS NULL AND status = 'open' AND assignee_user_id IS NULL AND archived_at IS NULL
-                AND target_kind IN ('manager', 'department') AND opened_at <= ${since}::timestamptz
-              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, subject, confidential`,
+                AND target_kind IN ('manager', 'department', 'person') AND opened_at <= ${since}::timestamptz
+              RETURNING id, organization_id, requester_user_id, about_user_id, target_kind, target_department_id, subject, confidential`,
         )
       ).rows as unknown as (FlowTarget & { id: string; subject: string; confidential: boolean })[];
       for (const r of waiting) {

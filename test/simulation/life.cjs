@@ -1154,7 +1154,7 @@ async function main() {
   else if (target === 'dev') assert(['localhost', '127.0.0.1'].includes(new URL(process.env.DATABASE_URL).hostname), 'dev runs against a local database only');
   else assert.equal(new URL(process.env.DATABASE_URL).hostname, `apensum-${target.slice(4)}-pg`);
   // No timers of the API in this process (its reminders run in the instance itself).
-  for (const k of ['REQUEST_ALERTS', 'HR_TASKS', 'HRPLUS_REMINDERS']) process.env[k] = 'off';
+  for (const k of ['REQUEST_ALERTS', 'TRIGGERS', 'HRPLUS_REMINDERS']) process.env[k] = 'off';
 
   require(require.resolve('reflect-metadata', { paths: [path.join(ROOT, 'apps/api')] }));
   const { NestFactory } = require(require.resolve('@nestjs/core', { paths: [path.join(ROOT, 'apps/api')] }));

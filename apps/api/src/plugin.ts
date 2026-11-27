@@ -21,6 +21,7 @@ import type { PersonalDocumentSource } from './documents.service';
 import type { SourceOrgResolver, SourceRecordLoader, WorkflowActionContext, WorkflowKind } from './workflows.service';
 import type { AssistantTool } from './assistant-tools';
 import type { PlannedMinutesSource } from './work-time-model.service';
+import type { TriggerSource } from './triggers';
 
 /** Core services a plugin's declared functions get as their last argument. */
 export interface PluginCore {
@@ -91,10 +92,17 @@ export interface ApiPlugin {
    */
   assistantTools?: AssistantTool[];
   /**
-   * Whether the plugin reminds of residence permits ending in this organization (e.g. HR-Prozesse's tasks): the core's
-   * own reminder (workflow-dues.service.ts, from My Data's `residencePermitValidUntil`) then stays silent there.
+   * Whether the plugin reminds of residence permits ending in this organization: the core's own reminder
+   * (workflow-dues.service.ts, from My Data's `residencePermitValidUntil`) then stays silent there.
+   * @deprecated the core's trigger event `permitExpires` (Auslöser) does it: an enabled trigger silences the reminder.
    */
   permitReminders?: (db: Db, orgId: string) => Promise<boolean>;
+  /**
+   * Events for Auslöser (triggers, Admin settings -> Workflows): an organization's trigger opens a flow for each
+   * occurrence (an anniversary, an exit step), through a flow type's steps or as a Free Flow. Event ids start with the
+   * plugin's id (`hr.anniversary`); they run only while the plugin's module (`module`, else the plugin's id) is on.
+   */
+  triggers?: TriggerSource;
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
@@ -137,6 +145,8 @@ export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type Perso
 export { FieldsService } from './fields.service';
 // Personal data (users.basicdata): a direct edit with its history entry, as HR's on the Employees page.
 export { BasicDataService } from './basicdata.service';
+// Auslöser (triggers): the events a plugin offers (ApiPlugin.triggers).
+export type { TriggerEventDef, TriggerLang, TriggerOccurrence, TriggerSource } from './triggers';
 export { WorkflowsService, type WorkflowEvent, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver, type WorkflowKind } from './workflows.service';
 
 // Notifications (the bell; a click opens the section the web part's `notificationSections` names

@@ -131,6 +131,11 @@
       "source": "./src/personnelDocs.ts",
       "types": "./dist/personnelDocs.d.ts",
       "default": "./dist/personnelDocs.js"
+    },
+    "./triggerTemplates": {
+      "source": "./src/triggerTemplates.ts",
+      "types": "./dist/triggerTemplates.d.ts",
+      "default": "./dist/triggerTemplates.js"
     }
   }
 }

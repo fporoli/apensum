@@ -16,7 +16,7 @@ plugins/<id>/
   tsconfig.api.json   the build: api/ -> dist/api (against the core's built declarations)
   shared/             optional: code both parts import (e.g. a report's definition and texts)
   changelog/          Liquibase: db.changelog-master.xml + NNN-name.sql, run after the core's (below)
-  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, workflows, documents, assistantTools })
+  api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, workflows, documents, assistantTools, triggers })
   web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
   web/tsconfig.json   editor only: extends apps/web/tsconfig.json
   web/texts.ts        the plugin's UI texts, en/de/fr/it with the same keys
@@ -268,7 +268,11 @@ controller's checks. `plugins/notes/api/assistant-tools.ts` is the short example
 `plugins/expenses/api/assistant-tools.ts`, `roster`, `billing`, `hrplus` and `hr` have their own.
 Leave out what must not reach the model: the cases module (end-to-end encrypted) and the reporting office have no tools.
 
-`permitReminders(db, orgId)`: true when the plugin reminds of residence permits ending in that organization itself (HR-Prozesse's tasks); the core's reminder from My Data then stays silent there.\
+`triggers` (a `TriggerSource`, types in the contract): events for Auslöser, the core's triggers (docs/dev/FLOWS.md).\
+Its `events` have ids that start with the plugin's id (`hr.anniversary`), labels in four languages, the placeholders they give the flow types' e-mail templates, a default lead time (`false`: as soon as known), the section their flows link to (`?user=<id>`) and `sensitive` (a permission object: only who edits it for everyone sees and sets up their triggers).\
+`due(db, orgId, today, horizons)` returns the occurrences of the events asked for (key, the person, date, optional due date and department, values, `text(lang)`); the core opens, updates and closes the flows, and runs a plugin's events only while its module (`triggers.module`, else the plugin's id) is on.\
+The web part may show the same panel (`FlowTriggers` in `@worktime3/web/plugin`), e.g. in its settings.\
+`permitReminders(db, orgId)` (deprecated): true when the plugin reminds of residence permits ending itself; an enabled `permitExpires` trigger silences the core's reminder now.\
 A plugin that changes someone's personal data does it through `BasicDataService` (in the contract), so the core keeps its history.
 
 Everything a plugin adds to the API is declared in `defineApiPlugin`, so its `api/index.ts` shows all of

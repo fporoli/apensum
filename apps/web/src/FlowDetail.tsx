@@ -55,7 +55,7 @@ export interface FlowItem {
   flow_type: string | null;
   urgent: boolean;
   link_url: string | null;
-  target_kind: 'manager' | 'department' | 'workflow';
+  target_kind: 'manager' | 'department' | 'workflow' | 'person';
   department_name: string | null;
   /** Null for a task a module or plugin opened (`source`). */
   requester_user_id: string | null;
@@ -474,10 +474,13 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
   const r = detail?.flow;
   const target = (item: FlowItem) =>
     item.target_kind === 'workflow' ? t('flow.toWorkflow')
-      : item.target_kind === 'manager' ? t('flow.toManager') : t('flow.toDepartment', { department: item.department_name ?? '' });
+      // A task a trigger opened (nobody started it): the manager of, or the person it is about.
+      : item.target_kind === 'manager' ? t(item.requester_user_id ? 'flow.toManager' : 'flow.toAboutManager')
+        : item.target_kind === 'person' ? t('flow.toAboutPerson') : t('flow.toDepartment', { department: item.department_name ?? '' });
   /** A module's or plugin's name (its `modules.<id>` text), for the tasks it opens. */
   const sourceLabel = (source: string | null) => {
     if (!source) return t('flow.system');
+    if (source === 'trigger') return t('flowTriggers.sender');
     const label = t(`modules.${source}`);
     return label === `modules.${source}` ? source : label;
   };
@@ -603,7 +606,7 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
           <Typography variant="h6" sx={{ fontSize: '1.1rem', overflowWrap: 'anywhere' }}>{r.subject}</Typography>
           <Typography variant="body2" color="text.secondary">
             {t('flow.from', { name: sender(r) })} · {target(r)}
-            {r.target_kind === 'manager' && detail.handlers.length > 0 ? ` (${detail.handlers.map((h) => h.name).join(', ')})` : ''}
+            {(r.target_kind === 'manager' || r.target_kind === 'person') && detail.handlers.length > 0 ? ` (${detail.handlers.map((h) => h.name).join(', ')})` : ''}
             {' · '}
             {formatLocaleDateTime(r.opened_at, locale)}
           </Typography>

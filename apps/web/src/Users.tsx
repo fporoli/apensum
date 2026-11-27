@@ -134,10 +134,12 @@ export default function Users({ orgId, isAdmin, canAccessBasicData, canSeeWorkSc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId, isAdmin]);
 
-  // A link to one person's personal data (`#/users?basicdata=<user id>`, e.g. a residence permit ending) opens it.
+  // A link to one person's personal data (`#/users?basicdata=<user id>`, e.g. a residence permit ending; `?user=` from a
+  // flow a trigger opened about them) opens it.
   useEffect(() => {
     const onHash = () => {
-      const id = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('basicdata');
+      const query = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+      const id = query.get('basicdata') ?? query.get('user');
       const member = id ? members.find((m) => m.user_id === id) : undefined;
       if (!member) return;
       setBasicDataFor(member);

@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, unique, uuid, varchar, jsonb, timestamp, boolean, check, date, uniqueIndex, text, integer, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, index, foreignKey, check, uuid, text, boolean, integer, unique, varchar, jsonb, timestamp, date, uniqueIndex, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -18,6 +18,34 @@ export const subproject_type = pgEnum("subproject_type", ['phase', 'work_package
 export const timesheet_status = pgEnum("timesheet_status", ['open', 'submitted', 'approved', 'rejected'])
 export const user_status = pgEnum("user_status", ['active', 'suspended', 'deactivated'])
 
+
+export const flow_triggers = pgTable("flow_triggers", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	event: text().notNull(),
+	enabled: boolean().default(true).notNull(),
+	lead_days: integer().default(14).notNull(),
+	flow_type: text(),
+	target: text().default('department').notNull(),
+	department_id: uuid(),
+	confidential: boolean().default(true).notNull(),
+	label: text(),
+}, (table) => [
+	index("idx_flow_triggers_org").using("btree", table.organization_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.department_id],
+			foreignColumns: [departments.id],
+			name: "flow_triggers_department_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "flow_triggers_organization_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_flow_triggers_label", sql`(label IS NULL) OR (char_length(label) <= 100)`),
+	check("chk_flow_triggers_lead", sql`(lead_days >= 0) AND (lead_days <= 365)`),
+	check("chk_flow_triggers_target", sql`target = ANY (ARRAY['department'::text, 'manager'::text, 'person'::text])`),
+]);
 
 export const user_identities = pgTable("user_identities", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
@@ -1066,10 +1094,10 @@ export const flows = pgTable("flows", {
 			name: "flows_target_department_id_fkey"
 		}).onDelete("restrict"),
 	check("chk_flows_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
-	check("chk_flows_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND (target_kind = ANY (ARRAY['department'::text, 'workflow'::text])))`),
+	check("chk_flows_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND ((target_kind = ANY (ARRAY['department'::text, 'workflow'::text])) OR ((target_kind = ANY (ARRAY['manager'::text, 'person'::text])) AND (about_user_id IS NOT NULL))))`),
 	check("chk_flows_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
 	check("chk_flows_subject", sql`length(btrim(subject)) > 0`),
-	check("chk_flows_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL)) OR ((target_kind = 'workflow'::text) AND (target_department_id IS NULL))`),
+	check("chk_flows_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL)) OR ((target_kind = 'workflow'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'person'::text) AND (target_department_id IS NULL) AND (about_user_id IS NOT NULL))`),
 ]);
 
 export const exchange_rates = pgTable("exchange_rates", {

@@ -40,7 +40,11 @@ export function composeValues(
   lang: Lang,
 ): Record<string, string | null> {
   const data = input.taskData ?? {};
+  // The task's other values (an event's `type`, `step`, `title`, ...) as they are; dates the Swiss way.
+  const extra: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(data)) if (/^[a-zA-Z]+$/.test(k) && (typeof v === 'string' || typeof v === 'number')) extra[k] = composeDate(String(v), lang);
   return {
+    ...extra,
     name: input.aboutName,
     firstName: input.aboutFirstName || (input.aboutName ? input.aboutName.split(/\s+/)[0] : null),
     date: composeDate(data.date, lang),
