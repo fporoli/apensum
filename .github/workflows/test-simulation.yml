@@ -86,7 +86,8 @@ jobs:
             src="/tmp/apensum-${environment}-simulation-${{ github.run_id }}"
             dst=/app/test/simulation-${{ github.run_id }}
             # A cancelled run (the SSH session ends) stops the simulation too, then tidies up.
-            trap 'docker exec "$container" sh -c "pkill -f $dst/life.cjs 2>/dev/null || true"; docker exec "$container" rm -rf "$dst"; rm -rf "$src"' EXIT HUP INT TERM
+            # [l]ife.cjs: the pattern must not match pkill's own command line.
+            trap 'docker exec "$container" pkill -f "$dst/[l]ife.cjs" || true; docker exec "$container" rm -rf "$dst" || true; rm -rf "$src"' EXIT HUP INT TERM
             docker exec "$container" mkdir -p "$dst"
             docker cp "$src/test/simulation/." "$container:$dst/"
             docker exec -e APENSUM_ROOT=/app "$container" node "$dst/life.cjs" "vps-$environment"
