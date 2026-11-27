@@ -1,3 +1,4 @@
+import { BROCHURE_AUDIENCES, BROCHURE_FILES } from '../brochures/files.mjs';
 import { CANTONS, HOLIDAY_NAMES, cantonHolidays } from '../../../packages/shared/src/worktime.ts';
 import { githubMark, icon } from './icons.mjs';
 import { MODULE_PAGES, esc, layout, newsletterForm, pagePath } from './layout.mjs';
@@ -824,15 +825,11 @@ ${ctaBand(ctx)}`;
 }
 
 /**
- * The brochure to download (static/downloads, PDF in German, the online version of the printed one: without the
- * investment box and the phone number, `npm run` nothing: rendered from the design, see the brochures page). Shown on
+ * The brochures to download, in the page's language (static/downloads, the online version of the printed one: without
+ * the investment box and the phone number; made from apps/site/brochures by `npm run site:brochures`). Shown on
  * Pricing; all three with a preview of their first page (the .jpg beside each PDF) on the Brochures page.
  */
-const BROCHURES = [
-  ['trustees', 'apensum-broschuere-treuhaender.pdf'],
-  ['customers', 'apensum-broschuere-endkunden.pdf'],
-  ['partners', 'apensum-broschuere-it-partner.pdf'],
-];
+const brochureFile = (ctx, audience) => (BROCHURE_FILES[ctx.lang] ?? BROCHURE_FILES.de)[audience];
 function brochures(ctx) {
   const { t } = ctx;
   return `<section class="section tight">
@@ -843,7 +840,7 @@ function brochures(ctx) {
         <h2>${t('brochure.title')}</h2>
         <p>${t('brochure.text')}</p>
         <div class="brochure-links">
-          ${BROCHURES.map(([k, file]) => `<a class="btn btn-ghost btn-sm" href="/downloads/${file}" download>${icon('arrow')}${t(`brochure.${k}`)}</a>`).join('\n          ')}
+          ${BROCHURE_AUDIENCES.map((k) => `<a class="btn btn-ghost btn-sm" href="/downloads/${brochureFile(ctx, k)}" download>${icon('arrow')}${t(`brochure.${k}`)}</a>`).join('\n          ')}
         </div>
         <p class="muted small">${t('brochure.format')}</p>
       </div>
@@ -856,9 +853,8 @@ function brochures(ctx) {
 const BROCHURE_ORDER = ['customers', 'trustees', 'partners'];
 export function brochuresPage(ctx) {
   const { t } = ctx;
-  const files = Object.fromEntries(BROCHURES);
   const cards = BROCHURE_ORDER.map((k) => {
-    const pdf = `/downloads/${files[k]}`;
+    const pdf = `/downloads/${brochureFile(ctx, k)}`;
     const name = t(`brochure.${k}`);
     return `<article class="card brochure-card">
       <a class="brochure-preview" href="${pdf}" download><img src="${pdf.replace(/\.pdf$/, '.jpg')}" alt="${esc(t('brochures.preview', { name }))}" width="476" height="674" loading="lazy"></a>

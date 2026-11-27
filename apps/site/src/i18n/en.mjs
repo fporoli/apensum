@@ -986,7 +986,7 @@ export default {
   'brochure.trustees': "For fiduciaries",
   'brochure.customers': "For companies",
   'brochure.partners': "For IT partners",
-  'brochure.format': "PDF, in German",
+  'brochure.format': "PDF, in English",
   'home.platform.link': "Apensum as a platform",
   'home.platform.text': "Apensum is also a framework for your own business applications: users, permissions, flows, documents, single sign-on and operations are solved. You build your own modules on it – open or confidential.",
   'home.platform.title': "More than time tracking",

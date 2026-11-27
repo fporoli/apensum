@@ -985,7 +985,7 @@ export default {
   'brochure.trustees': "Per le fiduciarie",
   'brochure.customers': "Per le aziende",
   'brochure.partners': "Per i partner IT",
-  'brochure.format': "PDF, in tedesco",
+  'brochure.format': "PDF, in italiano",
   'home.platform.link': "Apensum come piattaforma",
   'home.platform.text': "Apensum è anche un framework per le sue applicazioni aziendali: utenti, diritti, flow, documenti, single sign-on ed esercizio sono risolti. Ci costruisce i suoi moduli – aperti o riservati.",
   'home.platform.title': "Più di una rilevazione del tempo",

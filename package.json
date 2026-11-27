@@ -31,6 +31,7 @@
     "site:deploy": "node scripts/site-deploy.mjs",
     "site:videos": "npm --prefix apps/site/videos install --no-audit --no-fund && node apps/site/videos/record.mjs",
     "site:screens": "npm --prefix apps/site/videos install --no-audit --no-fund && node apps/site/videos/screens.mjs",
+    "site:brochures": "npm --prefix apps/site/videos install --no-audit --no-fund && node apps/site/videos/brochures.mjs",
     "site:videos:publish": "node apps/site/videos/publish.mjs",
     "dev:up": "node scripts/with-env.mjs dev docker compose -f compose/docker-compose.dev.yml up -d --remove-orphans",
     "dev:down": "node scripts/with-env.mjs dev docker compose -f compose/docker-compose.dev.yml down",
