@@ -29,7 +29,7 @@ import { AccountBalanceWalletIcon, AddIcon, ChevronLeftIcon, ChevronRightIcon, D
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
-export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start' | 'not-recorded';
+export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start' | 'after-end' | 'not-recorded';
 
 export interface MonthBalance {
   month: string;
@@ -103,6 +103,7 @@ const STATUS_COLOR: Record<MonthStatus, 'success' | 'info' | 'error' | 'warning'
   current: 'default',
   future: 'default',
   'before-start': 'default',
+  'after-end': 'default',
   'not-recorded': 'default',
 };
 
@@ -128,7 +129,7 @@ export function parseSignedHours(text: string): number | null {
 
 export function MonthStatusChip({ status }: { status: MonthStatus }) {
   const { t } = useI18n();
-  if (status === 'before-start') return <Typography variant="body2" color="text.disabled">—</Typography>;
+  if (status === 'before-start' || status === 'after-end') return <Typography variant="body2" color="text.disabled">—</Typography>;
   return <Chip size="small" label={t(`balances.status.${status}`)} color={STATUS_COLOR[status]} variant={status === 'future' || status === 'current' || status === 'not-recorded' ? 'outlined' : 'filled'} />;
 }
 
@@ -201,7 +202,7 @@ export function BalancesPanel({
 
   const targetUserId = userId;
   const months = data?.months ?? [];
-  const visibleMonths = months.filter((m) => m.status !== 'before-start');
+  const visibleMonths = months.filter((m) => m.status !== 'before-start' && m.status !== 'after-end');
   const absenceTitle = (m: MonthBalance) =>
     Object.entries(m.absenceByType)
       .map(([type, minutes]) => {

@@ -17,7 +17,7 @@ const hours = (minutes: number) => Math.round((minutes / 60) * 100) / 100;
 
 /** Months that count in a report: from the person's start, up to and including the current one. */
 function counts(m: MonthBalance): boolean {
-  return m.status !== 'before-start' && m.status !== 'future';
+  return m.status !== 'before-start' && m.status !== 'after-end' && m.status !== 'future';
 }
 
 /** Attendance and overtime rows of one person: one per month, from the balances (same numbers as the Balances page). */

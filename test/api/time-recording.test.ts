@@ -46,7 +46,14 @@ test('a change in the middle of a month leaves that month a timesheet', () => {
 
 test('after the employment ended, its months stay without timesheet', () => {
   const b = computeYearBalances(inputs([none], { until: '2026-09-01' }));
-  assert.equal(b.months[11].status, 'not-recorded');
+  assert.equal(b.months[11].status, 'after-end');
+});
+
+test('a month beginning after the last working day is "after the end", not open (a leaver\'s year can close)', () => {
+  // The last day is 28 August: August is still theirs, September on is after the end.
+  const b = computeYearBalances(inputs([{ ...full, validFrom: '2026-01-01' }], { until: '2026-08-29' }));
+  assert.equal(b.months[7].status === 'after-end', false);
+  assert.deepEqual(b.months.slice(8).map((m) => m.status), ['after-end', 'after-end', 'after-end', 'after-end']);
 });
 
 test('HR sets the entitlement; the calculated days stay visible', () => {

@@ -165,7 +165,7 @@ export default function BalanceReport({ orgId, authHeaders }: { orgId: string; a
             <TableBody>
               {shown.map((r) => {
                 const m = r.month;
-                const inactive = m.status === 'before-start';
+                const inactive = m.status === 'before-start' || m.status === 'after-end';
                 return (
                   <TableRow key={r.userId} hover sx={{ cursor: 'pointer' }} onClick={() => setSelected(r)}>
                     <TableCell>

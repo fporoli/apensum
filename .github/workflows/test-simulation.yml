@@ -1,10 +1,14 @@
-name: Dolphin and Whale simulation (VPS)
+name: Whale simulation (VPS)
+
+# A company's life since 2008 on a test instance (docs/OPERATIONS.md "Whale simulation"): the instance is reset (demo
+# seed), then test/simulation/life.cjs plays Whale day by day through the API's services inside the API container,
+# and checks it over HTTP. Only from the branch test/dolphin-whale-simulation, only on test or preprod.
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: VPS environment to populate
+        description: VPS environment to reset and populate
         type: choice
         required: true
         default: test
@@ -18,9 +22,11 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
+# Its own group: the reset it dispatches runs in the deploy workflows' group (worktime3-vps).
 concurrency:
-  group: worktime3-vps
+  group: whale-simulation-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -28,9 +34,11 @@ jobs:
     if: github.ref == 'refs/heads/test/dolphin-whale-simulation'
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Confirm preprod target
         env:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
@@ -40,21 +48,38 @@ jobs:
             echo "Preprod requires the exact confirmation: SIMULATE preprod" >&2
             exit 1
           fi
-      - name: Upload simulation files
+      - name: Reset the instance (vps.yml reset-seed with main's image)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -eu
+          git fetch --quiet origin main
+          tag="sha-$(git merge-base HEAD origin/main | cut -c1-7)"
+          echo "Resetting $TARGET_ENVIRONMENT with $tag"
+          before=$(gh run list --workflow vps.yml -L 1 --json databaseId -q '.[0].databaseId' || echo 0)
+          gh workflow run vps.yml --ref main -f action=reset-seed -f environment="$TARGET_ENVIRONMENT" -f image_tag="$tag" -f confirmation='RESET worktime3 public schema'
+          for i in $(seq 1 30); do
+            run=$(gh run list --workflow vps.yml -L 1 --json databaseId -q '.[0].databaseId')
+            [ "$run" != "$before" ] && break
+            sleep 5
+          done
+          gh run watch "$run" --exit-status --interval 15
+      - name: Upload the simulation
         uses: appleboy/scp-action@v1
         with:
           host: ${{ vars.VPS_HOST }}
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: test/simulation/history.sql,test/simulation/run.cjs
+          source: test/simulation/life.cjs
           target: /tmp/apensum-${{ inputs.environment }}-simulation-${{ github.run_id }}
-      - name: Seed and verify on VPS
+      - name: Live Whale's years and check them
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ vars.VPS_HOST }}
           username: ${{ vars.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 25m
+          command_timeout: 280m
           script: |
             set -eu
             environment=${{ inputs.environment }}
@@ -64,4 +89,4 @@ jobs:
             trap 'docker exec "$container" rm -rf "$dst"; rm -rf "$src"' EXIT
             docker exec "$container" mkdir -p "$dst"
             docker cp "$src/test/simulation/." "$container:$dst/"
-            docker exec "$container" node "$dst/run.cjs" "vps-$environment"
+            docker exec -e APENSUM_ROOT=/app "$container" node "$dst/life.cjs" "vps-$environment"

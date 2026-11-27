@@ -52,10 +52,11 @@ export interface Adjustment {
 /**
  * How a month stands: `closed` once its timesheet is approved (numbers frozen); otherwise the
  * timesheet's status (`submitted`, `rejected`) or, without one, `open` (past), `current` or
- * `future`. Months before the person's balances start are `before-start`, those in which they record
+ * `future`. Months before the person's balances start are `before-start`, those beginning after the employment
+ * ended `after-end` (a year someone left in closes without them), those in which they record
  * no working time `not-recorded`: nothing to submit, nothing that keeps a year open.
  */
-export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start' | 'not-recorded';
+export type MonthStatus = 'closed' | 'submitted' | 'rejected' | 'open' | 'current' | 'future' | 'before-start' | 'after-end' | 'not-recorded';
 
 export interface MonthBalance extends MonthSummary {
   month: string;
@@ -285,6 +286,9 @@ export function computeYearBalances(input: BalanceInputs): YearBalances {
       legal = closed.legalOvertime ?? legalOvertimeBetween(attendance, m > start ? m : start, next, legalMax);
     } else if (next <= start) {
       row = { ...EMPTY_SUMMARY, absenceByType: {}, month: m, status: 'before-start', closedAt: null, monthTarget: 0, plannedVacationDays: 0, adjustmentMinutes, ...NO_RUNNING };
+    } else if (input.until && m >= input.until) {
+      // A month that begins after the employment ended (`until`, the day after the last): nothing to hand in.
+      row = { ...EMPTY_SUMMARY, absenceByType: {}, month: m, status: 'after-end', closedAt: null, monthTarget: 0, plannedVacationDays: 0, adjustmentMinutes, ...NO_RUNNING };
     } else {
       const from = m > start ? m : start;
       // Nothing is counted from the end of the employment on (`until`, exclusive).
@@ -715,7 +719,7 @@ export class BalancesService {
     const yearStart = `${year}-01-01`;
     const startYear = Number(b.start.slice(0, 4));
     const values = { overtime: b.overtime.closing, legalOvertime: b.legalOvertime.closing, vacation: b.vacation.remaining };
-    const openMonths = b.months.filter((m) => m.month >= yearStart && m.status !== 'closed' && m.status !== 'before-start' && m.status !== 'not-recorded').map((m) => m.month);
+    const openMonths = b.months.filter((m) => m.month >= yearStart && m.status !== 'closed' && m.status !== 'before-start' && m.status !== 'after-end' && m.status !== 'not-recorded').map((m) => m.month);
     const previousOpen = year - 1 >= startYear && !closings.some((c) => c.year === year - 1);
     return {
       year,
@@ -803,7 +807,7 @@ export class BalancesService {
         vacationRemaining: balances.vacation.remaining,
         legalYearToDate,
         legalYearLimit: context.settings.legalOvertimeYearLimitMinutes,
-        alerts: row.status === 'before-start' ? [] : reportAlerts(row, balances.vacation.remaining, today, context.settings, legalYearToDate),
+        alerts: row.status === 'before-start' || row.status === 'after-end' ? [] : reportAlerts(row, balances.vacation.remaining, today, context.settings, legalYearToDate),
       };
     });
     return rows.filter(row => row !== null);
