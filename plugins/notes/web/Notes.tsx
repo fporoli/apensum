@@ -5,11 +5,13 @@ import {
   Box,
   Checkbox,
   Chip,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  IconButton,
   InputAdornment,
   Paper,
   Stack,
@@ -18,7 +20,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n, Button, VisibilityIcon } from '@worktime3/web/plugin';
+import { ConfirmDialog, EmptyState, EditIcon, ExpandLessIcon, ExpandMoreIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n, Button, VisibilityIcon } from '@worktime3/web/plugin';
 import { isMailAddress, MAX_MAIL_ADDRESSES, splitAddresses } from '../shared/mail';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -40,6 +42,16 @@ const matches = (query: string, ...texts: (string | null | undefined)[]) => {
 /** Whether the notes shared with the caller are shown: remembered in this browser, on by default. */
 const SHOW_SHARED = 'notes.showShared';
 const storedShowShared = () => { try { return localStorage.getItem(SHOW_SHARED) !== '0'; } catch { return true; } };
+
+/** A note's title when folded: its first line with text, without Markdown's marks. */
+export function noteTitle(text: string): string {
+  const line = text.split('\n').map((l) => l.trim()).find((l) => l.replace(/[#>*_`\-\s]/g, '')) ?? '';
+  return line.replace(/^(#{1,6}\s+|>\s*|[-*+]\s+|\d+\.\s+|\[[ xX]\]\s+)+/, '').replace(/[*_`~]+/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
+}
+
+/** Which notes are open: kept for the session (folded by default, so a long list reads at a glance). */
+const OPEN_NOTES = 'notes.open';
+const storedOpen = (): Set<string> => { try { return new Set(JSON.parse(sessionStorage.getItem(OPEN_NOTES) ?? '[]')); } catch { return new Set(); } };
 
 /** The note a link names (`#/notes?id=<id>`), to scroll to and mark. */
 const linkedId = () => new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('id');
@@ -171,6 +183,27 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
 
   const mark = (id: string) => (focus === id ? { borderColor: 'primary.main', borderWidth: 2 } : {});
 
+  // Folded notes show their first line; a linked note and the one being changed are always open.
+  const [open, setOpen] = useState<Set<string>>(storedOpen);
+  const keepOpen = (next: Set<string>) => {
+    setOpen(next);
+    try { sessionStorage.setItem(OPEN_NOTES, JSON.stringify([...next])); } catch { /* not remembered */ }
+  };
+  const isOpen = (id: string) => open.has(id) || focus === id || editing?.id === id;
+  const toggleOpen = (id: string) => { const next = new Set(open); if (next.has(id)) next.delete(id); else next.add(id); keepOpen(next); };
+  const listed = [...shownNotes.map((n) => n.id), ...shownShared.map((n) => n.id)];
+  const allOpen = listed.length > 0 && listed.every(isOpen);
+  /** A note's title row: the arrow, its first line, and (folded) when and with whom. */
+  const header = (id: string, text: string, extra: React.ReactNode) => (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => toggleOpen(id)}>
+      <IconButton size="small" aria-expanded={isOpen(id)} aria-label={t(isOpen(id) ? 'common.collapse' : 'common.expand')} sx={{ ml: -0.5 }}>
+        {isOpen(id) ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+      </IconButton>
+      <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>{noteTitle(text) || '…'}</Typography>
+      {!isOpen(id) && extra}
+    </Box>
+  );
+
   return (
     <Stack spacing={2}>
       <PageHeader title={t('notes.title')} subtitle={t('notes.subtitle')} />
@@ -198,6 +231,12 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
               label={t('notes.showShared', { count: String(shared.length - hiddenCount) })}
             />
           )}
+          {listed.length > 1 && (
+            <Button size="small" startIcon={allOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+              onClick={() => keepOpen(allOpen ? new Set() : new Set([...open, ...listed]))}>
+              {t(allOpen ? 'notes.collapseAll' : 'notes.expandAll')}
+            </Button>
+          )}
           {showShared && hiddenCount > 0 && (
             <FormControlLabel
               control={<Checkbox size="small" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />}
@@ -213,7 +252,13 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
         <Paper variant="outlined"><EmptyState icon={<EditIcon fontSize="inherit" />} title={t('notes.empty')} /></Paper>
       )}
       {shownNotes.map((n) => (
-        <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, ...mark(n.id) }}>
+        <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, ...(isOpen(n.id) ? {} : { py: 1 }), ...mark(n.id) }}>
+          {header(n.id, n.text, <>
+            {(n.shared_with?.length ?? 0) > 0 && <Chip size="small" variant="outlined" label={t('notes.sharedCount', { count: String(n.shared_with!.length) })} />}
+            <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{formatLocaleDateTime(n.created_at, locale)}</Typography>
+          </>)}
+          <Collapse in={isOpen(n.id)} unmountOnExit>
+          <Box sx={{ mt: 1 }}>
           {editing?.id === n.id ? (
             <>
               <NoteEditor text={editing.text} onChange={(v) => setEditing({ id: n.id, text: v })} autoFocus />
@@ -242,6 +287,8 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
               <Button size="small" color="error" onClick={() => setDeleting(n)}>{t('notes.delete')}</Button>
             </Box>
           </Box>}
+          </Box>
+          </Collapse>
         </Paper>
       ))}
 
@@ -249,7 +296,12 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
         <>
           <Typography variant="h6" sx={{ pt: 1 }}>{t('notes.sharedWithMe')}</Typography>
           {shownShared.map((n) => (
-            <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', opacity: n.hidden ? 0.6 : 1, ...mark(n.id) }}>
+            <Paper key={n.id} id={`note-${n.id}`} variant="outlined" sx={{ p: 2, ...(isOpen(n.id) ? {} : { py: 1 }), bgcolor: 'action.hover', opacity: n.hidden ? 0.6 : 1, ...mark(n.id) }}>
+              {header(n.id, n.text, <>
+                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{t('notes.from', { name: n.author })}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>{formatLocaleDateTime(n.created_at, locale)}</Typography>
+              </>)}
+              <Collapse in={isOpen(n.id)} unmountOnExit>
               <Typography variant="caption" color="text.secondary">{t('notes.from', { name: n.author })}</Typography>
               <Box sx={{ mt: 0.5 }}>{body(n.id, n.text)}</Box>
               <Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1 }}>
@@ -259,6 +311,7 @@ export default function Notes({ orgId, authHeaders }: { orgId: string; authHeade
                   <Button size="small" onClick={() => void setHidden(n.id, !n.hidden)}>{t(n.hidden ? 'notes.unhide' : 'notes.hide')}</Button>
                 </Box>
               </Box>
+              </Collapse>
             </Paper>
           ))}
         </>
