@@ -2,7 +2,7 @@
 // Every local time below is Zurich's.
 process.env.TZ = 'Europe/Zurich';
 /**
- * Whale: a company's life since 2008, played through the API's own services (docs/OPERATIONS.md "Whale simulation").
+ * Whale: a company's life since 2015, played through the API's own services (docs/OPERATIONS.md "Whale simulation").
  *
  * Runs inside the API's container (or against a dev database) as `node test/simulation/life.cjs <target>`, after the
  * instance was reset. It boots the API's Nest application without HTTP and calls its controllers as the person who
@@ -21,7 +21,8 @@ const TARGETS = ['vps-test', 'vps-preprod', 'local-check', 'dev'];
 
 // ------------------------------------------------------------------------------------------------ the company
 
-const COMPANY = { name: 'Whale', founded: '2008-01-01', headcount: 200, admin: 'admin@whale.com', adminPassword: 'admin' };
+// SIM_FOUNDED=YYYY-MM-DD moves the founding (2015-01-01: about eleven years of history).
+const COMPANY = { name: 'Whale', founded: process.env.SIM_FOUNDED ?? '2015-01-01', headcount: 200, admin: 'admin@whale.com', adminPassword: 'admin' };
 const DOMAIN = 'whale.example';
 const SHARES = { hr: 0.05, finance: 0.05, lead: 0.1, it: 0.05 };
 const DEPARTMENTS = [
@@ -34,7 +35,7 @@ const BUSINESS = ['sales', 'consulting', 'development', 'operations', 'marketing
 /** Departments that work on customer projects (and book project time). */
 const PROJECT_DEPTS = ['consulting', 'development', 'operations', 'service', 'data', 'security', 'ai'];
 /** Departments founded later (year, code, name): the business grows into new fields. */
-const LATER_DEPARTMENTS = [[2013, 'data', 'Data & Analytics'], [2018, 'security', 'Security'], [2023, 'ai', 'AI Lab']];
+const LATER_DEPARTMENTS = [[2017, 'data', 'Data & Analytics'], [2020, 'security', 'Security'], [2023, 'ai', 'AI Lab']];
 const CATEGORIES = {
   values: { travel: { vat: 'standard', account: '5820' }, meals: { vat: 'standard', account: '5821' }, supplies: { vat: 'standard', account: '6500' }, software: { vat: 'standard', account: '6570' }, other: {} },
   translation: {
@@ -77,6 +78,8 @@ const day = (d) => d.toISOString().slice(0, 10);
 const addDays = (iso, n) => day(new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000));
 const monthStart = (y, m) => `${y}-${String(m).padStart(2, '0')}-01`;
 const monthEnd = (y, m) => day(new Date(Date.UTC(y, m, 0)));
+/** Calendar days from `a` to `b` (YYYY-MM-DD). */
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 const weekday = (iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
 const as = (userId) => ({ user: { kind: 'local', sub: userId }, headers: {} });
 /** A Zurich wall-clock time on a day as an ISO instant. */
@@ -128,6 +131,12 @@ class Sim {
     this.c = {};
     this.people = [];
     this.today = day(new Date());
+    /** Free Flows not resolved yet (`askFlow`, `takeOver`), by id. */
+    this.openFlows = new Map();
+    /** Flows taken over (`takeOver`), by why. */
+    this.taken = {};
+    /** Each department's (and the managers') time for flows this week (`newWeek`, `pace`). */
+    this.load = {};
   }
 
   q(text, params) {
@@ -416,6 +425,8 @@ class Sim {
   /** Something to do on a day: `org` things (people come and go, projects) first, then what people do. */
   schedule(d, fn, kind = 'person') {
     if (d < this.firstDay) d = this.firstDay;
+    // A day whose agenda ran already (today's, from what happens during the day): the next one, not lost.
+    if (this.agendaRan && d <= this.agendaRan) d = addDays(this.agendaRan, 1);
     const a = (this.agenda ??= new Map()).get(d) ?? { org: [], person: [] };
     a[kind].push(fn);
     this.agenda.set(d, a);
@@ -513,13 +524,41 @@ class Sim {
   async live(d) {
     const a = this.agenda?.get(d);
     this.agenda?.delete(d);
+    this.agendaRan = d;
     for (const fn of a?.org ?? []) await fn();
     await parallel(a?.person ?? [], WIDTH, (fn) => fn());
     if (!this.isWorkday(d)) return;
     await parallel(this.working(d), WIDTH, (p) => this.workDay(p, d));
-    // 0 to 10 Free Flows a working day.
+    // 0 to 10 Free Flows a working day, more in January and on Mondays, fewer in summer and on Fridays.
     const people = this.working(d).filter((p) => p !== this.admin);
-    for (let i = between(0, 10); i > 0 && people.length; i--) await this.askFlow(pick(people));
+    const month = Number(d.slice(5, 7));
+    const inflow = (month === 1 ? 1.3 : month === 7 || month === 8 ? 0.7 : 1) * ({ 1: 1.3, 5: 0.8 }[weekday(d)] ?? 1);
+    for (let i = Math.round(between(0, 10) * inflow); i > 0 && people.length; i--) await this.askFlow(pick(people));
+    if (weekday(d) === 1) this.newWeek();
+    await this.takeOver();
+    if (d.slice(8) >= '28' && Number(addDays(d, 7).slice(8)) <= 7) {
+      // The month's last working week: how many wait (the year's line shows the range).
+      const [{ n }] = await this.q(`SELECT count(*)::int AS n FROM flows WHERE organization_id = $1 AND status <> 'resolved' AND archived_at IS NULL`, [this.org]);
+      (this.openByMonth ??= new Map()).set(d.slice(0, 7), n);
+    }
+  }
+
+  /**
+   * How much time each department (and the managers) has for flows this week: a random walk between a quarter and all
+   * of it, less in the summer holidays and from 20 December. A busy department answers fewer flows at first, later,
+   * and takes over less: the open flows rise and fall as in real life (spec by Fabio, 2026-11-27).
+   */
+  newWeek() {
+    for (const key of ['manager', ...Object.keys(this.departments)]) {
+      this.load[key] = Math.min(1, Math.max(0.25, (this.load[key] ?? 0.8) + (random() - 0.5) * 0.5));
+    }
+  }
+
+  /** The share of time `to` (a department's code or `manager`) has for flows today (0.25 .. 1, less in holidays). */
+  pace(to) {
+    const d = this.current;
+    const holidays = d.slice(5, 7) === '07' || d.slice(5, 7) === '08' || d.slice(5) >= '12-20' ? 0.6 : 1;
+    return (this.load[to] ?? 0.8) * holidays;
   }
 
   /**
@@ -528,7 +567,9 @@ class Sim {
    */
   async askFlow(p) {
     const flows = this.ctrl('flows.controller', 'FlowsController');
-    const [subject, to] = pick(FLOW_TOPICS);
+    // Nobody asks their own department (an IT person fixes their VPN themselves), nor one where nobody works yet.
+    const staffed = new Set(this.working(this.current).map((x) => x.dept));
+    const [subject, to] = pick(FLOW_TOPICS.filter(([, t]) => t !== p.dept && (t === 'manager' || staffed.has(t))));
     const dept = to === 'manager' ? null : this.departments[to];
     // The flow's type (the global ones): HR matters are confidential, IT is support.
     const type = { hr: 'hr', it: 'support', finance: 'service', service: 'service', manager: 'other' }[to];
@@ -541,22 +582,124 @@ class Sim {
     const r = await call('flows.create', () => flows.create(this.org, body, [], as(p.userId)));
     if (!r.ok) return;
     const id = r.id ?? r.flow?.id;
-    if (chance(0.25)) return; // nobody answers
+    // Until it is resolved: whoever waits too long gets it taken over (`takeOver`).
+    const open = { id, to, asker: p, due: body.dueDate ?? null, last: this.current, handler: null };
+    this.openFlows.set(id, open);
+    // The first one it reaches does not answer: a quarter of them in a normal week, more when the department is busy.
+    const pace = this.pace(to);
+    if (chance(1 - 0.75 * pace)) return;
     // Who handles it: the manager, or someone of the department (its leader first) who takes it.
-    const handler = () => {
-      if (!dept) return this.people.find((x) => x.userId === p.manager && x.hired && !(x.exit && x.exit < this.current)) ?? this.admin;
+    const handler = async () => {
+      if (!dept) return this.flowManager(p);
       const staff = this.working(this.current).filter((x) => x.dept === to && x !== p);
       return dept.leader && !dept.leader.exit ? dept.leader : staff.length ? pick(staff) : null;
     };
-    this.schedule(this.workdayFrom(addDays(this.current, between(1, 5))), async () => {
-      const h = handler();
-      if (!h) return;
+    this.schedule(this.workdayFrom(addDays(this.current, between(1, Math.round(3 + 7 * (1 - pace))))), async () => {
+      const h = await handler();
+      if (!h || !this.openFlows.has(id)) return;
       if (dept) await call('flows.take', () => flows.take(this.org, id, {}, as(h.userId)));
-      if (!body.dueDate && chance(0.3)) await call('flows.details', () => flows.setDetails(this.org, id, { dueDate: addDays(this.current, between(2, 10)) }, as(h.userId)));
-      await call('flows.reply', () => flows.reply(this.org, id, { body: pick(['On it, I will get back to you.', 'Done, please check.', 'I need a bit more information, please.', 'Approved.']) }, [], as(h.userId)));
-      if (chance(0.85)) this.schedule(this.workdayFrom(addDays(this.current, between(0, 4))), () => call('flows.resolve', () => flows.setStatus(this.org, id, { status: 'resolved' }, as(h.userId))));
+      if (!body.dueDate && chance(0.3)) {
+        const due = addDays(this.current, between(2, 10));
+        const d = await call('flows.details', () => flows.setDetails(this.org, id, { dueDate: due }, as(h.userId)));
+        if (d?.ok) open.due = due;
+      }
+      const a = await call('flows.reply', () => flows.reply(this.org, id, { body: pick(['On it, I will get back to you.', 'Done, please check.', 'I need a bit more information, please.', 'Approved.']) }, [], as(h.userId)));
+      if (!a?.ok) return;
+      open.last = this.current;
+      open.handler = h;
+      if (chance(0.85)) this.schedule(this.workdayFrom(addDays(this.current, between(0, 4))), () => this.resolveFlow(open, h));
     });
   }
+
+  /**
+   * Who answers a flow to the asker's manager: as the API decides it (`membershipManagerId`, the newest assignment up to
+   * the real today, so also one HR planned ahead), not the manager of the simulated day. Nobody when that manager left.
+   */
+  async flowManager(p) {
+    const [row] = await this.q(`SELECT manager_user_id FROM employee_assignments WHERE organization_id = $1 AND user_id = $2
+      AND valid_from <= CURRENT_DATE ORDER BY valid_from DESC LIMIT 1`, [this.org, p.userId]);
+    if (!row?.manager_user_id) return null;
+    if (row.manager_user_id === this.admin.userId) return this.admin;
+    return this.people.find((x) => x.userId === row.manager_user_id && x.hired && !(x.exit && x.exit < this.current)) ?? null;
+  }
+
+  /** The handler resolves it (refused, e.g. they moved to another department: it waits for someone to take it over). */
+  async resolveFlow(open, h) {
+    if (!this.openFlows.has(open.id)) return;
+    const flows = this.ctrl('flows.controller', 'FlowsController');
+    const r = await call('flows.resolve', () => flows.setStatus(this.org, open.id, { status: 'resolved' }, as(h.userId)));
+    if (r?.ok) this.openFlows.delete(open.id);
+  }
+
+  /**
+   * Flows don't stay put, as in real life (spec by Fabio, 2026-11-27): each working day, a flow to a department that
+   * waited ten days without anyone acting on it, or is overdue and quiet for two days, is taken over now and then by a colleague of that
+   * department (not the asker, not whoever has it), who answers it and resolves it in the next days. A flow to the
+   * manager that waited two weeks gets a late answer from whoever is the asker's manager by then.
+   */
+  async takeOver() {
+    const flows = this.ctrl('flows.controller', 'FlowsController');
+    const today = this.current;
+    for (const open of [...this.openFlows.values()]) {
+      const waiting = daysBetween(open.last, today);
+      const overdue = open.due && open.due < today;
+      // Two weeks of working days without anyone acting, or overdue and quiet for two days.
+      if (waiting < 10 && !(overdue && waiting >= 2)) continue;
+      let who;
+      if (open.to === 'manager') {
+        if (waiting < 14 || !chance(0.2 * this.pace('manager'))) continue;
+        // Whoever manages the asker by then.
+        who = await this.flowManager(open.asker);
+      } else {
+        if (!chance((overdue ? 0.5 : 0.3) * this.pace(open.to))) continue;
+        // A colleague of the department; in a small one whoever has it after all (none: it waits for the next hire).
+        const staff = this.working(today).filter((x) => x.dept === open.to && x !== open.asker);
+        const others = staff.filter((x) => x !== open.handler);
+        who = others.length ? pick(others) : staff[0];
+        if (!who) continue;
+        const t = await call('flows.takeOver', () => flows.take(this.org, open.id, {}, as(who.userId)));
+        if (!t?.ok) continue;
+      }
+      const a = await call('flows.reply', () => flows.reply(this.org, open.id, { body: pick(['Sorry for the wait, I am taking this over.', 'I will take care of this now.', 'Taking this over: done, please check.']) }, [], as(who.userId)));
+      if (!a?.ok) continue;
+      open.last = today;
+      open.handler = who;
+      const why = open.to === 'manager' ? 'manager late' : overdue ? 'overdue' : 'waited';
+      this.taken[why] = (this.taken[why] ?? 0) + 1;
+      if (chance(0.9)) this.schedule(this.workdayFrom(addDays(today, between(0, 3))), () => this.resolveFlow(open, who));
+    }
+  }
+
+  /**
+   * SQL: the API stamps flows and workflows with the real time; a simulated day's new stamps (since `since`, the
+   * database's time when the day began) are moved to that day, from 8:00 in Zurich on, in the order they happened. So
+   * "the last 30 days", "waiting since" and a step's history read as in a company that lived those years.
+   */
+  async stampDay(d, since) {
+    // $1 the organization, $2 and $4 when the day began and ended (database time), $3 the simulated day: what was
+    // written that day is spread over 8:00 to 17:00 in the order it happened; a time beyond the day's end (a due date
+    // set "in 3 days") moves by as much as the day.
+    const moved = (value) => `((($3::date + time '08:00') AT TIME ZONE 'Europe/Zurich') + CASE WHEN ${value} <= $4
+      THEN EXTRACT(epoch FROM ${value} - $2) / GREATEST(EXTRACT(epoch FROM $4::timestamptz - $2), 0.001) * interval '9 hours'
+      ELSE ${value} - $2 END)`;
+    const at = (col) => `${col} = CASE WHEN ${col} >= $2 THEN ${moved(col)} ELSE ${col} END`;
+    const any = (cols) => cols.map((c) => `${c} >= $2`).join(' OR ');
+    const [{ now: until }] = await this.q('SELECT now()');
+    const params = [this.org, since, d, until];
+    const flowCols = ['opened_at', 'last_activity_at', 'resolved_at', 'archived_at', 'overdue_alerted_at'];
+    await this.pool.query(`UPDATE flows SET ${flowCols.map(at).join(', ')} WHERE organization_id = $1 AND (${any(flowCols)})`, params);
+    await this.pool.query(`UPDATE flow_messages m SET posted_at = ${moved('m.posted_at')} FROM flows r WHERE r.id = m.flow_id AND r.organization_id = $1 AND m.posted_at >= $2`, params);
+    const wfCols = ['workflow_started', 'workflow_finished', 'workflow_to_be_finished_until', 'workflow_step_started', 'workflow_step_finished', 'workflow_step_to_be_finished_until'];
+    // The history's entries (`at`, ISO text) too, in the same statement (it reads the stamps before they move).
+    const entryAt = `(e ->> 'at')::timestamptz`;
+    const history = `CASE WHEN jsonb_typeof(workflow_data -> 'history') = 'array' THEN jsonb_set(workflow_data, '{history}', (
+        SELECT COALESCE(jsonb_agg(CASE WHEN e ->> 'at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND ${entryAt} >= $2
+          THEN jsonb_set(e, '{at}', to_jsonb(to_char(${moved(entryAt)} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
+          ELSE e END ORDER BY n), '[]'::jsonb)
+        FROM jsonb_array_elements(workflow_data -> 'history') WITH ORDINALITY AS h(e, n))) ELSE workflow_data END`;
+    await this.pool.query(`UPDATE workflows SET ${wfCols.map(at).join(', ')}, workflow_data = ${history} WHERE organization_id = $1 AND (${any(wfCols)})`, params);
+  }
+
 
   /** Asks for vacation from `from` on; the manager decides in the next days (now and then no: moved and asked again). */
   async askVacation(p, from, summer) {
@@ -1045,10 +1188,22 @@ async function main() {
   for (let d = COMPANY.founded; d < sim.today && d <= until; d = addDays(d, 1)) {
     sim.current = d;
     if (d.endsWith('-01')) sim.planMonth(Number(d.slice(0, 4)), Number(d.slice(5, 7)));
+    const [{ now: since }] = await sim.q('SELECT now()');
     await sim.live(d);
-    if (d.endsWith('-12-31')) console.log(`${d.slice(0, 4)}: ${sim.working(d).length} people, ${sim.people.filter((p) => p.hired).length} hired so far (${Math.round((performance.now() - started) / 1000)} s)`);
+    await sim.stampDay(d, since);
+    if (d.endsWith('-12-31')) {
+      const open = [...(sim.openByMonth ?? new Map())].filter(([m]) => m.startsWith(d.slice(0, 4))).map(([, n]) => n);
+      const range = open.length ? `, open flows at month-end ${Math.min(...open)}-${Math.max(...open)}` : '';
+      console.log(`${d.slice(0, 4)}: ${sim.working(d).length} people, ${sim.people.filter((p) => p.hired).length} hired so far${range} (${Math.round((performance.now() - started) / 1000)} s)`);
+    }
   }
   for (const e of (sim.closeErrors ?? []).slice(0, 10)) console.log(`  not closed: ${e}`);
+  // Free Flows: what still waits, and that the stamps are the simulated days' (none from the run's own time).
+  const [ff] = await sim.q(`SELECT count(*)::int AS total, count(*) FILTER (WHERE status <> 'resolved')::int AS open,
+      count(*) FILTER (WHERE status <> 'resolved' AND last_activity_at < $2::date - 30)::int AS stale,
+      max(last_activity_at) AS newest FROM flows WHERE organization_id = $1`, [sim.org, sim.current]);
+  console.log(`free flows: ${ff.total}, open ${ff.open} (no activity for 30 days: ${ff.stale}), taken over ${JSON.stringify(sim.taken)}`);
+  assert(!ff.newest || day(new Date(ff.newest)) <= sim.current, `flows stamped on the simulated days (newest ${ff.newest})`);
   if (!process.env.SIM_UNTIL) await verify(sim);
   const now = sim.working(sim.current);
   const roleCount = (r) => now.filter((p) => p.role === r).length;

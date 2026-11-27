@@ -1,13 +1,13 @@
 # Whale simulation: a company's life
 
-`life.cjs` plays the company **Whale** day by day from its founding (2008-01-01) to yesterday, through the API's own services, and then checks the result over real HTTP.\
+`life.cjs` plays the company **Whale** day by day from its founding (2015-01-01, `SIM_FOUNDED`) to yesterday, through the API's own services, and then checks the result over real HTTP.\
 It is meant to show the app as it is after years of real use: realistic volumes, every flow and permission exercised, and where the time goes.\
 It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** database, or on a scratch database (`local-check`).
 
 ## What happens
 
 **The company** (spec by Fabio, 2026-11-27):
-- Whale grows from a handful of people to **200** today.
+- Whale is founded on 2015-01-01 and grows from a handful of people to **200** today.
 - **Roles:** 5% HR, 5% finance (Whale's own role `finance`: payment runs and billing), 10% leads (`manager`), 5% IT support (`admin`, at least one of them also `developer`), the rest members (a tenth of them also developers).
 - **Admin:** `admin@whale.com` with the password `admin` is owner and admin; the founder does HR until the first HR person comes, then gives the role away.
 - About 10% give notice each year (HR records the last day some weeks ahead); people join on their first day through an invitation they accept.
@@ -18,7 +18,9 @@ It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** d
 - Some are ill (recorded that morning); some forget a day (the manager notices it at the month's end).
 - People ask for vacation weeks ahead (about 25 days a year, more in summer); the manager decides one to three days later and now and then says no (asked again later).
 - Expenses: travel and meals with customers (billable on the customer's project), supplies and software in the office.
-- 0 to 10 Free Flows: to the manager or a department (HR, IT support, finance, customer service), sometimes with a due date (set by the asker or later by whoever handles it); most are taken, answered and resolved in the next days, about a quarter never get an answer.
+- 0 to 10 Free Flows (more in January and on Mondays, fewer in summer and on Fridays): to the manager or a department (HR, IT support, finance, customer service; never one's own, never one where nobody works yet), sometimes with a due date (set by the asker or later by whoever handles it); most are taken, answered and resolved in the next days, a quarter in a normal week get no first answer.
+- **Flows don't stay put** (spec by Fabio, 2026-11-27): a flow to a department that waited ten days without anyone acting, or is overdue and quiet for two days, is taken over now and then by a colleague of that department, who answers it and resolves it; a flow to the manager that waited two weeks gets a late answer from whoever manages the asker by then (as the API decides it: the newest assignment).
+- **Busy weeks:** each department (and the managers) has a share of its time for flows that changes week by week (a random walk between a quarter and all of it, less in July, August and from 20 December): a busy department answers fewer flows at first, later, and takes over less, so the open flows rise and fall (the year's line shows the range at month-end).
 
 **Each month:**
 - On the first working days everyone hands in the month before: the timesheet (to the manager), the project hours (to each project's owner) and an expense report; the decisions come some days later; now and then one is sent back, completed and handed in again.
@@ -42,7 +44,8 @@ It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** d
 - **SQL** only where no service can act in the past or the spec asks for something the service refuses; each place says `SQL:` in the code:
   - an account's join date (the service says now, a leaver's exit must lie after it);
   - the admin's 8-character-short demo password `admin`, set once (as the demo seed does), never changed after;
-  - the billing licence where the instance has no operator (a fresh dev database; on test and preprod the operator grants it).
+  - the billing licence where the instance has no operator (a fresh dev database; on test and preprod the operator grants it);
+  - the time stamps of flows, their messages and workflows (with their history), which the API writes with the real time: each simulated day's are moved to that day, spread over 8:00 to 17:00 in the order they happened, so "the last 30 days" and "waiting since" read as in a company that lived those years.
 - Mails are read as the person's mailbox would show them (invitation token, password reset link); the instance's mail goes to its Mailpit.
 - The API's own timers (reminders, HR tasks) are off in the simulation's process; the instance itself keeps them.
 - Random but reproducible: the same `SIM_SEED` gives the same company.
@@ -75,9 +78,12 @@ DATABASE_URL=postgresql://…/apensum_simulation_check npm run db:migrate
 SIM_API=http://127.0.0.1:8012/api/v1/ DATABASE_URL=… node test/simulation/life.cjs local-check
 ```
 
-**Options:** `SIM_UNTIL=YYYY-MM-DD` stops early (no checks then), `SIM_SEED` changes the randomness, `SIM_PARALLEL` sets how many people act at once (8), `SIM_API` the API for the checks.
+**Options:** `SIM_FOUNDED=YYYY-MM-DD` moves the founding (2015-01-01), `SIM_UNTIL=YYYY-MM-DD` stops early (no checks then), `SIM_SEED` changes the randomness, `SIM_PARALLEL` sets how many people act at once (8), `SIM_API` the API for the checks.
 
 ## What it found so far
 
 - **A leaver's year could never be closed** (months after the exit counted as open): fixed, months after the employment are `after-end`.
 - **Where the time goes** (database sampled during a run, 78% busy): writing the history (`versions`, about a quarter, now written in batches: about a third faster overall), the overlap checks of bookings, looking up roles and permissions for every call, the flow definition written again at every flow start, the manager re-routing over all open flows at every decision.
+- **Tasks scheduled for the same day were lost** in the simulation itself (a resolve "today" after the day's agenda had run): they now go to the next day.
+- **A flow to the manager follows the newest assignment, also one planned ahead** (`membershipManagerId` reads up to the real today): when HR records a move for next month, the new manager handles the flows to the manager at once.
+- **The balance reports took 16 s** for 354 people (date arithmetic, not SQL): now about half a second on dev for 204 people.
