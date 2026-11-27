@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { AccessCacheInterceptor } from './access-cache.interceptor';
 import { JwtAuthGuard } from './jwt.guard';
 import { HealthController } from './health.controller';
 import { AboutController } from './about.controller';
@@ -169,6 +170,7 @@ const plugins = loadApiPlugins();
     PluginRegistrar,
     ...plugins.providers,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_INTERCEPTOR, useClass: AccessCacheInterceptor },
   ],
 })
 export class AppModule {}

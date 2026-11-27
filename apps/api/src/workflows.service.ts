@@ -572,8 +572,11 @@ export class WorkflowsService {
    * change has come into force since. Only requests still with one of the person's managers
    * (current or past) move; a request already elsewhere, or a person without a manager now, stays.
    * The new manager is notified. Returns how many requests moved.
+   * `scope` narrows the look (a list or a decision need not look at every organization's open flows): one workflow,
+   * an organization, the flows of one person (`subjectId`), or what concerns `userId` (with them now, or of someone
+   * whose manager they are today). Without it, all (the 10-minute runner, workflow-dues.service.ts).
    */
-  async rerouteToCurrentManagers(db: Db): Promise<number> {
+  async rerouteToCurrentManagers(db: Db, scope: { workflowId?: string; organizationId?: string; subjectId?: string; userId?: string } = {}): Promise<number> {
     const names = sql.join([...this.managerRouted].map((n) => sql`${n}`), sql`, `);
     // Kinds with variants have one definition per variant (`<name>:<variant>`).
     const prefixes = [...this.kindsById.values()].filter((k) => k.variants).map((k) => `${k.catalogue.definitionName}:`);
@@ -588,7 +591,15 @@ export class WorkflowsService {
         -- Only steps that go to the manager (a later step, e.g. processing, has its own assignees).
         AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(COALESCE(w.steps, d.steps)) = 'array' THEN COALESCE(w.steps, d.steps) ELSE '[]'::jsonb END) st
                         WHERE st->>'key' = w.step AND COALESCE(st->>'assignTo', 'manager') <> 'manager')
-        AND jsonb_exists(w.workflow_data, 'submittedByUserId')`);
+        AND jsonb_exists(w.workflow_data, 'submittedByUserId')
+        ${scope.workflowId ? sql`AND w.workflow_id = ${scope.workflowId}::uuid` : sql``}
+        ${scope.organizationId ? sql`AND w.organization_id = ${scope.organizationId}::uuid` : sql``}
+        ${scope.subjectId ? sql`AND w.workflow_data->>'submittedByUserId' = ${scope.subjectId}` : sql``}
+        ${scope.userId ? sql`AND (w.assigned_to_user_id @> ARRAY[${scope.userId}::uuid] OR EXISTS (
+            SELECT 1 FROM employee_assignments a WHERE a.organization_id = w.organization_id
+              AND a.user_id = (w.workflow_data->>'submittedByUserId')::uuid AND a.manager_user_id = ${scope.userId}::uuid
+              AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
+                                  WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= CURRENT_DATE)))` : sql``}`);
     const pending = pendingResult.rows as { workflow_id: string; organization_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string }[];
     if (pending.length === 0) return 0;
     const values = sql.join(
@@ -678,8 +689,8 @@ export class WorkflowsService {
     note: string | undefined,
     values?: unknown,
   ): Promise<{ ok: true } | { ok: false; error: string; field?: string }> {
-    // A dated manager change may have come into force since the request was routed.
-    await this.rerouteToCurrentManagers(db).catch(() => 0);
+    // A dated manager change may have come into force since the request was routed (this request only).
+    await this.rerouteToCurrentManagers(db, { workflowId }).catch(() => 0);
     const workflow = await this.loadWorkflow(db, eq(workflows.workflow_id, workflowId));
     if (!workflow) return { ok: false, error: 'workflow-not-found' };
 

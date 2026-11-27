@@ -9,7 +9,7 @@ import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
 import { API_PLUGINS } from './plugin-registrar';
 import type { ApiPlugin } from './plugin';
-import { stepNameValue, workflowHistory, type WorkflowEvent, type WorkflowStepDefinition } from './workflows.service';
+import { WorkflowsService, stepNameValue, workflowHistory, type WorkflowEvent, type WorkflowStepDefinition } from './workflows.service';
 
 /** How often pending steps are looked at (deputies, reminders, escalations). */
 const TICK_MS = 10 * 60_000;
@@ -134,7 +134,7 @@ interface DueState { step: string; started: string; reminded?: boolean; escalate
 
 /**
  * Flows don't stay put (a runner in the API, every 10 minutes; `REQUEST_ALERTS=off` turns it off with the Free Flows'
- * overdue alerts): a step whose assignees are away goes to their deputies (organization_memberships.deputy_user_id),
+ * overdue alerts): open flows follow dated manager changes (the one look over all of them), a step whose assignees are away goes to their deputies (organization_memberships.deputy_user_id),
  * a step waiting its `remindDays` working days reminds them (bell and mail), and one waiting its `escalateDays` goes to
  * their managers as well (else to HR). Each is written into the flow's history.
  */
@@ -148,6 +148,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     private readonly db: DbService,
     private readonly notifications: NotificationsService,
     private readonly versions: VersionsService,
+    private readonly workflowsSvc: WorkflowsService,
     @Optional() @Inject(API_PLUGINS) private readonly plugins: readonly ApiPlugin[] = [],
   ) {}
 
@@ -169,6 +170,8 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     this.running = true;
     try {
       const today = localDate(now, TIME_ZONE);
+      // Dated manager changes that came into force: the lists and decisions only look at what concerns them.
+      await this.workflowsSvc.rerouteToCurrentManagers(db).catch(() => 0);
       done.permits = await this.remindPermits(db, today).catch((err) => {
         this.log.warn(`permit reminders failed: ${err instanceof Error ? err.message : err}`);
         return 0;

@@ -48,6 +48,8 @@ const TABS: Record<FlowsTab, { scope: Scope; status: StatusFilter; boxes: Box_[]
 };
 
 const REQUEST_COLOR = { open: 'warning', in_progress: 'info', resolved: 'success' } as const;
+/** Done and Mine show the newest so many of the other flows; "Load older" brings the next ones. */
+const PAGE = 200;
 const WORKFLOW_COLOR = { pending: 'warning', approved: 'success', rejected: 'error' } as const;
 
 export default function Flows(props: FlowsProps) {
@@ -60,6 +62,8 @@ export default function Flows(props: FlowsProps) {
   const [items, setItems] = useState<ActionItem[]>([]);
   const [types, setTypes] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(false);
+  // Where older flows start (the API's cursor), when there are more than the page shows.
+  const [older, setOlder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ source: FlowRow['source']; id: string } | null>(props.focus ? { source: props.focus.source, id: props.focus.id } : null);
   const [typeFilter, setTypeFilter] = useState('');
@@ -117,10 +121,12 @@ export default function Flows(props: FlowsProps) {
     try {
       const headers = await authHeaders();
       const [wf, ...boxes] = await Promise.all([
-        fetch(`${API}/workflows/assigned-to-me?scope=${shown.scope}&status=${shown.status}&orgId=${orgId}`, { headers }).then((r) => r.json()),
+        fetch(`${API}/workflows/assigned-to-me?scope=${shown.scope}&status=${shown.status}&orgId=${orgId}${shown.status === 'all' ? `&limit=${PAGE + 1}` : ''}`, { headers }).then((r) => r.json()),
         ...(hasFreeFlows ? shown.boxes.map((box) => fetch(`${API}/organizations/${orgId}/flows?box=${box}`, { headers }).then((r) => r.json())) : []),
       ]);
-      setItems(Array.isArray(wf) ? wf : []);
+      const list: ActionItem[] = Array.isArray(wf) ? wf : [];
+      setItems(shown.status === 'all' ? list.slice(0, PAGE) : list);
+      setOlder(shown.status === 'all' && list.length > PAGE ? (list[PAGE - 1].cursor ?? null) : null);
       // Opened without a focus: "To do" stays when something waits there, else "Mine".
       if (chooseTab.current && tab === 'todo') {
         chooseTab.current = false;
@@ -139,6 +145,22 @@ export default function Flows(props: FlowsProps) {
   useEffect(() => {
     void load();
   }, [load, props.refreshKey]);
+
+  /** The next older flows (Done, Mine), added below. */
+  const loadOlder = async () => {
+    if (!older) return;
+    setLoading(true);
+    try {
+      const wf = await (await fetch(`${API}/workflows/assigned-to-me?scope=${shown.scope}&status=${shown.status}&orgId=${orgId}&limit=${PAGE + 1}&before=${encodeURIComponent(older)}`, { headers: await authHeaders() })).json();
+      const list: ActionItem[] = Array.isArray(wf) ? wf : [];
+      setItems((prev) => [...prev, ...list.slice(0, PAGE)]);
+      setOlder(list.length > PAGE ? (list[PAGE - 1].cursor ?? null) : null);
+    } catch {
+      setError(t('common.cannotReachApi'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const changed = () => {
     void load();
@@ -212,6 +234,11 @@ export default function Flows(props: FlowsProps) {
             </Box>
           ))}
         </List>
+      )}
+      {older && (
+        <Box sx={{ p: 1, display: 'flex', justifyContent: 'center' }}>
+          <Button size="small" disabled={loading} onClick={() => void loadOlder()}>{t('flows.showOlder')}</Button>
+        </Box>
       )}
     </Paper>
   );

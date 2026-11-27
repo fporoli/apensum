@@ -22,6 +22,18 @@ export function workflowRecallDays(env: NodeJS.ProcessEnv = process.env): number
   return env.WORKFLOW_RECALL_DAYS?.trim() && Number.isInteger(days) && days >= 0 && days <= 365 ? days : 5;
 }
 
+/** A cursor of the workflow list (`<step started ISO>|<workflow id>`), or null when malformed. */
+export function parseWorkflowCursor(value: string | undefined): { started: string; id: string } | null {
+  const [started, id] = (value ?? '').split('|');
+  if (!started || !id || Number.isNaN(Date.parse(started)) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
+  return { started: new Date(started).toISOString(), id };
+}
+
+/** The cursor of a row of the list, for the next page (`before`). */
+export function workflowCursor(row: { id: string; started: string | Date | null }): string {
+  return `${row.started ? new Date(row.started).toISOString() : '1970-01-01T00:00:00.000Z'}|${row.id}`;
+}
+
 @Controller('workflows')
 export class WorkflowsController {
   constructor(
@@ -41,13 +53,16 @@ export class WorkflowsController {
     @Query('status') status?: string,
     @Query('scope') scope?: string,
     @Query('orgId') orgId?: string,
+    @Query('limit') limitParam?: string,
+    @Query('before') before?: string,
   ) {
     const db = this.db.getDb();
     if (!db) return [];
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return [];
     // Requests follow a person's manager: bring the inbox up to date with dated manager changes.
-    await this.workflowsSvc.rerouteToCurrentManagers(db).catch(() => 0);
+    // What concerns the caller only (in the organization asked for): with them now, or of someone they manage today.
+    await this.workflowsSvc.rerouteToCurrentManagers(db, { userId: callerId, ...(orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? { organizationId: orgId } : {}) }).catch(() => 0);
     const teamIds = await this.workflowsSvc.callerTeamIds(db, callerId);
     const assignedToCaller = sql`${workflows.assigned_to_user_id} @> ARRAY[${callerId}]::uuid[]`;
     const assignment = teamIds.length > 0 ? or(assignedToCaller, inArray(workflows.assigned_to_team_id, teamIds)) : assignedToCaller;
@@ -62,6 +77,11 @@ export class WorkflowsController {
     const conditions = [who];
     if (status !== 'all') conditions.push(eq(workflows.step_status, status === 'approved' || status === 'rejected' ? status : 'pending'));
     if (orgId && /^[0-9a-f-]{36}$/i.test(orgId)) conditions.push(eq(workflows.organization_id, orgId));
+    // Newest first, `limit` at a time (Flows -> Done: 200 and "Load older"); `before` is the last row's cursor.
+    const limit = Math.min(Math.max(Number(limitParam) || 0, 0), 1000);
+    const cursor = parseWorkflowCursor(before);
+    const startedOrZero = sql`COALESCE(${workflows.workflow_step_started}, 'epoch'::timestamptz)`;
+    if (cursor) conditions.push(sql`(${startedOrZero}, ${workflows.workflow_id}) < (${cursor.started}::timestamptz, ${cursor.id}::uuid)`);
     const rawRows = await db
       .select({
         id: workflows.workflow_id,
@@ -84,7 +104,8 @@ export class WorkflowsController {
       .from(workflows)
       .innerJoin(workflow_definitions, eq(workflow_definitions.workflow_def_id, workflows.workflow_def_id))
       .where(and(...conditions))
-      .orderBy(desc(workflows.workflow_step_started));
+      .orderBy(desc(startedOrZero), desc(workflows.workflow_id))
+      .limit(limit || 100_000);
 
     // The "corresponding object" label/formatter for this row's step come from its workflow_definitions'
     // steps config (`source` / `source_name`) rather than being hardcoded per workflow type here.
@@ -198,6 +219,8 @@ export class WorkflowsController {
     );
     return rows.map(({ workflow_started: _started, ...r }) => ({
       ...r,
+      // Where the next page starts (`before`, Flows -> Done "Load older").
+      cursor: workflowCursor(r),
       // A form step's answers (`inputs`) are shown where the item's own page decides who sees them (a request's thread).
       workflow_data: withoutInputs(r.workflow_data),
       history: (histories.get(r.id) ?? []).map((e) => ({ ...e, by_name: e.by ? (actorNames.get(e.by) ?? null) : null })),

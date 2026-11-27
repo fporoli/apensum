@@ -125,6 +125,8 @@ export interface ActionItem {
   step_private_answers?: boolean;
   /** The caller submitted it. */
   is_own?: boolean;
+  /** Where the list continues after this item (`before`, Flows -> Done "Load older"). */
+  cursor?: string;
   /** False for an item recalled under "Done": the caller did a step of it, it waits with someone else now. */
   assigned_to_me?: boolean;
   /** What happened, oldest first (`key` is a text key: the core's or a plugin's). */

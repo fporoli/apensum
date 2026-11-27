@@ -40,7 +40,43 @@ export function pickPrimaryRole(names: string[]): string | null {
 }
 
 /** All of a user's active role names in an organization — a membership can now hold more than one. */
+/**
+ * Roles and permissions are read for nearly every call, often several times in one: they are kept for ACCESS_TTL_MS
+ * per database handle (so a test's or a transaction's never mixes with another's) and forgotten at once whenever
+ * roles, permissions, memberships, modules or licences change (`forgetAccess`, access-cache.interceptor.ts). Holding
+ * nothing (not a member) is never kept, so whoever joins or gets a first role is seen at once.
+ */
+/** `ACCESS_CACHE_TTL_MS=0` turns the cache off (e.g. to measure it). */
+const ACCESS_TTL_MS = Number(process.env.ACCESS_CACHE_TTL_MS ?? 3000);
+const accessCaches = new WeakMap<object, Map<string, { at: number; value: Promise<unknown> }>>();
+let accessGeneration = 0;
+
+/** Forgets every cached role and permission (after a change to roles, permissions, memberships, modules, licences). */
+export function forgetAccess(): void {
+  accessGeneration++;
+}
+
+function cachedAccess<T>(db: Executor, key: string, load: () => Promise<T>): Promise<T> {
+  let cache = accessCaches.get(db as object);
+  if (!cache) accessCaches.set(db as object, (cache = new Map()));
+  const now = Date.now();
+  const k = `${accessGeneration}:${key}`;
+  const hit = cache.get(k);
+  if (ACCESS_TTL_MS <= 0) return load();
+  if (hit && now - hit.at < ACCESS_TTL_MS) return hit.value as Promise<T>;
+  if (cache.size > 5000) cache.clear();
+  const value = load();
+  cache.set(k, { at: now, value });
+  // Nothing held (not a member, no roles) is not kept: joining or a first role counts at once, wherever it happens.
+  value.then((v) => { if ((Array.isArray(v) && !v.length) || (v instanceof Set && !v.size)) cache.delete(k); }, () => cache.delete(k));
+  return value;
+}
+
 async function activeRoleNames(db: Executor, organizationId: string, userId: string): Promise<string[]> {
+  return cachedAccess(db, `roles:${organizationId}:${userId}`, () => loadActiveRoleNames(db, organizationId, userId));
+}
+
+async function loadActiveRoleNames(db: Executor, organizationId: string, userId: string): Promise<string[]> {
   const rows = await db.execute(
     sql`SELECT r.name FROM organization_memberships m
         JOIN membership_roles mr ON mr.membership_id = m.id
@@ -371,6 +407,11 @@ export async function isProjectPeriodLocked(
 
 /** The caller's permission ids in this organization, merged across all their active roles. */
 export async function permissionIdsOf(db: Executor, organizationId: string, userId: string): Promise<Set<string>> {
+  // A copy, so a caller that changes its set does not change the cached one.
+  return new Set(await cachedAccess(db, `permissions:${organizationId}:${userId}`, () => loadPermissionIdsOf(db, organizationId, userId)));
+}
+
+async function loadPermissionIdsOf(db: Executor, organizationId: string, userId: string): Promise<Set<string>> {
   // The Admin organization: its members hold the Super Admin pages and nothing else, whatever any role says.
   if (organizationId === OPERATOR_ORG_ID) return new Set((await isOperator(db, userId)) ? [OPERATOR_PERMISSION] : []);
   const rows = await db.execute(

@@ -420,7 +420,7 @@ export class EmploymentController {
     const [row] = await db.insert(employee_assignments).values(values).returning({ id: employee_assignments.id });
     void this.versions.record('employee_assignments', row.id, 'insert', callerId, { id: row.id, ...values }).catch(() => {});
     void this.audit.record(orgId, callerId, 'employment.assign', 'user', userId, { id: row.id }).catch(() => {});
-    await this.workflows.rerouteToCurrentManagers(db).catch(() => 0);
+    await this.workflows.rerouteToCurrentManagers(db, { organizationId: orgId, subjectId: userId }).catch(() => 0);
     return { ok: true, id: row.id };
   }
 
@@ -447,7 +447,7 @@ export class EmploymentController {
     await db.update(employee_assignments).set(checked).where(eq(employee_assignments.id, id));
     void this.versions.record('employee_assignments', id, 'update_delta', callerId, checked).catch(() => {});
     void this.audit.record(orgId, callerId, 'employment.update', 'user', row.user_id, { id }).catch(() => {});
-    await this.workflows.rerouteToCurrentManagers(db).catch(() => 0);
+    await this.workflows.rerouteToCurrentManagers(db, { organizationId: orgId, subjectId: row.user_id }).catch(() => 0);
     return { ok: true };
   }
 
@@ -462,7 +462,7 @@ export class EmploymentController {
     await db.delete(employee_assignments).where(eq(employee_assignments.id, id));
     void this.versions.record('employee_assignments', id, 'delete', callerId, row).catch(() => {});
     void this.audit.record(orgId, callerId, 'employment.delete', 'user', row.user_id, { id }).catch(() => {});
-    await this.workflows.rerouteToCurrentManagers(db).catch(() => 0);
+    await this.workflows.rerouteToCurrentManagers(db, { organizationId: orgId, subjectId: row.user_id }).catch(() => 0);
     return { ok: true };
   }
 
