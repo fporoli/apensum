@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { workingDaysSince } from '@worktime3/shared/workflowConfig';
 import { DbService, type Db } from './db.service';
@@ -7,6 +7,8 @@ import { VersionsService } from './versions.service';
 import { sendMail } from './mailer';
 import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
+import { API_PLUGINS } from './plugin-registrar';
+import type { ApiPlugin } from './plugin';
 import { stepNameValue, workflowHistory, type WorkflowEvent, type WorkflowStepDefinition } from './workflows.service';
 
 /** How often pending steps are looked at (deputies, reminders, escalations). */
@@ -146,6 +148,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     private readonly db: DbService,
     private readonly notifications: NotificationsService,
     private readonly versions: VersionsService,
+    @Optional() @Inject(API_PLUGINS) private readonly plugins: readonly ApiPlugin[] = [],
   ) {}
 
   onModuleInit(): void {
@@ -295,7 +298,17 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
         AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.type = 'basicdata.permit' AND n.organization_id = m.organization_id
                           AND n.source_table_uuid = u.id AND n.data->>'validUntil' = u.basicdata->>'residencePermitValidUntil')`)).rows as { user_id: string; name: string; organization_id: string; until: string }[];
     let sent = 0;
+    // An organization where a plugin reminds of permits itself (HR-Prozesse's tasks) gets none from here.
+    const pluginReminds = new Map<string, boolean>();
+    const remindedByPlugin = async (orgId: string) => {
+      if (!pluginReminds.has(orgId)) {
+        const answers = await Promise.all(this.plugins.map((pl) => pl.permitReminders?.(db, orgId).catch(() => false) ?? false));
+        pluginReminds.set(orgId, answers.some(Boolean));
+      }
+      return pluginReminds.get(orgId)!;
+    };
     for (const p of due) {
+      if (await remindedByPlugin(p.organization_id)) continue;
       const date = p.until.split('-').reverse().join('.');
       const hr = ((await db.execute(sql`
         SELECT DISTINCT m.user_id FROM organization_memberships m

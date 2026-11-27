@@ -267,6 +267,9 @@ controller's checks. `plugins/notes/api/assistant-tools.ts` is the short example
 `plugins/expenses/api/assistant-tools.ts`, `roster`, `billing`, `hrplus` and `hr` have their own.
 Leave out what must not reach the model: the cases module (end-to-end encrypted) and the reporting office have no tools.
 
+`permitReminders(db, orgId)`: true when the plugin reminds of residence permits ending in that organization itself (HR-Prozesse's tasks); the core's reminder from My Data then stays silent there.\
+A plugin that changes someone's personal data does it through `BasicDataService` (in the contract), so the core keeps its history.
+
 Everything a plugin adds to the API is declared in `defineApiPlugin`, so its `api/index.ts` shows all of
 it; the core registers it at startup (`plugins.ts`, `plugin-registrar.ts`). A plugin calls no
 `register*` method itself.

@@ -90,6 +90,11 @@ export interface ApiPlugin {
    * controller method as the caller (`ctx.get(Controller)`, `ctx.req`), so it runs the endpoint's checks.
    */
   assistantTools?: AssistantTool[];
+  /**
+   * Whether the plugin reminds of residence permits ending in this organization (e.g. HR-Prozesse's tasks): the core's
+   * own reminder (workflow-dues.service.ts, from My Data's `residencePermitValidUntil`) then stays silent there.
+   */
+  permitReminders?: (db: Db, orgId: string) => Promise<boolean>;
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
@@ -127,6 +132,8 @@ export {
 // Documents, form templates, approval workflows
 export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type PersonalDocumentSource } from './documents.service';
 export { FieldsService } from './fields.service';
+// Personal data (users.basicdata): a direct edit with its history entry, as HR's on the Employees page.
+export { BasicDataService } from './basicdata.service';
 export { WorkflowsService, type WorkflowEvent, type SourceRecordLoader, type WorkflowActionContext, type WorkflowActionHandler, type SourceOrgResolver, type WorkflowKind } from './workflows.service';
 
 // Notifications (the bell; a click opens the section the web part's `notificationSections` names

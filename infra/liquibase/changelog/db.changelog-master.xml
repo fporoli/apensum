@@ -134,6 +134,7 @@
     <include file="116-unused-and-second-history.sql" relativeToChangelogFile="true"/>
     <include file="117-membership-deputy.sql" relativeToChangelogFile="true"/>
     <include file="118-basicdata-lists.sql" relativeToChangelogFile="true"/>
+    <include file="119-permit-other.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 
