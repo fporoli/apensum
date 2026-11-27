@@ -139,6 +139,7 @@
     <include file="121-flow-about.sql" relativeToChangelogFile="true"/>
     <include file="122-flow-task-steps.sql" relativeToChangelogFile="true"/>
     <include file="123-flow-triggers.sql" relativeToChangelogFile="true"/>
+    <include file="124-flow-trigger-runs.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

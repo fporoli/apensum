@@ -8,6 +8,7 @@ import { useApi } from './useApi';
 import { apiRequest } from './apiRequest';
 import { useI18n, useT } from './i18n';
 import { ConfirmDialog } from './components';
+import { formatLocaleDateTime } from './localeFormat';
 import { AddIcon, ArrowDropDownIcon, DeleteIcon, EditIcon } from './icons';
 import type { TriggerTemplate } from '@worktime3/shared/triggerTemplates';
 
@@ -235,6 +236,11 @@ export default function FlowTriggers({ orgId, authHeaders, onTypesChanged }: {
           }}
         />
       )}
+      {data && events.length > 0 && (
+        <TriggerRuns orgId={orgId} authHeaders={authHeaders} canRun={data.editable} eventLabel={(id) => label(eventOf(id)?.label, id)}
+          errorText={errorText} onRan={async (text) => { setMessage({ severity: 'success', text }); await reload(); }}
+          onError={(code) => setMessage({ severity: 'error', text: errorText(code) })} />
+      )}
       <ConfirmDialog
         open={!!deleting}
         title={t('flowTriggers.delete')}
@@ -373,5 +379,104 @@ function TemplateDialog({ tpl, orgId, list, authHeaders, label, errorText, onClo
         <Button variant="contained" disabled={busy || !departmentId} onClick={() => void create()}>{t('flowTriggers.create')}</Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+interface TriggerRunRow {
+  id: string;
+  at: string;
+  /** Who started it; null: the hourly job. */
+  by: string | null;
+  opened: number;
+  updated: number;
+  closed: number;
+  details: { trigger: string; event: string; opened: number; updated: number; closed: number; error?: string }[];
+}
+
+/**
+ * Letzte Läufe (GET flow-triggers/runs): when the triggers ran, who started it (or the hourly job), and what they did,
+ * per trigger the caller sees; "Jetzt ausführen" runs them (POST flow-triggers/run) for who changes some of them.
+ */
+function TriggerRuns({ orgId, authHeaders, canRun, eventLabel, errorText, onRan, onError }: {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  canRun: boolean;
+  eventLabel: (id: string) => string;
+  errorText: (code: string) => string;
+  onRan: (text: string) => Promise<void> | void;
+  onError: (code: string) => void;
+}) {
+  const t = useT();
+  const { locale } = useI18n();
+  const [quiet, setQuiet] = useState(false);
+  const [running, setRunning] = useState(false);
+  const { data, error, reload, clearError } = useApi<{ ok: boolean; runs: TriggerRunRow[] }>(
+    `${API}/organizations/${orgId}/flow-triggers/runs${quiet ? '?quiet=1' : ''}`, authHeaders, { refreshMs: 60_000 },
+  );
+  const runs = data?.runs ?? [];
+
+  async function runNow() {
+    setRunning(true);
+    const res = await apiRequest<{ ok: boolean; opened: number; updated: number; closed: number }>(
+      `${API}/organizations/${orgId}/flow-triggers/run`, { method: 'POST', headers: await authHeaders() },
+    );
+    setRunning(false);
+    if (!res.ok) onError(res.error);
+    else await onRan(t('flowTriggers.runDone', { opened: String(res.data.opened ?? 0), updated: String(res.data.updated ?? 0), closed: String(res.data.closed ?? 0) }));
+    await reload();
+  }
+
+  return (
+    <Box sx={{ display: 'grid', gap: 1, mt: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        <Typography variant="h6" sx={{ fontSize: '1rem' }}>{t('flowTriggers.runs')}</Typography>
+        <FormControlLabel control={<Checkbox size="small" checked={quiet} onChange={(e) => setQuiet(e.target.checked)} />} label={t('flowTriggers.runsQuiet')} />
+        <Box sx={{ flex: 1 }} />
+        {canRun && <Button size="small" variant="outlined" disabled={running} onClick={() => void runNow()}>{t('flowTriggers.runNow')}</Button>}
+      </Box>
+      <Typography variant="caption" color="text.secondary">{t('flowTriggers.runsHint')}</Typography>
+      {error && <Alert severity="error" onClose={clearError}>{errorText(error)}</Alert>}
+      {running && <LinearProgress />}
+      {data && runs.length === 0 && <Typography variant="body2" color="text.secondary">{t('flowTriggers.runNone')}</Typography>}
+      {runs.length > 0 && (
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>{t('flowTriggers.runAt')}</TableCell>
+                <TableCell>{t('flowTriggers.runBy')}</TableCell>
+                <TableCell align="right">{t('flowTriggers.runOpened')}</TableCell>
+                <TableCell align="right">{t('flowTriggers.runUpdated')}</TableCell>
+                <TableCell align="right">{t('flowTriggers.runClosed')}</TableCell>
+                <TableCell>{t('flowTriggers.runDetails')}</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {runs.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatLocaleDateTime(r.at, locale)}</TableCell>
+                  <TableCell>{r.by === null ? t('flowTriggers.runJob') : r.by}</TableCell>
+                  <TableCell align="right">{r.opened}</TableCell>
+                  <TableCell align="right">{r.updated}</TableCell>
+                  <TableCell align="right">{r.closed}</TableCell>
+                  <TableCell>
+                    {r.details.filter((d) => d.opened || d.updated || d.closed || d.error).map((d) => (
+                      <Box key={d.trigger} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="body2">{eventLabel(d.event)}{(['opened', 'updated', 'closed'] as const).filter((k) => d[k]).map((k) => ` · ${t(`flowTriggers.run${k[0].toUpperCase()}${k.slice(1)}`)} ${d[k]}`).join('')}</Typography>
+                        {d.error && (
+                          <Tooltip title={errorText(d.error)}>
+                            <Chip size="small" color="error" variant="outlined" label={d.error} />
+                          </Tooltip>
+                        )}
+                      </Box>
+                    ))}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      )}
+    </Box>
   );
 }

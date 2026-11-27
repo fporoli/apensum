@@ -4,7 +4,7 @@ import { resolveModules } from '@worktime3/shared/modules';
 import { DbService, type Db } from './db.service';
 import { FlowsService } from './flows.service';
 import { actingManagerId } from './access';
-import { clock } from './clock';
+import { clock, sqlNow } from './clock';
 import { localDate } from './work-time-model.service';
 import { API_PLUGINS } from './plugin-registrar';
 import type { ApiPlugin } from './plugin';
@@ -16,7 +16,21 @@ import {
 
 const HOUR = 60 * 60_000;
 
-export type TriggerRun = { ok: true; opened: number; updated: number; closed: number } | { ok: false; error: string };
+export type TriggerRun = { ok: true; opened: number; updated: number; closed: number; errors: number } | { ok: false; error: string };
+
+/** What a run did with one trigger (flow_trigger_runs.details): counts and an error code, never whom it was about. */
+export interface TriggerRunDetail { trigger: string; event: string; opened: number; updated: number; closed: number; error?: string }
+
+/** Keeps a run (flow_trigger_runs) and drops old ones: those that changed nothing after two days, the others after 90. */
+export async function recordTriggerRun(db: Db, orgId: string, by: string | null, run: { opened: number; updated: number; closed: number; errors: number }, details: TriggerRunDetail[]): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO flow_trigger_runs (organization_id, ran_at, by_user_id, opened, updated, closed, errors, details)
+    VALUES (${orgId}::uuid, ${sqlNow()}, ${by}::uuid, ${run.opened}, ${run.updated}, ${run.closed}, ${run.errors}, ${JSON.stringify(details)}::jsonb)`);
+  await db.execute(sql`
+    DELETE FROM flow_trigger_runs WHERE organization_id = ${orgId}::uuid AND (
+      ran_at < ${sqlNow()} - INTERVAL '90 days'
+      OR (ran_at < ${sqlNow()} - INTERVAL '2 days' AND opened = 0 AND updated = 0 AND closed = 0 AND errors = 0))`);
+}
 
 /** An event with the source that offers it. */
 export interface KnownEvent {
@@ -127,8 +141,18 @@ export class TriggersService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Runs the organization's triggers now. */
-  async run(db: Db, orgId: string, now: Date = clock.now()): Promise<TriggerRun> {
+  /**
+   * Runs an organization's triggers; `by` is who started it (null: the hourly job). The run is kept (flow_trigger_runs,
+   * the Auslöser tab's "Letzte Läufe") and logged when it changed something or failed somewhere.
+   */
+  async run(db: Db, orgId: string, by: string | null = null, now: Date = clock.now()): Promise<TriggerRun> {
     if (!(await this.flows.enabled(db, orgId))) return { ok: false, error: 'flows-off' };
+    const details = new Map<string, TriggerRunDetail>();
+    const detail = (t: FlowTrigger) => {
+      let d = details.get(t.id);
+      if (!d) details.set(t.id, (d = { trigger: t.id, event: t.event, opened: 0, updated: 0, closed: 0 }));
+      return d;
+    };
     const today = localDate(now, 'Europe/Zurich');
     const triggers = await triggersOf(db, orgId);
     const events = this.events();
@@ -138,7 +162,9 @@ export class TriggersService implements OnModuleInit, OnModuleDestroy {
     let closed = 0;
     // A disabled trigger (or one whose event no longer exists): its open flows are resolved.
     for (const t of triggers.filter((x) => !x.enabled || !events.has(x.event))) {
-      closed += await this.flows.closeTasks(db, orgId, 'trigger', [], today, triggerKeyPrefix(t.id));
+      const n = await this.flows.closeTasks(db, orgId, 'trigger', [], today, triggerKeyPrefix(t.id));
+      if (n) detail(t).closed += n;
+      closed += n;
     }
     const active = triggers.filter((x) => x.enabled && events.has(x.event) && on.has(x.event));
     // Each source once, for the events of its active triggers, as far ahead as the longest lead time asks.
@@ -160,7 +186,10 @@ export class TriggersService implements OnModuleInit, OnModuleDestroy {
       const e = events.get(t.event)!;
       const list = occurrences.get(e.source);
       // The source failed: its flows stay as they are until the next run.
-      if (!list) continue;
+      if (!list) {
+        detail(t).error = 'source-failed';
+        continue;
+      }
       const keys: string[] = [];
       for (const occ of list) {
         if (occ.event !== t.event || !withinLead(occ.date, today, e.def.defaultLeadDays === false ? false : t.leadDays)) continue;
@@ -185,14 +214,30 @@ export class TriggersService implements OnModuleInit, OnModuleDestroy {
         });
         if (!result.ok) {
           this.log.warn(`trigger ${t.id} of ${orgId}: ${result.error}`);
+          detail(t).error = result.error;
           continue;
         }
-        if (result.created) opened++;
-        else if (result.changed) updated++;
+        if (result.created) {
+          opened++;
+          detail(t).opened++;
+        } else if (result.changed) {
+          updated++;
+          detail(t).updated++;
+        }
       }
-      closed += await this.flows.closeTasks(db, orgId, 'trigger', keys, today, triggerKeyPrefix(t.id));
+      const n = await this.flows.closeTasks(db, orgId, 'trigger', keys, today, triggerKeyPrefix(t.id));
+      if (n) detail(t).closed += n;
+      closed += n;
     }
-    return { ok: true, opened, updated, closed };
+    const errors = [...details.values()].filter((d) => d.error).length;
+    const totals = { opened, updated, closed, errors };
+    await recordTriggerRun(db, orgId, by, totals, [...details.values()]).catch((err: unknown) => {
+      this.log.warn(`trigger run of ${orgId} not kept: ${err instanceof Error ? err.message : err}`);
+    });
+    if (opened || updated || closed || errors) {
+      this.log.log(`triggers of ${orgId}${by ? ' (by hand)' : ''}: opened ${opened}, updated ${updated}, closed ${closed}, errors ${errors}`);
+    }
+    return { ok: true, ...totals };
   }
 
   /** The flow's language: whoever gets it first (the department's leader, the manager, the person), else German. */

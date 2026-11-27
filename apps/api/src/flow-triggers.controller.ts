@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { AuditService } from './audit.service';
@@ -8,7 +8,7 @@ import { WorkflowsService } from './workflows.service';
 import { FLOW_STEPS_KIND } from './flow-steps';
 import { callerUserId, can, reachesAll } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
-import { TriggersService, triggersOf, type KnownEvent } from './triggers.service';
+import { TriggersService, triggersOf, type KnownEvent, type TriggerRunDetail } from './triggers.service';
 import { triggerKeyPrefix, validateTrigger, type FlowTrigger } from './triggers';
 import { sqlToday } from './clock';
 import { freeTypeKey, templateConfig } from '@worktime3/shared/triggerTemplates';
@@ -112,7 +112,7 @@ export class FlowTriggersController {
       RETURNING id`)).rows as { id: string }[];
     void this.versions.record('flow_triggers', row.id, 'insert', a.callerId, { organization_id: orgId, ...v }).catch(() => {});
     void this.audit.record(orgId, a.callerId, 'flow-trigger.create', 'flow_trigger', row.id, { event: v.event }).catch(() => {});
-    await this.triggers.run(db, orgId).catch(() => null);
+    await this.triggers.run(db, orgId, a.callerId).catch(() => null);
     return { ok: true, id: row.id };
   }
 
@@ -134,7 +134,7 @@ export class FlowTriggersController {
       WHERE id = ${id}::uuid AND organization_id = ${orgId}::uuid`);
     void this.versions.record('flow_triggers', id, 'update', a.callerId, { organization_id: orgId, ...v }).catch(() => {});
     void this.audit.record(orgId, a.callerId, 'flow-trigger.update', 'flow_trigger', id, { event: v.event }).catch(() => {});
-    await this.triggers.run(db, orgId).catch(() => null);
+    await this.triggers.run(db, orgId, a.callerId).catch(() => null);
     return { ok: true };
   }
 
@@ -196,8 +196,38 @@ export class FlowTriggersController {
       void this.versions.record('flow_triggers', row.id, 'insert', a.callerId, { organization_id: orgId, event: tpl.event, lead_days: tpl.leadDays, flow_type: key, department_id: department.id }).catch(() => {});
     }
     void this.audit.record(orgId, a.callerId, 'flow-trigger.template', 'flow_trigger', tpl.event).catch(() => {});
-    await this.triggers.run(db, orgId).catch(() => null);
+    await this.triggers.run(db, orgId, a.callerId).catch(() => null);
     return { ok: true, key };
+  }
+
+  /**
+   * The last runs (flow_trigger_runs, newest first, at most 50): when, who started it (none: the hourly job), and the
+   * counts of the triggers the caller sees, summed from those alone (a sensitive trigger's flows stay with HR).
+   * `quiet=1` includes the runs that changed nothing.
+   */
+  @Get('runs')
+  async runs(@Param('orgId') orgId: string, @Query('quiet') quiet: string | undefined, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true, runs: [] };
+    const a = await this.access(db, orgId, req);
+    if (!a || a.events.size === 0) return { ok: true, runs: [] };
+    const rows = (await db.execute(sql`
+      SELECT r.id, r.ran_at, r.by_user_id, COALESCE(u.display_name, u.email) AS by_name, r.details
+      FROM flow_trigger_runs r LEFT JOIN users u ON u.id = r.by_user_id
+      WHERE r.organization_id = ${orgId}::uuid
+        AND (${quiet === '1'} OR r.opened > 0 OR r.updated > 0 OR r.closed > 0 OR r.errors > 0)
+      ORDER BY r.ran_at DESC LIMIT 200`)).rows as { id: string; ran_at: string; by_user_id: string | null; by_name: string | null; details: TriggerRunDetail[] | null }[];
+    const runs = [];
+    for (const r of rows) {
+      const details = (Array.isArray(r.details) ? r.details : []).filter((d) => a.events.has(d.event));
+      const sum = (k: 'opened' | 'updated' | 'closed') => details.reduce((n, d) => n + (d[k] || 0), 0);
+      const run = { id: r.id, at: r.ran_at, by: r.by_user_id ? r.by_name ?? '' : null, opened: sum('opened'), updated: sum('updated'), closed: sum('closed'), details };
+      // A run that changed only what the caller doesn't see is quiet to them.
+      if (quiet !== '1' && !details.some((d) => d.opened || d.updated || d.closed || d.error)) continue;
+      runs.push(run);
+      if (runs.length === 50) break;
+    }
+    return { ok: true, runs };
   }
 
   /** Runs the organization's triggers now: for whoever changes any of them (HR after an exit date, the Flow-Designer). */
@@ -207,7 +237,7 @@ export class FlowTriggersController {
     if (!db) return { ok: true, offline: true };
     const a = await this.access(db, orgId, req);
     if (!a || a.editable.size === 0) return { ok: false, error: 'forbidden' };
-    return this.triggers.run(db, orgId);
+    return this.triggers.run(db, orgId, a.callerId);
   }
 
   /** A trigger of the organization the caller may see, or null. */

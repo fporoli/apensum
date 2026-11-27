@@ -1,95 +1,21 @@
 import { relations } from "drizzle-orm/relations";
-import { departments, flow_triggers, organizations, users, user_identities, organization_domains, roles, organization_memberships, organization_invitations, audit_logs, teams, projects, project_times, subprojects, timesheet_periods, static_data, versions, workflow_definitions, workflows, notifications, work_times, documents, absences, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, employee_assignments, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, exchange_rates, ai_usage, news_posts, assistant_prompts, balance_years, user_two_factor, personnel_documents, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads } from "./schema";
+import { users, flow_trigger_runs, organizations, user_identities, organization_domains, roles, projects, organization_memberships, organization_invitations, audit_logs, teams, subprojects, project_times, timesheet_periods, versions, workflow_definitions, static_data, workflows, notifications, work_times, documents, absences, field_config, balance_adjustments, work_time_months, locations, org_holidays, work_schedules, vacation_entitlements, project_time_periods, departments, employee_assignments, flow_messages, flows, timesheet_documents, saved_reports, report_schedules, report_runs, exchange_rates, ai_usage, news_posts, assistant_prompts, balance_years, user_two_factor, personnel_documents, flow_triggers, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads } from "./schema";
 
-export const flow_triggersRelations = relations(flow_triggers, ({one}) => ({
-	department: one(departments, {
-		fields: [flow_triggers.department_id],
-		references: [departments.id]
+export const flow_trigger_runsRelations = relations(flow_trigger_runs, ({one}) => ({
+	user: one(users, {
+		fields: [flow_trigger_runs.by_user_id],
+		references: [users.id]
 	}),
 	organization: one(organizations, {
-		fields: [flow_triggers.organization_id],
+		fields: [flow_trigger_runs.organization_id],
 		references: [organizations.id]
-	}),
-}));
-
-export const departmentsRelations = relations(departments, ({one, many}) => ({
-	flow_triggers: many(flow_triggers),
-	user: one(users, {
-		fields: [departments.leader_user_id],
-		references: [users.id]
-	}),
-	organization: one(organizations, {
-		fields: [departments.organization_id],
-		references: [organizations.id]
-	}),
-	employee_assignments: many(employee_assignments),
-	flows: many(flows),
-}));
-
-export const organizationsRelations = relations(organizations, ({one, many}) => ({
-	flow_triggers: many(flow_triggers),
-	organization_domains: many(organization_domains),
-	roles: many(roles),
-	organization_memberships: many(organization_memberships),
-	organization_invitations: many(organization_invitations),
-	audit_logs: many(audit_logs),
-	teams: many(teams),
-	projects: many(projects),
-	project_times: many(project_times),
-	subprojects: many(subprojects),
-	timesheet_periods: many(timesheet_periods),
-	user: one(users, {
-		fields: [organizations.created_by_user_id],
-		references: [users.id]
-	}),
-	organization: one(organizations, {
-		fields: [organizations.parent_organization_id],
-		references: [organizations.id],
-		relationName: "organizations_parent_organization_id_organizations_id"
-	}),
-	organizations: many(organizations, {
-		relationName: "organizations_parent_organization_id_organizations_id"
-	}),
-	static_data: many(static_data),
-	workflow_definitions: many(workflow_definitions),
-	workflows: many(workflows),
-	notifications: many(notifications),
-	work_times: many(work_times),
-	documents: many(documents),
-	absences: many(absences),
-	field_configs: many(field_config),
-	org_holidays: many(org_holidays),
-	balance_adjustments: many(balance_adjustments),
-	vacation_entitlements: many(vacation_entitlements),
-	work_schedules: many(work_schedules),
-	project_time_periods: many(project_time_periods),
-	work_time_months: many(work_time_months),
-	departments: many(departments),
-	employee_assignments: many(employee_assignments),
-	timesheet_documents: many(timesheet_documents),
-	saved_reports: many(saved_reports),
-	report_schedules: many(report_schedules),
-	report_runs: many(report_runs),
-	flows: many(flows),
-	exchange_rates: many(exchange_rates),
-	ai_usages: many(ai_usage),
-	news_posts: many(news_posts),
-	assistant_prompts: many(assistant_prompts),
-	balance_years: many(balance_years),
-	locations: many(locations),
-	personnel_documents: many(personnel_documents),
-	organization_licenses: many(organization_licenses),
-}));
-
-export const user_identitiesRelations = relations(user_identities, ({one}) => ({
-	user: one(users, {
-		fields: [user_identities.user_id],
-		references: [users.id]
 	}),
 }));
 
 export const usersRelations = relations(users, ({many}) => ({
+	flow_trigger_runs: many(flow_trigger_runs),
 	user_identities: many(user_identities),
+	projects: many(projects),
 	organization_memberships_deputy_user_id: many(organization_memberships, {
 		relationName: "organization_memberships_deputy_user_id_users_id"
 	}),
@@ -99,9 +25,8 @@ export const usersRelations = relations(users, ({many}) => ({
 	organization_invitations: many(organization_invitations),
 	audit_logs: many(audit_logs),
 	teams: many(teams),
-	projects: many(projects),
-	project_times: many(project_times),
 	subprojects: many(subprojects),
+	project_times: many(project_times),
 	timesheet_periods_reviewed_by_user_id: many(timesheet_periods, {
 		relationName: "timesheet_periods_reviewed_by_user_id_users_id"
 	}),
@@ -117,7 +42,6 @@ export const usersRelations = relations(users, ({many}) => ({
 	}),
 	notifications: many(notifications),
 	work_times: many(work_times),
-	documents: many(documents),
 	absences_reviewed_by_user_id: many(absences, {
 		relationName: "absences_reviewed_by_user_id_users_id"
 	}),
@@ -130,19 +54,19 @@ export const usersRelations = relations(users, ({many}) => ({
 	balance_adjustments_user_id: many(balance_adjustments, {
 		relationName: "balance_adjustments_user_id_users_id"
 	}),
-	vacation_entitlements: many(vacation_entitlements),
-	work_schedules: many(work_schedules),
-	project_time_periods_reviewed_by_user_id: many(project_time_periods, {
-		relationName: "project_time_periods_reviewed_by_user_id_users_id"
-	}),
-	project_time_periods_user_id: many(project_time_periods, {
-		relationName: "project_time_periods_user_id_users_id"
-	}),
 	work_time_months_closed_by_user_id: many(work_time_months, {
 		relationName: "work_time_months_closed_by_user_id_users_id"
 	}),
 	work_time_months_user_id: many(work_time_months, {
 		relationName: "work_time_months_user_id_users_id"
+	}),
+	work_schedules: many(work_schedules),
+	vacation_entitlements: many(vacation_entitlements),
+	project_time_periods_reviewed_by_user_id: many(project_time_periods, {
+		relationName: "project_time_periods_reviewed_by_user_id_users_id"
+	}),
+	project_time_periods_user_id: many(project_time_periods, {
+		relationName: "project_time_periods_user_id_users_id"
 	}),
 	departments: many(departments),
 	employee_assignments_manager_user_id: many(employee_assignments, {
@@ -151,19 +75,11 @@ export const usersRelations = relations(users, ({many}) => ({
 	employee_assignments_user_id: many(employee_assignments, {
 		relationName: "employee_assignments_user_id_users_id"
 	}),
-	timesheet_documents: many(timesheet_documents),
 	flow_messages: many(flow_messages),
+	timesheet_documents: many(timesheet_documents),
+	documents: many(documents),
 	saved_reports: many(saved_reports),
 	report_runs: many(report_runs),
-	flows_about_user_id: many(flows, {
-		relationName: "flows_about_user_id_users_id"
-	}),
-	flows_assignee_user_id: many(flows, {
-		relationName: "flows_assignee_user_id_users_id"
-	}),
-	flows_requester_user_id: many(flows, {
-		relationName: "flows_requester_user_id_users_id"
-	}),
 	ai_usages: many(ai_usage),
 	news_posts: many(news_posts),
 	assistant_prompts: many(assistant_prompts),
@@ -180,8 +96,80 @@ export const usersRelations = relations(users, ({many}) => ({
 	personnel_documents_user_id: many(personnel_documents, {
 		relationName: "personnel_documents_user_id_users_id"
 	}),
+	flows_about_user_id: many(flows, {
+		relationName: "flows_about_user_id_users_id"
+	}),
+	flows_assignee_user_id: many(flows, {
+		relationName: "flows_assignee_user_id_users_id"
+	}),
+	flows_requester_user_id: many(flows, {
+		relationName: "flows_requester_user_id_users_id"
+	}),
 	membership_roles: many(membership_roles),
 	news_post_reads: many(news_post_reads),
+}));
+
+export const organizationsRelations = relations(organizations, ({one, many}) => ({
+	flow_trigger_runs: many(flow_trigger_runs),
+	organization_domains: many(organization_domains),
+	roles: many(roles),
+	projects: many(projects),
+	organization_memberships: many(organization_memberships),
+	organization_invitations: many(organization_invitations),
+	audit_logs: many(audit_logs),
+	teams: many(teams),
+	subprojects: many(subprojects),
+	project_times: many(project_times),
+	timesheet_periods: many(timesheet_periods),
+	user: one(users, {
+		fields: [organizations.created_by_user_id],
+		references: [users.id]
+	}),
+	organization: one(organizations, {
+		fields: [organizations.parent_organization_id],
+		references: [organizations.id],
+		relationName: "organizations_parent_organization_id_organizations_id"
+	}),
+	organizations: many(organizations, {
+		relationName: "organizations_parent_organization_id_organizations_id"
+	}),
+	workflow_definitions: many(workflow_definitions),
+	static_data: many(static_data),
+	workflows: many(workflows),
+	notifications: many(notifications),
+	work_times: many(work_times),
+	absences: many(absences),
+	field_configs: many(field_config),
+	balance_adjustments: many(balance_adjustments),
+	work_time_months: many(work_time_months),
+	org_holidays: many(org_holidays),
+	work_schedules: many(work_schedules),
+	vacation_entitlements: many(vacation_entitlements),
+	project_time_periods: many(project_time_periods),
+	departments: many(departments),
+	employee_assignments: many(employee_assignments),
+	timesheet_documents: many(timesheet_documents),
+	documents: many(documents),
+	saved_reports: many(saved_reports),
+	report_schedules: many(report_schedules),
+	report_runs: many(report_runs),
+	exchange_rates: many(exchange_rates),
+	ai_usages: many(ai_usage),
+	news_posts: many(news_posts),
+	assistant_prompts: many(assistant_prompts),
+	balance_years: many(balance_years),
+	locations: many(locations),
+	personnel_documents: many(personnel_documents),
+	flow_triggers: many(flow_triggers),
+	flows: many(flows),
+	organization_licenses: many(organization_licenses),
+}));
+
+export const user_identitiesRelations = relations(user_identities, ({one}) => ({
+	user: one(users, {
+		fields: [user_identities.user_id],
+		references: [users.id]
+	}),
 }));
 
 export const organization_domainsRelations = relations(organization_domains, ({one}) => ({
@@ -200,6 +188,21 @@ export const rolesRelations = relations(roles, ({one, many}) => ({
 	role_permissions: many(role_permissions),
 	team_members: many(team_members),
 	membership_roles: many(membership_roles),
+}));
+
+export const projectsRelations = relations(projects, ({one, many}) => ({
+	organization: one(organizations, {
+		fields: [projects.organization_id],
+		references: [organizations.id]
+	}),
+	user: one(users, {
+		fields: [projects.owner_user_id],
+		references: [users.id]
+	}),
+	subprojects: many(subprojects),
+	project_times: many(project_times),
+	project_time_periods: many(project_time_periods),
+	project_teams: many(project_teams),
 }));
 
 export const organization_membershipsRelations = relations(organization_memberships, ({one, many}) => ({
@@ -261,19 +264,20 @@ export const teamsRelations = relations(teams, ({one, many}) => ({
 	team_members: many(team_members),
 }));
 
-export const projectsRelations = relations(projects, ({one, many}) => ({
+export const subprojectsRelations = relations(subprojects, ({one, many}) => ({
 	organization: one(organizations, {
-		fields: [projects.organization_id],
+		fields: [subprojects.organization_id],
 		references: [organizations.id]
 	}),
 	user: one(users, {
-		fields: [projects.owner_user_id],
+		fields: [subprojects.owner_user_id],
 		references: [users.id]
 	}),
+	project: one(projects, {
+		fields: [subprojects.project_id],
+		references: [projects.id]
+	}),
 	project_times: many(project_times),
-	subprojects: many(subprojects),
-	project_time_periods: many(project_time_periods),
-	project_teams: many(project_teams),
 }));
 
 export const project_timesRelations = relations(project_times, ({one}) => ({
@@ -292,22 +296,6 @@ export const project_timesRelations = relations(project_times, ({one}) => ({
 	user: one(users, {
 		fields: [project_times.user_id],
 		references: [users.id]
-	}),
-}));
-
-export const subprojectsRelations = relations(subprojects, ({one, many}) => ({
-	project_times: many(project_times),
-	organization: one(organizations, {
-		fields: [subprojects.organization_id],
-		references: [organizations.id]
-	}),
-	user: one(users, {
-		fields: [subprojects.owner_user_id],
-		references: [users.id]
-	}),
-	project: one(projects, {
-		fields: [subprojects.project_id],
-		references: [projects.id]
 	}),
 }));
 
@@ -330,13 +318,6 @@ export const timesheet_periodsRelations = relations(timesheet_periods, ({one, ma
 	timesheet_documents: many(timesheet_documents),
 }));
 
-export const static_dataRelations = relations(static_data, ({one}) => ({
-	organization: one(organizations, {
-		fields: [static_data.organization_id],
-		references: [organizations.id]
-	}),
-}));
-
 export const versionsRelations = relations(versions, ({one}) => ({
 	user_created_by_user_id: one(users, {
 		fields: [versions.created_by_user_id],
@@ -356,6 +337,13 @@ export const workflow_definitionsRelations = relations(workflow_definitions, ({o
 		references: [organizations.id]
 	}),
 	workflows: many(workflows),
+}));
+
+export const static_dataRelations = relations(static_data, ({one}) => ({
+	organization: one(organizations, {
+		fields: [static_data.organization_id],
+		references: [organizations.id]
+	}),
 }));
 
 export const workflowsRelations = relations(workflows, ({one, many}) => ({
@@ -400,21 +388,6 @@ export const work_timesRelations = relations(work_times, ({one}) => ({
 	}),
 }));
 
-export const documentsRelations = relations(documents, ({one, many}) => ({
-	organization: one(organizations, {
-		fields: [documents.organization_id],
-		references: [organizations.id]
-	}),
-	user: one(users, {
-		fields: [documents.uploaded_by_user_id],
-		references: [users.id]
-	}),
-	absences: many(absences),
-	timesheet_documents: many(timesheet_documents),
-	report_runs: many(report_runs),
-	personnel_documents: many(personnel_documents),
-}));
-
 export const absencesRelations = relations(absences, ({one}) => ({
 	document: one(documents, {
 		fields: [absences.document_id],
@@ -436,10 +409,63 @@ export const absencesRelations = relations(absences, ({one}) => ({
 	}),
 }));
 
+export const documentsRelations = relations(documents, ({one, many}) => ({
+	absences: many(absences),
+	timesheet_documents: many(timesheet_documents),
+	organization: one(organizations, {
+		fields: [documents.organization_id],
+		references: [organizations.id]
+	}),
+	user: one(users, {
+		fields: [documents.uploaded_by_user_id],
+		references: [users.id]
+	}),
+	report_runs: many(report_runs),
+	personnel_documents: many(personnel_documents),
+}));
+
 export const field_configRelations = relations(field_config, ({one}) => ({
 	organization: one(organizations, {
 		fields: [field_config.organization_id],
 		references: [organizations.id]
+	}),
+}));
+
+export const balance_adjustmentsRelations = relations(balance_adjustments, ({one}) => ({
+	user_created_by_user_id: one(users, {
+		fields: [balance_adjustments.created_by_user_id],
+		references: [users.id],
+		relationName: "balance_adjustments_created_by_user_id_users_id"
+	}),
+	organization: one(organizations, {
+		fields: [balance_adjustments.organization_id],
+		references: [organizations.id]
+	}),
+	user_user_id: one(users, {
+		fields: [balance_adjustments.user_id],
+		references: [users.id],
+		relationName: "balance_adjustments_user_id_users_id"
+	}),
+}));
+
+export const work_time_monthsRelations = relations(work_time_months, ({one}) => ({
+	user_closed_by_user_id: one(users, {
+		fields: [work_time_months.closed_by_user_id],
+		references: [users.id],
+		relationName: "work_time_months_closed_by_user_id_users_id"
+	}),
+	organization: one(organizations, {
+		fields: [work_time_months.organization_id],
+		references: [organizations.id]
+	}),
+	timesheet_period: one(timesheet_periods, {
+		fields: [work_time_months.timesheet_period_id],
+		references: [timesheet_periods.id]
+	}),
+	user_user_id: one(users, {
+		fields: [work_time_months.user_id],
+		references: [users.id],
+		relationName: "work_time_months_user_id_users_id"
 	}),
 }));
 
@@ -463,20 +489,14 @@ export const locationsRelations = relations(locations, ({one, many}) => ({
 	}),
 }));
 
-export const balance_adjustmentsRelations = relations(balance_adjustments, ({one}) => ({
-	user_created_by_user_id: one(users, {
-		fields: [balance_adjustments.created_by_user_id],
-		references: [users.id],
-		relationName: "balance_adjustments_created_by_user_id_users_id"
-	}),
+export const work_schedulesRelations = relations(work_schedules, ({one}) => ({
 	organization: one(organizations, {
-		fields: [balance_adjustments.organization_id],
+		fields: [work_schedules.organization_id],
 		references: [organizations.id]
 	}),
-	user_user_id: one(users, {
-		fields: [balance_adjustments.user_id],
-		references: [users.id],
-		relationName: "balance_adjustments_user_id_users_id"
+	user: one(users, {
+		fields: [work_schedules.user_id],
+		references: [users.id]
 	}),
 }));
 
@@ -487,17 +507,6 @@ export const vacation_entitlementsRelations = relations(vacation_entitlements, (
 	}),
 	user: one(users, {
 		fields: [vacation_entitlements.user_id],
-		references: [users.id]
-	}),
-}));
-
-export const work_schedulesRelations = relations(work_schedules, ({one}) => ({
-	organization: one(organizations, {
-		fields: [work_schedules.organization_id],
-		references: [organizations.id]
-	}),
-	user: one(users, {
-		fields: [work_schedules.user_id],
 		references: [users.id]
 	}),
 }));
@@ -523,25 +532,18 @@ export const project_time_periodsRelations = relations(project_time_periods, ({o
 	}),
 }));
 
-export const work_time_monthsRelations = relations(work_time_months, ({one}) => ({
-	user_closed_by_user_id: one(users, {
-		fields: [work_time_months.closed_by_user_id],
-		references: [users.id],
-		relationName: "work_time_months_closed_by_user_id_users_id"
+export const departmentsRelations = relations(departments, ({one, many}) => ({
+	user: one(users, {
+		fields: [departments.leader_user_id],
+		references: [users.id]
 	}),
 	organization: one(organizations, {
-		fields: [work_time_months.organization_id],
+		fields: [departments.organization_id],
 		references: [organizations.id]
 	}),
-	timesheet_period: one(timesheet_periods, {
-		fields: [work_time_months.timesheet_period_id],
-		references: [timesheet_periods.id]
-	}),
-	user_user_id: one(users, {
-		fields: [work_time_months.user_id],
-		references: [users.id],
-		relationName: "work_time_months_user_id_users_id"
-	}),
+	employee_assignments: many(employee_assignments),
+	flow_triggers: many(flow_triggers),
+	flows: many(flows),
 }));
 
 export const employee_assignmentsRelations = relations(employee_assignments, ({one}) => ({
@@ -566,25 +568,6 @@ export const employee_assignmentsRelations = relations(employee_assignments, ({o
 		fields: [employee_assignments.user_id],
 		references: [users.id],
 		relationName: "employee_assignments_user_id_users_id"
-	}),
-}));
-
-export const timesheet_documentsRelations = relations(timesheet_documents, ({one}) => ({
-	document: one(documents, {
-		fields: [timesheet_documents.document_id],
-		references: [documents.id]
-	}),
-	organization: one(organizations, {
-		fields: [timesheet_documents.organization_id],
-		references: [organizations.id]
-	}),
-	timesheet_period: one(timesheet_periods, {
-		fields: [timesheet_documents.timesheet_period_id],
-		references: [timesheet_periods.id]
-	}),
-	user: one(users, {
-		fields: [timesheet_documents.user_id],
-		references: [users.id]
 	}),
 }));
 
@@ -623,6 +606,25 @@ export const flowsRelations = relations(flows, ({one, many}) => ({
 	department: one(departments, {
 		fields: [flows.target_department_id],
 		references: [departments.id]
+	}),
+}));
+
+export const timesheet_documentsRelations = relations(timesheet_documents, ({one}) => ({
+	document: one(documents, {
+		fields: [timesheet_documents.document_id],
+		references: [documents.id]
+	}),
+	organization: one(organizations, {
+		fields: [timesheet_documents.organization_id],
+		references: [organizations.id]
+	}),
+	timesheet_period: one(timesheet_periods, {
+		fields: [timesheet_documents.timesheet_period_id],
+		references: [timesheet_periods.id]
+	}),
+	user: one(users, {
+		fields: [timesheet_documents.user_id],
+		references: [users.id]
 	}),
 }));
 
@@ -753,6 +755,17 @@ export const personnel_documentsRelations = relations(personnel_documents, ({one
 		fields: [personnel_documents.user_id],
 		references: [users.id],
 		relationName: "personnel_documents_user_id_users_id"
+	}),
+}));
+
+export const flow_triggersRelations = relations(flow_triggers, ({one}) => ({
+	department: one(departments, {
+		fields: [flow_triggers.department_id],
+		references: [departments.id]
+	}),
+	organization: one(organizations, {
+		fields: [flow_triggers.organization_id],
+		references: [organizations.id]
 	}),
 }));
 

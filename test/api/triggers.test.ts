@@ -71,9 +71,11 @@ function demoPlugin(id = 'demo'): ApiPlugin {
 function engine(opts: { triggers: Record<string, unknown>[]; modules?: Record<string, boolean>; plugins?: ApiPlugin[]; flowsOn?: boolean }) {
   const opened: Record<string, unknown>[] = [];
   const closed: { keep: string[]; prefix?: string }[] = [];
+  const runs: string[] = [];
   const db = {
     execute: async (q: unknown) => {
       const s = sqlText(q);
+      if (s.includes('flow_trigger_runs')) { runs.push(s); return { rows: [] }; }
       if (s.includes('FROM flow_triggers')) return { rows: opts.triggers };
       if (s.includes('organization_licenses')) return { rows: [{ modules: opts.modules ?? {}, licenses: [] }] };
       if (s.includes('leader_user_id FROM departments')) return { rows: [{ leader_user_id: 'lead' }] };
@@ -87,15 +89,19 @@ function engine(opts: { triggers: Record<string, unknown>[]; modules?: Record<st
     closeTasks: async (_db: unknown, _org: string, source: string, keep: string[], _today: string, prefix?: string) => { assert.equal(source, 'trigger'); closed.push({ keep, prefix }); return 0; },
   };
   const svc = new TriggersService({ getDb: () => db } as never, flows as never, opts.plugins ?? [demoPlugin()]);
-  return { svc, db, opened, closed };
+  return { svc, db, opened, closed, runs };
 }
 
 const row = (over: Record<string, unknown>) => ({ id: 't1', event: 'demo.ev', enabled: true, lead_days: 14, flow_type: null, target: 'department', department_id: DEPT, confidential: true, label: null, ...over });
 
 test('the engine opens each occurrence within the lead time once, keyed per trigger, and closes the rest of that trigger', async () => {
-  const { svc, db, opened, closed } = engine({ triggers: [row({})] });
-  const result = await svc.run(db as never, 'org-1', new Date('2026-12-20T10:00:00Z'));
-  assert.deepEqual(result, { ok: true, opened: 1, updated: 0, closed: 0 });
+  const { svc, db, opened, closed, runs } = engine({ triggers: [row({})] });
+  const result = await svc.run(db as never, 'org-1', null, new Date('2026-12-20T10:00:00Z'));
+  assert.deepEqual(result, { ok: true, opened: 1, updated: 0, closed: 0, errors: 0 });
+  // The run is kept (Letzte Läufe) and old ones dropped.
+  assert.equal(runs.length, 2);
+  assert.match(runs[0], /INSERT INTO flow_trigger_runs/);
+  assert.match(runs[1], /DELETE FROM flow_trigger_runs/);
   assert.equal(opened.length, 1);
   assert.equal(opened[0].key, 'trigger:t1:a:u1:2027-01-01');
   assert.equal(opened[0].source, 'trigger');
@@ -110,13 +116,13 @@ test('the engine opens each occurrence within the lead time once, keyed per trig
 
 test('the engine: a longer lead time opens the later one too; a disabled trigger only closes its flows; flows off does nothing', async () => {
   const longer = engine({ triggers: [row({ lead_days: 90, flow_type: 'jubilaeum', target: 'manager' })] });
-  await longer.svc.run(longer.db as never, 'org-2', new Date('2026-12-20T10:00:00Z'));
+  await longer.svc.run(longer.db as never, 'org-2', null, new Date('2026-12-20T10:00:00Z'));
   assert.deepEqual(longer.opened.map((o) => [o.key, o.flowType, o.target]), [
     ['trigger:t1:a:u1:2027-01-01', 'jubilaeum', 'manager'],
     ['trigger:t1:b:u2:2027-03-01', 'jubilaeum', 'manager'],
   ]);
   const off = engine({ triggers: [row({ enabled: false })] });
-  await off.svc.run(off.db as never, 'org-3', new Date('2026-12-20T10:00:00Z'));
+  await off.svc.run(off.db as never, 'org-3', null, new Date('2026-12-20T10:00:00Z'));
   assert.deepEqual(off.opened, []);
   assert.deepEqual(off.closed, [{ keep: [], prefix: 'trigger:t1:' }]);
   const noFlows = engine({ triggers: [row({})], flowsOn: false });
@@ -127,7 +133,7 @@ test('the engine: a longer lead time opens the later one too; a disabled trigger
 test('the engine leaves the triggers of a module that is off alone (neither opened nor closed)', async () => {
   registerModule({ id: 'demooff', caption: 'modules.demooff', defaultEnabled: true, objects: [] });
   const e = engine({ triggers: [row({ event: 'demooff.ev' })], plugins: [demoPlugin('demooff')], modules: { demooff: false } });
-  await e.svc.run(e.db as never, 'org-5', new Date('2026-12-20T10:00:00Z'));
+  await e.svc.run(e.db as never, 'org-5', null, new Date('2026-12-20T10:00:00Z'));
   assert.deepEqual(e.opened, []);
   assert.deepEqual(e.closed, []);
 });
