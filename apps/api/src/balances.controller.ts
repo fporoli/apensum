@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { DbService } from './db.service';
-import { ADJUSTMENT_KINDS, BALANCE_KINDS, BalancesService, type AdjustmentKind, type BalanceKind } from './balances.service';
+import { ADJUSTMENT_KINDS, BALANCE_KINDS, BalancesService, employedFrom, type AdjustmentKind, type BalanceKind } from './balances.service';
 import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isYearClosed, listableUserIds, permissionIdsOf, visibleUserIds } from './access';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { organization_memberships, users } from './db/schema';
@@ -150,7 +150,8 @@ export class BalancesController {
     const year = parseYear(yearParam ?? String(new Date().getFullYear() - 1));
     const ids = await listableUserIds(db, orgId, callerId, OBJECT);
     if (ids !== 'all' && ids.length === 0) return { ok: true, year, rows: [] };
-    const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true)];
+    // Who left before the year began has nothing in it to close.
+    const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true), employedFrom(`${year}-01-01`)];
     if (ids !== 'all') conditions.push(inArray(organization_memberships.user_id, ids));
     const people = await db
       .select({ id: users.id, name: users.display_name, email: users.email, timezone: users.timezone, membershipStatus: organization_memberships.status })

@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addDays,
+  datesBetween,
   CANTONS,
   defaultLegalOvertimeYearLimit,
   legalOvertimeByDay,
@@ -248,4 +250,23 @@ test('a published shift plan sets the target of its days; absence days keep the 
   assert.equal(by['2026-12-26'].target, 0);
   const plain = targets('2026-12-21', '2026-12-27', { ...model, planned: undefined });
   assert.equal(plain.find((d) => d.date === '2026-12-25').target, 0, 'without a plan the holiday is off');
+});
+
+test('date helpers: across months, leap days, years and centuries, both ways', () => {
+  assert.equal(addDays('2024-02-28', 1), '2024-02-29');
+  assert.equal(addDays('2023-02-28', 1), '2023-03-01');
+  assert.equal(addDays('1900-02-28', 1), '1900-03-01', '1900 had no 29 February');
+  assert.equal(addDays('2000-02-28', 1), '2000-02-29');
+  assert.equal(addDays('2026-12-31', 1), '2027-01-01');
+  assert.equal(addDays('2027-01-01', -1), '2026-12-31');
+  assert.equal(addDays('2026-03-29', 0), '2026-03-29', 'a DST change day is just a day');
+  assert.equal(addDays('2026-01-10', -400), '2024-12-06');
+  assert.equal(weekdayIndex('2026-11-23'), 0, 'a Monday');
+  assert.equal(weekdayIndex('2026-11-29'), 6, 'a Sunday');
+  assert.equal(weekdayIndex('1969-12-29'), 0, 'before 1970 too');
+  assert.equal(weekStart('2026-11-27'), '2026-11-23');
+  assert.deepEqual(datesBetween('2024-02-27', '2024-03-02'), ['2024-02-27', '2024-02-28', '2024-02-29', '2024-03-01']);
+  assert.deepEqual(datesBetween('2026-05-01', '2026-05-01'), []);
+  assert.deepEqual(datesBetween('2026-05-02', '2026-05-01'), []);
+  assert.equal(datesBetween('2026-01-01', '2027-01-01').length, 365);
 });

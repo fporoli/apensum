@@ -18,29 +18,42 @@ export function isIsoDate(value: unknown): value is string {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
-function utc(date: string): Date {
-  return new Date(`${date}T00:00:00Z`);
+// The balances walk every day of a person's year, several times: these read and write 'YYYY-MM-DD'
+// by hand instead of parsing a date string and formatting it back (`toISOString`), which was most
+// of a year's computation.
+const MS_PER_DAY = 86_400_000;
+
+/** Milliseconds of a date's UTC midnight. */
+function utcMs(date: string): number {
+  return Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)));
 }
 
 function iso(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getUTCFullYear();
+  const m = d.getUTCMonth() + 1;
+  const day = d.getUTCDate();
+  // Years 0–9999 only (the four digits of the input); beyond that, as `toISOString` writes them.
+  if (y < 0 || y > 9999) return d.toISOString().slice(0, 10);
+  return `${y < 1000 ? String(y).padStart(4, '0') : y}-${m < 10 ? '0' : ''}${m}-${day < 10 ? '0' : ''}${day}`;
 }
 
 export function addDays(date: string, days: number): string {
-  const d = utc(date);
-  d.setUTCDate(d.getUTCDate() + days);
-  return iso(d);
+  return iso(new Date(utcMs(date) + days * MS_PER_DAY));
 }
 
 /** Monday = 0 … Sunday = 6. */
 export function weekdayIndex(date: string): number {
-  return (utc(date).getUTCDay() + 6) % 7;
+  // 1970-01-01 was a Thursday (3).
+  return (((Math.floor(utcMs(date) / MS_PER_DAY) + 3) % 7) + 7) % 7;
 }
 
 /** Every date in `[from, toExclusive)`. */
 export function datesBetween(from: string, toExclusive: string): string[] {
   const out: string[] = [];
-  for (let d = from; d < toExclusive; d = addDays(d, 1)) out.push(d);
+  if (from >= toExclusive) return out;
+  // Counted in UTC milliseconds from one parse; `d < toExclusive` keeps the old bounds (strings compare).
+  const d = new Date(utcMs(from));
+  for (let date = from; date < toExclusive; d.setTime(d.getTime() + MS_PER_DAY), date = iso(d)) out.push(date);
   return out;
 }
 
@@ -546,14 +559,15 @@ export function weekStart(date: string): string {
 export function legalOvertimeByDay(attendance: ReadonlyMap<string, number>, from: string, toExclusive: string, maxWeeklyMinutes: number): Map<string, number> {
   const out = new Map<string, number>();
   if (from >= toExclusive) return out;
-  let week = '';
   let cumulative = 0;
+  // From a Monday on, day by day: every seventh day starts a new week.
+  let weekday = 0;
   for (const date of datesBetween(weekStart(from), toExclusive)) {
-    const monday = weekStart(date);
-    if (monday !== week) {
-      week = monday;
+    if (weekday === 7) {
+      weekday = 0;
       cumulative = 0;
     }
+    weekday++;
     const before = Math.max(0, cumulative - maxWeeklyMinutes);
     cumulative += attendance.get(date) ?? 0;
     const excess = Math.max(0, cumulative - maxWeeklyMinutes) - before;

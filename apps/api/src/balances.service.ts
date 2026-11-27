@@ -217,6 +217,15 @@ async function balanceBatches<T, R>(people: readonly T[], load: (person: T) => P
   return results;
 }
 
+/**
+ * Memberships still employed on or after `day` (YYYY-MM-DD): no exit, or an exit no earlier than the day
+ * before (a day's margin for the time zones; such a person's month is computed and shows as after-end).
+ * The balance reports leave out people who left before the month or year asked for.
+ */
+export function employedFrom(day: string) {
+  return sql`(${organization_memberships.exit_at} IS NULL OR ${organization_memberships.exit_at} >= ${day}::date - 1)`;
+}
+
 type BalanceContext = { settings: WorkTimeSettings; unpaidTypes: ReadonlySet<string> };
 
 const EMPTY_SUMMARY: MonthSummary = { scheduled: 0, holiday: 0, absenceByType: {}, target: 0, actual: 0, delta: 0, vacationDays: 0 };
@@ -780,7 +789,7 @@ export class BalancesService {
 
   /** The balance report for a month: every person the caller may list, with alerts. */
   async report(db: Db, orgId: string, userIds: 'all' | string[], month: string, now: Date = new Date()) {
-    const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true)];
+    const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true), employedFrom(month)];
     if (userIds !== 'all') {
       if (userIds.length === 0) return [];
       conditions.push(inArray(organization_memberships.user_id, userIds));
