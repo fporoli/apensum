@@ -8,6 +8,7 @@ import { VACATION_ABSENCE_TYPE } from '@worktime3/shared/worktime';
 import { workflows, workflow_definitions, timesheet_periods, absences, users } from './db/schema';
 import { WorkflowsService, workflowHistory, type WorkflowStepDefinition } from './workflows.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
+import { cursorOf, isUuid, parseCursor, parseLimit, parseListFilters, wordsMatch } from './list-filters';
 
 /**
  * Generic surface over any workflow_definitions-driven approval: a manager's
@@ -24,15 +25,16 @@ export function workflowRecallDays(env: NodeJS.ProcessEnv = process.env): number
 
 /** A cursor of the workflow list (`<step started ISO>|<workflow id>`), or null when malformed. */
 export function parseWorkflowCursor(value: string | undefined): { started: string; id: string } | null {
-  const [started, id] = (value ?? '').split('|');
-  if (!started || !id || Number.isNaN(Date.parse(started)) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
-  return { started: new Date(started).toISOString(), id };
+  const c = parseCursor(value);
+  return c ? { started: c.at, id: c.id } : null;
 }
 
 /** The cursor of a row of the list, for the next page (`before`). */
 export function workflowCursor(row: { id: string; started: string | Date | null }): string {
-  return `${row.started ? new Date(row.started).toISOString() : '1970-01-01T00:00:00.000Z'}|${row.id}`;
+  return cursorOf({ id: row.id, at: row.started });
 }
+
+const STEP_STATES = ['pending', 'approved', 'rejected'] as const;
 
 @Controller('workflows')
 export class WorkflowsController {
@@ -45,7 +47,11 @@ export class WorkflowsController {
   /**
    * Workflows with a step assigned to the caller, directly or through any team they belong to —
    * their action-item queue — or (`scope=mine`) the ones the caller submitted. `status`: pending
-   * (default), approved, rejected or all; `orgId` keeps one organization's.
+   * (default), approved, rejected or all; `orgId` keeps one organization's; `id` keeps that one item
+   * (Flows' card of a workflow item), still only when it is in the list asked for.
+   * Flows' filters narrow it further: `definition` (its kind), `state` (pending, approved, rejected; on
+   * top of `status`, so "Done" keeps what it recalls), `since` (step started on or after), `person`
+   * (who submitted it) and `q` (every word in the submitter's name or e-mail).
    */
   @Get('assigned-to-me')
   async assignedToMe(
@@ -55,11 +61,18 @@ export class WorkflowsController {
     @Query('orgId') orgId?: string,
     @Query('limit') limitParam?: string,
     @Query('before') before?: string,
+    @Query('id') id?: string,
+    @Query('definition') definition?: string,
+    @Query('state') state?: string,
+    @Query('since') since?: string,
+    @Query('person') person?: string,
+    @Query('q') q?: string,
   ) {
     const db = this.db.getDb();
     if (!db) return [];
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return [];
+    if (id !== undefined && !isUuid(id)) return [];
     // Requests follow a person's manager: bring the inbox up to date with dated manager changes.
     // What concerns the caller only (in the organization asked for): with them now, or of someone they manage today.
     await this.workflowsSvc.rerouteToCurrentManagers(db, { userId: callerId, ...(orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? { organizationId: orgId } : {}) }).catch(() => 0);
@@ -77,10 +90,20 @@ export class WorkflowsController {
     const conditions = [who];
     if (status !== 'all') conditions.push(eq(workflows.step_status, status === 'approved' || status === 'rejected' ? status : 'pending'));
     if (orgId && /^[0-9a-f-]{36}$/i.test(orgId)) conditions.push(eq(workflows.organization_id, orgId));
+    if (id) conditions.push(eq(workflows.workflow_id, id));
     // Newest first, `limit` at a time (Flows -> Done: 200 and "Load older"); `before` is the last row's cursor.
-    const limit = Math.min(Math.max(Number(limitParam) || 0, 0), 1000);
+    const limit = parseLimit(limitParam);
     const cursor = parseWorkflowCursor(before);
-    const startedOrZero = sql`COALESCE(${workflows.workflow_step_started}, 'epoch'::timestamptz)`;
+    // In milliseconds, as the cursor carries them (Postgres keeps microseconds).
+    const startedOrZero = sql`date_trunc('milliseconds', COALESCE(${workflows.workflow_step_started}, 'epoch'::timestamptz))`;
+    const filters = parseListFilters({ since, person, q });
+    if (typeof definition === 'string' && definition && definition.length <= 200) conditions.push(eq(workflow_definitions.name, definition));
+    if ((STEP_STATES as readonly string[]).includes(state ?? '')) conditions.push(eq(workflows.step_status, state as (typeof STEP_STATES)[number]));
+    if (filters.since) conditions.push(sql`${startedOrZero} >= ${filters.since}::date`);
+    const submitter = sql`${workflows.workflow_data} ->> 'submittedByUserId'`;
+    if (filters.person) conditions.push(sql`${submitter} = ${filters.person}`);
+    const words = wordsMatch([sql`su.display_name`, sql`su.email`], filters.words);
+    if (words) conditions.push(sql`EXISTS (SELECT 1 FROM users su WHERE su.id::text = ${submitter} AND ${words})`);
     if (cursor) conditions.push(sql`(${startedOrZero}, ${workflows.workflow_id}) < (${cursor.started}::timestamptz, ${cursor.id}::uuid)`);
     const rawRows = await db
       .select({

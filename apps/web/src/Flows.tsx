@@ -5,8 +5,8 @@
 // of an own type is a request with a workflow: it is listed once, as the request.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Box, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
-  Tab, Tabs, TextField,
+  Alert, Autocomplete, Box, Chip, Divider, InputAdornment, LinearProgress, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Paper,
+  Tab, Tabs, TextField, Typography,
 } from '@mui/material';
 import { Button } from './Button';
 import { flowTypeLabel } from '@worktime3/shared/flows';
@@ -16,7 +16,8 @@ import { EmptyState, PageHeader } from './components';
 import { useI18n } from './i18n';
 import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';
-import { flowRows, type FlowFocus, type FlowRow, type FlowsTab } from './flowRows';
+import { NO_FILTERS, flowQueries, flowRows, shownFrom, type FlowFilters, type FlowFocus, type FlowRow, type FlowsTab } from './flowRows';
+import { PLUGIN_WORKFLOW_KINDS } from './plugins';
 export type { FlowFocus, FlowsTab } from './flowRows';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -40,16 +41,39 @@ interface FlowsProps {
   navigate?: (section: string) => void;
 }
 
-/** What each tab asks the two sources. */
-const TABS: Record<FlowsTab, { scope: Scope; status: StatusFilter; boxes: Box_[] }> = {
-  todo: { scope: 'assigned', status: 'pending', boxes: ['inbox'] },
-  mine: { scope: 'mine', status: 'all', boxes: ['mine'] },
-  done: { scope: 'assigned', status: 'all', boxes: ['inbox', 'archived'] },
+/** What each tab asks the workflow items (the query strings of both sources: `flowQueries`). */
+const TABS: Record<FlowsTab, { scope: Scope; status: StatusFilter }> = {
+  todo: { scope: 'assigned', status: 'pending' },
+  mine: { scope: 'mine', status: 'all' },
+  done: { scope: 'assigned', status: 'all' },
 };
 
+/** The built-in kinds for the type filter (definition names), besides the plugins'. */
+const CORE_DEFINITIONS = ['approve absence', 'approve timesheet', 'approve project timesheet', 'reopen approved timesheet'];
+const PERIODS = [30, 90, 365] as const;
+/**
+ * A column of the list and flow side by side: sticky below the app bar, as high as the window, scrolling inside. Its
+ * scroll bar is drawn always (macOS and Chrome otherwise show one only while scrolling, and a long list looks like it
+ * ends at the window's bottom); Firefox keeps its own.
+ */
+const PANE = {
+  position: { md: 'sticky' },
+  top: { md: 80 },
+  maxHeight: { md: 'calc(100vh - 96px)' },
+  overflowY: { md: 'auto' },
+  '&::-webkit-scrollbar': { width: 10 },
+  '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+  '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(128, 128, 128, 0.45)', borderRadius: 5, border: '2px solid transparent', backgroundClip: 'padding-box' },
+  '&::-webkit-scrollbar-thumb:hover': { backgroundColor: 'rgba(128, 128, 128, 0.7)' },
+} as const;
+
+type Person = { userId: string; name: string; email: string };
+
 const REQUEST_COLOR = { open: 'warning', in_progress: 'info', resolved: 'success' } as const;
-/** Done and Mine show the newest so many of the other flows; "Load older" brings the next ones. */
+/** Each tab shows the newest so many of each source; "Load all" brings the rest that matches the filters. */
 const PAGE = 200;
+/** "Load all" reads the rest in pages this large (the API's most). */
+const ALL = 1000;
 const WORKFLOW_COLOR = { pending: 'warning', approved: 'success', rejected: 'error' } as const;
 
 export default function Flows(props: FlowsProps) {
@@ -62,12 +86,28 @@ export default function Flows(props: FlowsProps) {
   const [items, setItems] = useState<ActionItem[]>([]);
   const [types, setTypes] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(false);
-  // Where older flows start (the API's cursor), when there are more than the page shows.
-  const [older, setOlder] = useState<string | null>(null);
+  // Where each source's older flows start (the API's cursor), when there are more than loaded.
+  const [older, setOlder] = useState<{ workflows: string | null; flows: string | null }>({ workflows: null, flows: null });
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ source: FlowRow['source']; id: string } | null>(props.focus ? { source: props.focus.source, id: props.focus.id } : null);
-  const [typeFilter, setTypeFilter] = useState('');
+  const [filters, setFilters] = useState<FlowFilters>(NO_FILTERS);
+  // The search field as typed; it reaches `filters.q` (and the API) after a pause.
   const [search, setSearch] = useState('');
+  const [people, setPeople] = useState<Person[] | null>(null);
+  useEffect(() => {
+    const id = setTimeout(() => setFilters((f) => (f.q === search ? f : { ...f, q: search })), 350);
+    return () => clearTimeout(id);
+  }, [search]);
+  // Who can be picked as the one who started a flow: the directory, read when the field is first opened.
+  const loadPeople = async () => {
+    if (people) return;
+    try {
+      const data = await (await fetch(`${API}/organizations/${orgId}/directory`, { headers: await authHeaders() })).json();
+      setPeople(Array.isArray(data?.people) ? data.people.map((p: Person) => ({ userId: p.userId, name: p.name, email: p.email })) : []);
+    } catch {
+      setPeople([]);
+    }
+  };
   const [composeSignal, setComposeSignal] = useState(0);
   const [composePreset, setComposePreset] = useState<ComposePreset | undefined>(undefined);
   // "New flow": the types with their own steps, then a free flow to the manager or a department.
@@ -116,45 +156,79 @@ export default function Flows(props: FlowsProps) {
     return () => { cancelled = true; };
   }, [orgId, authHeaders, hasFreeFlows]);
 
+  /** A source's rows as the API answers them: workflow items as an array, flows as `{ flows }`. */
+  const fetchRows = async (url: string, headers: Record<string, string>) => {
+    const body = await (await fetch(url, { headers })).json();
+    if (body?.ok === false) throw new Error(body.error ?? 'error');
+    return Array.isArray(body) ? body : Array.isArray(body?.flows) ? body.flows : [];
+  };
+  const urls = useCallback((before?: { workflows: string | null; flows: string | null }, size = PAGE) => {
+    const q = flowQueries(tab, filters, orgId, hasFreeFlows);
+    const page = `&limit=${size + 1}`;
+    const after = (cursor: string | null | undefined) => (cursor ? `&before=${encodeURIComponent(cursor)}` : '');
+    return {
+      workflows: q.workflows && (!before || before.workflows) ? `${API}/workflows/assigned-to-me?${q.workflows}${page}${after(before?.workflows)}` : null,
+      flows: q.flows && (!before || before.flows) ? `${API}/organizations/${orgId}/flows?${q.flows}${page}${after(before?.flows)}` : null,
+    };
+  }, [tab, filters, orgId, hasFreeFlows]);
+  // Which box a flow belongs to (the thread on the right and the tab's rules): Done holds the inbox's and the archive's.
+  const boxed = useCallback((rows: FlowItem[]) => rows.map((r) => ({ ...r, box: (tab === 'mine' ? 'mine' : tab === 'done' && r.archived_at ? 'archived' : 'inbox') as Box_ })), [tab]);
+  /** One page of a source: what to show, and where its next page starts (null: no more). */
+  const page = <T extends { cursor?: string }>(rows: T[], size = PAGE): { rows: T[]; next: string | null } =>
+    ({ rows: rows.slice(0, size), next: rows.length > size ? (rows[size - 1].cursor ?? null) : null });
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const headers = await authHeaders();
-      const [wf, ...boxes] = await Promise.all([
-        fetch(`${API}/workflows/assigned-to-me?scope=${shown.scope}&status=${shown.status}&orgId=${orgId}${shown.status === 'all' ? `&limit=${PAGE + 1}` : ''}`, { headers }).then((r) => r.json()),
-        ...(hasFreeFlows ? shown.boxes.map((box) => fetch(`${API}/organizations/${orgId}/flows?box=${box}`, { headers }).then((r) => r.json())) : []),
+      const u = urls();
+      const [wf, fl] = await Promise.all([
+        u.workflows ? fetchRows(u.workflows, headers) : Promise.resolve([]),
+        u.flows ? fetchRows(u.flows, headers) : Promise.resolve([]),
       ]);
-      const list: ActionItem[] = Array.isArray(wf) ? wf : [];
-      setItems(shown.status === 'all' ? list.slice(0, PAGE) : list);
-      setOlder(shown.status === 'all' && list.length > PAGE ? (list[PAGE - 1].cursor ?? null) : null);
+      const w = page(wf as ActionItem[]);
+      const f = page(fl as (FlowItem & { cursor?: string })[]);
+      setItems(w.rows);
+      setRequests(boxed(f.rows));
+      setOlder({ workflows: w.next, flows: f.next });
       // Opened without a focus: "To do" stays when something waits there, else "Mine".
       if (chooseTab.current && tab === 'todo') {
         chooseTab.current = false;
-        const waiting = (Array.isArray(wf) ? wf.length : 0) + boxes.reduce((n, b) => n + (Array.isArray(b?.flows) ? b.flows.filter((f: FlowItem) => f.status !== 'resolved').length : 0), 0);
-        if (waiting === 0) setTab('mine');
+        if (wf.length + fl.length === 0) setTab('mine');
       }
-      setRequests(boxes.flatMap((b, k) => (Array.isArray(b?.flows) ? (b.flows as FlowItem[]).map((r) => ({ ...r, box: shown.boxes[k] })) : [])));
       setError(null);
     } catch {
       setError(t('common.cannotReachApi'));
     } finally {
       setLoading(false);
     }
-  }, [authHeaders, orgId, hasFreeFlows, shown, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authHeaders, urls, boxed, tab, t]);
 
   useEffect(() => {
     void load();
   }, [load, props.refreshKey]);
 
-  /** The next older flows (Done, Mine), added below. */
-  const loadOlder = async () => {
-    if (!older) return;
+  /** Every flow that matches the filters: the rest of each source, ALL at a time, added below. */
+  const loadAll = async () => {
+    let next = older;
+    if (!next.workflows && !next.flows) return;
     setLoading(true);
     try {
-      const wf = await (await fetch(`${API}/workflows/assigned-to-me?scope=${shown.scope}&status=${shown.status}&orgId=${orgId}&limit=${PAGE + 1}&before=${encodeURIComponent(older)}`, { headers: await authHeaders() })).json();
-      const list: ActionItem[] = Array.isArray(wf) ? wf : [];
-      setItems((prev) => [...prev, ...list.slice(0, PAGE)]);
-      setOlder(list.length > PAGE ? (list[PAGE - 1].cursor ?? null) : null);
+      const headers = await authHeaders();
+      while (next.workflows || next.flows) {
+        const u = urls(next, ALL);
+        const [wf, fl] = await Promise.all([
+          u.workflows ? fetchRows(u.workflows, headers) : Promise.resolve(null),
+          u.flows ? fetchRows(u.flows, headers) : Promise.resolve(null),
+        ]);
+        const w = wf ? page(wf as ActionItem[], ALL) : null;
+        const f = fl ? page(fl as (FlowItem & { cursor?: string })[], ALL) : null;
+        if (w) setItems((prev) => [...prev, ...w.rows]);
+        if (f) setRequests((prev) => [...prev, ...boxed(f.rows)]);
+        next = { workflows: w ? w.next : null, flows: f ? f.next : null };
+        setOlder(next);
+      }
     } catch {
       setError(t('common.cannotReachApi'));
     } finally {
@@ -176,7 +250,15 @@ export default function Flows(props: FlowsProps) {
       const label = r.source ? t(`modules.${r.source}`) : t('flow.system');
       return label === `modules.${r.source}` ? r.source ?? '' : label;
     };
-    return flowRows(tab, requests, items, {
+    // While a source has more, only what is not older than its oldest loaded row (`shownFrom`).
+    const shownSince = shownFrom([
+      { more: !!older.workflows, oldest: items.at(-1)?.started ?? null },
+      { more: !!older.flows, oldest: requests.at(-1)?.last_activity_at ?? null },
+    ]);
+    const time = (at: string | null | undefined) => (at ? Date.parse(at) : 0);
+    const shownItems = shownSince === null ? items : items.filter((i) => time(i.started) >= shownSince);
+    const shownRequests = shownSince === null ? requests : requests.filter((r) => time(r.last_activity_at) >= shownSince);
+    return flowRows(tab, shownRequests, shownItems, {
       flow: (r) => ({
         title: r.subject,
         type: r.flow_type ? flowTypeLabel(types, locale, r.flow_type) : t('flows.kind.free'),
@@ -192,18 +274,42 @@ export default function Flows(props: FlowsProps) {
         status: { label: t(`approvals.status.${i.step_status}`), color: WORKFLOW_COLOR[i.step_status] },
       }),
     }, hasFreeFlows);
-  }, [tab, requests, items, types, locale, t, hasFreeFlows, shown.scope]);
+  }, [tab, requests, items, types, locale, t, hasFreeFlows, shown.scope, older]);
 
-  const typeOptions = useMemo(() => [...new Set(rows.map((r) => r.type))].sort((a, b) => a.localeCompare(b, locale)), [rows, locale]);
-  const shownType = typeOptions.includes(typeFilter) ? typeFilter : '';
-  const q = search.trim().toLowerCase();
-  const filtered = rows.filter((r) => (!shownType || r.type === shownType) && (!q || `${r.title} ${r.type} ${r.line}`.toLowerCase().includes(q)));
+  // Every kind there is (not only the loaded ones'): the built-in and the plugins' workflows, the own types, Free Flow.
+  const typeOptions = useMemo(() => {
+    const options = new Map<string, string>();
+    for (const name of [...CORE_DEFINITIONS, ...PLUGIN_WORKFLOW_KINDS.map((k) => k.definitionName)]) options.set(`def:${name}`, actionItemLabel(name, t));
+    if (hasFreeFlows) {
+      for (const key of Object.keys(types)) options.set(`type:${key}`, flowTypeLabel(types, locale, key));
+      options.set('free', t('flows.kind.free'));
+    }
+    return [...options].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, locale));
+  }, [types, hasFreeFlows, locale, t]);
+  const filtering = filters.type !== '' || filters.days !== null || (tab !== 'todo' && filters.state !== '') || (tab !== 'mine' && filters.person !== '') || filters.q.trim() !== '';
+  const filtered = rows;
+  const chosenPerson = people?.find((p) => p.userId === filters.person) ?? null;
 
+  // There are older flows than loaded: said above the list (it stays there while the list scrolls) and below it.
+  const hasOlder = !!(older.workflows || older.flows);
+  const moreLine = (sticky: boolean) => (
+    <Box
+      sx={{
+        px: 2, py: 0.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap',
+        bgcolor: 'background.paper', borderColor: 'divider', borderStyle: 'solid', borderWidth: sticky ? '0 0 1px' : '1px 0 0',
+        ...(sticky ? { position: 'sticky', top: 0, zIndex: 1 } : {}),
+      }}
+    >
+      <Typography variant="body2" color="text.secondary">{t('flows.shownNewest', { count: filtered.length })}</Typography>
+      <Button size="small" disabled={loading} onClick={() => void loadAll()}>{t('flows.loadAll')}</Button>
+    </Box>
+  );
   const list = (
     <Paper variant="outlined" sx={{ minWidth: 0 }}>
+      {hasOlder && moreLine(true)}
       {loading && <LinearProgress />}
       {filtered.length === 0 && !loading ? (
-        <EmptyState icon={<AccountTreeIcon fontSize="inherit" />} title={t(rows.length ? 'flows.noMatch' : `flows.empty.${tab}`)} />
+        <EmptyState icon={<AccountTreeIcon fontSize="inherit" />} title={t(filtering ? 'flows.noMatch' : `flows.empty.${tab}`)} />
       ) : (
         <List disablePadding>
           {filtered.map((row, k) => (
@@ -235,11 +341,7 @@ export default function Flows(props: FlowsProps) {
           ))}
         </List>
       )}
-      {older && (
-        <Box sx={{ p: 1, display: 'flex', justifyContent: 'center' }}>
-          <Button size="small" disabled={loading} onClick={() => void loadOlder()}>{t('flows.showOlder')}</Button>
-        </Box>
-      )}
+      {hasOlder && filtered.length > 0 && moreLine(false)}
     </Paper>
   );
 
@@ -331,27 +433,72 @@ export default function Flows(props: FlowsProps) {
           select
           size="small"
           label={t('flows.type')}
-          value={shownType}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          sx={{ minWidth: { xs: '100%', sm: 240 } }}
+          value={typeOptions.some((o) => o.value === filters.type) ? filters.type : ''}
+          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+          sx={{ minWidth: { xs: '100%', sm: 220 } }}
           slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
         >
           <MenuItem value="">{t('flows.allTypes')}</MenuItem>
-          {typeOptions.map((o) => <MenuItem key={o} value={o}>{o}</MenuItem>)}
+          {typeOptions.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
         </TextField>
+        <TextField
+          select
+          size="small"
+          label={t('flows.period')}
+          value={filters.days ?? ''}
+          onChange={(e) => setFilters((f) => ({ ...f, days: e.target.value === '' ? null : Number(e.target.value) }))}
+          sx={{ minWidth: { xs: '100%', sm: 170 } }}
+          slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+        >
+          <MenuItem value="">{t('flows.period.all')}</MenuItem>
+          {PERIODS.map((d) => <MenuItem key={d} value={d}>{t(`flows.period.${d}`)}</MenuItem>)}
+        </TextField>
+        {tab !== 'todo' && (
+          <TextField
+            select
+            size="small"
+            label={t('flows.state')}
+            value={filters.state}
+            onChange={(e) => setFilters((f) => ({ ...f, state: e.target.value as FlowFilters['state'] }))}
+            sx={{ minWidth: { xs: '100%', sm: 160 } }}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+          >
+            <MenuItem value="">{t('flows.state.all')}</MenuItem>
+            <MenuItem value="open">{t('flows.state.open')}</MenuItem>
+            <MenuItem value="done">{t('flows.state.done')}</MenuItem>
+            <MenuItem value="rejected">{t('flows.state.rejected')}</MenuItem>
+          </TextField>
+        )}
+        {tab !== 'mine' && (
+          <Autocomplete
+            size="small"
+            options={people ?? []}
+            loading={people === null}
+            onOpen={() => void loadPeople()}
+            value={chosenPerson ?? (filters.person ? { userId: filters.person, name: '…', email: '' } : null)}
+            onChange={(_, p) => setFilters((f) => ({ ...f, person: p?.userId ?? '' }))}
+            getOptionLabel={(p) => p.name || p.email}
+            isOptionEqualToValue={(a, b) => a.userId === b.userId}
+            renderOption={(props, p) => <li {...props} key={p.userId}>{p.name || p.email}</li>}
+            renderInput={(params) => <TextField {...params} label={t('flows.person')} placeholder={t('flows.person.anyone')} slotProps={{ inputLabel: { shrink: true } }} />}
+            sx={{ minWidth: { xs: '100%', sm: 220 } }}
+          />
+        )}
         <TextField
           size="small"
           placeholder={t('flows.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          sx={{ minWidth: { xs: '100%', sm: 300 } }}
+          sx={{ minWidth: { xs: '100%', sm: 260 } }}
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" color="action" /></InputAdornment> } }}
         />
       </Box>
 
+      {/* Side by side (md and up), list and flow each scroll on their own and stay below the app bar: a flow chosen far
+          down the list is seen at once. */}
       <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'minmax(280px, 2fr) 3fr' }, alignItems: 'start' }}>
-        <Box sx={{ display: { xs: selected ? 'none' : 'block', md: 'block' }, minWidth: 0 }}>{list}</Box>
-        <Box sx={{ display: { xs: selected ? 'block' : 'none', md: 'block' }, minWidth: 0 }}>{detail}</Box>
+        <Box sx={{ display: { xs: selected ? 'none' : 'block', md: 'block' }, minWidth: 0, ...PANE }}>{list}</Box>
+        <Box sx={{ display: { xs: selected ? 'block' : 'none', md: 'block' }, minWidth: 0, ...PANE }}>{detail}</Box>
       </Box>
     </Box>
   );

@@ -16,6 +16,7 @@ import { FieldsService } from './fields.service';
 import { FlowsService, currentAssignments, noticeSubject } from './flows.service';
 import { WorkflowsService, type WorkflowStepDefinition } from './workflows.service';
 import { FLOW_STEPS_KIND, visibleThread } from './flow-steps';
+import { cursorOf, parseCursor, parseLimit, parseListFilters, wordsMatch } from './list-filters';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -380,10 +381,20 @@ export class FlowsController {
 
   /**
    * `box=mine`: the caller's own requests; `inbox`: requests they handle (not their own);
-   * `archived`: archived requests of either kind. Newest activity first.
+   * `archived`: archived requests of either kind; `done` (Flows -> Done): the inbox's resolved ones and
+   * the archived ones. Without `limit` the newest 500, urgent and overdue first (the Flows page sorts
+   * by activity itself). With `limit`: newest activity first, `before` the last row's `cursor`.
+   * Flows' filters: `type` (a flow type's key, or `free`), `state` (`open`: not resolved, `done`:
+   * resolved), `since` (last activity on or after), `person` (the requester), `q` (every word in the
+   * subject or the requester's name or e-mail).
    */
   @Get()
-  async list(@Param('orgId') orgId: string, @Query('box') box: string | undefined, @Req() req: AuthenticatedRequest) {
+  async list(
+    @Param('orgId') orgId: string,
+    @Query('box') box: string | undefined,
+    @Req() req: AuthenticatedRequest,
+    @Query() query: { limit?: string; before?: string; type?: string; state?: string; since?: string; person?: string; q?: string } = {},
+  ) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true, flows: [] };
     const callerId = await this.caller(db, orgId, req);
@@ -391,18 +402,35 @@ export class FlowsController {
     const all = await reachesAll(db, orgId, callerId, 'nav.flows', 'edit');
     const mine = sql`r.requester_user_id = ${callerId}`;
     const handles = handlesCondition(orgId, callerId, all);
+    const inbox = sql`r.archived_at IS NULL AND r.requester_user_id IS DISTINCT FROM ${callerId} AND ${handles}`;
+    const archived = sql`r.archived_at IS NOT NULL AND (${mine} OR ${handles})`;
     const where =
-      box === 'inbox'
-        ? sql`r.archived_at IS NULL AND r.requester_user_id IS DISTINCT FROM ${callerId} AND ${handles}`
-        : box === 'archived'
-          ? sql`r.archived_at IS NOT NULL AND (${mine} OR ${handles})`
-          : sql`r.archived_at IS NULL AND ${mine}`;
-    const rows = await db.execute(
-      sql`SELECT ${LIST_COLUMNS} ${LIST_FROM(orgId)} WHERE r.organization_id = ${orgId} AND ${where}
-          ORDER BY (r.urgent AND r.status <> 'resolved') DESC,
-            (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`,
-    );
-    return { ok: true, flows: rows.rows };
+      box === 'inbox' ? inbox
+        : box === 'archived' ? archived
+          : box === 'done' ? sql`((${inbox} AND r.status = 'resolved') OR (${archived}))`
+            : sql`r.archived_at IS NULL AND ${mine}`;
+    const conditions: SQL[] = [sql`r.organization_id = ${orgId}`, where];
+    const filters = parseListFilters(query);
+    const type = typeof query.type === 'string' ? query.type : '';
+    if (type === 'free') conditions.push(sql`r.flow_type IS NULL`);
+    else if (type && type.length <= 100) conditions.push(sql`r.flow_type = ${type}`);
+    if (query.state === 'open') conditions.push(sql`r.status <> 'resolved'`);
+    else if (query.state === 'done') conditions.push(sql`r.status = 'resolved'`);
+    if (filters.since) conditions.push(sql`r.last_activity_at >= ${filters.since}::date`);
+    if (filters.person) conditions.push(sql`r.requester_user_id = ${filters.person}`);
+    const words = wordsMatch([sql`r.subject`, sql`ru.display_name`, sql`ru.email`], filters.words);
+    if (words) conditions.push(words);
+    const limit = parseLimit(query.limit);
+    const cursor = parseCursor(query.before);
+    // In milliseconds, as the cursor carries them (Postgres keeps microseconds).
+    const activity = sql`date_trunc('milliseconds', r.last_activity_at)`;
+    if (limit && cursor) conditions.push(sql`(${activity}, r.id) < (${cursor.at}::timestamptz, ${cursor.id}::uuid)`);
+    const order = limit
+      ? sql`${activity} DESC, r.id DESC LIMIT ${limit}`
+      : sql`(r.urgent AND r.status <> 'resolved') DESC,
+            (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`;
+    const rows = await db.execute(sql`SELECT ${LIST_COLUMNS} ${LIST_FROM(orgId)} WHERE ${sql.join(conditions, sql` AND `)} ORDER BY ${order}`);
+    return { ok: true, flows: (rows.rows as { id: string; last_activity_at: string | null }[]).map((r) => ({ ...r, cursor: cursorOf({ id: r.id, at: r.last_activity_at }) })) };
   }
 
   /** Open requests in the caller's inbox nobody took yet, or taken by them: the navbar badge. */

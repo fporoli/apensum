@@ -62,3 +62,76 @@ export function flowRows(
   }
   return rows.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }
+
+/**
+ * The Flows page's filters, sent to both sources (the API filters, so they reach every flow, not only the loaded ones).
+ * `type`: `def:<workflow definition>` (a built-in kind: absence, timesheet, a plugin's), `type:<key>` (an own flow
+ * type) or `free` (a Free Flow); `days`: last activity within so many days; `state`: open, done or sent back (Mine and
+ * Done); `person`: who started it (To do and Done).
+ */
+export interface FlowFilters {
+  type: string;
+  days: number | null;
+  state: '' | 'open' | 'done' | 'rejected';
+  person: string;
+  q: string;
+}
+
+export const NO_FILTERS: FlowFilters = { type: '', days: null, state: '', person: '', q: '' };
+
+/** The day `days` before `today` (YYYY-MM-DD). */
+export function sinceDay(days: number, today: Date = new Date()): string {
+  return new Date(today.getTime() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * The query strings of the two sources for a tab and its filters, without paging: `workflows` for
+ * `workflows/assigned-to-me`, `flows` for `organizations/:orgId/flows` (null: that source has nothing for the filters,
+ * or the Free Flows are off). A flow of an own type comes from `flows` only when the Free Flows are on.
+ */
+export function flowQueries(tab: FlowsTab, f: FlowFilters, orgId: string, requestsListed: boolean, today: Date = new Date()): { workflows: string | null; flows: string | null } {
+  const since = f.days ? sinceDay(f.days, today) : '';
+  const state = tab === 'todo' ? '' : f.state;
+  const person = tab === 'mine' ? '' : f.person;
+  const common = (p: URLSearchParams) => {
+    if (since) p.set('since', since);
+    if (person) p.set('person', person);
+    if (f.q.trim()) p.set('q', f.q.trim());
+    return p;
+  };
+  const ownType = f.type === 'free' || f.type.startsWith('type:');
+  let workflows: string | null = null;
+  if (!(ownType && requestsListed)) {
+    const p = new URLSearchParams({ scope: tab === 'mine' ? 'mine' : 'assigned', status: tab === 'todo' ? 'pending' : 'all', orgId });
+    if (f.type.startsWith('def:')) p.set('definition', f.type.slice(4));
+    else if (f.type.startsWith('type:')) p.set('definition', `flow:${f.type.slice(5)}`);
+    if (state) p.set('state', state === 'open' ? 'pending' : state === 'done' ? 'approved' : 'rejected');
+    workflows = common(p).toString();
+  }
+  let flows: string | null = null;
+  // A Free Flow is never sent back; a built-in kind is not a row of `flows`.
+  if (requestsListed && !f.type.startsWith('def:') && state !== 'rejected') {
+    const p = new URLSearchParams({ box: tab === 'todo' ? 'inbox' : tab });
+    if (f.type === 'free') p.set('type', 'free');
+    else if (f.type.startsWith('type:')) p.set('type', f.type.slice(5));
+    if (tab === 'todo') p.set('state', 'open');
+    else if (state) p.set('state', state);
+    flows = common(p).toString();
+  }
+  return { workflows, flows };
+}
+
+/**
+ * Two lists, each newest first and loaded a page at a time, shown as one: while a source has more, only what is not
+ * older than its oldest loaded row can be shown (the other's older rows wait for "Load older", else they would stand
+ * where that source's next rows belong). The time from which rows are shown, or null for all.
+ */
+export function shownFrom(sources: readonly { more: boolean; oldest: string | null }[]): number | null {
+  let from: number | null = null;
+  for (const s of sources) {
+    if (!s.more || !s.oldest) continue;
+    const at = Date.parse(s.oldest);
+    if (!Number.isNaN(at) && (from === null || at > from)) from = at;
+  }
+  return from;
+}

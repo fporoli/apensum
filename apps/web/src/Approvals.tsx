@@ -227,7 +227,6 @@ interface ApprovalsProps {
 export default function Approvals({ orgId, role, canDecide, authHeaders, onChanged, embedded }: ApprovalsProps) {
   const { t, locale } = useI18n();
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
-  const [approved, setApproved] = useState<PeriodRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
@@ -369,16 +368,13 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
     setLoading(true);
     try {
       const headers = await authHeaders();
-      const [iRes, aRes] = await Promise.all([
-        fetch(`${API}/workflows/assigned-to-me?scope=${scope}&status=${statusFilter}&orgId=${orgId}`, { headers }),
-        fetch(`${API}/organizations/${orgId}/timesheet-periods?status=approved`, { headers }),
-      ]);
-      const [i, a] = await Promise.all([iRes.json(), aRes.json()]);
+      // One item's card (Flows) asks for that item only, not the whole list it comes from.
+      const only = embedded?.onlyId ? `&id=${encodeURIComponent(embedded.onlyId)}` : '';
+      const i = await (await fetch(`${API}/workflows/assigned-to-me?scope=${scope}&status=${statusFilter}&orgId=${orgId}${only}`, { headers })).json();
       if (Array.isArray(i)) {
         setActionItems(i.filter((x: ActionItem) =>
           (!embedded?.onlyId || x.id === embedded.onlyId) && !embedded?.excludeSources?.includes(x.source_table)));
       }
-      if (Array.isArray(a)) setApproved(a);
     } catch { /* offline fallback */ } finally {
       setLoading(false);
     }
@@ -437,24 +433,6 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
       onChanged?.();
     } catch {
       setError(t('approvals.declineFailed'));
-    }
-  }
-
-  async function reopen(id: string) {
-    setError(null);
-    setSuccess(null);
-    try {
-      const res = await fetch(`${API}/timesheet-periods/${id}/reopen`, { method: 'POST', headers: await authHeaders() });
-      const data = await res.json();
-      if (!data.ok) {
-        setError(data.error === 'forbidden' ? t('approvals.reopenForbidden') : t('approvals.reopenFailedWith', { error: data.error ?? t('common.unknownError') }));
-        return;
-      }
-      setSuccess(t('approvals.reopened'));
-      await reload();
-      onChanged?.();
-    } catch {
-      setError(t('approvals.reopenFailed'));
     }
   }
 
@@ -1020,34 +998,6 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
           </Table>
         </TableContainer>
       </Paper>
-
-      {role === 'admin' && !embedded && (
-        <Paper sx={{ p: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>{t('approvals.approvedList', { count: approved.length })}</Typography>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow><TableCell>{t('teamHours.member')}</TableCell><TableCell>{t('time.period')}</TableCell><TableCell align="right">{t('common.actions')}</TableCell></TableRow>
-              </TableHead>
-              <TableBody>
-                {approved.map((p) => (
-                  <TableRow key={p.id} hover>
-                    <TableCell>{p.user_display_name}</TableCell>
-                    <TableCell>{p.period_start.slice(0, 7)}</TableCell>
-                    <TableCell align="right">
-                      <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => void inspect(p, null)}>{t('approvals.inspect')}</Button>
-                      <Button size="small" onClick={() => void reopen(p.id)}>{t('approvals.reopen')}</Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {approved.length === 0 && (
-                  <TableEmptyRow colSpan={3} icon={<CheckCircleIcon fontSize="inherit" />} title={t('approvals.noneYet')} />
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
-      )}
 
       {dialogs}
     </Box>
