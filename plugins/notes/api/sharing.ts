@@ -25,7 +25,7 @@ export function parseAddresses(raw: unknown): { ok: true; addresses: string[] } 
 export class HourlyLimit {
   private readonly sent = new Map<string, number[]>();
   constructor(private readonly max: number) {}
-  take(key: string, n: number, now = Date.now()): boolean {
+  take(key: string, n: number, now = Date.now()): boolean { // real time: rate limit
     const recent = (this.sent.get(key) ?? []).filter((t) => now - t < 3_600_000);
     if (recent.length + n > this.max) { this.sent.set(key, recent); return false; }
     this.sent.set(key, [...recent, ...Array<number>(n).fill(now)]);

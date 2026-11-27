@@ -1,8 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import {
-  appBaseUrl, AuditService, callerUserId, can, DbService, NotificationsService, sendMail, VersionsService, type AuthenticatedRequest, type Db,
-} from '@worktime3/api/plugin';
+import { appBaseUrl, AuditService, callerUserId, can, DbService, NotificationsService, sendMail, VersionsService, type AuthenticatedRequest, type Db, sqlNow, sqlToday } from '@worktime3/api/plugin';
 import { HourlyLimit, MAX_MAILS_PER_HOUR, mailLang, noteMail, parseAddresses } from './sharing';
 
 /** Longest note, in characters. */
@@ -81,13 +79,13 @@ export class NotesController {
     if (!userIds.length && !departmentIds.length) return [];
     const rows = await db.execute(sql`
       SELECT m.user_id FROM organization_memberships m
-      WHERE m.organization_id = ${orgId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+      WHERE m.organization_id = ${orgId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
         AND (m.user_id = ANY(${uuidArray(userIds)}::uuid[])
           OR m.user_id IN (SELECT d.leader_user_id FROM departments d WHERE d.organization_id = ${orgId}::uuid AND d.id = ANY(${uuidArray(departmentIds)}::uuid[]))
           OR EXISTS (SELECT 1 FROM employee_assignments a WHERE a.organization_id = m.organization_id AND a.user_id = m.user_id
                        AND a.department_id = ANY(${uuidArray(departmentIds)}::uuid[])
                        AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
-                                           WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= CURRENT_DATE)))`);
+                                           WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= ${sqlToday()})))`);
     return (rows.rows as { user_id: string }[]).map((r) => r.user_id);
   }
 
@@ -212,7 +210,7 @@ export class NotesController {
     const text = cleanNoteText(body?.text);
     if (!text) return { ok: false, error: 'invalid-note' };
     const [note] = (await db.execute(sql`
-      INSERT INTO notes.notes (organization_id, user_id, text) VALUES (${orgId}::uuid, ${userId}::uuid, ${text})
+      INSERT INTO notes.notes (organization_id, user_id, text, created_at) VALUES (${orgId}::uuid, ${userId}::uuid, ${text}, ${sqlNow()})
       RETURNING id, text, created_at::text AS created_at`)).rows as { id: string; text: string; created_at: string }[];
     void this.versions.record('notes.notes', note.id, 'insert', userId, { text }).catch(() => {});
     return { ok: true, note };
