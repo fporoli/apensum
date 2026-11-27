@@ -10,7 +10,7 @@ import {
 } from '@worktime3/shared/workflowConfig';
 import { useI18n, useT } from './i18n';
 import { ConfirmDialog, PageHeader } from './components';
-import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon } from './icons';
+import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon, AccountTreeIcon, CodeIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -321,8 +321,8 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRena
       <Typography variant="body2" color="text.secondary">{t('workflowConfig.runningKeep')}</Typography>
       {message && <Alert severity={message.severity} onClose={() => setMessage(null)}>{message.text}</Alert>}
       <Tabs value={mode} onChange={(_, v) => setMode(v)} sx={{ minHeight: 36, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}>
-        <Tab value="visual" label={t('workflowDesigner.visual')} />
-        <Tab value="json" label="JSON" />
+        <Tab value="visual" icon={<AccountTreeIcon />} label={t('workflowDesigner.visual')} />
+        <Tab value="json" icon={<CodeIcon />} label="JSON" />
       </Tabs>
       {mode === 'visual' && designable && (
         <WorkflowDesigner

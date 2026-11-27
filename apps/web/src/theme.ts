@@ -285,8 +285,12 @@ export function createAppTheme(mode: ThemeMode = 'light', branding: OrgBranding 
         },
       },
       MuiTab: {
+        // Every tab has an icon before its label (it reads as a tab, not as a button or a heading).
+        defaultProps: { iconPosition: 'start' },
         styleOverrides: {
           root: { textTransform: 'none', fontWeight: 600, minHeight: 44 },
+          labelIcon: { minHeight: 44, paddingTop: 6, paddingBottom: 6 },
+          iconWrapper: { fontSize: '1.15rem' },
         },
       },
       MuiTableCell: {

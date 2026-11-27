@@ -33,7 +33,7 @@ import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shar
 import { StepAnswers, StepFieldsForm, type StepAnswer, type StepValues } from './StepFieldsForm';
 import { formatLocaleNumber } from './localeFormat';
 import { EmptyState, PageHeader } from './components';
-import { AddIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon, RestartAltIcon, ScheduleIcon } from './icons';
+import { AddIcon, CheckCircleIcon, ChevronLeftIcon, ChevronRightIcon, EditIcon, LockIcon, MailIcon, PublicIcon, RestartAltIcon, ScheduleIcon, SendIcon, InboxIcon, ArchiveIcon } from './icons';
 import { stepProgress, type StepState } from './flowSteps';
 import { cleanDueDate, cleanFlowLink, flowTypeConfidential, flowTypeLabel, flowTypeOptions } from '@worktime3/shared/flows';
 import { FLOW_FORM, flowTypeForm } from '@worktime3/shared/fields';
@@ -812,16 +812,17 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
         variant="scrollable"
         allowScrollButtonsMobile
       >
-        <Tab value="mine" label={t('flow.box.mine')} />
+        <Tab value="mine" icon={<SendIcon />} label={t('flow.box.mine')} />
         <Tab
           value="inbox"
+          icon={<InboxIcon />}
           label={
             <Badge color="error" badgeContent={inboxCount} sx={{ '& .MuiBadge-badge': { right: -12 } }}>
               {t('flow.box.inbox')}
             </Badge>
           }
         />
-        <Tab value="archived" label={t('flow.box.archived')} />
+        <Tab value="archived" icon={<ArchiveIcon />} label={t('flow.box.archived')} />
       </Tabs>}
 
       {embedded?.detailOnly ? (thread ?? <LinearProgress />) : (

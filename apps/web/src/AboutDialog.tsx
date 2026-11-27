@@ -21,6 +21,7 @@ import { infoUrl } from './infoUrl';
 import { useI18n } from './i18n';
 import { swissLocale } from './localeFormat';
 import { VISIBLE_SCROLLBAR } from './scrollbars';
+import { InfoOutlinedIcon, ExtensionIcon, CopyrightIcon, MemoryIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -173,10 +174,10 @@ export default function AboutDialog({ open, onClose, session, authHeaders, curre
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { height: 'min(640px, calc(100% - 64px))' } } }}>
       <DialogTitle sx={{ pb: 0 }}>{t('about.title')}</DialogTitle>
       <Tabs value={tab} onChange={(_, v: AboutTab) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}>
-        <Tab value="general" label={t('about.tab.general')} />
-        <Tab value="plugins" label={t('about.plugins')} />
-        <Tab value="about" label={t('about.tab.about')} />
-        <Tab value="support" label={t('about.tab.support')} />
+        <Tab value="general" icon={<InfoOutlinedIcon />} label={t('about.tab.general')} />
+        <Tab value="plugins" icon={<ExtensionIcon />} label={t('about.plugins')} />
+        <Tab value="about" icon={<CopyrightIcon />} label={t('about.tab.about')} />
+        <Tab value="support" icon={<MemoryIcon />} label={t('about.tab.support')} />
       </Tabs>
       <DialogContent sx={{ display: 'grid', gap: 2, alignContent: 'start', overflowY: 'auto', pt: '16px !important', ...VISIBLE_SCROLLBAR }}>
         {error && <Alert severity="error">{error}</Alert>}

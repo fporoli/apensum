@@ -32,7 +32,7 @@ import { DESIGN_PANEL_WIDTH, FormDesignPanel } from './FormDesigner';
 import { useI18n } from './i18n';
 import { ConfigFieldGroup, useGroupTitle } from './ConfigField';
 import { formatLocaleDate, swissLocale } from './localeFormat';
-import { AddIcon, CloseIcon, DeleteIcon, EditIcon, HistoryIcon } from './icons';
+import { AddIcon, CloseIcon, DeleteIcon, EditIcon, HistoryIcon, PersonIcon, GroupIcon } from './icons';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -423,8 +423,8 @@ export function BasicDataPanel({ orgId, userId, isSelf, embedded = false, authHe
 
       {showPersonalTab && showFamilyTab && (
         <Tabs value={currentTab} onChange={(_, v) => switchTab(v)} sx={{ mb: 2 }}>
-          <Tab value="personal" label={t('home.tab.personal')} />
-          <Tab value="family" label={t('home.tab.family')} />
+          <Tab value="personal" icon={<PersonIcon />} label={t('home.tab.personal')} />
+          <Tab value="family" icon={<GroupIcon />} label={t('home.tab.family')} />
         </Tabs>
       )}
 

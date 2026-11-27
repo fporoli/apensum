@@ -14,7 +14,7 @@ import Approvals, { actionItemLabel, correspondingObject, itemPerson, type Actio
 import FlowDetail, { type Box_, type ComposePreset, type FlowItem } from './FlowDetail';
 import { EmptyState, PageHeader } from './components';
 import { useI18n } from './i18n';
-import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon } from './icons';
+import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon, AssignmentIcon, PersonIcon, CheckCircleIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';
 import { NO_FILTERS, flowQueries, flowRows, shownFrom, type FlowFilters, type FlowFocus, type FlowRow, type FlowsTab } from './flowRows';
 import { PLUGIN_WORKFLOW_KINDS } from './plugins';
@@ -417,9 +417,9 @@ export default function Flows(props: FlowsProps) {
       )}
 
       <Tabs value={tab} onChange={(_, v: FlowsTab) => { setTab(v); setSelected(null); }} variant="scrollable" allowScrollButtonsMobile>
-        <Tab value="todo" label={t('flows.tab.todo')} />
-        <Tab value="mine" label={t('flows.tab.mine')} />
-        <Tab value="done" label={t('flows.tab.done')} />
+        <Tab value="todo" icon={<AssignmentIcon />} label={t('flows.tab.todo')} />
+        <Tab value="mine" icon={<PersonIcon />} label={t('flows.tab.mine')} />
+        <Tab value="done" icon={<CheckCircleIcon />} label={t('flows.tab.done')} />
       </Tabs>
 
       <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>

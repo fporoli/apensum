@@ -3,7 +3,7 @@ import { Alert, Box, Container, Divider, IconButton, MenuItem, Paper, Tab, Tabs,
 import { Button } from './Button';
 import { completeSsoLogin, isSsoCallback, ssoConfig, startSsoLogin } from './auth';
 import { LOCALES, useI18n } from './i18n';
-import { DarkModeIcon, LightModeIcon } from './icons';
+import { DarkModeIcon, LightModeIcon, LoginIcon, PersonAddIcon, MailIcon, KeyIcon } from './icons';
 import { infoUrl } from './infoUrl';
 import { ApensumMark } from './ApensumMark';
 import { useThemeMode } from './theme';
@@ -262,10 +262,10 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
           variant="fullWidth"
           sx={{ mb: 3 }}
         >
-          <Tab value="login" label={t('login.tab.login')} />
-          <Tab value="register" label={t('login.tab.register')} />
-          <Tab value="invite" label={t('login.tab.invite')} />
-          <Tab value="reset" label={t('login.tab.reset')} />
+          <Tab value="login" icon={<LoginIcon />} label={t('login.tab.login')} />
+          <Tab value="register" icon={<PersonAddIcon />} label={t('login.tab.register')} />
+          <Tab value="invite" icon={<MailIcon />} label={t('login.tab.invite')} />
+          <Tab value="reset" icon={<KeyIcon />} label={t('login.tab.reset')} />
         </Tabs>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         {notice && <Alert severity="success" sx={{ mb: 2 }}>{notice}</Alert>}

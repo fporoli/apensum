@@ -18,7 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n, Button } from '@worktime3/web/plugin';
+import { ConfirmDialog, EmptyState, EditIcon, formatLocaleDateTime, MarkdownHelp, MarkdownView, PageHeader, SearchIcon, useI18n, Button, VisibilityIcon } from '@worktime3/web/plugin';
 import { isMailAddress, MAX_MAIL_ADDRESSES, splitAddresses } from '../shared/mail';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -414,8 +414,8 @@ function NoteEditor({ text, onChange, placeholder, autoFocus }: { text: string; 
   return (
     <>
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 36, mb: 1, '& .MuiTab-root': { minHeight: 36, py: 0.5 } }}>
-        <Tab value="write" label={t('notes.write')} />
-        <Tab value="preview" label={t('notes.preview')} disabled={!text.trim()} />
+        <Tab value="write" icon={<EditIcon />} label={t('notes.write')} />
+        <Tab value="preview" icon={<VisibilityIcon />} label={t('notes.preview')} disabled={!text.trim()} />
       </Tabs>
       {tab === 'write' ? (
         <TextField

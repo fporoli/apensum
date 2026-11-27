@@ -113,6 +113,7 @@ That looks like success but does nothing.
   `locale` itself stays the language key (texts, labels).\
   Date pickers use dayjs `de-ch`/`fr-ch`/`it-ch` and a Swiss English `en-ch` (`ConfigField.tsx`).
 - Tables search and sort through `TableView.tsx` (`useTableView(id, rows, columns)`, `SortHeader`, `TableSearch`; rules in `tableRows.ts`: every word in any searched column without case or accents, numbers as numbers, texts by the language with numbers in them, empty cells last, a third click back to the table's own order; kept per table in sessionStorage; in the plugin contract): use it for lists that grow (people, documents, records), not where the order is the point (a day's sessions, a week, a month's balances); a table the server pages through searches on the server instead.
+- Every tab has an icon (`<Tab icon={<ScheduleIcon />} …>`, from `./icons` or the plugin contract; the theme puts it before the label), so it reads as a tab.
 - Buttons are the app's `Button` (`./Button`; plugins `@worktime3/web/plugin`), not MUI's: it adds the organization's colorful look (`docs/dev/FEATURES.md`).\
   A button's text comes from a key that names its action (`.save`, `.cancel`, `.delete`, `.send`, ... in `colorful.ts`), so it gets the right icon.
 - Show API errors to the user.\

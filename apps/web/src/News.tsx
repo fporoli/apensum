@@ -23,7 +23,7 @@ import {
 import { Button } from './Button';
 import { useI18n } from './i18n';
 import { ConfirmDialog, EmptyState, PageHeader } from './components';
-import { AddIcon, CampaignIcon, CheckCircleIcon, ChevronLeftIcon, DeleteIcon, EditIcon, ImageIcon, VisibilityIcon } from './icons';
+import { AddIcon, CampaignIcon, CheckCircleIcon, ChevronLeftIcon, DeleteIcon, EditIcon, ImageIcon, VisibilityIcon, TranslateIcon } from './icons';
 import { formatLocaleDateTime } from './localeFormat';
 import { renderMarkdown, safeHref, unescapeHtml } from '@worktime3/shared/markdown';
 import { NEWS_LANGS, newsImageId, newsTextFor, type NewsLang, type NewsTexts } from '@worktime3/shared/news';
@@ -698,7 +698,7 @@ function PostEditor({
         {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
         <Tabs value={lang} onChange={(_, v) => setLang(v)} variant="scrollable">
           {NEWS_LANGS.map((l) => (
-            <Tab key={l} value={l} label={`${l.toUpperCase()}${filled(l) ? ' •' : ''}`} />
+            <Tab key={l} value={l} icon={<TranslateIcon />} label={`${l.toUpperCase()}${filled(l) ? ' •' : ''}`} />
           ))}
         </Tabs>
         <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>

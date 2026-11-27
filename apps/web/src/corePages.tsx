@@ -392,7 +392,8 @@ export const CORE_PAGES: AppPage[] = [
     section: 'documents',
     hash: '#/documents',
     object: 'nav.documents',
-    nav: { group: 'personal', label: 'nav.documents', icon: <DescriptionIcon fontSize="small" /> },
+    // Under My Data: one's own documents belong with one's own details.
+    nav: { group: 'personal', parent: 'myData', label: 'nav.documents', icon: <DescriptionIcon fontSize="small" /> },
     render: (c) => <Documents orgId={c.orgId} authHeaders={c.authHeaders} />,
   },
   {

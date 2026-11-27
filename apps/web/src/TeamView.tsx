@@ -26,7 +26,7 @@ import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDate, formatLocaleDateTime, formatLocaleNumber, formatSignedMinutes, swissLocale } from './localeFormat';
 import { PageHeader, TableEmptyRow } from './components';
-import { ChevronLeftIcon, ChevronRightIcon, ExpandLessIcon, ExpandMoreIcon } from './icons';
+import { ChevronLeftIcon, ChevronRightIcon, ExpandLessIcon, ExpandMoreIcon, PersonIcon, GroupIcon } from './icons';
 import {
   absenceDaysInMonth,
   absenceOn,
@@ -129,8 +129,8 @@ export default function TeamView({
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', minHeight: 40 }}>
-        <Tab value="own" label={t('team.tab.individual')} sx={{ minHeight: 40 }} />
-        <Tab value="team" label={t('team.tab.team')} sx={{ minHeight: 40 }} />
+        <Tab value="own" icon={<PersonIcon />} label={t('team.tab.individual')} sx={{ minHeight: 40 }} />
+        <Tab value="team" icon={<GroupIcon />} label={t('team.tab.team')} sx={{ minHeight: 40 }} />
       </Tabs>
       {tab === 'own' ? (
         <Fragment key={personId ?? 'self'}>{renderOwn(personId, personId ? month : undefined)}</Fragment>

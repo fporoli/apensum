@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   Alert,
   Box,
@@ -34,11 +34,20 @@ import { buildCsv, buildXlsx } from '@worktime3/shared/xlsx';
 import { PRESETS, buildReportTable, detailsShown, formatMeasure, labelFor, periodText, presetRange, sortRows, staticDataLabelsOf, type Preset, type StaticLabels } from '@worktime3/shared/reportTable';
 import { useI18n } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
-import { DeleteIcon, DownloadIcon, SaveIcon, ScheduleIcon } from './icons';
+import { DeleteIcon, DownloadIcon, SaveIcon, ScheduleIcon, BarChartIcon, BeachAccessIcon, PeopleIcon, VerifiedUserIcon } from './icons';
 import { formatLocaleDate, formatLocaleDateTime, swissLocale } from './localeFormat';
 import { roleLabel, type OrgRole } from './roleLabel';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
+
+/** Each report's tab icon. */
+const REPORT_ICONS: Record<ReportId, ReactElement> = {
+  projectHours: <BarChartIcon />,
+  attendance: <ScheduleIcon />,
+  absences: <BeachAccessIcon />,
+  people: <PeopleIcon />,
+  workingTimeAct: <VerifiedUserIcon />,
+};
 
 /** The grouping a report starts with: its default plus the dimensions it always keeps. */
 const initialGroupBy = (r: ReportDefinition) => [...r.defaultGroupBy, ...(r.alwaysGroupBy ?? []).filter((d) => !r.defaultGroupBy.includes(d))];
@@ -534,7 +543,7 @@ export default function Reports({ orgId, authHeaders }: { orgId: string; authHea
       {notice && <Alert severity={notice.severity} onClose={() => setNotice(null)}>{notice.text}</Alert>}
 
       <Tabs value={reportId} onChange={(_, v) => { setSavedId(''); setReportId(v); }}>
-        {REPORTS.map((r) => <Tab key={r.id} value={r.id} label={t(`reports.report.${r.id}`)} />)}
+        {REPORTS.map((r) => <Tab key={r.id} value={r.id} icon={REPORT_ICONS[r.id]} label={t(`reports.report.${r.id}`)} />)}
       </Tabs>
       <Typography variant="body2" color="text.secondary" sx={{ mt: -1 }}>{t(`reports.report.${reportId}.description`)}</Typography>
 

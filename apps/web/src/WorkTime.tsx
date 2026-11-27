@@ -32,7 +32,7 @@ import { useI18n } from './i18n';
 import { formatDurationMinutes, formatLocaleDateTime, formatSignedMinutes, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { BalancesPanel, formatDays } from './BalancesPanel';
-import { AddIcon, DeleteIcon, EditIcon, HomeIcon, PlayArrowIcon, StopIcon, TimerIcon } from './icons';
+import { AddIcon, DeleteIcon, EditIcon, HomeIcon, PlayArrowIcon, StopIcon, TimerIcon, ScheduleIcon, AccountBalanceWalletIcon } from './icons';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { ClockTimeField, DurationField } from './TimeFields';
@@ -515,8 +515,8 @@ export default function WorkTime({ orgId, userId, authHeaders, onWorkTimeChanged
 
       <Paper sx={{ p: 2 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-          <Tab value="sessions" label={t('workTime.tab.sessions')} />
-          {isSelf && <Tab value="balances" label={t('workTime.tab.balances')} />}
+          <Tab value="sessions" icon={<ScheduleIcon />} label={t('workTime.tab.sessions')} />
+          {isSelf && <Tab value="balances" icon={<AccountBalanceWalletIcon />} label={t('workTime.tab.balances')} />}
         </Tabs>
 
         {tab === 'sessions' || !isSelf ? (

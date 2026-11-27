@@ -25,7 +25,7 @@ import YearClosing from './YearClosing';
 import { useI18n } from './i18n';
 import { formatDurationMinutes, formatSignedMinutes } from './localeFormat';
 import { PageHeader, TableEmptyRow } from './components';
-import { AccountBalanceWalletIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon } from './icons';
+import { AccountBalanceWalletIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CalendarMonthIcon, EventIcon } from './icons';
 import { BalancesPanel, MonthStatusChip, formatDays, monthName, type MonthBalance } from './BalancesPanel';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -127,8 +127,8 @@ export default function BalanceReport({ orgId, authHeaders }: { orgId: string; a
       <PageHeader title={t('nav.balances')} subtitle={t('balanceReport.subtitle')} />
       <Paper sx={{ p: 2, display: 'grid', gap: 2 }}>
         <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tab value="month" label={t('yearClosing.tabMonth')} />
-          <Tab value="year" label={t('yearClosing.tab')} />
+          <Tab value="month" icon={<CalendarMonthIcon />} label={t('yearClosing.tabMonth')} />
+          <Tab value="year" icon={<EventIcon />} label={t('yearClosing.tab')} />
         </Tabs>
         {view === 'year' ? <YearClosing orgId={orgId} authHeaders={authHeaders} /> : (<>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
