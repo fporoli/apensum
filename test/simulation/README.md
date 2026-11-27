@@ -55,11 +55,13 @@ It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** d
 
 ```sh
 gh workflow run test-simulation.yml --ref main -f environment=preprod -f confirmation='SIMULATE preprod'
+gh workflow run test-simulation.yml --ref main -f environment=test -f founded=2020-01-01   # fewer years, quicker
 gh run list --workflow test-simulation.yml
 ```
 
 It resets the instance first (`vps.yml` `reset-seed` with the image of the commit it runs from: wait until `build-push` of that commit is done), then runs `life.cjs` inside the API container; it refuses when Whale exists already.\
-It takes about an hour or more (mostly the daily bookings).
+`founded` (optional, `YYYY-MM-DD` from 2000 to yesterday, checked before it reaches the instance) sets Whale's founding day, `SIM_FOUNDED` (empty: 2015-01-01): Whale still grows to 200 people today, over fewer years.\
+It takes about an hour from 2015 (mostly the daily bookings of the last, largest years), about half as long from 2020; on dev about 13 and 7 minutes.
 
 **On dev** (your own database; it is reset first):
 

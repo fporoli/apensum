@@ -22,7 +22,9 @@ const TARGETS = ['vps-test', 'vps-preprod', 'local-check', 'dev'];
 // ------------------------------------------------------------------------------------------------ the company
 
 // SIM_FOUNDED=YYYY-MM-DD moves the founding (2015-01-01: about eleven years of history).
-const COMPANY = { name: 'Whale', founded: process.env.SIM_FOUNDED ?? '2015-01-01', headcount: 200, admin: 'admin@whale.com', adminPassword: 'admin' };
+const FOUNDED = process.env.SIM_FOUNDED || '2015-01-01';
+assert(/^\d{4}-\d{2}-\d{2}$/.test(FOUNDED) && new Date(`${FOUNDED}T00:00:00Z`).toISOString().startsWith(FOUNDED) && FOUNDED >= '2000-01-01', `SIM_FOUNDED: a day YYYY-MM-DD from 2000 on, not ${FOUNDED}`);
+const COMPANY = { name: 'Whale', founded: FOUNDED, headcount: 200, admin: 'admin@whale.com', adminPassword: 'admin' };
 const DOMAIN = 'whale.example';
 const SHARES = { hr: 0.05, finance: 0.05, lead: 0.1, it: 0.05 };
 const DEPARTMENTS = [
