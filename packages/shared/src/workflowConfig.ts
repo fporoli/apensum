@@ -83,8 +83,10 @@ export interface WorkflowStepConfig {
    * message step sends them to the requester alone.
    */
   privateAnswers?: boolean;
-  /** What an automatic message block sends (only with a block that has `message`). */
+  /** What an automatic message block sends, or the template a person's e-mail starts from (only with a block that has `message`). */
   message?: StepMessage;
+  /** Whom a person's e-mail goes to (only with a block that has `compose`): see MAIL_TO; default `about`. */
+  mailTo?: MailTo;
   /** Working days (Monday to Friday) after the step started that its assignees are reminded (by the bell and by mail). */
   remindDays?: number;
   /**
@@ -105,6 +107,24 @@ export interface StepMessage {
 }
 export const MAX_MESSAGE_SUBJECT = 120;
 export const MAX_MESSAGE_TEXT = 2000;
+
+/**
+ * Whom a person's e-mail (block with `compose`) goes to: `about` = the person the flow is about (who started it, or
+ * whom a task is about), `requester` = who started it, `aboutManager` = the manager of the person it is about.
+ */
+export const MAIL_TO = ['about', 'requester', 'aboutManager'] as const;
+export type MailTo = (typeof MAIL_TO)[number];
+
+/** The placeholders an e-mail template may use (the tokens stay English in every language). */
+export const MAIL_PLACEHOLDERS = ['name', 'firstName', 'date', 'years', 'subject', 'sender'] as const;
+
+/** A template with its placeholders filled (`{{name}}`, ...); one without a value, or unknown, stays as typed. */
+export function fillPlaceholders(text: string, values: Partial<Record<string, string | number | null | undefined>>): string {
+  return text.replace(/\{\{\s*([a-zA-Z]+)\s*\}\}/g, (whole, name: string) => {
+    const v = values[name];
+    return v === null || v === undefined || v === '' ? whole : String(v);
+  });
+}
 
 export interface WorkflowConfig {
   version: number;
@@ -142,6 +162,8 @@ export interface WorkflowBlock {
   automatic?: boolean;
   /** The step sends a message (`WorkflowStepConfig.message`) to its assignees. */
   message?: boolean;
+  /** A person writes an e-mail from the step's template (`message`) to `mailTo`, then marks the step done. */
+  compose?: boolean;
   /** English name, the step's label when the configuration gives none. */
   label: string;
 }
@@ -162,6 +184,8 @@ export interface WorkflowKindCatalogue {
   firstStepDecides?: boolean;
   /** Its steps may go to every assignee, each on their own (`each`). */
   each?: boolean;
+  /** A step that reaches several people (a department, team or permission, not `each`) is taken over by one of them before they act. */
+  takeOver?: boolean;
   /** The configuration an organization without its own uses. */
   defaultConfig: WorkflowConfig;
   /** Shown with the steps on the Workflow page (`source`/`source_name` of the engine's step). */
@@ -342,7 +366,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
   steps.forEach((s, i) => {
     const at = `steps[${i}]`;
     if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
-    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'privateAnswers', 'message', 'remindDays', 'escalateDays'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
+    for (const k of Object.keys(s)) if (!['key', 'do', 'assignTo', 'when', 'reject', 'label', 'each', 'fields', 'privateAnswers', 'message', 'mailTo', 'remindDays', 'escalateDays'].includes(k)) errors.push({ path: `${at}.${k}`, code: 'unknown-field' });
     const key = typeof s.key === 'string' ? s.key : '';
     if (!KEY.test(key)) errors.push({ path: `${at}.key`, code: 'invalid-key' });
     else if (keys.has(key)) errors.push({ path: `${at}.key`, code: 'duplicate-key' });
@@ -395,6 +419,11 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
       if (!m) errors.push({ path: `${at}.message`, code: 'invalid-message' });
       else message = m;
     }
+    // Whom a person's e-mail goes to: only with a block that has `compose`.
+    const composes = blocks.some((b: string) => kind.blocks[b]?.compose);
+    let mailTo: MailTo | undefined;
+    if (s.mailTo !== undefined && (!composes || !(MAIL_TO as readonly unknown[]).includes(s.mailTo))) errors.push({ path: `${at}.mailTo`, code: composes ? 'invalid-mail-to' : 'mail-to-not-allowed' });
+    else if (composes) mailTo = (s.mailTo as MailTo | undefined) ?? 'about';
     // The fields a block with `fields` asks: required with it, allowed with `fieldsOptional`, refused without.
     const requiresFields = blocks.some((b: string) => kind.blocks[b]?.fields);
     const asks = requiresFields || (s.fields !== undefined && blocks.length > 0 && blocks.every((b: string) => kind.blocks[b]?.fieldsOptional));
@@ -420,6 +449,7 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
       key, do: blocks as string[], assignTo, ...(s.when !== undefined ? { when: s.when as Condition } : {}), reject: reject as RejectMode, ...(label ? { label } : {}),
       ...(each ? { each: true } : {}), ...(fields ? { fields } : {}), ...(fields && privateAnswers ? { privateAnswers: true } : {}),
       ...(message ? { message } : {}),
+      ...(mailTo ? { mailTo } : {}),
       ...(typeof s.remindDays === 'number' ? { remindDays: s.remindDays } : {}),
       ...(typeof s.escalateDays === 'number' ? { escalateDays: s.escalateDays } : {}),
     });
@@ -479,8 +509,13 @@ export interface CompiledWorkflowStep {
   privateAnswers?: boolean;
   /** Done by the system when reached: its actions run with the step's assignees as recipients. */
   automatic?: boolean;
-  /** What it sends. */
+  /** What it sends (an automatic step), or the template of a person's e-mail (`compose`). */
   message?: StepMessage;
+  /** A person writes an e-mail from `message` to `mailTo` before the step can be done. */
+  compose?: boolean;
+  mailTo?: MailTo;
+  /** Several people get it, one of them takes it over before acting (a kind with `takeOver`, not `each`). */
+  takeOver?: boolean;
   /** Working days until its assignees are reminded, and until it goes to their managers as well. */
   remindDays?: number;
   escalateDays?: number;
@@ -516,6 +551,8 @@ export function compileWorkflow(kind: WorkflowKindCatalogue, config: WorkflowCon
       ...(s.fields && s.privateAnswers ? { privateAnswers: true } : {}),
       ...(blocks.some((b) => b.automatic) ? { automatic: true } : {}),
       ...(s.message ? { message: s.message } : {}),
+      ...(blocks.some((b) => b.compose) ? { compose: true, mailTo: s.mailTo ?? 'about' } : {}),
+      ...(kind.takeOver && !s.each && !blocks.some((b) => b.automatic) && ['department', 'team', 'permission'].includes(assigneeKind(s.assignTo) ?? '') ? { takeOver: true } : {}),
       ...(s.remindDays ? { remindDays: s.remindDays } : {}),
       ...(s.escalateDays ? { escalateDays: s.escalateDays } : {}),
       ...(kind.source ? { source: kind.source } : {}),

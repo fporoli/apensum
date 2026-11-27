@@ -75,6 +75,9 @@ export const usersRelations = relations(users, ({many}) => ({
 	flow_messages: many(flow_messages),
 	saved_reports: many(saved_reports),
 	report_runs: many(report_runs),
+	flows_about_user_id: many(flows, {
+		relationName: "flows_about_user_id_users_id"
+	}),
 	flows_assignee_user_id: many(flows, {
 		relationName: "flows_assignee_user_id_users_id"
 	}),
@@ -585,6 +588,11 @@ export const flow_messagesRelations = relations(flow_messages, ({one}) => ({
 
 export const flowsRelations = relations(flows, ({one, many}) => ({
 	flow_messages: many(flow_messages),
+	user_about_user_id: one(users, {
+		fields: [flows.about_user_id],
+		references: [users.id],
+		relationName: "flows_about_user_id_users_id"
+	}),
 	user_assignee_user_id: one(users, {
 		fields: [flows.assignee_user_id],
 		references: [users.id],

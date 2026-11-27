@@ -115,6 +115,19 @@ export function workflowHistory(
   return out;
 }
 
+/** Who took over step `stepKey` and from whom (`workflow_data.taken`), or null. */
+export function takenOf(data: unknown, stepKey: string): { by: string; from: string[] } | null {
+  const t = (data && typeof data === 'object' ? (data as Record<string, unknown>).taken : null) as { step?: unknown; by?: unknown; from?: unknown } | null | undefined;
+  if (!t || t.step !== stepKey || typeof t.by !== 'string' || !Array.isArray(t.from)) return null;
+  return { by: t.by, from: t.from.filter((x): x is string => typeof x === 'string') };
+}
+
+/** Whether step `stepKey` sent its e-mail (`workflow_data.composed`). */
+export function composeSent(data: unknown, stepKey: string): boolean {
+  const c = (data && typeof data === 'object' ? (data as Record<string, unknown>).composed : null) as Record<string, unknown> | null | undefined;
+  return !!c && typeof c === 'object' && !!c[stepKey];
+}
+
 export type SourceOrgResolver = (db: Db, sourceTableUuid: string) => Promise<string | null>;
 
 /**
@@ -138,6 +151,8 @@ export interface WorkflowKind {
    * then, not at a first approval with more to come.
    */
   onFinished?: (db: Db, sourceTableUuid: string, actorUserId: string, core: { versions: VersionsService }) => Promise<void>;
+  /** Someone took the pending step over (or gave it back, `released`): e.g. an event in the record's thread. */
+  onTaken?: (db: Db, sourceTableUuid: string, actorUserId: string, step: { key: string; label: string; labels?: Partial<Record<string, string>> }, released: boolean) => Promise<void>;
 }
 /**
  * Loads the records of one source table for the Workflow page (GET workflows/assigned-to-me): one
@@ -276,7 +291,8 @@ export class WorkflowsService {
       variant?: string;
       organizationId: string;
       sourceTableUuid: string;
-      actorUserId: string;
+      /** Who submits it; null = the system (a task a module opens): nobody submitted it. */
+      actorUserId: string | null;
       workflowData: Record<string, unknown>;
       notification: { title: string; body?: string; text?: NoticeText };
     },
@@ -289,17 +305,19 @@ export class WorkflowsService {
     const steps = compileWorkflow(catalogue, own ?? catalogue.defaultConfig) as unknown as WorkflowStepDefinition[];
     const definition = await this.ensureDefinition(db, params.organizationId, this.definitionNameOf(kind, params.variant), kind.description, steps);
     const now = clock.now().toISOString();
+    // A task the system opens has no submitter: its actions and history name nobody (NULL in SQL).
+    const actor = params.actorUserId as string;
     const history: WorkflowEvent[] = [{ key: 'approvals.event.submitted', by: params.actorUserId, at: now }];
     const placed = await this.place(db, {
       steps, from: 0, organizationId: params.organizationId, sourceTable: kind.sourceTable, sourceTableUuid: params.sourceTableUuid,
-      submittedBy: params.actorUserId, actor: params.actorUserId, history,
+      submittedBy: params.actorUserId ?? undefined, actor, history,
     });
     const values = {
       workflow_def_id: definition.workflow_def_id,
       organization_id: params.organizationId,
       source_table: kind.sourceTable,
       source_table_uuid: params.sourceTableUuid,
-      workflow_data: { ...params.workflowData, submittedByUserId: params.actorUserId, history: placed.history },
+      workflow_data: { ...params.workflowData, ...(params.actorUserId ? { submittedByUserId: params.actorUserId } : {}), history: placed.history },
       workflow_started: now,
       step: placed.index >= 0 ? steps[placed.index].key : steps[steps.length - 1].key,
       step_status: placed.index >= 0 ? 'pending' : 'approved',
@@ -311,10 +329,10 @@ export class WorkflowsService {
     };
     const [workflow] = await db.insert(workflows).values(values).returning({ id: workflows.workflow_id });
     void this.versions.record('workflows', workflow.id, 'insert', params.actorUserId, { id: workflow.id, ...values }).catch(() => {});
-    if (placed.index < 0) await kind.onFinished?.(db, params.sourceTableUuid, params.actorUserId, { versions: this.versions });
+    if (placed.index < 0) await kind.onFinished?.(db, params.sourceTableUuid, actor, { versions: this.versions });
     if (placed.index >= 0) {
       void this.notifyAssignees(db, {
-        organizationId: params.organizationId, sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: params.actorUserId, type: 'workflow.assigned',
+        organizationId: params.organizationId, sourceTable: kind.sourceTable, assignedToUserId: placed.assignees, excludeUserId: actor, type: 'workflow.assigned',
         title: params.notification.title, body: params.notification.body, text: params.notification.text, sourceTableUuid: params.sourceTableUuid, workflowId: workflow.id,
       }).catch((err) => console.error('notify-assignees-failed', err));
     }
@@ -703,6 +721,11 @@ export class WorkflowsService {
     const step = this.stepsOf(workflow).find((s) => s.key === workflow.step);
     const submittedBy = (workflow.workflow_data as Record<string, unknown> | null)?.submittedByUserId;
     if (step?.decides && submittedBy === callerId) return { ok: false, error: 'own-submission' };
+    const data = (workflow.workflow_data ?? {}) as Record<string, unknown>;
+    // A step several people got: one of them takes it over first (an approvals grant reaching everyone may still act).
+    if (step?.takeOver && !isOverride && (workflow.assigned_to_user_id ?? []).length > 1) return { ok: false, error: 'take-first' };
+    // A step that writes an e-mail is done once the e-mail went out.
+    if (outcome === 'approved' && step?.compose && !composeSent(data, step.key)) return { ok: false, error: 'mail-not-sent' };
     // A step with fields: what the caller fills, checked (only when done; sending back asks nothing).
     let given: Record<string, string | number | boolean> | undefined;
     if (outcome === 'approved' && step?.fields?.length) {
@@ -725,6 +748,86 @@ export class WorkflowsService {
     );
     if (!workflow) return false;
     return (await this.advance(db, workflow, workflow.organization_id, callerId, 'approved', note, false)).ok;
+  }
+
+  /**
+   * Takes over the pending step a workflow gave several people (a step with `takeOver`): it then waits for the caller
+   * alone, the others are told. `release` gives it back to everyone it had. Only one of its assignees takes it; only who
+   * took it gives it back.
+   */
+  async take(db: Db, workflowId: string, callerId: string, release = false): Promise<{ ok: true; organizationId: string | null } | { ok: false; error: string }> {
+    const workflow = await this.loadWorkflow(db, eq(workflows.workflow_id, workflowId));
+    if (!workflow) return { ok: false, error: 'workflow-not-found' };
+    if (workflow.step_status !== 'pending') return { ok: false, error: 'not-pending' };
+    const step = this.stepsOf(workflow).find((s) => s.key === workflow.step);
+    if (!step?.takeOver) return { ok: false, error: 'not-takeable' };
+    const data = (workflow.workflow_data ?? {}) as Record<string, unknown>;
+    const assignees = workflow.assigned_to_user_id ?? [];
+    const taken = takenOf(data, step.key);
+    let next: string[];
+    let nextData: Record<string, unknown>;
+    if (release) {
+      if (!taken || taken.by !== callerId) return { ok: false, error: 'forbidden' };
+      next = taken.from;
+      const { taken: _t, ...rest } = data;
+      nextData = rest;
+    } else {
+      if (!assignees.includes(callerId)) return { ok: false, error: 'forbidden' };
+      if (assignees.length < 2) return { ok: false, error: 'already-taken' };
+      next = [callerId];
+      nextData = { ...data, taken: { step: step.key, by: callerId, from: assignees } };
+    }
+    const now = clock.now().toISOString();
+    const history = [...workflowHistory(data, { started: workflow.started, finished: null, status: 'pending' }), { key: release ? 'approvals.event.released' : 'approvals.event.taken', by: callerId, at: now }];
+    // Only while nobody else took it or acted meanwhile.
+    const patch = { assigned_to_user_id: next, workflow_data: { ...nextData, history } };
+    const moved = await db.update(workflows).set(patch)
+      .where(and(eq(workflows.workflow_id, workflow.id), eq(workflows.step_status, 'pending'), sql`${workflows.assigned_to_user_id} = ${`{${assignees.join(',')}}`}::uuid[]`))
+      .returning({ id: workflows.workflow_id });
+    if (moved.length === 0) return { ok: false, error: 'already-taken' };
+    void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+    await this.kindOfTable(workflow.source_table)?.onTaken?.(db, workflow.source_table_uuid, callerId, { key: step.key, label: step.label, ...(step.labels ? { labels: step.labels } : {}) }, release);
+    if (workflow.organization_id) {
+      void this.audit.record(workflow.organization_id, callerId, release ? 'workflow.released' : 'workflow.taken', 'workflow', workflow.id).catch(() => {});
+      // The others it was with (taken) or everyone again (given back) hear of it.
+      const tell = (release ? next : assignees).filter((id) => id !== callerId);
+      if (tell.length) {
+        void this.notifications.notifyMany({
+          organizationId: workflow.organization_id,
+          recipientUserIds: tell,
+          type: release ? 'workflow.assigned' : 'workflow.taken',
+          title: release ? `A flow step is open again: ${step.label}` : `A flow step was taken over: ${step.label}`,
+          text: { key: release ? 'notice.workflow.released' : 'notice.workflow.taken', vars: { step: stepNameValue(step) } },
+          sourceTable: workflow.source_table,
+          sourceTableUuid: workflow.source_table_uuid,
+          workflowId: workflow.id,
+          data: { workflowId: workflow.id, sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid },
+        }).catch((err) => console.error('notify-taken-failed', err));
+      }
+    }
+    return { ok: true, organizationId: workflow.organization_id };
+  }
+
+  /** Records that the pending step `stepKey` sent its e-mail (a step with `compose` is done only after that). */
+  async markComposed(db: Db, workflowId: string, stepKey: string, callerId: string, recipients: number): Promise<void> {
+    const workflow = await this.loadWorkflow(db, eq(workflows.workflow_id, workflowId));
+    if (!workflow || workflow.step !== stepKey) return;
+    const data = (workflow.workflow_data ?? {}) as Record<string, unknown>;
+    const now = clock.now().toISOString();
+    const history = [...workflowHistory(data, { started: workflow.started, finished: null, status: 'pending' }), { key: 'approvals.event.mailed', by: callerId, at: now }];
+    const composed = { ...((data.composed as Record<string, unknown> | undefined) ?? {}), [stepKey]: { by: callerId, at: now, recipients } };
+    const patch = { workflow_data: { ...data, composed, history } };
+    await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
+    void this.versions.record('workflows', workflow.id, 'update_delta', callerId, { workflow_data: { composed } }).catch(() => {});
+  }
+
+  /** A workflow's pending step as a module needs it (e.g. to write the step's e-mail), or null. */
+  async pendingStep(db: Db, workflowId: string): Promise<{ id: string; organizationId: string | null; sourceTable: string; sourceTableUuid: string; step: WorkflowStepDefinition; assignees: string[]; data: Record<string, unknown> } | null> {
+    const workflow = await this.loadWorkflow(db, eq(workflows.workflow_id, workflowId));
+    if (!workflow || workflow.step_status !== 'pending') return null;
+    const step = this.stepsOf(workflow).find((s) => s.key === workflow.step);
+    if (!step) return null;
+    return { id: workflow.id, organizationId: workflow.organization_id, sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid, step, assignees: workflow.assigned_to_user_id ?? [], data: (workflow.workflow_data ?? {}) as Record<string, unknown> };
   }
 
   private async loadWorkflow(db: Db, where: SQL | undefined) {
@@ -801,8 +904,10 @@ export class WorkflowsService {
       })
       : { index: -1, assignees: [], history: soFar, autoApproved: [] };
     const next = placed.index >= 0 ? stepDefs[placed.index] : undefined;
+    const { taken: _taken, ...priorRest } = workflow.workflow_data as Record<string, unknown>;
     const workflowData = {
-      ...(workflow.workflow_data as Record<string, unknown>),
+      // Who took the step over belongs to that step: the next one starts with all its assignees.
+      ...(next ? priorRest : (workflow.workflow_data as Record<string, unknown>)),
       ...inputs,
       ...(index <= 0 ? { decisionNote } : {}),
       history: placed.history satisfies WorkflowEvent[],
@@ -933,7 +1038,7 @@ export class WorkflowsService {
       JOIN membership_roles mr ON mr.membership_id = m.id JOIN roles r ON r.id = mr.role_id
       WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active' AND r.name = 'owner'`);
     ids = others((owners.rows as { user_id: string }[]).map((r) => r.user_id));
-    return ids.length ? ids : [fallback];
+    return ids.length ? ids : fallback ? [fallback] : [];
   }
 
   /**

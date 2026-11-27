@@ -136,6 +136,8 @@
     <include file="118-basicdata-lists.sql" relativeToChangelogFile="true"/>
     <include file="119-permit-other.sql" relativeToChangelogFile="true"/>
     <include file="120-flow-urgent-alert.sql" relativeToChangelogFile="true"/>
+    <include file="121-flow-about.sql" relativeToChangelogFile="true"/>
+    <include file="122-flow-task-steps.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

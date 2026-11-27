@@ -27,6 +27,9 @@ export default function ForwardMailDialog({
   suggested,
   defaultSubject,
   defaultMessage,
+  initialTo,
+  title,
+  hint,
   authHeaders,
 }: {
   open: boolean;
@@ -38,6 +41,11 @@ export default function ForwardMailDialog({
   suggested: Recipient[];
   defaultSubject: string;
   defaultMessage: string;
+  /** Who it goes to at first (default: the suggested people). */
+  initialTo?: Recipient[];
+  /** The dialog's title and the line under the text (default: "Send by e-mail", with a link back). */
+  title?: string;
+  hint?: string;
   authHeaders: () => Promise<Record<string, string>>;
 }) {
   const t = useT();
@@ -50,7 +58,7 @@ export default function ForwardMailDialog({
 
   useEffect(() => {
     if (!open) return;
-    setTo(suggested);
+    setTo(initialTo ?? suggested);
     setSubject(defaultSubject);
     setMessage(defaultMessage);
     setError(null);
@@ -96,7 +104,7 @@ export default function ForwardMailDialog({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{t('mail.title')}</DialogTitle>
+      <DialogTitle>{title ?? t('mail.title')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
         <Autocomplete
@@ -132,7 +140,7 @@ export default function ForwardMailDialog({
         />
         <TextField label={t('mail.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
         <TextField label={t('mail.message')} value={message} onChange={(e) => setMessage(e.target.value)} multiline minRows={6} slotProps={{ htmlInput: { maxLength: 5000 } }} />
-        <Typography variant="caption" color="text.secondary">{t('mail.hint')}</Typography>
+        <Typography variant="caption" color="text.secondary">{hint ?? t('mail.hint')}</Typography>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>

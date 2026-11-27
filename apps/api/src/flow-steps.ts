@@ -34,6 +34,8 @@ export const FLOW_CATALOGUE: WorkflowKindCatalogue = {
   definitionName: 'flow',
   rejectModes: ['none', 'back'],
   each: true,
+  // A step to a department, a team or a permission is taken over by one of them before they act (as a Free Flow).
+  takeOver: true,
   facts: { urgent: 'boolean', type: 'string', 'requester.department': 'string', 'requester.management': 'boolean' },
   blocks: {
     // A review may ask fields as well (an amount to enter while approving): whoever approves fills them.
@@ -42,6 +44,8 @@ export const FLOW_CATALOGUE: WorkflowKindCatalogue = {
     // Sent by the system the moment the workflow gets there (its own step, nobody acts on it): to the step's assignees.
     mail: { label: 'E-mail', action: 'flow.mail', assignees: [...ASSIGNEES, 'requester'], automatic: true, message: true, doneKey: 'approvals.event.sent' },
     form: { label: 'Form', action: 'flow.done', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.submitForm', fields: true },
+    // Whoever does the step writes an e-mail from its template (flow-compose.ts), then marks it done.
+    compose: { label: 'Write an e-mail', action: 'flow.done', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.done', message: true, compose: true },
   },
   defaultConfig: {
     version: 1,
@@ -55,7 +59,7 @@ export const FLOW_CATALOGUE: WorkflowKindCatalogue = {
 const FACT_OF_FIELD: Record<string, FactType> = { number: 'number', checkbox: 'boolean', text: 'string', date: 'string', datetime: 'string', select: 'string' };
 
 /** A step's event in the request's thread (Requests.tsx shows `data.workflow`). */
-async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed') {
+async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed' | 'taken' | 'released') {
   const data = {
     workflow: what,
     ...(ctx.stepKey ? { step: { key: ctx.stepKey, label: ctx.stepLabel ?? ctx.stepKey, ...(ctx.stepLabels ? { labels: ctx.stepLabels } : {}), ...(ctx.stepBlocks?.length ? { blocks: ctx.stepBlocks } : {}) } } : {}),
@@ -98,6 +102,11 @@ export class FlowSteps implements OnModuleInit {
         await db.execute(sql`UPDATE flows SET status = 'resolved', resolved_at = ${sqlNow()}, last_activity_at = ${sqlNow()} WHERE id = ${id}::uuid`);
         await threadEvent(db, { sourceTable: 'flows', sourceTableUuid: id, actorUserId, decisionNote: null }, 'finished');
         void this.versions.record('flows', id, 'update_delta', actorUserId, { status: 'resolved' }).catch(() => {});
+      },
+      // Someone took the step over (or gave it back): the thread says so; the flow is being worked on.
+      onTaken: async (db, id, actorUserId, step, released) => {
+        if (!released) await db.execute(sql`UPDATE flows SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END, last_activity_at = ${sqlNow()} WHERE id = ${id}::uuid`);
+        await threadEvent(db, { sourceTable: 'flows', sourceTableUuid: id, actorUserId, decisionNote: null, stepKey: step.key, stepLabel: step.label, stepLabels: step.labels }, released ? 'released' : 'taken');
       },
     };
     this.workflows.registerKind(kind);

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, Box, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
 import { Button } from './Button';
 import {
-  assigneeKind, MAX_DUE_DAYS, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type StepMessage, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
+  assigneeKind, MAIL_PLACEHOLDERS, MAIL_TO, type MailTo, MAX_DUE_DAYS, MAX_STEP_FIELDS, STEP_FIELD_TYPES, type Condition, type FactType, type RejectMode, type StepField, type StepFieldType, type StepMessage, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT, type WorkflowConfig, type WorkflowConfigError, type WorkflowStepConfig,
 } from '@worktime3/shared/workflowConfig';
 import { PERMISSION_OBJECTS } from '@worktime3/shared/permissions';
 import { useT } from './i18n';
@@ -10,7 +10,7 @@ import { AddIcon, ArrowDownwardIcon, ArrowUpwardIcon, ContentCopyIcon, DeleteIco
 
 /** What the designer knows of a kind (from GET workflow-configs). */
 export interface DesignerKind {
-  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean; fieldsOptional?: boolean; automatic?: boolean; message?: boolean }>;
+  blocks: Record<string, { assignees: string[]; label: string; once: boolean; last: boolean; after: string[]; canReturn: boolean; required?: boolean; fields?: boolean; fieldsOptional?: boolean; automatic?: boolean; message?: boolean; compose?: boolean }>;
   facts: Record<string, FactType>;
   rejectModes: RejectMode[];
   /** Its steps may go to everyone of a unit, each on their own. */
@@ -184,9 +184,12 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
   const fieldsOptional = step.do.length > 0 && step.do.every((b) => kind.blocks[b]?.fieldsOptional);
   const asksFields = step.do.some((b) => kind.blocks[b]?.fields) || (fieldsOptional && !!step.fields);
   const sendsMessage = step.do.some((b) => kind.blocks[b]?.message);
+  // A person writes the e-mail (block "Write an e-mail"): to whom, and the placeholders the template may use.
+  const composes = step.do.some((b) => kind.blocks[b]?.compose);
   /** The step with its blocks changed: fields only while a block asks them, a first empty field when one starts to. */
   const withBlocks = (doBlocks: string[]): WorkflowStepConfig => {
-    const { fields, message, privateAnswers, ...rest } = step;
+    const { fields, message, privateAnswers, mailTo, ...rest } = step;
+    const composesNow = doBlocks.some((b) => kind.blocks[b]?.compose);
     const asks = doBlocks.some((b) => kind.blocks[b]?.fields) || (!!fields && doBlocks.every((b) => kind.blocks[b]?.fieldsOptional));
     const sends = doBlocks.some((b) => kind.blocks[b]?.message);
     // The assignee stays where the new block allows it, else the block's default.
@@ -198,6 +201,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
       ...(asks ? { fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : {}),
       ...(asks && privateAnswers ? { privateAnswers: true } : {}),
       ...(sends ? { message: message ?? { subject: {} } } : {}),
+      ...(composesNow ? { mailTo: mailTo ?? 'about' } : {}),
     };
   };
   /** The step with another assignee: `each` only where it fits. */
@@ -339,7 +343,15 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
         </Box>
       )}
       {/* What a message step sends (the system sends it the moment the workflow gets there). */}
-      {sendsMessage && <StepMessageEditor message={step.message ?? { subject: {} }} editable={editable} onChange={(message) => onChange({ ...step, message })} />}
+      {sendsMessage && <StepMessageEditor message={step.message ?? { subject: {} }} editable={editable} compose={composes} onChange={(message) => onChange({ ...step, message })} />}
+      {composes && (
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Typography variant="body2" sx={{ minWidth: 110 }}>{t('workflowDesigner.mailTo')}</Typography>
+          <TextField select size="small" value={step.mailTo ?? 'about'} disabled={!editable} onChange={(e) => onChange({ ...step, mailTo: e.target.value as MailTo })} sx={{ minWidth: 260 }}>
+            {MAIL_TO.map((m) => <MenuItem key={m} value={m}>{t(`workflowDesigner.mailTo.${m}`)}</MenuItem>)}
+          </TextField>
+        </Box>
+      )}
 
       {/* Rejecting: not possible, or back to the person who submitted. */}
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -413,7 +425,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
 }
 
 /** A message step's mail: subject and text per language, and whether the form steps' answers go with it. */
-function StepMessageEditor({ message, editable, onChange }: { message: StepMessage; editable: boolean; onChange: (m: StepMessage) => void }) {
+function StepMessageEditor({ message, editable, compose, onChange }: { message: StepMessage; editable: boolean; compose?: boolean; onChange: (m: StepMessage) => void }) {
   const t = useT();
   const setLang = (part: 'subject' | 'text', l: (typeof LANGS)[number], value: string) => {
     const map = { ...(message[part] ?? {}), [l]: value };
@@ -423,8 +435,14 @@ function StepMessageEditor({ message, editable, onChange }: { message: StepMessa
   };
   return (
     <Box sx={{ display: 'grid', gap: 1 }}>
-      <Typography variant="body2">{t('workflowDesigner.message')}</Typography>
-      <Typography variant="caption" color="text.secondary">{t('workflowDesigner.messageHint')}</Typography>
+      <Typography variant="body2">{t(compose ? 'workflowDesigner.composeMessage' : 'workflowDesigner.message')}</Typography>
+      <Typography variant="caption" color="text.secondary">{t(compose ? 'workflowDesigner.composeHint' : 'workflowDesigner.messageHint')}</Typography>
+      {/* The placeholders a template may use: the tokens stay English, the hint says what each one is. */}
+      {compose && (
+        <Typography variant="caption" color="text.secondary" component="div">
+          {t('workflowDesigner.placeholders')} {MAIL_PLACEHOLDERS.map((p) => `{{${p}}} = ${t(`workflowDesigner.placeholder.${p}`)}`).join(' · ')}
+        </Typography>
+      )}
       {LANGS.map((l) => (
         <Box key={l} sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'flex-start', pl: { sm: 2 } }}>
           <TextField size="small" label={`${t('workflowDesigner.messageSubject')} ${l.toUpperCase()}`} value={message.subject[l] ?? ''} disabled={!editable}
@@ -433,10 +451,10 @@ function StepMessageEditor({ message, editable, onChange }: { message: StepMessa
             inputProps={{ maxLength: MAX_MESSAGE_TEXT }} sx={{ flex: 1, minWidth: 260 }} onChange={(e) => setLang('text', l, e.target.value)} />
         </Box>
       ))}
-      <Box sx={{ pl: { sm: 2 } }}>
+      {!compose && <Box sx={{ pl: { sm: 2 } }}>
         <FormControlLabel control={<Checkbox size="small" checked={!!message.answers} disabled={!editable} onChange={(e) => { const { answers: _a, ...rest } = message; onChange(e.target.checked ? { ...rest, answers: true } : rest); }} />}
           label={<Typography variant="body2">{t('workflowDesigner.messageAnswers')}</Typography>} />
-      </Box>
+      </Box>}
     </Box>
   );
 }

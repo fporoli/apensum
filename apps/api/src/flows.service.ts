@@ -11,7 +11,8 @@ import { VersionsService } from './versions.service';
 import { sendMail } from './mailer';
 import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
-import { workflowParticipants } from './flow-steps';
+import { FLOW_STEPS_KIND, workflowParticipants } from './flow-steps';
+import { WorkflowsService } from './workflows.service';
 import { clock, sqlNow, sqlToday } from './clock';
 
 /** Assignments in force today, one row per person of the organization. */
@@ -46,6 +47,15 @@ export interface SystemTaskInput {
   dueDate?: string | null;
   /** Only the department sees it, not `nav.flows:edit:all`; notifications and alert mails carry neither subject nor text. */
   confidential?: boolean;
+  /**
+   * A flow type of the organization: when it has its own steps (Flow-Designer), the task goes through them instead of
+   * to the department (a new task only; one already open stays as it is).
+   */
+  flowType?: string | null;
+  /** The person the task is about (a member of the organization): its steps' e-mails may go to them, the page opens them. */
+  aboutUserId?: string | null;
+  /** Values for its steps' e-mail templates: `date` (YYYY-MM-DD), `years`, ... */
+  data?: Record<string, string | number> | null;
 }
 
 export type SystemTaskResult =
@@ -164,6 +174,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     private readonly db: DbService,
     private readonly notifications: NotificationsService,
     private readonly versions: VersionsService,
+    private readonly workflows?: WorkflowsService,
   ) {}
 
   onModuleInit(): void {
@@ -223,22 +234,41 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       sql`SELECT id FROM departments WHERE id = ${input.departmentId}::uuid AND organization_id = ${input.organizationId} AND is_active`,
     );
     if (department.rows.length === 0) return { ok: false, error: 'unknown-department' };
+    // Whom it is about: a member of the organization, else nobody.
+    const about = input.aboutUserId
+      ? ((await db.execute(sql`SELECT user_id FROM organization_memberships WHERE organization_id = ${input.organizationId}::uuid AND user_id::text = ${input.aboutUserId}`)).rows[0] as { user_id: string } | undefined)?.user_id ?? null
+      : null;
+    const taskData = input.data && typeof input.data === 'object' ? JSON.stringify(input.data) : null;
 
     const existing = (
       await db.execute(
-        sql`SELECT id, subject, due_date::text AS due_date, status, archived_at, target_department_id FROM flows
+        sql`SELECT id, subject, due_date::text AS due_date, status, archived_at, target_department_id, target_kind, assignee_user_id FROM flows
             WHERE organization_id = ${input.organizationId} AND source_key = ${input.key}`,
       )
-    ).rows as { id: string; subject: string; due_date: string | null; status: string; archived_at: string | null; target_department_id: string }[];
+    ).rows as { id: string; subject: string; due_date: string | null; status: string; archived_at: string | null; target_department_id: string | null; target_kind: string; assignee_user_id: string | null }[];
     const old = existing[0];
+    // A type with its own steps: the task goes through them (the workflow decides who does what).
+    const flowType = typeof input.flowType === 'string' && input.flowType.trim() ? input.flowType.trim() : null;
+    const viaWorkflow = !!flowType && !!this.workflows && !!(await this.workflows.ownConfig(db, input.organizationId, FLOW_STEPS_KIND, flowType));
     if (old) {
       if (old.status === 'resolved' || old.archived_at) return { ok: true, id: old.id, created: false, changed: false };
+      // Its kind got a type with steps since it opened, and nobody took it yet: from now on it goes through them.
+      if (viaWorkflow && old.target_kind === 'department' && old.status === 'open' && !old.assignee_user_id) {
+        await db.execute(sql`UPDATE flows SET target_kind = 'workflow', target_department_id = NULL, flow_type = ${flowType}, last_activity_at = ${sqlNow()} WHERE id = ${old.id}`);
+        void this.versions.record('flows', old.id, 'update_delta', null, { target_kind: 'workflow', flow_type: flowType }).catch(() => {});
+        await this.startTaskWorkflow(db, input.organizationId, old.id, flowType!, subject, input.confidential === true, message);
+      }
       // Confidentiality follows the source's wish (also for tasks opened before it asked for it).
       await db.execute(sql`UPDATE flows SET confidential = ${input.confidential === true} WHERE id = ${old.id} AND confidential <> ${input.confidential === true}`);
-      const changed = old.subject !== subject || old.due_date !== due || old.target_department_id !== input.departmentId;
+      // Whom it is about, its values and where it opens follow the source (also for tasks opened before it said so).
+      await db.execute(sql`UPDATE flows SET about_user_id = ${about}, task_data = ${taskData}::jsonb, source_section = ${input.section ?? null} WHERE id = ${old.id}
+                           AND (about_user_id IS DISTINCT FROM ${about}::uuid OR task_data IS DISTINCT FROM ${taskData}::jsonb OR source_section IS DISTINCT FROM ${input.section ?? null})`);
+      // A task that went through its type's steps keeps its steps: no department to move it to.
+      const changed = old.subject !== subject || old.due_date !== due || (old.target_department_id !== null && old.target_department_id !== input.departmentId);
       if (!changed) return { ok: true, id: old.id, created: false, changed: false };
       await db.execute(
-        sql`UPDATE flows SET subject = ${subject}, due_date = ${due}::date, target_department_id = ${input.departmentId}::uuid, last_activity_at = ${sqlNow()},
+        sql`UPDATE flows SET subject = ${subject}, due_date = ${due}::date,
+              target_department_id = CASE WHEN target_kind = 'department' THEN ${input.departmentId}::uuid ELSE target_department_id END, last_activity_at = ${sqlNow()},
               overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${due}::date THEN NULL ELSE overdue_alerted_at END
             WHERE id = ${old.id}`,
       );
@@ -252,8 +282,9 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
 
     const inserted = (
       await db.execute(
-        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section, confidential, opened_at, last_activity_at)
-            VALUES (${input.organizationId}, NULL, 'department', ${input.departmentId}::uuid, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null},
+        sql`INSERT INTO flows (organization_id, requester_user_id, about_user_id, task_data, target_kind, target_department_id, flow_type, subject, due_date, source, source_key, source_section, confidential, opened_at, last_activity_at)
+            VALUES (${input.organizationId}, NULL, ${about}, ${taskData}::jsonb, ${viaWorkflow ? 'workflow' : 'department'}, ${viaWorkflow ? null : input.departmentId}::uuid,
+                    ${viaWorkflow ? flowType : null}, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null},
                     ${input.confidential === true}, ${sqlNow()}, ${sqlNow()})
             ON CONFLICT (organization_id, source_key) WHERE source_key IS NOT NULL DO NOTHING
             RETURNING id`,
@@ -266,7 +297,11 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     }
     const id = inserted[0].id;
     await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body, posted_at) VALUES (${id}, NULL, 'message', ${message}, ${sqlNow()})`);
-    void this.versions.record('flows', id, 'insert', null, { source: input.source, source_key: input.key, subject, due_date: due, message }).catch(() => {});
+    void this.versions.record('flows', id, 'insert', null, { source: input.source, source_key: input.key, subject, due_date: due, message, about_user_id: about, flow_type: viaWorkflow ? flowType : null }).catch(() => {});
+    if (viaWorkflow) {
+      await this.startTaskWorkflow(db, input.organizationId, id, flowType!, subject, input.confidential === true, message);
+      return { ok: true, id, created: true, changed: true };
+    }
     const handlers = await this.handlerIds(db, {
       organization_id: input.organizationId,
       requester_user_id: null,
@@ -289,6 +324,18 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     return { ok: true, id, created: true, changed: true };
   }
 
+  /** Starts a task's type's steps: the first is assigned and notified by the engine; nobody submitted it (the system did). */
+  private async startTaskWorkflow(db: Db, orgId: string, id: string, flowType: string, subject: string, confidential: boolean, message: string): Promise<void> {
+    await this.workflows?.start(db, {
+      kind: FLOW_STEPS_KIND, variant: flowType, organizationId: orgId, sourceTableUuid: id, actorUserId: null, workflowData: {},
+      notification: {
+        title: noticeSubject({ subject, confidential }),
+        text: { key: 'notice.flow.task', vars: { subject: subjectValue({ subject, confidential }) } },
+        body: confidential ? undefined : message.slice(0, 200),
+      },
+    });
+  }
+
   /**
    * Resolves the open tasks of `source` whose key is not in `keep` (what they were about is gone, e.g.
    * an absence shortened), only those due on or after `dueFrom` (past ones stay for the handlers).
@@ -305,6 +352,8 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       )
     ).rows as { id: string }[];
     for (const r of closed) {
+      // A task going through its type's steps: its workflow ends with it.
+      await this.workflows?.withdraw(db, 'flows', r.id, null as unknown as string).catch(() => false);
       await db.execute(
         sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data, posted_at) VALUES (${r.id}, NULL, 'event', ${JSON.stringify({ status: 'resolved', obsolete: true })}::jsonb, ${sqlNow()})`,
       );

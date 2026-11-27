@@ -55,6 +55,7 @@ import { SiteNewsletterController } from './site-newsletter.controller';
 import { WorkflowsController } from './workflows.controller';
 import { WorkflowConfigsController } from './workflow-configs.controller';
 import { FlowSteps } from './flow-steps';
+import { FlowComposeService } from './flow-compose';
 import { StaticDataController } from './static-data.controller';
 import { AuditController } from './audit.controller';
 import { AssistantController } from './assistant.controller';
@@ -140,6 +141,7 @@ const plugins = loadApiPlugins();
   ],
   providers: [
     FlowSteps,
+    FlowComposeService,
     DbService,
     AiBudgetService,
     ImportExportService,

@@ -123,6 +123,12 @@ export interface ActionItem {
   /** What the step asks whoever does it (a form step). */
   step_fields?: StepField[] | null;
   step_private_answers?: boolean;
+  /** Several people got the step: one of them takes it over before acting. */
+  step_take_over?: boolean;
+  /** The caller took it over (and may give it back). */
+  step_taken_by_me?: boolean;
+  /** The step writes an e-mail first: done on the flow's page. */
+  step_compose?: boolean;
   /** The caller submitted it. */
   is_own?: boolean;
   /** Where the list continues after this item (`before`, Flows -> Done "Load older"). */
@@ -415,6 +421,27 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
     }
   }
 
+  /** Takes over (or gives back) a step several people got. */
+  async function takeItem(id: string, release: boolean) {
+    setError(null);
+    try {
+      const res = await fetch(`${API}/workflows/${id}/take`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify(release ? { release: true } : {}),
+      });
+      const data = await res.json();
+      if (!data?.ok) {
+        const key = `flow.error.${data?.error}`;
+        setError(t(key) === key ? t('flow.error.failed', { error: data?.error ?? t('common.unknownError') }) : t(key));
+        return;
+      }
+      await reload();
+    } catch {
+      setError(t('common.cannotReachApi'));
+    }
+  }
+
   async function rejectItem(id: string) {
     setError(null);
     setSuccess(null);
@@ -580,7 +607,16 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                           </IconButton>
                         </Tooltip>
                       )}
-                      {decides && item.step_status === 'pending' && (() => {
+                      {/* Several people got it: one takes it over first; then its button (or give it back). */}
+                      {decides && item.step_status === 'pending' && item.step_take_over && (
+                        <Tooltip title={t('flow.workflow.takeFirst')}>
+                          <Button size="small" variant="contained" sx={{ mr: 1 }} onClick={() => void takeItem(item.id, false)}>{t('flow.take')}</Button>
+                        </Tooltip>
+                      )}
+                      {decides && item.step_status === 'pending' && item.step_taken_by_me && (
+                        <Button size="small" sx={{ mr: 1 }} onClick={() => void takeItem(item.id, true)}>{t('flow.release')}</Button>
+                      )}
+                      {decides && item.step_status === 'pending' && !item.step_take_over && !item.step_compose && (() => {
                         const plugin = pluginRecord(item);
                         // A step done in the dialog (it shows what the step needs) opens it instead.
                         const act = item.step_in_dialog && plugin?.kind.Inspect

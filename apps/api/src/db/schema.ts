@@ -1033,11 +1033,18 @@ export const flows = pgTable("flows", {
 	confidential: boolean().default(false).notNull(),
 	custom: jsonb().default({}).notNull(),
 	urgent_alerted_at: timestamp({ withTimezone: true, mode: 'string' }),
+	about_user_id: uuid(),
+	task_data: jsonb(),
 }, (table) => [
 	index("idx_flows_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
 	index("idx_flows_due").using("btree", table.due_date.asc().nullsLast()).where(sql`((due_date IS NOT NULL) AND (overdue_alerted_at IS NULL))`),
 	index("idx_flows_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
 	uniqueIndex("uq_flows_source_key").using("btree", table.organization_id.asc().nullsLast(), table.source_key.asc().nullsLast()).where(sql`(source_key IS NOT NULL)`),
+	foreignKey({
+			columns: [table.about_user_id],
+			foreignColumns: [users.id],
+			name: "flows_about_user_id_fkey"
+		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.assignee_user_id],
 			foreignColumns: [users.id],
@@ -1059,7 +1066,7 @@ export const flows = pgTable("flows", {
 			name: "flows_target_department_id_fkey"
 		}).onDelete("restrict"),
 	check("chk_flows_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
-	check("chk_flows_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND (target_kind = 'department'::text))`),
+	check("chk_flows_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND (target_kind = ANY (ARRAY['department'::text, 'workflow'::text])))`),
 	check("chk_flows_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
 	check("chk_flows_subject", sql`length(btrim(subject)) > 0`),
 	check("chk_flows_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL)) OR ((target_kind = 'workflow'::text) AND (target_department_id IS NULL))`),

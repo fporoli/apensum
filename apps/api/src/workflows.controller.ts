@@ -6,7 +6,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { probationUntilOf } from './vacation';
 import { VACATION_ABSENCE_TYPE } from '@worktime3/shared/worktime';
 import { workflows, workflow_definitions, timesheet_periods, absences, users } from './db/schema';
-import { WorkflowsService, workflowHistory, type WorkflowStepDefinition } from './workflows.service';
+import { WorkflowsService, takenOf, workflowHistory, type WorkflowStepDefinition } from './workflows.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 import { cursorOf, isUuid, parseCursor, parseLimit, parseListFilters, wordsMatch } from './list-filters';
 import { sqlNow } from './clock';
@@ -122,6 +122,8 @@ export class WorkflowsController {
         definition_name: workflow_definitions.name,
         // Whether the caller is at it now; false for one recalled from "done" (its step was the caller's).
         assigned_to_me: sql<boolean>`(${assignment})`,
+        // How many it waits for (a step several people got is taken over first).
+        assignee_count: sql<number>`COALESCE(cardinality(${workflows.assigned_to_user_id}), 0)`,
         // The steps the workflow started with, else (older ones) its definition's.
         steps: sql<unknown>`COALESCE(${workflows.steps}, ${workflow_definitions.steps})`,
       })
@@ -154,6 +156,11 @@ export class WorkflowsController {
         // What the step asks the caller to fill in (a block with fields).
         step_fields: stepDef?.fields ?? null,
         step_private_answers: !!stepDef?.privateAnswers,
+        // Several people got the step: one of them takes it over first (the card offers it, then the step's button).
+        step_take_over: !!stepDef?.takeOver && r.step_status === 'pending' && Number(r.assignee_count) > 1,
+        step_taken_by_me: !!stepDef?.takeOver && r.step_status === 'pending' && !!takenOf(r.workflow_data, r.step ?? '') && takenOf(r.workflow_data, r.step ?? '')?.by === callerId,
+        // The step writes an e-mail first: it is done on the flow's page (its dialog).
+        step_compose: !!stepDef?.compose,
       };
     });
 
@@ -275,6 +282,17 @@ export class WorkflowsController {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId) return { ok: false, error: 'unauthenticated' };
     return this.workflowsSvc.resolve(db, id, callerId, 'approved', body?.note, body?.values);
+  }
+
+  /** One of a step's several assignees takes it over (`{ release: true }` gives it back to everyone it had). */
+  @Post(':id/take')
+  async take(@Param('id') id: string, @Body() body: { release?: boolean }, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = req.user ? await callerUserId(db, req.user) : null;
+    if (!callerId || !/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: 'unauthenticated' };
+    const result = await this.workflowsSvc.take(db, id, callerId, body?.release === true);
+    return result.ok ? { ok: true } : result;
   }
 
   @Post(':id/reject')

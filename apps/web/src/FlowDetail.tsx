@@ -65,6 +65,8 @@ export interface FlowItem {
   /** The module or plugin that opened it, and the page it is about. */
   source: string | null;
   source_section: string | null;
+  /** Whom the flow is about (who started it, or whom a task is about): its page opens them. */
+  about_user_id?: string | null;
   overdue: boolean;
   /** Only the requester and the handlers see it (its type is confidential). */
   confidential: boolean;
@@ -90,7 +92,7 @@ interface Message {
     details?: { flow_type?: string | null; urgent?: boolean; link_url?: string | null; due_date?: string | null; subject?: string };
     obsolete?: boolean;
     /** A workflow request's step (request-workflow.ts threadEvent). */
-    workflow?: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed';
+    workflow?: 'approved' | 'done' | 'returned' | 'finished' | 'resubmitted' | 'withdrawn' | 'mailed' | 'composed' | 'taken' | 'released';
     step?: StepLabel;
     automatic?: boolean;
     note?: string;
@@ -130,6 +132,13 @@ interface FlowStepsInfo {
   privateAnswers?: boolean;
   /** Every assignee does it on their own. */
   each?: boolean;
+  /** Several people got the step: the caller (one of them) takes it over before acting. */
+  takeOver?: boolean;
+  /** The caller took the step over (and may give it back). */
+  takenByMe?: boolean;
+  /** The step writes an e-mail first (its dialog), and whether it went out. */
+  compose?: boolean;
+  composed?: boolean;
 }
 
 /** A step's name: its own in the reader's language, else (no name given) its blocks' names translated, else as stored. */
@@ -211,7 +220,7 @@ interface FlowDetailProps {
   /** After a change, so the navbar badge can refresh. */
   onChanged?: () => void;
   /** Opens another page by its section id (a task's source page). */
-  navigate?: (section: string) => void;
+  navigate?: (section: string, query?: string) => void;
   /**
    * Shown inside the Flows page (Flows.tsx): its box is fixed (no header or tabs), a change of `composeSignal` opens
    * the new-flow dialog, and `onCreated` gets the new one (the page then shows it among one's own).
@@ -249,6 +258,8 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
   const [forwarding, setForwarding] = useState(false);
+  // The e-mail a step writes (block "Write an e-mail"): its draft from the step's template, while its dialog is open.
+  const [composing, setComposing] = useState<{ subject: string; text: string; to: Recipient[]; suggested: Recipient[] } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   // The Flows page's "New flow" button.
@@ -344,6 +355,44 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
     if (selectedId) void loadDetail(selectedId);
     else setDetail(null);
   }, [selectedId, loadDetail, refreshKey]);
+
+  /** Takes over (or gives back) the step several people got (the Workflow page's endpoint). */
+  async function takeStep(workflowId: string, release: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/workflows/${workflowId}/take`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        body: JSON.stringify(release ? { release: true } : {}),
+      });
+      const data = await res.json();
+      if (!data?.ok) { setError(errorText(data?.error)); return; }
+      if (selectedId) await loadDetail(selectedId);
+      await loadList();
+      onChanged?.();
+    } catch {
+      setError(t('common.cannotReachApi'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Opens the step's e-mail: its draft (the template filled, to whom the step names). */
+  async function openCompose(flowId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/organizations/${orgId}/flows/${flowId}/compose`, { headers: await authHeaders() });
+      const data = await res.json();
+      if (!data?.ok) { setError(errorText(data?.error)); return; }
+      setComposing({ subject: data.subject ?? '', text: data.text ?? '', to: data.to ?? [], suggested: data.suggested ?? [] });
+    } catch {
+      setError(t('common.cannotReachApi'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   /** Approves (or sends back) the step of a workflow request the caller decides (the Workflow page's endpoints). */
   async function decide(workflowId: string, what: 'approve' | 'reject', note: string, values?: StepValues, fields?: StepField[] | null): Promise<boolean> {
@@ -598,7 +647,8 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
 
       {r.source_section && navigate && (
         <Box>
-          <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string)}>
+          {/* A task about someone opens that person on its page (`?user=`), e.g. their HR dashboard. */}
+          <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string, r.about_user_id ? `user=${r.about_user_id}` : undefined)}>
             {t('flow.openSource', { name: sourceLabel(r.source) })}
           </Button>
         </Box>
@@ -610,6 +660,8 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
           isRequester={detail.isRequester}
           busy={busy}
           onDecide={(what, note, values) => decide(detail.workflow!.id, what, note, values, detail.workflow!.fields)}
+          onTake={(release) => void takeStep(detail.workflow!.id, release)}
+          onCompose={() => void openCompose(r.id)}
           totals={stepTotals(detail.messages, locale)}
           events={detail.messages.filter((m) => m.kind === 'event')}
           onResubmit={(note) => void post(`/${r.id}/resubmit`, { note })}
@@ -620,7 +672,8 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
         {r.assignee_name && <Typography variant="body2" color="text.secondary">{t('flow.handledBy', { name: r.assignee_name })}</Typography>}
         <Box sx={{ flex: 1 }} />
-        {detail.isHandler && !r.archived_at && (
+        {/* A flow with set steps is taken over step by step (WorkflowPanel), not as a whole. */}
+        {detail.isHandler && !r.archived_at && r.target_kind !== 'workflow' && (
           r.assignee_user_id === userId ? (
             <Button size="small" disabled={busy} onClick={() => void post(`/${r.id}/take`, { release: true })}>{t('flow.release')}</Button>
           ) : (
@@ -836,6 +889,26 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
           )}
         </Box>
       </Box>
+      )}
+
+      {r && composing && (
+        <ForwardMailDialog
+          open
+          onClose={() => setComposing(null)}
+          onSent={(count) => {
+            setNotice(t('mail.sent', { count: String(count) }));
+            if (selectedId) void loadDetail(selectedId);
+          }}
+          orgId={orgId}
+          endpoint={`/organizations/${orgId}/flows/${r.id}/compose`}
+          suggested={composing.suggested}
+          initialTo={composing.to}
+          defaultSubject={composing.subject}
+          defaultMessage={composing.text}
+          title={t('flow.compose.title')}
+          hint={t('flow.compose.hint')}
+          authHeaders={authHeaders}
+        />
       )}
 
       {r && detail && (
@@ -1237,8 +1310,12 @@ function stepTotals(messages: Message[], locale: string): string[] {
   return [...sums.values()].filter((s) => s.count > 1).map((s) => `${s.label}: ${formatLocaleNumber(s.total, locale)}`);
 }
 
-function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw, totals, events }: {
+function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWithdraw, onTake, onCompose, totals, events }: {
   workflow: FlowStepsInfo;
+  /** Takes the step over (or gives it back, `release`). */
+  onTake: (release: boolean) => void;
+  /** Opens the step's e-mail. */
+  onCompose: () => void;
   /** The thread's events: who did which step when. */
   events: Message[];
   isRequester: boolean;
@@ -1303,19 +1380,31 @@ function WorkflowPanel({ workflow, isRequester, busy, onDecide, onResubmit, onWi
       {workflow.status === 'pending' && workflow.each && <Typography variant="caption" color="text.secondary">{t('flow.workflow.each')}</Typography>}
       {totals.length > 0 && <Typography variant="body2">{t('flow.workflow.totals', { totals: totals.join(' · ') })}</Typography>}
       {workflow.returned && <Alert severity="warning">{t(isRequester ? 'flow.workflow.returnedToYou' : 'flow.workflow.returned')}</Alert>}
+      {/* Several people got the step: one takes it over, then does it. A step that writes an e-mail: first the e-mail. */}
+      {workflow.canDecide && workflow.takeOver && <Typography variant="caption" color="text.secondary">{t('flow.workflow.takeFirst')}</Typography>}
+      {workflow.canDecide && !workflow.takeOver && workflow.compose && !workflow.composed && <Typography variant="caption" color="text.secondary">{t('flow.workflow.mailFirst')}</Typography>}
       {workflow.canDecide && workflow.fields?.length ? <StepFieldsForm fields={workflow.fields} values={values} onChange={setValues} disabled={busy} privateAnswers={workflow.privateAnswers} /> : null}
       {(workflow.canDecide || (isRequester && (workflow.returned || workflow.status === 'pending'))) && (
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
           {(workflow.canDecide || workflow.returned) && (
             <TextField size="small" label={t('flow.workflow.note')} value={note} onChange={(e) => setNote(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
           )}
+          {workflow.canDecide && workflow.takeOver && (
+            <Button size="small" variant="contained" disabled={busy} onClick={() => onTake(false)}>{t('flow.take')}</Button>
+          )}
+          {workflow.canDecide && !workflow.takeOver && workflow.compose && (
+            <Button size="small" variant={workflow.composed ? 'outlined' : 'contained'} startIcon={<MailIcon />} disabled={busy} onClick={onCompose}>{t('flow.workflow.compose')}</Button>
+          )}
           {workflow.canDecide && (
             <>
-              <Button size="small" variant="contained" disabled={busy} onClick={() => { void onDecide('approve', note, values).then((ok) => { if (ok) { setNote(''); setValues({}); } }); }}>
+              <Button size="small" variant="contained" disabled={busy || !!workflow.takeOver || (!!workflow.compose && !workflow.composed)} onClick={() => { void onDecide('approve', note, values).then((ok) => { if (ok) { setNote(''); setValues({}); } }); }}>
                 {t(workflow.actionKey ?? 'flow.workflow.approve')}
               </Button>
               {workflow.returns && (
-                <Button size="small" color="error" disabled={busy} onClick={() => { void onDecide('reject', note).then((ok) => { if (ok) setNote(''); }); }}>{t('approvals.return')}</Button>
+                <Button size="small" color="error" disabled={busy || !!workflow.takeOver} onClick={() => { void onDecide('reject', note).then((ok) => { if (ok) setNote(''); }); }}>{t('approvals.return')}</Button>
+              )}
+              {workflow.takenByMe && (
+                <Button size="small" disabled={busy} onClick={() => onTake(true)}>{t('flow.release')}</Button>
               )}
             </>
           )}

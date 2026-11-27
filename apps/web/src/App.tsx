@@ -142,9 +142,10 @@ export default function App() {
   // Edits (and reviews change requests for) other people's personal details: HR/admin by default.
   const isReviewer = permissions ? isBasicDataReviewer(permissions) : flags.isAdmin || flags.isHr;
 
-  const navigate = useCallback((next: Section) => {
+  // `query` (e.g. `user=<id>`) goes after the page's hash: the page opens that person.
+  const navigate = useCallback((next: Section, query?: string) => {
     setSectionState(next);
-    const targetHash = SECTION_TO_HASH[next];
+    const targetHash = query ? `${SECTION_TO_HASH[next]}?${query}` : SECTION_TO_HASH[next];
     if (typeof window !== 'undefined' && window.location.hash !== targetHash) {
       window.history.pushState(null, '', targetHash);
     }

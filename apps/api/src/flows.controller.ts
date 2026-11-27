@@ -14,8 +14,9 @@ import { cleanDueDate, cleanFlowLink, flowTypeConfidential, flowTypeKeys } from 
 import { FLOW_FORM, customValuesErrors, customValuesToSave, mergeForm, flowTypeForm, type ResolvedForm } from '@worktime3/shared/fields';
 import { FieldsService } from './fields.service';
 import { FlowsService, currentAssignments, noticeSubject } from './flows.service';
-import { WorkflowsService, type WorkflowStepDefinition } from './workflows.service';
+import { WorkflowsService, composeSent, takenOf, type WorkflowStepDefinition } from './workflows.service';
 import { FLOW_STEPS_KIND, visibleThread } from './flow-steps';
+import { FlowComposeService } from './flow-compose';
 import { cursorOf, parseCursor, parseLimit, parseListFilters, wordsMatch } from './list-filters';
 import { sqlNow, sqlToday } from './clock';
 
@@ -149,7 +150,7 @@ function ownHandlesCondition(orgId: string, callerId: string): SQL {
 const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`);
 
 const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.flow_type, r.urgent, r.link_url, r.target_kind, r.target_department_id, d.name AS department_name,
-  r.due_date::text AS due_date, r.source, r.source_section, r.confidential, r.custom,
+  r.due_date::text AS due_date, r.source, r.source_section, r.about_user_id, r.confidential, r.custom,
   (r.due_date < ${sqlToday()} AND r.status <> 'resolved' AND r.archived_at IS NULL) AS overdue,
   r.requester_user_id, ru.display_name AS requester_name, ru.email AS requester_email,
   r.assignee_user_id, au.display_name AS assignee_name,
@@ -195,6 +196,7 @@ export class FlowsController {
     private readonly flowsSvc: FlowsService,
     private readonly fields: FieldsService,
     private readonly workflowsSvc: WorkflowsService,
+    private readonly compose: FlowComposeService,
   ) {}
 
   /** Whether requests of this type follow a workflow (its own configuration on Admin settings -> Workflows). */
@@ -209,10 +211,10 @@ export class FlowsController {
   private async workflowOf(db: Db, r: FlowRecord, callerId: string) {
     if (r.target_kind !== 'workflow') return null;
     const [w] = (await db.execute(sql`
-      SELECT w.workflow_id AS id, w.step, w.step_status AS status, COALESCE(w.steps, d.steps) AS steps, w.assigned_to_user_id AS assignees
+      SELECT w.workflow_id AS id, w.step, w.step_status AS status, COALESCE(w.steps, d.steps) AS steps, w.assigned_to_user_id AS assignees, w.workflow_data AS data
       FROM workflows w JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
       WHERE w.source_table = 'flows' AND w.source_table_uuid = ${r.id}::uuid
-      ORDER BY w.workflow_started DESC NULLS LAST LIMIT 1`)).rows as { id: string; step: string; status: string; steps: WorkflowStepDefinition[]; assignees: string[] | null }[];
+      ORDER BY w.workflow_started DESC NULLS LAST LIMIT 1`)).rows as { id: string; step: string; status: string; steps: WorkflowStepDefinition[]; assignees: string[] | null; data: unknown }[];
     if (!w) return null;
     const steps = (Array.isArray(w.steps) ? w.steps : []).map((s) => ({ key: s.key, label: s.label, labels: s.labels ?? null, blocks: s.blocks ?? null }));
     const current = (Array.isArray(w.steps) ? w.steps : []).find((s) => s.key === w.step);
@@ -227,12 +229,19 @@ export class FlowsController {
       steps,
       waitingFor: w.status === 'pending' ? names : [],
       canDecide: w.status === 'pending' && assignees.includes(callerId),
-      returns: current?.reject === 'back',
+      // Back to whoever started it; a task the system opened has nobody to send it back to.
+      returns: current?.reject === 'back' && !!r.requester_user_id,
       actionKey: current?.actionKey ?? null,
       // What the step asks whoever does it, and whether each assignee does it on their own.
       fields: current?.fields ?? null,
       each: !!current?.each,
       privateAnswers: !!current?.privateAnswers,
+      // Several people got the step: one of them takes it over before acting; who took it may give it back.
+      takeOver: w.status === 'pending' && !!current?.takeOver && assignees.length > 1 && assignees.includes(callerId),
+      takenByMe: w.status === 'pending' && !!current?.takeOver && takenOf(w.data, w.step)?.by === callerId,
+      // The step writes an e-mail (its dialog) before it can be done; whether it went out.
+      compose: w.status === 'pending' && !!current?.compose,
+      composed: composeSent(w.data, w.step),
       // Sent back: the requester changes it and submits it again.
       returned: w.status === 'rejected' && r.status !== 'resolved',
     };
@@ -548,8 +557,8 @@ export class FlowsController {
 
     const [created] = (
       await db.execute(
-        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, flow_type, urgent, link_url, due_date, confidential, custom, opened_at, last_activity_at)
-            VALUES (${orgId}, ${callerId}, ${target}, ${departmentId}, ${subject}, ${flow_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date,
+        sql`INSERT INTO flows (organization_id, requester_user_id, about_user_id, target_kind, target_department_id, subject, flow_type, urgent, link_url, due_date, confidential, custom, opened_at, last_activity_at)
+            VALUES (${orgId}, ${callerId}, ${callerId}, ${target}, ${departmentId}, ${subject}, ${flow_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date,
                     ${confidential}, ${JSON.stringify(custom.value ?? {})}::jsonb, ${sqlNow()}, ${sqlNow()})
             RETURNING ${ROW_COLUMNS}`,
       )
@@ -738,6 +747,31 @@ export class FlowsController {
     await this.event(db, id, callerId, { workflow: 'withdrawn' });
     void this.versions.record('flows', id, 'update_delta', callerId, { status: 'resolved', withdrawn: true }).catch(() => {});
     return { ok: true };
+  }
+
+  /** The e-mail of the flow's pending step that writes one (block `compose`): its template filled, whom it goes to. */
+  @Get(':id/compose')
+  async composeDraft(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.caller(db, orgId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const a = await this.access(db, orgId, callerId, id);
+    if (!a) return { ok: false, error: 'not-found' };
+    return this.compose.draft(db, orgId, id, callerId);
+  }
+
+  /** Sends that e-mail (`{ userIds, subject, message }`); the step can be done afterwards. */
+  @Post(':id/compose')
+  async composeSend(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: ForwardInput, @Req() req: AuthenticatedRequest) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const callerId = await this.caller(db, orgId, req);
+    if (!callerId) return { ok: false, error: 'forbidden' };
+    const a = await this.access(db, orgId, callerId, id);
+    if (!a) return { ok: false, error: 'not-found' };
+    if (a.r.archived_at) return { ok: false, error: 'flow-archived' };
+    return this.compose.send(db, orgId, id, callerId, body ?? {});
   }
 
   /** A handler takes the request over (or `{ release: true }` gives it back to everyone). */
