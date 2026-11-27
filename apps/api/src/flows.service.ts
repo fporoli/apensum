@@ -5,7 +5,7 @@ import { cleanDueDate } from '@worktime3/shared/flows';
 import { DbService, type Db } from './db.service';
 import { subjectValue } from './notification-text';
 import type { Executor } from './access';
-import { membershipManagerId } from './access';
+import { actingManagerId } from './access';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { sendMail } from './mailer';
@@ -156,7 +156,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     if (r.target_kind === 'workflow') return r.id ? (await workflowParticipants(db as Db, r.id)).filter((x) => x !== r.requester_user_id) : [];
     if (r.target_kind === 'manager') {
       if (!r.requester_user_id) return [];
-      const manager = await membershipManagerId(db, r.organization_id, r.requester_user_id);
+      const manager = await actingManagerId(db, r.organization_id, r.requester_user_id);
       return manager ? [manager] : [];
     }
     const rows = await db.execute(

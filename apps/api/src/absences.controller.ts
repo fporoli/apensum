@@ -4,7 +4,7 @@ import { and, desc, eq, gte, inArray, isNull, lte, or, type SQL } from 'drizzle-
 import { join } from 'node:path';
 import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
-import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isPeriodLocked, listableUserIds, membershipManagerId } from './access';
+import { callerUserId, canEditBeyondOwn, canSeeUserData, isOrgMember, isPeriodLocked, listableUserIds, actingManagerId } from './access';
 import { VACATION_ABSENCE_TYPE, monthStart, nextMonth } from '@worktime3/shared/worktime';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { probationUntilOf } from './vacation';
@@ -163,7 +163,7 @@ export class AbsencesController implements OnModuleInit {
     if (await touchesLockedPeriod(db, orgId, callerId, dateStart, dateEnd)) return { ok: false, error: 'period-locked' };
 
     const now = clock.now().toISOString();
-    const managerUserId = await membershipManagerId(db, orgId, callerId);
+    const managerUserId = await actingManagerId(db, orgId, callerId);
     // A type flagged {approval: false} in static data (sickness, accident) is recorded at once; the others go through
     // the organization's absence workflow (a manager's approval without a manager is done at once there).
     const needsApproval = absenceNeedsApproval(types, absenceType);

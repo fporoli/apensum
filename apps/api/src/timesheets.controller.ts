@@ -1,7 +1,7 @@
 import { Body, Controller, Get, OnModuleInit, Param, Post, Query, Req } from '@nestjs/common';
 import { and, desc, eq, getTableColumns, inArray, type SQL } from 'drizzle-orm';
 import { DbService } from './db.service';
-import { callerUserId, canEditBeyondOwn, canEditUserData, canSeeUserData, isManagerOf, isOrgMember, isYearClosed, listableUserIds, membershipManagerId } from './access';
+import { callerUserId, canEditBeyondOwn, canEditUserData, canSeeUserData, isManagerOf, isOrgMember, isYearClosed, listableUserIds, actingManagerId } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { notRecordingUserIds } from './time-recording';
 import { timesheet_periods, users, workflows } from './db/schema';
@@ -136,7 +136,7 @@ export class TimesheetsController implements OnModuleInit {
 
     const now = clock.now().toISOString();
     // No manager on record ("top of the chain") — nobody to route the request to, so it's approved on submit.
-    const managerUserId = await membershipManagerId(db, orgId, callerId);
+    const managerUserId = await actingManagerId(db, orgId, callerId);
     const autoApproved = !managerUserId;
     const reviewFields = autoApproved
       ? { status: 'approved' as const, reviewed_by_user_id: callerId, reviewed_at: now }
@@ -323,7 +323,7 @@ export class TimesheetsController implements OnModuleInit {
     const reason = (body.reason ?? '').trim();
     if (!reason) return { ok: false, error: 'reason-required' };
 
-    const managerUserId = await membershipManagerId(db, period.organization_id, callerId);
+    const managerUserId = await actingManagerId(db, period.organization_id, callerId);
     if (!managerUserId) return { ok: false, error: 'no-manager-to-ask' };
 
     const existingPending = await this.workflowsSvc.findPending(db, 'timesheet_periods', id, REOPEN_TIMESHEET_WORKFLOW_NAME);

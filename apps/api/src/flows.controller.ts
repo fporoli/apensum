@@ -5,7 +5,7 @@ import type { Response } from 'express';
 import { DbService, type Db } from './db.service';
 import { subjectValue, type NoticeText } from './notification-text';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
-import { callerUserId, can, isOrgMember, membershipManagerId, reachesAll, type Executor } from './access';
+import { callerUserId, can, isOrgMember, actingManagerId, reachesAll, type Executor, actingManagers } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
@@ -135,7 +135,7 @@ function handlesCondition(orgId: string, callerId: string, handlesAll: boolean):
 }
 
 function ownHandlesCondition(orgId: string, callerId: string): SQL {
-  return sql`((r.target_kind = 'manager' AND rc.manager_user_id = ${callerId})
+  return sql`((r.target_kind = 'manager' AND ram.manager_user_id = ${callerId})
           OR (r.target_kind = 'department' AND (d.leader_user_id = ${callerId}
               OR r.target_department_id = (SELECT department_id FROM (${currentAssignments(orgId)}) me WHERE me.user_id = ${callerId})))
           OR (r.target_kind = 'workflow' AND EXISTS (
@@ -158,6 +158,7 @@ const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.flow_type, r.urgent, r.lin
 
 const LIST_FROM = (orgId: string) => sql`FROM flows r
   LEFT JOIN (${currentAssignments(orgId)}) rc ON rc.user_id = r.requester_user_id
+  LEFT JOIN (${actingManagers(orgId)}) ram ON ram.user_id = r.requester_user_id
   LEFT JOIN departments d ON d.id = r.target_department_id
   LEFT JOIN users ru ON ru.id = r.requester_user_id
   LEFT JOIN users au ON au.id = r.assignee_user_id`;
@@ -362,7 +363,7 @@ export class FlowsController {
     if (!db) return { ok: true, offline: true, manager: null, departments: [] };
     const callerId = await this.caller(db, orgId, req);
     if (!callerId) return { ok: true, manager: null, departments: [] };
-    const managerId = await membershipManagerId(db, orgId, callerId);
+    const managerId = await actingManagerId(db, orgId, callerId);
     const manager = managerId
       ? ((await db.execute(sql`SELECT id, display_name AS name, email FROM users WHERE id = ${managerId}`)).rows[0] ?? null)
       : null;
@@ -531,7 +532,7 @@ export class FlowsController {
     if (viaWorkflow) {
       // no target to check
     } else if (body.target === 'manager') {
-      if (!(await membershipManagerId(db, orgId, callerId))) return { ok: false, error: 'no-manager' };
+      if (!(await actingManagerId(db, orgId, callerId))) return { ok: false, error: 'no-manager' };
     } else if (body.target === 'department') {
       const rows = await db.execute(
         sql`SELECT id FROM departments WHERE id = ${body.departmentId ?? null}::uuid AND organization_id = ${orgId} AND is_active`,

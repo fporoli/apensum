@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { Db } from './db.service';
 import type { NoticeText, NoticeValue } from './notification-text';
-import { reachesAll } from './access';
+import { actingManagerId, isAboveInReportingLine, reachesAll } from './access';
 import {
   compileWorkflow, nextApplicableStep, stepFieldValues, validateWorkflowConfig,
   type CompiledWorkflowStep, type StepField, type StepMessage, type WorkflowConfig, type WorkflowKindCatalogue,
@@ -569,22 +569,28 @@ export class WorkflowsService {
 
   /**
    * Managers are dated (employee_assignments), so a pending request sent to someone's manager
-   * moves to whoever is their manager today: after an assignment changes, and whenever a dated
-   * change has come into force since. Only requests still with one of the person's managers
-   * (current or past) move; a request already elsewhere, or a person without a manager now, stays.
-   * The new manager is notified. Returns how many requests moved.
+   * moves to the manager who acts for them today (actingManagerId): after an assignment changes, whenever a dated
+   * change has come into force since, and when their manager has left (to the next one up until HR names a
+   * successor, then on to the successor). Only a request that waits with the person's manager moves: one of their
+   * managers (current or past), someone no longer in the organization, or someone above them in today's line (who
+   * stood in); a request already elsewhere (a deputy beside the manager, another step), or a person without anyone
+   * to act for them, stays. The new manager is notified. Returns how many requests moved.
    * `scope` narrows the look (a list or a decision need not look at every organization's open flows): one workflow,
-   * an organization, the flows of one person (`subjectId`), or what concerns `userId` (with them now, or of someone
-   * whose manager they are today). Without it, all (the 10-minute runner, workflow-dues.service.ts).
+   * an organization, the flows of one person (`subjectId`), or what concerns `userId` (with them now, of someone
+   * whose manager they are today, or with someone who has left). Without it, all (the 10-minute runner,
+   * workflow-dues.service.ts).
    */
   async rerouteToCurrentManagers(db: Db, scope: { workflowId?: string; organizationId?: string; subjectId?: string; userId?: string } = {}): Promise<number> {
     const names = sql.join([...this.managerRouted].map((n) => sql`${n}`), sql`, `);
     // Kinds with variants have one definition per variant (`<name>:<variant>`).
     const prefixes = [...this.kindsById.values()].filter((k) => k.variants).map((k) => `${k.catalogue.definitionName}:`);
     const prefixed = prefixes.length ? sql.join(prefixes.map((p) => sql` OR starts_with(d.name, ${p})`), sql``) : sql``;
+    // The step's one assignee is still a member who is there today.
+    const assigneePresent = sql`EXISTS (SELECT 1 FROM organization_memberships pm WHERE pm.organization_id = w.organization_id
+      AND pm.user_id = w.assigned_to_user_id[1] AND pm.status = 'active' AND (pm.exit_at IS NULL OR pm.exit_at > ${sqlNow()}))`;
     const pendingResult = await db.execute(sql`
       SELECT w.workflow_id, w.organization_id, w.source_table, w.source_table_uuid, w.assigned_to_user_id[1] AS assignee,
-             (w.workflow_data->>'submittedByUserId')::uuid AS subject
+             (w.workflow_data->>'submittedByUserId')::uuid AS subject, ${assigneePresent} AS assignee_present
       FROM workflows w
       JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
       WHERE w.step_status = 'pending' AND (d.name IN (${names})${prefixed})
@@ -596,38 +602,27 @@ export class WorkflowsService {
         ${scope.workflowId ? sql`AND w.workflow_id = ${scope.workflowId}::uuid` : sql``}
         ${scope.organizationId ? sql`AND w.organization_id = ${scope.organizationId}::uuid` : sql``}
         ${scope.subjectId ? sql`AND w.workflow_data->>'submittedByUserId' = ${scope.subjectId}` : sql``}
-        ${scope.userId ? sql`AND (w.assigned_to_user_id @> ARRAY[${scope.userId}::uuid] OR EXISTS (
+        ${scope.userId ? sql`AND (w.assigned_to_user_id @> ARRAY[${scope.userId}::uuid] OR NOT ${assigneePresent} OR EXISTS (
             SELECT 1 FROM employee_assignments a WHERE a.organization_id = w.organization_id
               AND a.user_id = (w.workflow_data->>'submittedByUserId')::uuid AND a.manager_user_id = ${scope.userId}::uuid
               AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
                                   WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= ${sqlToday()})))` : sql``}`);
-    const pending = pendingResult.rows as { workflow_id: string; organization_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string }[];
-    if (pending.length === 0) return 0;
-    const values = sql.join(
-      pending.map((p) => sql`(${p.workflow_id}::uuid, ${p.organization_id}::uuid, ${p.subject}::uuid, ${p.assignee}::uuid)`),
-      sql`, `,
-    );
-    const result = await db.execute(sql`
-      WITH pending(workflow_id, organization_id, subject, assignee) AS (VALUES ${values}),
-      moved AS (
-        SELECT p.*, (
-          SELECT a.manager_user_id FROM employee_assignments a
-          WHERE a.organization_id = p.organization_id AND a.user_id = p.subject AND a.valid_from <= ${sqlToday()}
-          ORDER BY a.valid_from DESC LIMIT 1
-        ) AS manager
-        FROM pending p
-      )
-      UPDATE workflows w SET assigned_to_user_id = ARRAY[m.manager]
-      FROM moved m
-      WHERE w.workflow_id = m.workflow_id AND w.step_status = 'pending' AND w.assigned_to_user_id[1] = m.assignee
-        AND m.manager IS NOT NULL AND m.manager <> m.assignee
-        AND EXISTS (
-          SELECT 1 FROM employee_assignments ea
-          WHERE ea.organization_id = m.organization_id AND ea.user_id = m.subject AND ea.manager_user_id = m.assignee
-        )
-      RETURNING w.workflow_id, w.source_table, w.source_table_uuid, m.organization_id, m.manager`);
-    const rows = result.rows as { workflow_id: string; source_table: string; source_table_uuid: string; organization_id: string; manager: string }[];
-    for (const r of rows) {
+    const pending = pendingResult.rows as { workflow_id: string; organization_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string; assignee_present: boolean }[];
+    const moved: { workflow_id: string; source_table: string; source_table_uuid: string; organization_id: string; manager: string }[] = [];
+    for (const p of pending) {
+      const manager = await actingManagerId(db, p.organization_id, p.subject);
+      if (!manager || manager === p.assignee) continue;
+      // Waits with the person's manager: one of theirs (any time), one who has left, or one above them who stood in.
+      const wasManager = (await db.execute(sql`SELECT 1 FROM employee_assignments WHERE organization_id = ${p.organization_id}::uuid
+        AND user_id = ${p.subject}::uuid AND manager_user_id = ${p.assignee}::uuid LIMIT 1`)).rows.length > 0;
+      if (!wasManager && p.assignee_present && !(await isAboveInReportingLine(db, p.organization_id, p.assignee, p.subject))) continue;
+      const updated = await db.execute(sql`UPDATE workflows SET assigned_to_user_id = ARRAY[${manager}::uuid]
+        WHERE workflow_id = ${p.workflow_id}::uuid AND step_status = 'pending' AND cardinality(assigned_to_user_id) = 1
+          AND assigned_to_user_id[1] = ${p.assignee}::uuid
+        RETURNING workflow_id`);
+      if (updated.rows.length) moved.push({ workflow_id: p.workflow_id, source_table: p.source_table, source_table_uuid: p.source_table_uuid, organization_id: p.organization_id, manager });
+    }
+    for (const r of moved) {
       void this.versions.record('workflows', r.workflow_id, 'update_delta', null, { assigned_to_user_id: [r.manager] }).catch(() => {});
       void this.notifications
         .notifyMany({
@@ -643,7 +638,7 @@ export class WorkflowsService {
         })
         .catch(() => {});
     }
-    return rows.length;
+    return moved.length;
   }
 
   /** The pending workflow (if any) for a record — lets a record-specific endpoint (e.g. timesheet-periods/:id/approve) delegate to it. */
@@ -921,11 +916,8 @@ export class WorkflowsService {
     } else if (step.assignTo === 'requester' && submittedByUserId) {
       ids = [submittedByUserId];
     } else if (step.assignTo === 'manager' && submittedByUserId) {
-      const rows = await db.execute(sql`
-        SELECT manager_user_id FROM employee_assignments
-        WHERE organization_id = ${organizationId}::uuid AND user_id = ${submittedByUserId}::uuid AND valid_from <= ${sqlToday()}
-        ORDER BY valid_from DESC LIMIT 1`);
-      const manager = (rows.rows as { manager_user_id: string | null }[])[0]?.manager_user_id;
+      // The manager who acts today: one who left is passed over for the next one up (actingManagerId).
+      const manager = await actingManagerId(db, organizationId, submittedByUserId);
       if (manager) ids = [manager];
     }
     ids = others(ids);

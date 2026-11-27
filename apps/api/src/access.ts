@@ -14,7 +14,7 @@ import {
 } from '@worktime3/shared/permissions';
 import { resolveModules, withoutDisabledModules } from '@worktime3/shared/modules';
 import { OPERATOR_ORG_ID, OPERATOR_PERMISSION } from '@worktime3/shared/operator';
-import { sqlToday } from './clock';
+import { sqlNow, sqlToday } from './clock';
 
 /** The slice of Db these helpers need — easy to fake in tests, satisfied by any real Db. */
 export type Executor = Pick<Db, 'execute'>;
@@ -187,9 +187,67 @@ export async function membershipManagerId(db: Executor, organizationId: string, 
   return (rows.rows[0]?.manager_user_id as string | null) ?? null;
 }
 
-/** True when `managerId` is the org's designated manager for `targetUserId` — i.e. approvals for them route to `managerId`. */
+/** How far up a reporting line a manager who left is passed over (a loop in the assignments ends here too). */
+const ACTING_DEPTH = 10;
+
+/** SQL: `userId` (a column or value) is in the organization today: an active member, not past their exit. */
+export function presentMember(organizationId: string, userId: SQL): SQL {
+  return sql`EXISTS (SELECT 1 FROM organization_memberships pm WHERE pm.organization_id = ${organizationId}::uuid AND pm.user_id = ${userId}
+    AND pm.status = 'active' AND (pm.exit_at IS NULL OR pm.exit_at > ${sqlNow()}))`;
+}
+
+/**
+ * The manager who acts for `userId` today: the manager of their assignment in force, or, when that manager has left
+ * the organization (and HR has not named a successor yet), the next one up the reporting line who is still there.
+ * Null when nobody above is (HR and admin, who reach everyone, pick such requests up). Requests are routed and decided
+ * by this (isManagerOf, the steps that go to the manager, Free Flows to the manager, rerouteToCurrentManagers);
+ * `membershipManagerId` stays the assignment's own answer (the reporting line as recorded, its loops checked).
+ */
+export async function actingManagerId(db: Executor, organizationId: string, userId: string): Promise<string | null> {
+  // Written out (no nested fragments): the organization and the person stay plain parameters of this query.
+  const rows = await db.execute(
+    sql`WITH RECURSIVE chain(manager_user_id, depth) AS (
+          SELECT (SELECT a.manager_user_id FROM employee_assignments a
+                  WHERE a.organization_id = ${organizationId}::uuid AND a.user_id = ${userId}::uuid AND a.valid_from <= ${sqlToday()}
+                  ORDER BY a.valid_from DESC LIMIT 1), 0
+          UNION ALL
+          SELECT (SELECT a.manager_user_id FROM employee_assignments a
+                  WHERE a.organization_id = ${organizationId}::uuid AND a.user_id = chain.manager_user_id AND a.valid_from <= ${sqlToday()}
+                  ORDER BY a.valid_from DESC LIMIT 1), chain.depth + 1
+          FROM chain
+          WHERE chain.manager_user_id IS NOT NULL AND chain.depth < ${ACTING_DEPTH}
+            AND NOT EXISTS (SELECT 1 FROM organization_memberships pm WHERE pm.organization_id = ${organizationId}::uuid
+                            AND pm.user_id = chain.manager_user_id AND pm.status = 'active' AND (pm.exit_at IS NULL OR pm.exit_at > ${sqlNow()}))
+        )
+        SELECT manager_user_id FROM chain
+        WHERE manager_user_id IS NOT NULL AND EXISTS (SELECT 1 FROM organization_memberships pm WHERE pm.organization_id = ${organizationId}::uuid
+          AND pm.user_id = chain.manager_user_id AND pm.status = 'active' AND (pm.exit_at IS NULL OR pm.exit_at > ${sqlNow()}))
+        ORDER BY depth LIMIT 1`,
+  );
+  return (rows.rows[0]?.manager_user_id as string | null) ?? null;
+}
+
+/**
+ * SQL: one row per person of the organization with an acting manager today (`actingManagerId` for all at once:
+ * user_id, manager_user_id), for joins (Free Flows to the manager).
+ */
+export function actingManagers(organizationId: string): SQL {
+  return sql`WITH RECURSIVE cur AS (${currentManagers(organizationId)}),
+    chain(user_id, manager_user_id, depth) AS (
+      SELECT user_id, manager_user_id, 0 FROM cur WHERE manager_user_id IS NOT NULL
+      UNION ALL
+      SELECT chain.user_id, cur.manager_user_id, chain.depth + 1 FROM chain JOIN cur ON cur.user_id = chain.manager_user_id
+      WHERE cur.manager_user_id IS NOT NULL AND chain.depth < ${ACTING_DEPTH}
+        AND NOT ${presentMember(organizationId, sql`chain.manager_user_id`)}
+    )
+    SELECT DISTINCT ON (user_id) user_id, manager_user_id FROM chain
+    WHERE ${presentMember(organizationId, sql`chain.manager_user_id`)}
+    ORDER BY user_id, depth`;
+}
+
+/** True when `managerId` is the manager who acts for `targetUserId` today (actingManagerId): approvals for them route to `managerId`. */
 export async function isManagerOf(db: Executor, organizationId: string, managerId: string, targetUserId: string): Promise<boolean> {
-  return (await membershipManagerId(db, organizationId, targetUserId)) === managerId;
+  return (await actingManagerId(db, organizationId, targetUserId)) === managerId;
 }
 
 /** Assignments in force today, one row per person of the organization (user, manager). */
