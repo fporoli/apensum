@@ -349,11 +349,18 @@ class Sim {
       const decider = w.assigned_to_user_id[0];
       // Only a step that can be sent back is (work steps, such as paying, cannot).
       const rejectable = w.step?.rejectable !== false && w.step?.reject !== 'none';
+      // A dated manager change that came into force today moves the step to the new manager as it is decided
+      // (`rerouteToCurrentManagers`): the old one is refused, and whoever has it now decides (read again).
+      const rerouted = (r) => r?.ok === false && r.error === 'forbidden';
       if (rejectable && chance(rejectChance)) {
-        await must(`decide.reject.${sourceTable}`, () => workflows.reject(w.workflow_id, { note: pick(REJECT_NOTES) }, as(decider)));
+        const r = await call(`decide.reject.${sourceTable}`, () => workflows.reject(w.workflow_id, { note: pick(REJECT_NOTES) }, as(decider)));
+        if (rerouted(r)) { this.rerouted = (this.rerouted ?? 0) + 1; continue; }
+        assert(r?.ok !== false, `decide.reject.${sourceTable}: ${r?.error}`);
         return 'rejected';
       }
-      await must(`decide.approve.${sourceTable}`, () => workflows.approve(w.workflow_id, {}, as(decider)));
+      const r = await call(`decide.approve.${sourceTable}`, () => workflows.approve(w.workflow_id, {}, as(decider)));
+      if (rerouted(r)) { this.rerouted = (this.rerouted ?? 0) + 1; continue; }
+      assert(r?.ok !== false, `decide.approve.${sourceTable}: ${r?.error}`);
     }
     return 'approved';
   }
@@ -1180,6 +1187,7 @@ async function main() {
       count(*) FILTER (WHERE status <> 'resolved' AND last_activity_at < $2::date - 30)::int AS stale,
       max(last_activity_at) AS newest FROM flows WHERE organization_id = $1`, [sim.org, sim.current]);
   console.log(`free flows: ${ff.total}, open ${ff.open} (no activity for 30 days: ${ff.stale}), taken over ${JSON.stringify(sim.taken)}`);
+  console.log(`decisions moved to a new manager on the day the change came into force: ${sim.rerouted ?? 0}`);
   assert(!ff.newest || day(new Date(ff.newest)) <= sim.current, `flows stamped on the simulated days (newest ${ff.newest})`);
   if (!process.env.SIM_UNTIL) await verify(sim);
   const now = sim.working(sim.current);
