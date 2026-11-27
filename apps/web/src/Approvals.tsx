@@ -591,13 +591,13 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                         const page = pluginRecord(item)?.kind.page;
                         return page && (!page.ownOnly || item.is_own) ? (
                           <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => { window.location.hash = page.hash(item.source_table_uuid); }}>
-                            {t('approvals.open')}
+                            {t('approvals.goToPage')}
                           </Button>
                         ) : null;
                       })()}
                       {item.flow && (
                         <Button size="small" variant="outlined" sx={{ mr: 1 }} onClick={() => { window.location.hash = `#/flows?id=${item.source_table_uuid}`; }}>
-                          {t('approvals.open')}
+                          {t('approvals.goToFlow')}
                         </Button>
                       )}
                       {scope === 'assigned' && (

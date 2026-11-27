@@ -28,7 +28,7 @@ const SEGMENT_ACTIONS: Record<string, ButtonAction> = {
   refresh: 'refresh', reload: 'refresh', retry: 'refresh', recalculate: 'refresh',
   copy: 'copy', duplicate: 'copy',
   back: 'back', previous: 'back', prev: 'back', toLogin: 'back',
-  next: 'next', continue: 'next', forwardStep: 'next',
+  next: 'next', continue: 'next', forwardStep: 'next', go: 'next', goTo: 'next',
   open: 'view', show: 'view', view: 'view', inspect: 'view', preview: 'view', details: 'view',
   publish: 'publish', unpublish: 'archive',
   archive: 'archive', unarchive: 'reset',
