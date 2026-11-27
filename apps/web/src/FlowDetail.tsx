@@ -649,7 +649,7 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
         <Box>
           {/* A task about someone opens that person on its page (`?user=`), e.g. their HR dashboard. */}
           <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string, r.about_user_id ? `user=${r.about_user_id}` : undefined)}>
-            {t('flow.openSource', { name: sourceLabel(r.source) })}
+            {r.about_user_id ? t('flow.goToPerson') : t('flow.openSource', { name: sourceLabel(r.source) })}
           </Button>
         </Box>
       )}
