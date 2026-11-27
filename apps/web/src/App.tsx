@@ -40,9 +40,9 @@ import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES, PLUGIN_W
 import { ApensumMark } from './ApensumMark';
 import InstanceInfo from './InstanceInfo';
 import { CORE_NAV_GROUPS, CORE_PAGES, type AppPage, type CorePageContext } from './corePages';
-import { buildNavTree, sectionHashes } from './navigation';
+import { buildNavTree, placeForCaller, sectionHashes } from './navigation';
 import { resolveRoleFlags, type RoleFlags } from './roleFlags';
-import { holdsAny, isBasicDataReviewer } from '@worktime3/shared/permissions';
+import { holdsAny, holdsBeyondOwn, isBasicDataReviewer } from '@worktime3/shared/permissions';
 import {
   AutoAwesomeIcon,
   ExpandLessIcon,
@@ -60,7 +60,20 @@ const DRAWER_WIDTH = 240;
 
 /** Every page: the core's (corePages.tsx), then the plugins' (plugins.ts). */
 const PAGES: readonly AppPage[] = [...CORE_PAGES, ...PLUGIN_PAGES];
-const NAV_TREE = buildNavTree([...CORE_NAV_GROUPS, ...PLUGIN_NAV_GROUPS], PAGES);
+const NAV_GROUP_DEFS = [...CORE_NAV_GROUPS, ...PLUGIN_NAV_GROUPS];
+const DEFAULT_NAV_TREE = buildNavTree(NAV_GROUP_DEFS, PAGES);
+const navTrees = new WeakMap<Set<string>, ReturnType<typeof buildNavTree<AppPage>>>();
+/** The navbar's tree for the caller's permissions (built once per set; the default until they have loaded). */
+function navTreeFor(permissions: Set<string> | null) {
+  if (!permissions) return DEFAULT_NAV_TREE;
+  let tree = navTrees.get(permissions);
+  if (!tree) {
+    const ownOnly = (p: AppPage) => !!p.object && holdsAny(permissions, p.object) && !holdsBeyondOwn(permissions, p.object, 'see');
+    tree = buildNavTree(NAV_GROUP_DEFS, placeForCaller(PAGES, ownOnly));
+    navTrees.set(permissions, tree);
+  }
+  return tree;
+}
 const { toHash: SECTION_TO_HASH, toSection: HASH_TO_SECTION } = sectionHashes(PAGES);
 
 /** A page's section id (core or plugin). */
@@ -496,6 +509,8 @@ export default function App() {
     visible: allowed(p.section),
     badge: badges[p.section],
   });
+  // The navbar for this caller: a page they hold only for themselves may sit elsewhere (PageNav.ownOnly).
+  const NAV_TREE = navTreeFor(permissions);
   const NAV_GROUPS: Array<{ id: string; header: string; items: NavItem[] }> = NAV_TREE.map((g) => ({
     id: g.id,
     header: g.header ? t(g.header) : '',

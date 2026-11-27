@@ -103,6 +103,7 @@ hashes and who may open a page are built from the core's and the plugins' pages 
     after: 'home',                // the entry it follows; at the end when unset/unknown
     parent: 'users',              // optional: a sub-entry of that page's entry
     showForChildren: true,        // optional: shown while one of its sub-entries is allowed
+    ownOnly: { parent: 'myData', label: 'nav.myDashboard' }, // optional: where and how it shows for someone holding `object` only for themselves
     badge: async ({ orgId, authHeaders, permissions, roles }) => 3, // optional count, reloaded on notifications
   },
   render: (ctx) => <Expenses orgId={ctx.orgId} ... />,

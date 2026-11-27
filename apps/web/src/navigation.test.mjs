@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildNavTree, sectionHashes } from './navigation.ts';
+import { buildNavTree, placeForCaller, sectionHashes } from './navigation.ts';
 
 const tree = (groups, pages) =>
   buildNavTree(groups, pages).map((g) => ({
@@ -61,4 +61,22 @@ test('an entry with `last` goes to the end of its group, behind the ones that fo
     { section: 'more', nav: { group: 'g' } },
   ]);
   assert.deepEqual(tree[0].items.map((i) => i.page.section), ['docs', 'notes', 'more', 'mine']);
+});
+
+test('a page held only for oneself moves where `ownOnly` says (parent, label, after); the others stay', () => {
+  const pages = [
+    { section: 'myData', nav: { group: 'p', last: true, label: 'nav.myData' } },
+    { section: 'documents', nav: { group: 'p', parent: 'myData', label: 'nav.documents' } },
+    { section: 'dash', object: 'o.dash', nav: { group: 'p', after: 'myData', label: 'nav.dash', ownOnly: { parent: 'myData', label: 'nav.myDash' } } },
+    { section: 'reviews', object: 'o.dash', nav: { group: 'p', after: 'dash', label: 'nav.reviews', ownOnly: { parent: 'myData', label: 'nav.myReviews', after: 'dash' } } },
+  ];
+  // A manager (beyond own): as listed.
+  assert.deepEqual(tree([{ id: 'p', header: '' }], placeForCaller(pages, () => false)), [{ id: 'p', items: ['dash', 'reviews', 'myData[documents]'] }]);
+  // Only their own: under My Data, after Documents, with their own labels.
+  const own = placeForCaller(pages, (p) => p.object === 'o.dash');
+  assert.deepEqual(tree([{ id: 'p', header: '' }], own), [{ id: 'p', items: ['myData[documents,dash,reviews]'] }]);
+  assert.equal(own.find((p) => p.section === 'dash').nav.label, 'nav.myDash');
+  assert.equal(own.find((p) => p.section === 'reviews').nav.label, 'nav.myReviews');
+  // The input is left as it was.
+  assert.equal(pages[2].nav.label, 'nav.dash');
 });

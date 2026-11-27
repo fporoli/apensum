@@ -16,7 +16,30 @@ export interface NavGroupDef {
 
 interface NavPage {
   section: string;
-  nav?: { group: string; after?: string; parent?: string; last?: boolean };
+  nav?: { group: string; after?: string; parent?: string; last?: boolean; label?: string; ownOnly?: OwnOnlyPlace };
+}
+
+/** Where an entry sits, and what it is called, for someone who holds its page only for themselves (scope `own`). */
+export interface OwnOnlyPlace {
+  /** The entry it goes under instead (e.g. 'myData'). */
+  parent?: string;
+  /** Its label there (an i18n key, e.g. "My performance reviews"). */
+  label?: string;
+  /** The sub-entry it follows there. */
+  after?: string;
+}
+
+/**
+ * The pages as the caller's navbar places them: a page with `nav.ownOnly` that the caller holds only for themselves
+ * moves there (parent, label, after), the others stay as they are. Pure; `ownOnly(page)` says whom it applies to.
+ */
+export function placeForCaller<P extends NavPage>(pages: readonly P[], ownOnly: (page: P) => boolean): P[] {
+  return pages.map((p) => {
+    const o = p.nav?.ownOnly;
+    if (!o || !ownOnly(p)) return p;
+    const { after: _after, last: _last, ...rest } = p.nav!;
+    return { ...p, nav: { ...rest, ...(o.parent ? { parent: o.parent } : {}), ...(o.label ? { label: o.label } : {}), ...(o.after ? { after: o.after } : {}) } };
+  });
 }
 
 export interface NavTreeItem<P> {

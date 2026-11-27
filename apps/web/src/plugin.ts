@@ -58,6 +58,11 @@ export interface PageNav<R extends PluginRoles = PluginRoles> {
   parent?: string;
   /** Shown while the caller may open one of its sub-entries, even when not the page itself. */
   showForChildren?: boolean;
+  /**
+   * For someone who holds the page's object only for themselves (scope `own`): another place and label, e.g. an
+   * employee's own dashboard as "My dashboard" under My Data, while managers and HR keep it where it is.
+   */
+  ownOnly?: { parent?: string; label?: string; after?: string };
   /** A count next to the entry (e.g. items waiting); loaded while the page is allowed, again on every notification. */
   badge?: (ctx: PluginBadgeContext<R>) => Promise<number>;
 }
