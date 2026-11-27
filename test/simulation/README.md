@@ -7,7 +7,7 @@ It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** d
 ## What happens
 
 **The company** (spec by Fabio, 2026-11-27):
-- Whale is founded on 2015-01-01 and grows from a handful of people to **200** today.
+- Whale is founded on 2015-01-01 and grows from a handful of people to **200** today (both can be changed: `founded`, `headcount`).
 - **Roles:** 5% HR, 5% finance (Whale's own role `finance`: payment runs and billing), 10% leads (`manager`), 5% IT support (`admin`, at least one of them also `developer`), the rest members (a tenth of them also developers).
 - **Admin:** `admin@whale.com` with the password `admin` is owner and admin; the founder does HR until the first HR person comes, then gives the role away.
 - About 10% give notice each year (HR records the last day some weeks ahead); people join on their first day through an invitation they accept.
@@ -55,12 +55,12 @@ It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** d
 
 ```sh
 gh workflow run test-simulation.yml --ref main -f environment=preprod -f confirmation='SIMULATE preprod'
-gh workflow run test-simulation.yml --ref main -f environment=test -f founded=2020-01-01   # fewer years, quicker
+gh workflow run test-simulation.yml --ref main -f environment=test -f founded=2020-01-01 -f headcount=80   # quicker
 gh run list --workflow test-simulation.yml
 ```
 
 It resets the instance first (`vps.yml` `reset-seed` with the image of the commit it runs from: wait until `build-push` of that commit is done), then runs `life.cjs` inside the API container; it refuses when Whale exists already.\
-`founded` (optional, `YYYY-MM-DD` from 2000 to yesterday, checked before it reaches the instance) sets Whale's founding day, `SIM_FOUNDED` (empty: 2015-01-01): Whale still grows to 200 people today, over fewer years.\
+`founded` (optional, `YYYY-MM-DD` from 2000 to yesterday, checked before it reaches the instance) sets Whale's founding day, `SIM_FOUNDED` (empty: 2015-01-01), and `headcount` (10 to 2000) how many work there today, `SIM_HEADCOUNT` (empty: 200): Whale grows from a handful to that many by today.\
 It takes about an hour from 2015 (mostly the daily bookings of the last, largest years), about half as long from 2020; on dev about 13 and 7 minutes.
 
 **On dev** (your own database; it is reset first):
@@ -79,7 +79,7 @@ DATABASE_URL=postgresql://…/apensum_simulation_check npm run db:migrate
 SIM_API=http://127.0.0.1:8012/api/v1/ DATABASE_URL=… node test/simulation/life.cjs local-check
 ```
 
-**Options:** `SIM_FOUNDED=YYYY-MM-DD` moves the founding (2015-01-01), `SIM_UNTIL=YYYY-MM-DD` stops early (no checks then), `SIM_SEED` changes the randomness, `SIM_PARALLEL` sets how many people act at once (8), `SIM_API` the API for the checks.
+**Options:** `SIM_FOUNDED=YYYY-MM-DD` moves the founding (2015-01-01), `SIM_HEADCOUNT` sets the people today (200), `SIM_UNTIL=YYYY-MM-DD` stops early (no checks then), `SIM_SEED` changes the randomness, `SIM_PARALLEL` sets how many people act at once (8), `SIM_API` the API for the checks.
 
 ## What it found so far
 

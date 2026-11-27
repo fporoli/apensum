@@ -23,6 +23,10 @@ on:
         description: Whale's founding day, YYYY-MM-DD (empty = 2015-01-01; later = fewer years, a quicker run)
         type: string
         required: false
+      headcount:
+        description: How many work at Whale today, 10 to 2000 (empty = 200; fewer = a quicker run)
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -52,15 +56,20 @@ jobs:
             echo "Preprod requires the exact confirmation: SIMULATE preprod" >&2
             exit 1
           fi
-      - name: Check the founding day
+      - name: Check the founding day and the headcount
         env:
           FOUNDED: ${{ inputs.founded }}
+          HEADCOUNT: ${{ inputs.headcount }}
         run: |
           # Checked here, before it reaches the instance's shell: a real day from 2000 to yesterday, or empty.
           if [[ -n "$FOUNDED" ]]; then
             [[ "$FOUNDED" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -d "$FOUNDED" +%F | grep -qx "$FOUNDED" \
               && [[ "$FOUNDED" > "1999-12-31" && "$FOUNDED" < "$(date -u +%F)" ]] \
               || { echo "founded: a day YYYY-MM-DD from 2000 to yesterday, not '$FOUNDED'" >&2; exit 1; }
+          fi
+          if [[ -n "$HEADCOUNT" ]]; then
+            [[ "$HEADCOUNT" =~ ^[0-9]{2,4}$ ]] && (( 10#$HEADCOUNT >= 10 && 10#$HEADCOUNT <= 2000 )) \
+              || { echo "headcount: a whole number from 10 to 2000, not '$HEADCOUNT'" >&2; exit 1; }
           fi
       - name: Reset the instance (vps.yml reset-seed with main's image)
         env:
@@ -104,4 +113,4 @@ jobs:
             trap 'docker exec "$container" pkill -f "$dst/[l]ife.cjs" || true; docker exec "$container" rm -rf "$dst" || true; rm -rf "$src"' EXIT HUP INT TERM
             docker exec "$container" mkdir -p "$dst"
             docker cp "$src/test/simulation/." "$container:$dst/"
-            docker exec -e APENSUM_ROOT=/app -e SIM_FOUNDED=${{ inputs.founded || '2015-01-01' }} "$container" node "$dst/life.cjs" "vps-$environment"
+            docker exec -e APENSUM_ROOT=/app -e SIM_FOUNDED=${{ inputs.founded || '2015-01-01' }} -e SIM_HEADCOUNT=${{ inputs.headcount || '200' }} "$container" node "$dst/life.cjs" "vps-$environment"
