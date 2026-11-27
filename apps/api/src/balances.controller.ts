@@ -9,6 +9,7 @@ import { isTimeNotRecorded } from './time-recording';
 import { isIsoDate } from '@worktime3/shared/worktime';
 import { NotificationsService } from './notifications.service';
 import { yearClosedNotice, yearReopenedNotice } from './year-closing-notice';
+import { clock } from './clock';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
 
@@ -16,7 +17,7 @@ type Db = NonNullable<ReturnType<DbService['getDb']>>;
 const OBJECT = 'nav.balances';
 
 function parseYear(value: string | undefined): number {
-  return /^\d{4}$/.test(value ?? '') ? Number(value) : new Date().getFullYear();
+  return /^\d{4}$/.test(value ?? '') ? Number(value) : clock.now().getFullYear();
 }
 
 @Controller()
@@ -34,14 +35,14 @@ export class BalancesController {
     if (!db) return null;
     const target = await this.target(db, orgId, req, userId);
     if (!target) return null;
-    const year = await this.balances.year(db, orgId, target, new Date().getFullYear());
+    const year = await this.balances.year(db, orgId, target, clock.now().getFullYear());
     return {
       overtimeMinutes: year.overtime.bookedMinutes,
       pendingOvertimeMinutes: year.overtime.pendingMinutes,
       pendingSince: year.overtime.pendingSince,
       vacationDays: year.vacation.remaining,
       vacationPlannedDays: year.vacation.planned,
-      timeRecorded: !(await isTimeNotRecorded(db, orgId, target, new Date())),
+      timeRecorded: !(await isTimeNotRecorded(db, orgId, target, clock.now())),
     };
   }
 
@@ -147,7 +148,7 @@ export class BalancesController {
     if (!db) return { ok: true, offline: true, rows: [] };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', rows: [] };
-    const year = parseYear(yearParam ?? String(new Date().getFullYear() - 1));
+    const year = parseYear(yearParam ?? String(clock.now().getFullYear() - 1));
     const ids = await listableUserIds(db, orgId, callerId, OBJECT);
     if (ids !== 'all' && ids.length === 0) return { ok: true, year, rows: [] };
     // Who left before the year began has nothing in it to close.

@@ -40,7 +40,7 @@ function sqlText(query: any): string {
   return chunks(query).map((c) => (Array.isArray(c?.value) ? c.value.join('') : '?')).join('');
 }
 function sqlParams(query: any): any[] {
-  return chunks(query).filter((c) => !Array.isArray(c?.value));
+  return chunks(query).filter((c) => !Array.isArray(c?.value) && !c?.queryChunks); // a nested fragment (the business clock's date) is not a parameter of its own
 }
 
 /** Answers access.ts's raw queries from the cast above; `locked` makes every month submitted. */

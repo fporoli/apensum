@@ -23,7 +23,7 @@ function sqlText(query: any): string {
   return (query.queryChunks ?? []).map((c: any) => (Array.isArray(c?.value) ? c.value.join('') : '?')).join('');
 }
 function sqlParams(query: any): any[] {
-  return (query.queryChunks ?? []).filter((c: any) => !Array.isArray(c?.value));
+  return (query.queryChunks ?? []).filter((c: any) => !Array.isArray(c?.value) && !c?.queryChunks); // a nested fragment (the business clock's date) is not a parameter of its own
 }
 
 function controller(caller = '') {

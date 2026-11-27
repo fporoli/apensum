@@ -10,6 +10,7 @@ import { localDate } from './work-time-model.service';
 import { API_PLUGINS } from './plugin-registrar';
 import type { ApiPlugin } from './plugin';
 import { WorkflowsService, stepNameValue, workflowHistory, type WorkflowEvent, type WorkflowStepDefinition } from './workflows.service';
+import { clock, sqlNow } from './clock';
 
 /** How often pending steps are looked at (deputies, reminders, escalations). */
 const TICK_MS = 10 * 60_000;
@@ -163,7 +164,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** One pass over the pending steps, and the permits that end soon; returns what it did. */
-  async run(now: Date = new Date()): Promise<{ deputies: number; reminded: number; escalated: number; permits: number }> {
+  async run(now: Date = clock.now()): Promise<{ deputies: number; reminded: number; escalated: number; permits: number }> {
     const done = { deputies: 0, reminded: 0, escalated: 0, permits: 0 };
     const db = this.db.getDb();
     if (!db || this.running) return done;
@@ -221,7 +222,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     const prior = data.due as DueState | undefined;
     const due: DueState = prior && prior.step === row.step && prior.started === startedAt ? { ...prior } : { step: row.step, started: startedAt };
     const history: WorkflowEvent[] = workflowHistory(data, { started: row.workflow_started, finished: null, status: 'pending' });
-    const at = new Date().toISOString();
+    const at = clock.now().toISOString();
     let assignees = [...(row.assignees ?? [])];
     const notices: { to: string[]; key: string; vars: Record<string, unknown>; mail?: 'remind' | 'escalate' }[] = [];
 
@@ -295,7 +296,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
   private async remindPermits(db: Db, today: string): Promise<number> {
     const due = (await db.execute(sql`
       SELECT u.id AS user_id, coalesce(u.display_name, u.email) AS name, m.organization_id, u.basicdata->>'residencePermitValidUntil' AS until
-      FROM users u JOIN organization_memberships m ON m.user_id = u.id AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+      FROM users u JOIN organization_memberships m ON m.user_id = u.id AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
       WHERE u.basicdata->>'residencePermitValidUntil' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
         AND (u.basicdata->>'residencePermitValidUntil')::date BETWEEN ${today}::date AND ${today}::date + ${PERMIT_REMIND_DAYS}::int
         AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.type = 'basicdata.permit' AND n.organization_id = m.organization_id
@@ -316,7 +317,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
       const hr = ((await db.execute(sql`
         SELECT DISTINCT m.user_id FROM organization_memberships m
         JOIN membership_roles mr ON mr.membership_id = m.id JOIN role_permissions rp ON rp.role_id = mr.role_id
-        WHERE m.organization_id = ${p.organization_id}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+        WHERE m.organization_id = ${p.organization_id}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
           AND rp.permission_id = 'section.basicdata.personalien:edit:all'`)).rows as { user_id: string }[]).map((r) => r.user_id).filter((id) => id !== p.user_id);
       const base = { organizationId: p.organization_id, type: 'basicdata.permit', sourceTable: 'basicdata', sourceTableUuid: p.user_id, data: { validUntil: p.until } };
       // The person's notification is the mark (once per end date): without it, no mail either, so none repeats.
@@ -377,7 +378,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     const rows = (await db.execute(sql`
       SELECT m.organization_id, m.user_id, m.deputy_user_id FROM organization_memberships m
       JOIN organization_memberships dm ON dm.organization_id = m.organization_id AND dm.user_id = m.deputy_user_id
-        AND dm.status = 'active' AND (dm.exit_at IS NULL OR dm.exit_at > now())
+        AND dm.status = 'active' AND (dm.exit_at IS NULL OR dm.exit_at > ${sqlNow()})
       WHERE m.deputy_user_id IS NOT NULL AND m.user_id = ANY(${`{${people.join(',')}}`}::uuid[])`)).rows as { organization_id: string; user_id: string; deputy_user_id: string }[];
     for (const r of rows) {
       if (!out.has(r.organization_id)) out.set(r.organization_id, new Map());
@@ -391,7 +392,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     const managers = (await db.execute(sql`
       SELECT DISTINCT a.manager_user_id AS user_id FROM employee_assignments a
       JOIN organization_memberships m ON m.organization_id = a.organization_id AND m.user_id = a.manager_user_id
-        AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+        AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
       WHERE a.organization_id = ${organizationId}::uuid AND a.manager_user_id IS NOT NULL
         AND a.user_id = ANY(${`{${assignees.join(',')}}`}::uuid[])
         AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
@@ -401,7 +402,7 @@ export class WorkflowDuesService implements OnModuleInit, OnModuleDestroy {
     const hr = (await db.execute(sql`
       SELECT DISTINCT m.user_id FROM organization_memberships m
       JOIN membership_roles mr ON mr.membership_id = m.id JOIN role_permissions rp ON rp.role_id = mr.role_id
-      WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+      WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
         AND rp.permission_id = 'section.people.employment:edit:all'`)).rows as { user_id: string }[];
     return hr.map((r) => r.user_id);
   }

@@ -19,6 +19,7 @@ import {
   REGISTRATIONS_PER_IP, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail,
 } from './password-reset';
 import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
+import { clock } from './clock';
 
 /** Second-step attempts per account within an hour (in memory, per API process). */
 export const TWO_FACTOR_ATTEMPTS_PER_HOUR = 10;
@@ -220,7 +221,7 @@ export class AuthController {
         .returning({ id: organizations.id });
       const [membership] = await tx
         .insert(organization_memberships)
-        .values({ organization_id: org.id, user_id: uid, status: 'active' })
+        .values({ organization_id: org.id, user_id: uid, status: 'active', joined_at: clock.now().toISOString() })
         .returning({ id: organization_memberships.id });
       await tx.insert(membership_roles).values(registrationRoleIds().map((role_id) => ({ membership_id: membership.id, role_id })));
       // Static data (absence types, `locales`, `countries`) is inherited from the global rows
@@ -487,7 +488,7 @@ export class AuthController {
       }
       const [membership] = await tx
         .insert(organization_memberships)
-        .values({ organization_id: invitation.organization_id, user_id: uid, status: 'active' })
+        .values({ organization_id: invitation.organization_id, user_id: uid, status: 'active', joined_at: clock.now().toISOString() })
         .onConflictDoUpdate({
           target: [organization_memberships.organization_id, organization_memberships.user_id],
           set: { status: 'active' },

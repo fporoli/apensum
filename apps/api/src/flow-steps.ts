@@ -10,6 +10,7 @@ import { VersionsService } from './versions.service';
 import { WorkflowsService, type WorkflowActionContext, type WorkflowKind } from './workflows.service';
 import { sendMail } from './mailer';
 import { workflowMail, type MailAnswer } from './workflow-mail';
+import { sqlNow, sqlToday } from './clock';
 
 /** The configurable kind of a request's workflow: one per request type (its key is the variant). */
 export const FLOW_STEPS_KIND = 'flows.flow';
@@ -68,8 +69,8 @@ async function threadEvent(db: Db, ctx: WorkflowActionContext, what: 'approved' 
     // Answers for the requester only: the thread shows them to the requester and their author (`visibleThread`).
     ...(ctx.values && ctx.fields?.length && ctx.privateAnswers ? { private: true } : {}),
   };
-  await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data)
-                       VALUES (${ctx.sourceTableUuid}::uuid, ${ctx.actorUserId}::uuid, 'event', ${JSON.stringify(data)}::jsonb)`);
+  await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data, posted_at)
+                       VALUES (${ctx.sourceTableUuid}::uuid, ${ctx.actorUserId}::uuid, 'event', ${JSON.stringify(data)}::jsonb, ${sqlNow()})`);
 }
 
 /**
@@ -94,7 +95,7 @@ export class FlowSteps implements OnModuleInit {
       variants: (db, orgId) => this.types(db, orgId),
       catalogueFor: (db, orgId, variant) => this.catalogue(orgId, variant),
       onFinished: async (db, id, actorUserId) => {
-        await db.execute(sql`UPDATE flows SET status = 'resolved', resolved_at = now(), last_activity_at = now() WHERE id = ${id}::uuid`);
+        await db.execute(sql`UPDATE flows SET status = 'resolved', resolved_at = ${sqlNow()}, last_activity_at = ${sqlNow()} WHERE id = ${id}::uuid`);
         await threadEvent(db, { sourceTable: 'flows', sourceTableUuid: id, actorUserId, decisionNote: null }, 'finished');
         void this.versions.record('flows', id, 'update_delta', actorUserId, { status: 'resolved' }).catch(() => {});
       },
@@ -102,7 +103,7 @@ export class FlowSteps implements OnModuleInit {
     this.workflows.registerKind(kind);
     // A step done moves an open request on; sending back opens it again for the requester.
     const moveOn = (what: 'approved' | 'done') => async (db: Db, ctx: WorkflowActionContext) => {
-      await db.execute(sql`UPDATE flows SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END, last_activity_at = now() WHERE id = ${ctx.sourceTableUuid}::uuid`);
+      await db.execute(sql`UPDATE flows SET status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END, last_activity_at = ${sqlNow()} WHERE id = ${ctx.sourceTableUuid}::uuid`);
       await threadEvent(db, ctx, what);
     };
     this.workflows.registerAction('flow.reviewed', moveOn('approved'));
@@ -133,7 +134,7 @@ export class FlowSteps implements OnModuleInit {
       await threadEvent(db, ctx, 'mailed');
     });
     this.workflows.registerAction('flow.returned', async (db, ctx) => {
-      await db.execute(sql`UPDATE flows SET status = 'open', resolved_at = NULL, last_activity_at = now() WHERE id = ${ctx.sourceTableUuid}::uuid`);
+      await db.execute(sql`UPDATE flows SET status = 'open', resolved_at = NULL, last_activity_at = ${sqlNow()} WHERE id = ${ctx.sourceTableUuid}::uuid`);
       await threadEvent(db, ctx, 'returned');
     });
     // The Workflow page's record: who asked and what (a confidential request's subject stays out).
@@ -176,10 +177,10 @@ export class FlowSteps implements OnModuleInit {
     const rows = await db.execute(sql`
       SELECT r.urgent, r.flow_type, r.custom,
         (SELECT d.code FROM employee_assignments a JOIN departments d ON d.id = a.department_id
-          WHERE a.organization_id = r.organization_id AND a.user_id = r.requester_user_id AND a.valid_from <= CURRENT_DATE
+          WHERE a.organization_id = r.organization_id AND a.user_id = r.requester_user_id AND a.valid_from <= ${sqlToday()}
           ORDER BY a.valid_from DESC LIMIT 1) AS department,
         COALESCE((SELECT a.is_management FROM employee_assignments a
-          WHERE a.organization_id = r.organization_id AND a.user_id = r.requester_user_id AND a.valid_from <= CURRENT_DATE
+          WHERE a.organization_id = r.organization_id AND a.user_id = r.requester_user_id AND a.valid_from <= ${sqlToday()}
           ORDER BY a.valid_from DESC LIMIT 1), false) AS management
       FROM flows r WHERE r.id = ${id}::uuid`);
     const r = rows.rows[0] as { urgent: boolean; flow_type: string | null; custom: Record<string, unknown> | null; department: string | null; management: boolean } | undefined;

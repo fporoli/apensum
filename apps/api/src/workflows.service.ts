@@ -11,6 +11,7 @@ import { workflows, workflow_definitions, team_members, organization_memberships
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
 import { NotificationsService } from './notifications.service';
+import { clock, sqlNow, sqlToday } from './clock';
 
 /** Employee asks their manager to reopen an already-approved month, with a reason. */
 export const REOPEN_TIMESHEET_WORKFLOW_NAME = 'reopen approved timesheet';
@@ -213,7 +214,7 @@ export class WorkflowsService {
       .orderBy(sql`${workflows.workflow_started} DESC NULLS LAST`)
       .limit(1);
     if (!row) return;
-    const history = [...workflowHistory(row.data, row), { key: event.key, by: event.by, at: new Date().toISOString(), note: event.note ?? null }];
+    const history = [...workflowHistory(row.data, row), { key: event.key, by: event.by, at: clock.now().toISOString(), note: event.note ?? null }];
     await db.update(workflows).set({ workflow_data: { ...(row.data as Record<string, unknown>), history } }).where(eq(workflows.workflow_id, row.id));
   }
 
@@ -287,7 +288,7 @@ export class WorkflowsService {
     const catalogue = (await this.catalogueOf(db, params.organizationId, params.kind, params.variant))!;
     const steps = compileWorkflow(catalogue, own ?? catalogue.defaultConfig) as unknown as WorkflowStepDefinition[];
     const definition = await this.ensureDefinition(db, params.organizationId, this.definitionNameOf(kind, params.variant), kind.description, steps);
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     const history: WorkflowEvent[] = [{ key: 'approvals.event.submitted', by: params.actorUserId, at: now }];
     const placed = await this.place(db, {
       steps, from: 0, organizationId: params.organizationId, sourceTable: kind.sourceTable, sourceTableUuid: params.sourceTableUuid,
@@ -338,7 +339,7 @@ export class WorkflowsService {
     const readFacts = async () => (facts ??= kind?.facts ? await kind.facts(db, p.sourceTableUuid).catch(() => ({})) : {});
     for (let from = p.from; ;) {
       const { index, skipped } = await nextApplicableStep(p.steps, from, readFacts);
-      const at = new Date().toISOString();
+      const at = clock.now().toISOString();
       for (const key of skipped) history.push({ key: 'approvals.event.skipped', by: null, at, note: p.steps.find((s) => s.key === key)?.label ?? key });
       if (index < 0) return { index, assignees: [], history, autoApproved };
       const step = p.steps[index];
@@ -397,7 +398,7 @@ export class WorkflowsService {
       and(eq(workflows.source_table, sourceTable), eq(workflows.source_table_uuid, sourceTableUuid), eq(workflows.step_status, 'pending')),
     );
     if (!workflow) return false;
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     const history = [...workflowHistory(workflow.workflow_data, { started: workflow.started, finished: null, status: 'pending' }), { key: 'approvals.event.withdrawn', by: callerId, at: now }];
     const patch = { step_status: 'rejected', workflow_step_finished: now, workflow_finished: now, workflow_data: { ...(workflow.workflow_data as Record<string, unknown>), history } };
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
@@ -478,7 +479,7 @@ export class WorkflowsService {
       notification: { title: string; body?: string; text?: NoticeText };
     },
   ) {
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     const [definition] = await db
       .select({ organization_id: workflow_definitions.organization_id })
       .from(workflow_definitions)
@@ -599,7 +600,7 @@ export class WorkflowsService {
             SELECT 1 FROM employee_assignments a WHERE a.organization_id = w.organization_id
               AND a.user_id = (w.workflow_data->>'submittedByUserId')::uuid AND a.manager_user_id = ${scope.userId}::uuid
               AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
-                                  WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= CURRENT_DATE)))` : sql``}`);
+                                  WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= ${sqlToday()})))` : sql``}`);
     const pending = pendingResult.rows as { workflow_id: string; organization_id: string; source_table: string; source_table_uuid: string; assignee: string; subject: string }[];
     if (pending.length === 0) return 0;
     const values = sql.join(
@@ -611,7 +612,7 @@ export class WorkflowsService {
       moved AS (
         SELECT p.*, (
           SELECT a.manager_user_id FROM employee_assignments a
-          WHERE a.organization_id = p.organization_id AND a.user_id = p.subject AND a.valid_from <= CURRENT_DATE
+          WHERE a.organization_id = p.organization_id AND a.user_id = p.subject AND a.valid_from <= ${sqlToday()}
           ORDER BY a.valid_from DESC LIMIT 1
         ) AS manager
         FROM pending p
@@ -776,7 +777,7 @@ export class WorkflowsService {
     // The step's own work first (a later step done at once may build on it).
     if (runAction) await this.runAction(db, { ...workflow, steps: stepDefs }, outcome, callerId, decisionNote, values);
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     // What the caller filled in, kept per step and person (`workflow_data.inputs`).
     const priorData = workflow.workflow_data as Record<string, unknown>;
     const inputs = values && workflow.step
@@ -878,7 +879,7 @@ export class WorkflowsService {
         JOIN membership_roles mr ON mr.membership_id = m.id
         JOIN role_permissions rp ON rp.role_id = mr.role_id
         WHERE m.organization_id = ${organizationId}::uuid AND m.status = 'active'
-          AND (m.exit_at IS NULL OR m.exit_at > now()) AND rp.permission_id = ${permissionId}`);
+          AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()}) AND rp.permission_id = ${permissionId}`);
       return (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     };
     // Four eyes on decisions: the submitter never decides their own submission (work steps they may do).
@@ -898,7 +899,7 @@ export class WorkflowsService {
         JOIN organization_memberships m ON m.organization_id = a.organization_id AND m.user_id = a.user_id AND m.status = 'active'
         WHERE a.organization_id = ${organizationId}::uuid AND a.department_id = (SELECT id FROM dep)
           AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
-                              WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= CURRENT_DATE)`);
+                              WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= ${sqlToday()})`);
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     } else if (step.assignTo.startsWith('team:')) {
       // By its code: its lead and its active members.
@@ -908,21 +909,21 @@ export class WorkflowsService {
         SELECT lead_user_id AS user_id FROM t WHERE lead_user_id IS NOT NULL
         UNION
         SELECT m.user_id FROM team_members tm JOIN organization_memberships m ON m.id = tm.membership_id
-        WHERE tm.team_id = (SELECT id FROM t) AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())`);
+        WHERE tm.team_id = (SELECT id FROM t) AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})`);
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     } else if (step.assignTo.startsWith('person:')) {
       // One person, while an active member of the organization.
       const rows = await db.execute(sql`
         SELECT m.user_id FROM organization_memberships m
         WHERE m.organization_id = ${organizationId}::uuid AND m.user_id::text = ${step.assignTo.slice('person:'.length)}
-          AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())`);
+          AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})`);
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     } else if (step.assignTo === 'requester' && submittedByUserId) {
       ids = [submittedByUserId];
     } else if (step.assignTo === 'manager' && submittedByUserId) {
       const rows = await db.execute(sql`
         SELECT manager_user_id FROM employee_assignments
-        WHERE organization_id = ${organizationId}::uuid AND user_id = ${submittedByUserId}::uuid AND valid_from <= CURRENT_DATE
+        WHERE organization_id = ${organizationId}::uuid AND user_id = ${submittedByUserId}::uuid AND valid_from <= ${sqlToday()}
         ORDER BY valid_from DESC LIMIT 1`);
       const manager = (rows.rows as { manager_user_id: string | null }[])[0]?.manager_user_id;
       if (manager) ids = [manager];

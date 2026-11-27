@@ -4,6 +4,7 @@ import { DbService } from './db.service';
 import { notifications } from './db/schema';
 import { NotificationsGateway } from './notifications.gateway';
 import type { NoticeText } from './notification-text';
+import { clock } from './clock';
 
 /**
  * Persisted, per-recipient notification feed — source of truth for the bell icon.
@@ -47,6 +48,7 @@ export class NotificationsService {
           source_table_uuid: params.sourceTableUuid,
           workflow_id: params.workflowId ?? null,
           data: params.text ? { ...(params.data ?? {}), text: params.text } : params.data ?? {},
+          created_at: clock.now().toISOString(),
         })),
       )
       .returning();
@@ -81,7 +83,7 @@ export class NotificationsService {
     if (!db) return false;
     const rows = await db
       .update(notifications)
-      .set({ read_at: new Date().toISOString() })
+      .set({ read_at: clock.now().toISOString() })
       .where(and(eq(notifications.id, id), eq(notifications.recipient_user_id, recipientUserId), isNull(notifications.read_at)))
       .returning({ id: notifications.id });
     return rows.length > 0;
@@ -92,7 +94,7 @@ export class NotificationsService {
     if (!db) return 0;
     const rows = await db
       .update(notifications)
-      .set({ read_at: new Date().toISOString() })
+      .set({ read_at: clock.now().toISOString() })
       .where(and(eq(notifications.recipient_user_id, recipientUserId), isNull(notifications.read_at)))
       .returning({ id: notifications.id });
     return rows.length;

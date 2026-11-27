@@ -14,6 +14,7 @@ import {
 } from '@worktime3/shared/permissions';
 import { resolveModules, withoutDisabledModules } from '@worktime3/shared/modules';
 import { OPERATOR_ORG_ID, OPERATOR_PERMISSION } from '@worktime3/shared/operator';
+import { sqlToday } from './clock';
 
 /** The slice of Db these helpers need — easy to fake in tests, satisfied by any real Db. */
 export type Executor = Pick<Db, 'execute'>;
@@ -180,7 +181,7 @@ export async function membershipManagerId(db: Executor, organizationId: string, 
   const rows = await db.execute(
     sql`SELECT manager_user_id FROM employee_assignments
         WHERE organization_id = ${organizationId} AND user_id = ${userId}
-          AND valid_from <= COALESCE(${onDate ?? null}::date, CURRENT_DATE)
+          AND valid_from <= COALESCE(${onDate ?? null}::date, ${sqlToday()})
         ORDER BY valid_from DESC LIMIT 1`,
   );
   return (rows.rows[0]?.manager_user_id as string | null) ?? null;
@@ -194,7 +195,7 @@ export async function isManagerOf(db: Executor, organizationId: string, managerI
 /** Assignments in force today, one row per person of the organization (user, manager). */
 function currentManagers(organizationId: string): SQL {
   return sql`SELECT DISTINCT ON (user_id) user_id, manager_user_id FROM employee_assignments
-             WHERE organization_id = ${organizationId} AND valid_from <= CURRENT_DATE
+             WHERE organization_id = ${organizationId} AND valid_from <= ${sqlToday()}
              ORDER BY user_id, valid_from DESC`;
 }
 
@@ -236,7 +237,7 @@ export async function directReportUserIds(db: Executor, organizationId: string, 
   const rows = await db.execute(
     sql`SELECT user_id FROM (
           SELECT DISTINCT ON (user_id) user_id, manager_user_id FROM employee_assignments
-          WHERE organization_id = ${organizationId} AND valid_from <= CURRENT_DATE
+          WHERE organization_id = ${organizationId} AND valid_from <= ${sqlToday()}
           ORDER BY user_id, valid_from DESC
         ) current_assignment WHERE manager_user_id = ${managerId}`,
   );
@@ -417,7 +418,7 @@ async function loadPermissionIdsOf(db: Executor, organizationId: string, userId:
   const rows = await db.execute(
     sql`SELECT r.name, rp.permission_id, o.settings -> 'modules' AS modules,
           (SELECT jsonb_agg(l.module_id) FROM organization_licenses l
-            WHERE l.organization_id = o.id AND (l.valid_until IS NULL OR l.valid_until >= (now() AT TIME ZONE 'Europe/Zurich')::date)) AS licenses
+            WHERE l.organization_id = o.id AND (l.valid_until IS NULL OR l.valid_until >= ${sqlToday()})) AS licenses
         FROM organization_memberships m
         JOIN organizations o ON o.id = m.organization_id
         JOIN membership_roles mr ON mr.membership_id = m.id

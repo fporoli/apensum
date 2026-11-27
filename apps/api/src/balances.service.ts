@@ -24,6 +24,7 @@ import {
   type MonthSummary,
   type WorkTimeModel,
 } from '@worktime3/shared/worktime';
+import { clock } from './clock';
 
 /** `legal_overtime` is the Überzeit share of the overtime balance; its adjustments move both. */
 export const BALANCE_KINDS = ['overtime', 'vacation', 'legal_overtime'] as const;
@@ -556,7 +557,7 @@ export class BalancesService {
       vacation_days: String(s.vacationDays),
       legal_overtime_minutes: legal,
       closed_by_user_id: actorUserId,
-      closed_at: new Date().toISOString(),
+      closed_at: clock.now().toISOString(),
     };
     const [row] = await db
       .insert(work_time_months)
@@ -648,7 +649,7 @@ export class BalancesService {
    * year-end closing before it (`balance_years`), else from the person's first day; `closing` is the
    * year's own closing when it has one.
    */
-  async year(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearBalances & { adjustments: Adjustment[]; closing: YearClosingInfo | null }> {
+  async year(db: Db, orgId: string, userId: string, year: number, now: Date = clock.now()): Promise<YearBalances & { adjustments: Adjustment[]; closing: YearClosingInfo | null }> {
     const { balances } = await this.calculateYear(db, orgId, userId, year, now, await this.balanceContext(db, orgId));
     return balances;
   }
@@ -713,11 +714,11 @@ export class BalancesService {
    * it would close with, the months whose timesheet is not approved yet, and whether the year before
    * is still open (years close in order). `notEmployed` when the year lies before their start.
    */
-  async yearStatus(db: Db, orgId: string, userId: string, year: number, now: Date = new Date()): Promise<YearStatus> {
+  async yearStatus(db: Db, orgId: string, userId: string, year: number, now: Date = clock.now()): Promise<YearStatus> {
     return this.calculateYearStatus(db, orgId, userId, year, now, await this.balanceContext(db, orgId));
   }
 
-  async yearStatuses(db: Db, orgId: string, people: readonly { id: string; timezone: string | null }[], year: number, now = new Date()): Promise<YearStatus[]> {
+  async yearStatuses(db: Db, orgId: string, people: readonly { id: string; timezone: string | null }[], year: number, now = clock.now()): Promise<YearStatus[]> {
     if (!people.length) return [];
     const context = await this.balanceContext(db, orgId);
     return balanceBatches(people, p => this.calculateYearStatus(db, orgId, p.id, year, now, context, p.timezone || 'UTC'));
@@ -746,7 +747,7 @@ export class BalancesService {
    * Refused for a year not ended yet, before the person's start, already closed, after an open year, or
    * (unless `force`) with months whose timesheet is not approved.
    */
-  async closeYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string, force: boolean, now: Date = new Date()): Promise<{ ok: true; id: string; values: { overtime: number; legalOvertime: number; vacation: number } } | { ok: false; error: string; months?: string[] }> {
+  async closeYear(db: Db, orgId: string, userId: string, year: number, actorUserId: string, force: boolean, now: Date = clock.now()): Promise<{ ok: true; id: string; values: { overtime: number; legalOvertime: number; vacation: number } } | { ok: false; error: string; months?: string[] }> {
     const status = await this.yearStatus(db, orgId, userId, year, now);
     if (status.closing) return { ok: false, error: 'year-closed' };
     if (status.notEmployed) return { ok: false, error: 'not-employed' };
@@ -788,7 +789,7 @@ export class BalancesService {
   }
 
   /** The balance report for a month: every person the caller may list, with alerts. */
-  async report(db: Db, orgId: string, userIds: 'all' | string[], month: string, now: Date = new Date()) {
+  async report(db: Db, orgId: string, userIds: 'all' | string[], month: string, now: Date = clock.now()) {
     const conditions = [eq(organization_memberships.organization_id, orgId), eq(organization_memberships.is_active, true), employedFrom(month)];
     if (userIds !== 'all') {
       if (userIds.length === 0) return [];

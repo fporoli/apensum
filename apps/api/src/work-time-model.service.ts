@@ -27,6 +27,7 @@ import {
   type WorkSchedule,
   type WorkTimeModel,
 } from '@worktime3/shared/worktime';
+import { sqlNow } from './clock';
 
 export interface WorkTimeSettings {
   /** Minutes of a 100% week, the base for workload percentages and the default schedule. */
@@ -268,11 +269,11 @@ export class WorkTimeModelService {
    */
   async attendanceByDay(db: Db, orgId: string, userId: string, from: string, toExclusive: string, timeZone: string, includeOpen: boolean): Promise<Map<string, number>> {
     const result = await db.execute(sql`
-      SELECT check_in AS start, COALESCE(check_out, now()) AS end
+      SELECT check_in AS start, COALESCE(check_out, ${sqlNow()}) AS end
       FROM work_times
       WHERE organization_id = ${orgId} AND user_id = ${userId}
         AND check_in < (${toExclusive}::date::timestamp AT TIME ZONE ${timeZone})
-        AND ${includeOpen ? sql`COALESCE(check_out, now())` : sql`check_out`} > (${from}::date::timestamp AT TIME ZONE ${timeZone})`);
+        AND ${includeOpen ? sql`COALESCE(check_out, ${sqlNow()})` : sql`check_out`} > (${from}::date::timestamp AT TIME ZONE ${timeZone})`);
     return minutesByLocalDay(result.rows as unknown as TimeSpan[], from, toExclusive, timeZone);
   }
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { DbService } from './db.service';
+import { clock } from './clock';
 
 export type VersionAction = 'insert' | 'update' | 'update_delta' | 'delete';
 
@@ -54,7 +55,7 @@ export class VersionsService implements OnModuleDestroy {
     return new Promise<void>((done, failed) => {
       this.queue.push({
         sourceTable, sourceTableUuid, actorUserId,
-        entry: { action, actioned_by_user_uuid: actorUserId, actioned_date: new Date().toISOString(), record: record ?? null },
+        entry: { action, actioned_by_user_uuid: actorUserId, actioned_date: clock.now().toISOString(), record: record ?? null },
         done, failed,
       });
       if (this.queue.length >= BATCH_MAX) this.flush();

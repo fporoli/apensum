@@ -12,11 +12,12 @@ import { sendMail } from './mailer';
 import { appBaseUrl } from './app-url';
 import { localDate } from './work-time-model.service';
 import { workflowParticipants } from './flow-steps';
+import { clock, sqlNow, sqlToday } from './clock';
 
 /** Assignments in force today, one row per person of the organization. */
 export function currentAssignments(orgId: string): SQL {
   return sql`SELECT DISTINCT ON (user_id) user_id, department_id, manager_user_id FROM employee_assignments
-             WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+             WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
              ORDER BY user_id, valid_from DESC`;
 }
 
@@ -206,13 +207,13 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       const changed = old.subject !== subject || old.due_date !== due || old.target_department_id !== input.departmentId;
       if (!changed) return { ok: true, id: old.id, created: false, changed: false };
       await db.execute(
-        sql`UPDATE flows SET subject = ${subject}, due_date = ${due}::date, target_department_id = ${input.departmentId}::uuid, last_activity_at = now(),
+        sql`UPDATE flows SET subject = ${subject}, due_date = ${due}::date, target_department_id = ${input.departmentId}::uuid, last_activity_at = ${sqlNow()},
               overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${due}::date THEN NULL ELSE overdue_alerted_at END
             WHERE id = ${old.id}`,
       );
       await db.execute(
-        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data)
-            VALUES (${old.id}, NULL, 'event', ${JSON.stringify({ details: { due_date: due, subject } })}::jsonb)`,
+        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data, posted_at)
+            VALUES (${old.id}, NULL, 'event', ${JSON.stringify({ details: { due_date: due, subject } })}::jsonb, ${sqlNow()})`,
       );
       void this.versions.record('flows', old.id, 'update_delta', null, { subject, due_date: due }).catch(() => {});
       return { ok: true, id: old.id, created: false, changed: true };
@@ -220,9 +221,9 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
 
     const inserted = (
       await db.execute(
-        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section, confidential)
+        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, due_date, source, source_key, source_section, confidential, opened_at, last_activity_at)
             VALUES (${input.organizationId}, NULL, 'department', ${input.departmentId}::uuid, ${subject}, ${due}::date, ${input.source}, ${input.key}, ${input.section ?? null},
-                    ${input.confidential === true})
+                    ${input.confidential === true}, ${sqlNow()}, ${sqlNow()})
             ON CONFLICT (organization_id, source_key) WHERE source_key IS NOT NULL DO NOTHING
             RETURNING id`,
       )
@@ -233,7 +234,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       return { ok: true, id: again[0]?.id ?? '', created: false, changed: false };
     }
     const id = inserted[0].id;
-    await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body) VALUES (${id}, NULL, 'message', ${message})`);
+    await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body, posted_at) VALUES (${id}, NULL, 'message', ${message}, ${sqlNow()})`);
     void this.versions.record('flows', id, 'insert', null, { source: input.source, source_key: input.key, subject, due_date: due, message }).catch(() => {});
     const handlers = await this.handlerIds(db, {
       organization_id: input.organizationId,
@@ -266,7 +267,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     const keepList = `{${keep.map((k) => `"${k.replace(/["\\]/g, '')}"`).join(',')}}`;
     const closed = (
       await db.execute(
-        sql`UPDATE flows SET status = 'resolved', resolved_at = now(), last_activity_at = now()
+        sql`UPDATE flows SET status = 'resolved', resolved_at = ${sqlNow()}, last_activity_at = ${sqlNow()}
             WHERE organization_id = ${orgId} AND source = ${source} AND status <> 'resolved' AND archived_at IS NULL
               AND (due_date IS NULL OR due_date >= ${dueFrom}::date) AND NOT (source_key = ANY(${keepList}::text[]))
             RETURNING id`,
@@ -274,7 +275,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     ).rows as { id: string }[];
     for (const r of closed) {
       await db.execute(
-        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data) VALUES (${r.id}, NULL, 'event', ${JSON.stringify({ status: 'resolved', obsolete: true })}::jsonb)`,
+        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data, posted_at) VALUES (${r.id}, NULL, 'event', ${JSON.stringify({ status: 'resolved', obsolete: true })}::jsonb, ${sqlNow()})`,
       );
       void this.versions.record('flows', r.id, 'update_delta', null, { status: 'resolved', obsolete: true }).catch(() => {});
     }
@@ -285,7 +286,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
    * Mails the handlers (the assignee, else everyone who handles it) of each open request whose due
    * date has passed in Zurich, once per due date, and notifies them.
    */
-  async alertOverdue(now: Date = new Date()): Promise<number> {
+  async alertOverdue(now: Date = clock.now()): Promise<number> {
     const db = this.db.getDb();
     if (!db || this.running) return 0;
     this.running = true;
@@ -295,7 +296,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       // Claim them first, so a second instance or the next tick never mails twice.
       const due = (
         await db.execute(
-          sql`UPDATE flows SET overdue_alerted_at = now()
+          sql`UPDATE flows SET overdue_alerted_at = ${sqlNow()}
               WHERE due_date < ${today}::date AND overdue_alerted_at IS NULL AND status <> 'resolved' AND archived_at IS NULL
               RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, due_date::text AS due_date`,
         )

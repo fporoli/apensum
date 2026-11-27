@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from './db.service';
 import { audit_logs } from './db/schema';
+import { clock } from './clock';
 
 @Injectable()
 export class AuditService {
@@ -16,6 +17,7 @@ export class AuditService {
       target_type: targetType,
       target_id: targetId,
       metadata,
+      created_at: clock.now().toISOString(),
     });
   }
 }

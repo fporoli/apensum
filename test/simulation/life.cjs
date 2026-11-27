@@ -78,6 +78,16 @@ const day = (d) => d.toISOString().slice(0, 10);
 const addDays = (iso, n) => day(new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000));
 const monthStart = (y, m) => `${y}-${String(m).padStart(2, '0')}-01`;
 const monthEnd = (y, m) => day(new Date(Date.UTC(y, m, 0)));
+/**
+ * The business time during a simulated day: from 8:00 (Zurich in winter) on, a real second ten simulated minutes, at most
+ * until 18:00, so what happens keeps its order and spreads over the working day.
+ */
+function dayTime(d) {
+  const start = Date.parse(`${d}T07:00:00Z`);
+  const real = Date.now();
+  return () => new Date(Math.min(start + (Date.now() - real) * 600, start + 10 * 3_600_000));
+}
+
 /** Calendar days from `a` to `b` (YYYY-MM-DD). */
 const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
 const weekday = (iso) => new Date(`${iso}T00:00:00Z`).getUTCDay();
@@ -171,8 +181,8 @@ class Sim {
     const roles = await this.q(`SELECT id, name FROM roles WHERE organization_id IS NULL`);
     this.roles = Object.fromEntries(roles.map((r) => [r.name, r.id]));
     this.founderDoesHr = true;
-    // SQL: the founding date (the service sets the account's start to now).
-    await this.q(`UPDATE organization_memberships SET joined_at = $1::date, start_date = $1::date WHERE id = $2`, [COMPANY.founded, m.id]);
+    // The founding runs on the founding day (the business clock): the account joined then; its start date as everyone's.
+    await must('employment.startDate', () => this.ctrl('employment.controller', 'EmploymentController').setStartDate(this.org, this.admin.userId, { startDate: COMPANY.founded }, as(this.admin.userId)));
     this.people.push(this.admin);
 
     // Its own finance role: pays expenses (payment runs).
@@ -274,8 +284,6 @@ class Sim {
     Object.assign(person, { userId: session.userId, name: `${first} ${last}`, email, password, start: iso });
     const [m] = await this.q(`SELECT id FROM organization_memberships WHERE organization_id = $1 AND user_id = $2`, [this.org, person.userId]);
     person.membershipId = m.id;
-    // SQL: the account joined on the hiring day (the service says now; leaving before now must stay possible).
-    await this.q(`UPDATE organization_memberships SET joined_at = $1::date WHERE id = $2`, [iso, m.id]);
     await must('employment.startDate', () => employment.setStartDate(this.org, person.userId, { startDate: iso }, as(this.hr(iso))));
     // HR gives the personnel number (payroll and expense payments need it).
     const basic = this.ctrl('basicdata.controller', 'BasicDataController');
@@ -612,12 +620,12 @@ class Sim {
   }
 
   /**
-   * Who answers a flow to the asker's manager: as the API decides it (`membershipManagerId`, the newest assignment up to
-   * the real today, so also one HR planned ahead), not the manager of the simulated day. Nobody when that manager left.
+   * Who answers a flow to the asker's manager: as the API decides it (`membershipManagerId`, the assignment in force on
+   * the business clock's today, the simulated day). Nobody when that manager left.
    */
   async flowManager(p) {
     const [row] = await this.q(`SELECT manager_user_id FROM employee_assignments WHERE organization_id = $1 AND user_id = $2
-      AND valid_from <= CURRENT_DATE ORDER BY valid_from DESC LIMIT 1`, [this.org, p.userId]);
+      AND valid_from <= $3::date ORDER BY valid_from DESC LIMIT 1`, [this.org, p.userId, this.current]);
     if (!row?.manager_user_id) return null;
     if (row.manager_user_id === this.admin.userId) return this.admin;
     return this.people.find((x) => x.userId === row.manager_user_id && x.hired && !(x.exit && x.exit < this.current)) ?? null;
@@ -669,37 +677,6 @@ class Sim {
       if (chance(0.9)) this.schedule(this.workdayFrom(addDays(today, between(0, 3))), () => this.resolveFlow(open, who));
     }
   }
-
-  /**
-   * SQL: the API stamps flows and workflows with the real time; a simulated day's new stamps (since `since`, the
-   * database's time when the day began) are moved to that day, from 8:00 in Zurich on, in the order they happened. So
-   * "the last 30 days", "waiting since" and a step's history read as in a company that lived those years.
-   */
-  async stampDay(d, since) {
-    // $1 the organization, $2 and $4 when the day began and ended (database time), $3 the simulated day: what was
-    // written that day is spread over 8:00 to 17:00 in the order it happened; a time beyond the day's end (a due date
-    // set "in 3 days") moves by as much as the day.
-    const moved = (value) => `((($3::date + time '08:00') AT TIME ZONE 'Europe/Zurich') + CASE WHEN ${value} <= $4
-      THEN EXTRACT(epoch FROM ${value} - $2) / GREATEST(EXTRACT(epoch FROM $4::timestamptz - $2), 0.001) * interval '9 hours'
-      ELSE ${value} - $2 END)`;
-    const at = (col) => `${col} = CASE WHEN ${col} >= $2 THEN ${moved(col)} ELSE ${col} END`;
-    const any = (cols) => cols.map((c) => `${c} >= $2`).join(' OR ');
-    const [{ now: until }] = await this.q('SELECT now()');
-    const params = [this.org, since, d, until];
-    const flowCols = ['opened_at', 'last_activity_at', 'resolved_at', 'archived_at', 'overdue_alerted_at'];
-    await this.pool.query(`UPDATE flows SET ${flowCols.map(at).join(', ')} WHERE organization_id = $1 AND (${any(flowCols)})`, params);
-    await this.pool.query(`UPDATE flow_messages m SET posted_at = ${moved('m.posted_at')} FROM flows r WHERE r.id = m.flow_id AND r.organization_id = $1 AND m.posted_at >= $2`, params);
-    const wfCols = ['workflow_started', 'workflow_finished', 'workflow_to_be_finished_until', 'workflow_step_started', 'workflow_step_finished', 'workflow_step_to_be_finished_until'];
-    // The history's entries (`at`, ISO text) too, in the same statement (it reads the stamps before they move).
-    const entryAt = `(e ->> 'at')::timestamptz`;
-    const history = `CASE WHEN jsonb_typeof(workflow_data -> 'history') = 'array' THEN jsonb_set(workflow_data, '{history}', (
-        SELECT COALESCE(jsonb_agg(CASE WHEN e ->> 'at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' AND ${entryAt} >= $2
-          THEN jsonb_set(e, '{at}', to_jsonb(to_char(${moved(entryAt)} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))
-          ELSE e END ORDER BY n), '[]'::jsonb)
-        FROM jsonb_array_elements(workflow_data -> 'history') WITH ORDINALITY AS h(e, n))) ELSE workflow_data END`;
-    await this.pool.query(`UPDATE workflows SET ${wfCols.map(at).join(', ')}, workflow_data = ${history} WHERE organization_id = $1 AND (${any(wfCols)})`, params);
-  }
-
 
   /** Asks for vacation from `from` on; the manager decides in the next days (now and then no: moved and asked again). */
   async askVacation(p, from, summer) {
@@ -1181,16 +1158,16 @@ async function main() {
   const started = performance.now();
   sim.firstDay = COMPANY.founded;
   sim.current = COMPANY.founded;
-  await sim.found();
+  // The API's business clock (clock.ts) runs on the simulated day: the founding on its day, each day from 8:00 on.
+  const { clock } = dist('clock');
+  await clock.at(new Date(`${COMPANY.founded}T07:00:00Z`), () => sim.found());
   // SIM_UNTIL=YYYY-MM-DD stops early (a quick check of the first years).
   const until = process.env.SIM_UNTIL ?? sim.today;
   // Day after day, from the founding to yesterday.
   for (let d = COMPANY.founded; d < sim.today && d <= until; d = addDays(d, 1)) {
     sim.current = d;
     if (d.endsWith('-01')) sim.planMonth(Number(d.slice(0, 4)), Number(d.slice(5, 7)));
-    const [{ now: since }] = await sim.q('SELECT now()');
-    await sim.live(d);
-    await sim.stampDay(d, since);
+    await clock.at(dayTime(d), () => sim.live(d));
     if (d.endsWith('-12-31')) {
       const open = [...(sim.openByMonth ?? new Map())].filter(([m]) => m.startsWith(d.slice(0, 4))).map(([, n]) => n);
       const range = open.length ? `, open flows at month-end ${Math.min(...open)}-${Math.max(...open)}` : '';

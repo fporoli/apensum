@@ -17,6 +17,7 @@ import { FlowsService, currentAssignments, noticeSubject } from './flows.service
 import { WorkflowsService, type WorkflowStepDefinition } from './workflows.service';
 import { FLOW_STEPS_KIND, visibleThread } from './flow-steps';
 import { cursorOf, parseCursor, parseLimit, parseListFilters, wordsMatch } from './list-filters';
+import { sqlNow, sqlToday } from './clock';
 
 /**
  * Requests (module "requests", packages/shared/src/modules.ts; tables in 052-requests.sql):
@@ -148,7 +149,7 @@ const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', '
 
 const LIST_COLUMNS = sql`r.id, r.subject, r.status, r.flow_type, r.urgent, r.link_url, r.target_kind, r.target_department_id, d.name AS department_name,
   r.due_date::text AS due_date, r.source, r.source_section, r.confidential, r.custom,
-  (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved' AND r.archived_at IS NULL) AS overdue,
+  (r.due_date < ${sqlToday()} AND r.status <> 'resolved' AND r.archived_at IS NULL) AS overdue,
   r.requester_user_id, ru.display_name AS requester_name, ru.email AS requester_email,
   r.assignee_user_id, au.display_name AS assignee_name,
   ${iso('r.opened_at')} AS opened_at, ${iso('r.last_activity_at')} AS last_activity_at,
@@ -279,7 +280,7 @@ export class FlowsController {
   private async addMessage(db: Db, r: { id: string; organization_id: string }, authorId: string, text: string | null, files: Express.Multer.File[]) {
     const [message] = (
       await db.execute(
-        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body) VALUES (${r.id}, ${authorId}, 'message', ${text}) RETURNING id`,
+        sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body, posted_at) VALUES (${r.id}, ${authorId}, 'message', ${text}, ${sqlNow()}) RETURNING id`,
       )
     ).rows as { id: string }[];
     // The document names its message (source_table/source_table_id): that is the link.
@@ -340,7 +341,7 @@ export class FlowsController {
 
   private async event(db: Executor, requestId: string, actorId: string, data: Record<string, unknown>) {
     await db.execute(
-      sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data) VALUES (${requestId}, ${actorId}, 'event', ${JSON.stringify(data)}::jsonb)`,
+      sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data, posted_at) VALUES (${requestId}, ${actorId}, 'event', ${JSON.stringify(data)}::jsonb, ${sqlNow()})`,
     );
   }
 
@@ -428,7 +429,7 @@ export class FlowsController {
     const order = limit
       ? sql`${activity} DESC, r.id DESC LIMIT ${limit}`
       : sql`(r.urgent AND r.status <> 'resolved') DESC,
-            (r.due_date < (now() AT TIME ZONE 'Europe/Zurich')::date AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`;
+            (r.due_date < ${sqlToday()} AND r.status <> 'resolved') DESC, r.last_activity_at DESC LIMIT 500`;
     const rows = await db.execute(sql`SELECT ${LIST_COLUMNS} ${LIST_FROM(orgId)} WHERE ${sql.join(conditions, sql` AND `)} ORDER BY ${order}`);
     return { ok: true, flows: (rows.rows as { id: string; last_activity_at: string | null }[]).map((r) => ({ ...r, cursor: cursorOf({ id: r.id, at: r.last_activity_at }) })) };
   }
@@ -543,9 +544,9 @@ export class FlowsController {
 
     const [created] = (
       await db.execute(
-        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, flow_type, urgent, link_url, due_date, confidential, custom)
+        sql`INSERT INTO flows (organization_id, requester_user_id, target_kind, target_department_id, subject, flow_type, urgent, link_url, due_date, confidential, custom, opened_at, last_activity_at)
             VALUES (${orgId}, ${callerId}, ${target}, ${departmentId}, ${subject}, ${flow_type ?? null}, ${urgent ?? false}, ${link_url ?? null}, ${due_date ?? null}::date,
-                    ${confidential}, ${JSON.stringify(custom.value ?? {})}::jsonb)
+                    ${confidential}, ${JSON.stringify(custom.value ?? {})}::jsonb, ${sqlNow()}, ${sqlNow()})
             RETURNING ${ROW_COLUMNS}`,
       )
     ).rows as unknown as FlowRecord[];
@@ -597,7 +598,7 @@ export class FlowsController {
     const fileNames = files.map((f) => f.originalname);
     if (status !== a.r.status) await this.event(db, id, callerId, { status });
     await db.execute(
-      sql`UPDATE flows SET last_activity_at = now(), status = ${status},
+      sql`UPDATE flows SET last_activity_at = ${sqlNow()}, status = ${status},
             resolved_at = CASE WHEN ${status} = 'resolved' THEN resolved_at ELSE NULL END
           WHERE id = ${id}`,
     );
@@ -625,8 +626,8 @@ export class FlowsController {
       return { ok: false, error: a.r.archived_at ? 'flow-archived' : 'forbidden' };
     }
     await db.execute(
-      sql`UPDATE flows SET status = ${to}, last_activity_at = now(),
-            resolved_at = CASE WHEN ${to} = 'resolved' THEN now() ELSE NULL END
+      sql`UPDATE flows SET status = ${to}, last_activity_at = ${sqlNow()},
+            resolved_at = CASE WHEN ${to} = 'resolved' THEN ${sqlNow()} ELSE NULL END
           WHERE id = ${id}`,
     );
     await this.event(db, id, callerId, { status: to });
@@ -677,7 +678,7 @@ export class FlowsController {
     await db.execute(
       sql`UPDATE flows SET flow_type = ${next.flow_type}, urgent = ${next.urgent}, link_url = ${next.link_url}, due_date = ${next.due_date}::date,
             confidential = ${confidential}, custom = ${JSON.stringify(customChanged ? custom.value : current)}::jsonb,
-            overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${next.due_date}::date THEN NULL ELSE overdue_alerted_at END, last_activity_at = now()
+            overdue_alerted_at = CASE WHEN due_date IS DISTINCT FROM ${next.due_date}::date THEN NULL ELSE overdue_alerted_at END, last_activity_at = ${sqlNow()}
           WHERE id = ${id}`,
     );
     await this.event(db, id, callerId, { details: { ...changed, ...(customChanged ? { custom: true } : {}) } });
@@ -705,7 +706,7 @@ export class FlowsController {
     const current = await this.workflowOf(db, a.r, callerId);
     if (!current?.returned) return { ok: false, error: 'not-returned' };
     const note = cleanFlowText(body?.note, MAX_BODY);
-    await db.execute(sql`UPDATE flows SET status = 'open', resolved_at = NULL, last_activity_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE flows SET status = 'open', resolved_at = NULL, last_activity_at = ${sqlNow()} WHERE id = ${id}`);
     await this.event(db, id, callerId, { workflow: 'resubmitted', ...(note ? { note } : {}) });
     const who = await this.displayName(db, callerId);
     const started = await this.workflowsSvc.start(db, {
@@ -728,7 +729,7 @@ export class FlowsController {
     if (!a) return { ok: false, error: 'not-found' };
     if (!a.requester || a.r.target_kind !== 'workflow' || a.r.archived_at || a.r.status === 'resolved') return { ok: false, error: 'forbidden' };
     await this.workflowsSvc.withdraw(db, 'flows', id, callerId);
-    await db.execute(sql`UPDATE flows SET status = 'resolved', resolved_at = now(), last_activity_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE flows SET status = 'resolved', resolved_at = ${sqlNow()}, last_activity_at = ${sqlNow()} WHERE id = ${id}`);
     await this.event(db, id, callerId, { workflow: 'withdrawn' });
     void this.versions.record('flows', id, 'update_delta', callerId, { status: 'resolved', withdrawn: true }).catch(() => {});
     return { ok: true };
@@ -747,7 +748,7 @@ export class FlowsController {
     if (a.r.archived_at) return { ok: false, error: 'flow-archived' };
     const assignee = body.release ? null : callerId;
     const status: FlowStatus = !body.release && a.r.status === 'open' ? 'in_progress' : a.r.status;
-    await db.execute(sql`UPDATE flows SET assignee_user_id = ${assignee}, status = ${status}, last_activity_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE flows SET assignee_user_id = ${assignee}, status = ${status}, last_activity_at = ${sqlNow()} WHERE id = ${id}`);
     await this.event(db, id, callerId, { assignee, ...(status !== a.r.status ? { status } : {}) });
     void this.versions.record('flows', id, 'update_delta', callerId, { assignee_user_id: assignee, status }).catch(() => {});
     if (!body.release) {
@@ -769,7 +770,7 @@ export class FlowsController {
     if (!a) return { ok: false, error: 'not-found' };
     if (!a.handler) return { ok: false, error: 'forbidden' };
     const archived = body.archived !== false;
-    await db.execute(sql`UPDATE flows SET archived_at = ${archived ? sql`now()` : sql`NULL`}, last_activity_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE flows SET archived_at = ${archived ? sqlNow() : sql`NULL`}, last_activity_at = ${sqlNow()} WHERE id = ${id}`);
     await this.event(db, id, callerId, { archived });
     void this.versions.record('flows', id, 'update_delta', callerId, { archived }).catch(() => {});
     return { ok: true, archived };

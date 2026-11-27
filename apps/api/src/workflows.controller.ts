@@ -9,6 +9,7 @@ import { workflows, workflow_definitions, timesheet_periods, absences, users } f
 import { WorkflowsService, workflowHistory, type WorkflowStepDefinition } from './workflows.service';
 import { ForwardMailService, type ForwardInput } from './forward-mail.service';
 import { cursorOf, isUuid, parseCursor, parseLimit, parseListFilters, wordsMatch } from './list-filters';
+import { sqlNow } from './clock';
 
 /**
  * Generic surface over any workflow_definitions-driven approval: a manager's
@@ -83,7 +84,7 @@ export class WorkflowsController {
     // WORKFLOW_RECALL_DAYS days (default 5), now with someone else or finished: by the history's entries.
     const recalled = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(${workflows.workflow_data} -> 'history') = 'array' THEN ${workflows.workflow_data} -> 'history' ELSE '[]'::jsonb END) e
       WHERE e ->> 'by' = ${callerId} AND e ->> 'key' <> 'approvals.event.submitted'
-        AND CASE WHEN e ->> 'at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN (e ->> 'at')::timestamptz END >= now() - make_interval(days => ${workflowRecallDays()}))`;
+        AND CASE WHEN e ->> 'at' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN (e ->> 'at')::timestamptz END >= ${sqlNow()} - make_interval(days => ${workflowRecallDays()}))`;
     const who = scope === 'mine'
       ? sql`${workflows.workflow_data} ->> 'submittedByUserId' = ${callerId}`
       : status === 'all' ? or(assignment, recalled)! : assignment;
