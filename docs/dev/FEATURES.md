@@ -67,3 +67,8 @@ Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere 
   The colorful look (`branding.colorful`, off by default) colors each navigation entry (`colorful.ts` `navColor`: fixed per section, a hash for others) and gives buttons an icon by what their text means: the key of the text (`common.save`, `roster.publish`, ...) names the action (`buttonActionOfKey`; a text several keys share goes by most of them), `Button.tsx` adds it; a button with its own icon keeps it.\
   App.tsx loads it per org into `BrandingContext`; `createAppTheme(mode, branding)` applies it.\
   Seeded logos are `infra/postgres/seeds/branding/*.svg`, base64-inlined in `seed.sql`.
+- Information (user menu, `AboutDialog.tsx`, `GET about`): four tabs.\
+  General: release, commit and build date of the web app and the API.\
+  Plugins: each installed plugin's version, commit and date.\
+  About: © Fabio Poroli, the license (the core GNU AGPL-3.0-only, the add-on modules proprietary, as the website says) with links to the license and the source code (`github.com/fporoli/apensum`, at the API's commit when it is known): the AGPL asks that everyone using it over the network is offered the source.\
+  Support: server (host, environment, Node.js and the latest migration for operators only) and the logged-in user, and "Copy for support" puts everything as text on the clipboard.

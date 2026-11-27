@@ -18,6 +18,7 @@ import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon } fro
 import { formatRelativeTime } from './localeFormat';
 import { NO_FILTERS, flowQueries, flowRows, shownFrom, type FlowFilters, type FlowFocus, type FlowRow, type FlowsTab } from './flowRows';
 import { PLUGIN_WORKFLOW_KINDS } from './plugins';
+import { VISIBLE_SCROLLBAR } from './scrollbars';
 export type { FlowFocus, FlowsTab } from './flowRows';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -51,20 +52,13 @@ const TABS: Record<FlowsTab, { scope: Scope; status: StatusFilter }> = {
 /** The built-in kinds for the type filter (definition names), besides the plugins'. */
 const CORE_DEFINITIONS = ['approve absence', 'approve timesheet', 'approve project timesheet', 'reopen approved timesheet'];
 const PERIODS = [30, 90, 365] as const;
-/**
- * A column of the list and flow side by side: sticky below the app bar, as high as the window, scrolling inside. Its
- * scroll bar is drawn always (macOS and Chrome otherwise show one only while scrolling, and a long list looks like it
- * ends at the window's bottom); Firefox keeps its own.
- */
+/** A column of the list and flow side by side: sticky below the app bar, as high as the window, scrolling inside. */
 const PANE = {
   position: { md: 'sticky' },
   top: { md: 80 },
   maxHeight: { md: 'calc(100vh - 96px)' },
   overflowY: { md: 'auto' },
-  '&::-webkit-scrollbar': { width: 10 },
-  '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-  '&::-webkit-scrollbar-thumb': { backgroundColor: 'rgba(128, 128, 128, 0.45)', borderRadius: 5, border: '2px solid transparent', backgroundClip: 'padding-box' },
-  '&::-webkit-scrollbar-thumb:hover': { backgroundColor: 'rgba(128, 128, 128, 0.7)' },
+  ...VISIBLE_SCROLLBAR,
 } as const;
 
 type Person = { userId: string; name: string; email: string };
