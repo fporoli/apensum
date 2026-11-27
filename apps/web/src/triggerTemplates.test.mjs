@@ -11,12 +11,13 @@ const FLOWS = {
   each: true,
   facts: { urgent: 'boolean' },
   blocks: {
+    task: { label: 'Task', action: 'flow.done', returnAction: 'flow.returned', assignees: ['manager', 'department', 'team', 'person'] },
     compose: { label: 'Write an e-mail', action: 'flow.done', returnAction: 'flow.returned', assignees: ['manager', 'department', 'team', 'person'], message: true, compose: true },
   },
   defaultConfig: { version: 1, steps: [] },
 };
 
-test('every template is a valid flow type configuration: one e-mail step to the person, to the department by its code', () => {
+test('every template is a valid flow type configuration: an e-mail step to the person first, to the department by its code', () => {
   for (const tpl of TRIGGER_TEMPLATES) {
     const config = templateConfig(tpl, 'hr');
     const checked = validateWorkflowConfig(FLOWS, config);
@@ -30,6 +31,11 @@ test('every template is a valid flow type configuration: one e-mail step to the 
       if (l === 'de') assert.doesNotMatch(tpl.text[l], /\b(du|dich|dir|dein\w*)\b/i, tpl.event);
     }
   }
+  // The permit's goes on to a task for the same department, reminded after ten working days, and may go back to the e-mail.
+  const permit = templateConfig(TRIGGER_TEMPLATES[0], 'hr');
+  assert.deepEqual(permit.steps.map((s) => [s.key, s.do[0], s.assignTo, s.reject, s.remindDays]), [
+    ['mail', 'compose', 'department:hr', 'back', undefined], ['record', 'task', 'department:hr', 'back', 10],
+  ]);
   // The core's own events only; HR-Prozesse brings its own (plugins/hr/shared/trigger-templates.ts).
   assert.deepEqual(TRIGGER_TEMPLATES.map((t) => t.event), ['permitExpires']);
 });

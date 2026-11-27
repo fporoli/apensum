@@ -1,5 +1,6 @@
-// Vorlagen of the Auslöser tab (web FlowTriggers.tsx): a trigger together with a flow type whose one step writes an
-// e-mail to the person the flow is about from a template (block `compose`), then is done. The API creates them
+// Vorlagen of the Auslöser tab (web FlowTriggers.tsx): a trigger together with a flow type whose first step writes an
+// e-mail to the person the flow is about from a template (block `compose`), then is done, or goes on to a task
+// (`followUp`: the permit's "Neue Bewilligung erfassen"). The API creates them
 // (POST flow-triggers/templates, for whoever may set up the event's triggers): the flow type, its steps, the trigger, as
 // a person would by hand. Pure, tested in apps/web/src/triggerTemplates.test.mjs (each passes the shared checker).
 
@@ -17,6 +18,11 @@ export interface TriggerTemplate {
   stepLabel: PerLang;
   subject: PerLang;
   text: PerLang;
+  /**
+   * A task for the same department after the e-mail went out (e.g. enter the new permit): the flow is done only when
+   * it is. It may be sent back to the e-mail (to write again); its assignees are reminded after `remindDays`.
+   */
+  followUp?: { key: string; label: PerLang; remindDays?: number };
 }
 
 export const WRITE_EMAIL: PerLang = { de: 'E-Mail schreiben', fr: 'Écrire un e-mail', it: "Scrivere un'e-mail", en: 'Write an e-mail' };
@@ -29,6 +35,11 @@ export const TRIGGER_TEMPLATES: readonly TriggerTemplate[] = [
     typeName: { de: 'Bewilligung erneuern', fr: "Renouveler l'autorisation", it: 'Rinnovare il permesso', en: 'Renew the permit' },
     leadDays: 90,
     stepLabel: WRITE_EMAIL,
+    followUp: {
+      key: 'record',
+      label: { de: 'Neue Bewilligung erfassen', fr: 'Saisir la nouvelle autorisation', it: 'Registrare il nuovo permesso', en: 'Record the new permit' },
+      remindDays: 10,
+    },
     subject: {
       de: 'Ihre Bewilligung läuft am {{date}} ab',
       fr: 'Votre autorisation échoit le {{date}}',
@@ -50,18 +61,23 @@ export const TRIGGER_TEMPLATES: readonly TriggerTemplate[] = [
  * trigger has nobody to send it back to, so its card hides that).
  */
 export function templateConfig(tpl: TriggerTemplate, departmentCode: string) {
-  return {
-    version: 1,
-    steps: [{
-      key: 'mail',
-      do: ['compose'],
-      assignTo: `department:${departmentCode}`,
-      reject: 'back',
-      mailTo: 'about',
-      label: tpl.stepLabel,
-      message: { subject: tpl.subject, text: tpl.text },
-    }],
-  };
+  const assignTo = `department:${departmentCode}`;
+  const steps: Record<string, unknown>[] = [{
+    key: 'mail',
+    do: ['compose'],
+    assignTo,
+    reject: 'back',
+    mailTo: 'about',
+    label: tpl.stepLabel,
+    message: { subject: tpl.subject, text: tpl.text },
+  }];
+  if (tpl.followUp) {
+    steps.push({
+      key: tpl.followUp.key, do: ['task'], assignTo, reject: 'back', label: tpl.followUp.label,
+      ...(tpl.followUp.remindDays ? { remindDays: tpl.followUp.remindDays } : {}),
+    });
+  }
+  return { version: 1, steps };
 }
 
 /** A flow type key not yet taken: the template's, else with _2, _3, ... */
