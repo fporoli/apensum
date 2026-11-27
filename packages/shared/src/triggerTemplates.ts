@@ -70,8 +70,9 @@ export const TRIGGER_TEMPLATES: readonly TriggerTemplate[] = [
 
 /**
  * The flow type's steps for a template: the e-mail to the person the flow is about, by the handler (`department:<code>`
- * or the template's permission), then its tasks (`then`). The first may be sent back (the engine's rule for a first
- * step; a task opened by a trigger has nobody to send it back to, so its card hides that), the others not.
+ * or the template's permission), then its tasks (`then`). Each may be sent back (the engine's rule for the first step
+ * someone acts on, so the e-mail may become an automatic mail; a task opened by a trigger has nobody to send it back
+ * to, so its card hides that).
  */
 export function templateConfig(tpl: TriggerTemplate, departmentCode: string | null) {
   const handler = tpl.handler && tpl.handler !== 'department' ? tpl.handler : `department:${departmentCode ?? ''}`;
@@ -86,7 +87,7 @@ export function templateConfig(tpl: TriggerTemplate, departmentCode: string | nu
   }];
   for (const s of tpl.then ?? []) {
     steps.push({
-      key: s.key, do: ['task'], assignTo: s.by === 'about' ? 'about' : handler, reject: 'none', label: s.label,
+      key: s.key, do: ['task'], assignTo: s.by === 'about' ? 'about' : handler, reject: 'back', label: s.label,
       ...(s.remindDays ? { remindDays: s.remindDays } : {}),
     });
   }

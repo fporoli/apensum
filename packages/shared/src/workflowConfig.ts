@@ -377,6 +377,10 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
   const keys = new Set<string>();
   const done = new Set<string>();
   const out: WorkflowStepConfig[] = [];
+  // The first step someone acts on: automatic ones before it (a mail first, e.g. to the person a task is about) don't
+  // count, so the rules of a first step (it applies always, it can be sent back) hold for it.
+  const automaticOnly = (s: unknown) => isObject(s) && Array.isArray(s.do) && s.do.length > 0 && s.do.every((b) => typeof b === 'string' && !!kind.blocks[b]?.automatic);
+  const firstWork = Math.max(0, steps.findIndex((s) => !automaticOnly(s)));
   steps.forEach((s, i) => {
     const at = `steps[${i}]`;
     if (!isObject(s)) { errors.push({ path: at, code: 'not-an-object' }); return; }
@@ -407,11 +411,11 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     if (!REJECT_MODES.includes(reject as RejectMode) || !kind.rejectModes.includes(reject as RejectMode)) errors.push({ path: `${at}.reject`, code: 'invalid-reject' });
     else if (reject !== 'none' && !blocks.every((b: string) => kind.blocks[b]?.returnAction)) errors.push({ path: `${at}.reject`, code: 'not-rejectable' });
     if (s.when !== undefined) {
-      if (i === 0 && kind.firstStepDecides !== false) errors.push({ path: `${at}.when`, code: 'first-step-condition' });
+      if ((i === 0 || i === firstWork) && kind.firstStepDecides !== false) errors.push({ path: `${at}.when`, code: 'first-step-condition' });
       else if (blocks.some((b: string) => kind.blocks[b]?.last)) errors.push({ path: `${at}.when`, code: 'last-step-condition' });
       else errors.push(...conditionErrors(s.when, kind.facts, `${at}.when`));
     }
-    if (i === 0 && reject === 'none' && kind.firstStepDecides !== false) errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
+    if (i === firstWork && !automaticOnly(s) && reject === 'none' && kind.firstStepDecides !== false) errors.push({ path: `${at}.reject`, code: 'first-step-decides' });
     let label: WorkflowStepConfig['label'];
     if (s.label !== undefined) {
       if (!isObject(s.label) || Object.entries(s.label).some(([l, v]) => !(LANGS as readonly string[]).includes(l) || typeof v !== 'string' || v.length > 60)) {

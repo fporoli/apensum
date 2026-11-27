@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileWorkflow, fillPlaceholders, validateWorkflowConfig } from '@worktime3/shared/workflowConfig';
 import { FLOW_CATALOGUE } from '../../apps/api/src/flow-steps';
-import { composeDate, composeMailText, composeValues, parseCc } from '../../apps/api/src/flow-compose';
+import { composeDate, composeMailText, composeValues, filledMessage, parseCc } from '../../apps/api/src/flow-compose';
 import { WorkflowsService, composeSent, takenOf } from '../../apps/api/src/workflows.service';
 
 const message = { subject: { de: '{{years}} Dienstjahre: {{name}}' }, text: { de: 'Liebe/r {{firstName}}, am {{date}} … {{unknown}}' } };
@@ -164,4 +164,16 @@ test('the engine gives an `about` step to the person the task is about (an activ
   assert.deepEqual(await assignees(db, 'o1', { key: 'upload', assignTo: 'about', blocks: ['task'] }, undefined, 'sys', 'uma'), ['uma']);
   // Without a task's person: who submitted it.
   assert.deepEqual(await assignees(db, 'o1', { key: 'upload', assignTo: 'about', blocks: ['task'] }, 'uma', 'sys'), ['uma']);
+});
+
+test('an automatic mail fills its placeholders in every language; a first step may be one, the next then decides', () => {
+  const m = filledMessage({ subject: { de: 'Bewilligung bis {{date}}', en: 'Permit until {{date}}' }, text: { de: 'Hallo {{firstName}}, {{sender}}' } }, { date: '11.01.2027', firstName: 'Uma', sender: 'Acme' });
+  assert.deepEqual(m, { subject: { de: 'Bewilligung bis 11.01.2027', en: 'Permit until 11.01.2027' }, text: { de: 'Hallo Uma, Acme' } });
+  const mailFirst = (reject: string) => validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [
+    { key: 'mail', do: ['mail'], assignTo: 'about', message },
+    { key: 'upload', do: ['task'], assignTo: 'about', reject },
+  ] });
+  assert.ok(mailFirst('back').ok);
+  const none = mailFirst('none');
+  assert.ok(!none.ok && none.errors.some((e) => e.code === 'first-step-decides' && e.path === 'steps[1].reject'));
 });

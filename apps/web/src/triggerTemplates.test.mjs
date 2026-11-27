@@ -37,9 +37,13 @@ test('every template is a valid flow type configuration: an e-mail step to the p
   const permit = templateConfig(tpl, null);
   const hr = 'permission:section.basicdata.personalien';
   assert.deepEqual(permit.steps.map((s) => [s.key, s.do[0], s.assignTo, s.reject, s.remindDays]), [
-    ['mail', 'compose', hr, 'back', undefined], ['upload', 'task', 'about', 'none', 5], ['record', 'task', hr, 'none', 5],
+    ['mail', 'compose', hr, 'back', undefined], ['upload', 'task', 'about', 'back', 5], ['record', 'task', hr, 'back', 5],
   ]);
   assert.ok(validateWorkflowConfig(FLOWS, permit).ok);
+  // The e-mail may become an automatic mail to the person: the upload is then the first step someone acts on.
+  const mailFirst = { ...permit, steps: [{ key: 'mail', do: ['mail'], assignTo: 'about', message: permit.steps[0].message }, ...permit.steps.slice(1)] };
+  const auto = { ...FLOWS, blocks: { ...FLOWS.blocks, mail: { label: 'E-mail', action: 'flow.mail', assignees: ['about'], automatic: true, message: true } } };
+  assert.ok(validateWorkflowConfig(auto, mailFirst).ok, JSON.stringify(validateWorkflowConfig(auto, mailFirst).errors));
   // The core's own events only; HR-Prozesse brings its own (plugins/hr/shared/trigger-templates.ts).
   assert.deepEqual(TRIGGER_TEMPLATES.map((t) => t.event), ['permitExpires']);
 });

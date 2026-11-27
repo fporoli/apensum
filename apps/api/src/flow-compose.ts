@@ -5,7 +5,7 @@
 // see the flow); the step is done only after it went out (WorkflowsService.resolve: `mail-not-sent`).
 import { Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { fillPlaceholders, messageText, type MailTo } from '@worktime3/shared/workflowConfig';
+import { fillPlaceholders, messageText, type MailTo, type StepMessage } from '@worktime3/shared/workflowConfig';
 import { actingManagerId } from './access';
 import { AuditService } from './audit.service';
 import { sqlNow } from './clock';
@@ -62,6 +62,12 @@ export function parseCc(raw: unknown, to: readonly string[]): string[] | null {
   if (!Array.isArray(raw) || !raw.every((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x))) return null;
   const ids = [...new Set(raw as string[])].filter((id) => !to.includes(id));
   return ids.length > 10 ? null : ids;
+}
+
+/** A step's message with its placeholders filled in every language (an automatic mail's, flow-steps.ts). */
+export function filledMessage(message: StepMessage, values: Record<string, string | null>): StepMessage {
+  const fill = (m: Partial<Record<string, string>> | undefined) => m && Object.fromEntries(Object.entries(m).map(([l, v]) => [l, fillPlaceholders(v ?? '', values)]));
+  return { ...message, subject: fill(message.subject) ?? {}, ...(message.text ? { text: fill(message.text) } : {}) };
 }
 
 interface FlowRow {

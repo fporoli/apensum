@@ -10,6 +10,7 @@ import { VersionsService } from './versions.service';
 import { WorkflowsService, type WorkflowActionContext, type WorkflowKind } from './workflows.service';
 import { sendMail } from './mailer';
 import { workflowMail, type MailAnswer } from './workflow-mail';
+import { composeLang, composeValues, filledMessage } from './flow-compose';
 import { sqlNow, sqlToday } from './clock';
 
 /** The configurable kind of a request's workflow: one per request type (its key is the variant). */
@@ -125,8 +126,21 @@ export class FlowSteps implements OnModuleInit {
     this.workflows.registerAction('flow.mail', async (db, ctx) => {
       const recipients = ctx.recipients ?? [];
       if (!ctx.message || recipients.length === 0) return;
-      const [r] = (await db.execute(sql`SELECT id, organization_id, subject, confidential, requester_user_id FROM flows WHERE id = ${ctx.sourceTableUuid}::uuid`)).rows as { id: string; organization_id: string; subject: string; confidential: boolean; requester_user_id: string | null }[];
+      const [r] = (await db.execute(sql`
+        SELECT f.id, f.organization_id, f.subject, f.confidential, f.requester_user_id, f.task_data, o.name AS org_name,
+               COALESCE(a.display_name, a.email) AS about_name, a.first_name AS about_first_name
+        FROM flows f JOIN organizations o ON o.id = f.organization_id
+        LEFT JOIN users a ON a.id = COALESCE(f.about_user_id, f.requester_user_id)
+        WHERE f.id = ${ctx.sourceTableUuid}::uuid`)).rows as {
+          id: string; organization_id: string; subject: string; confidential: boolean; requester_user_id: string | null;
+          task_data: Record<string, unknown> | null; org_name: string; about_name: string | null; about_first_name: string | null;
+        }[];
       if (!r) return;
+      // The template's placeholders as "E-Mail schreiben" fills them; the sender is the organization (nobody wrote it).
+      const messageFor = (locale: string | null) => filledMessage(ctx.message!, composeValues({
+        aboutName: r.about_name, aboutFirstName: r.about_first_name, subject: r.subject, confidential: !!r.confidential,
+        taskData: r.task_data, senderName: r.org_name,
+      }, composeLang(locale)));
       const answers = ctx.message.answers && !r.confidential
         ? ((await db.execute(sql`
             SELECT COALESCE(u.display_name, u.email) AS name, m.data->'values' AS values, COALESCE((m.data->>'private')::boolean, false) AS private
@@ -141,7 +155,7 @@ export class FlowSteps implements OnModuleInit {
         if (!u.email) continue;
         // Answers for the requester only go to the requester alone.
         const theirs = answers.filter((a) => !a.private || u.id === r.requester_user_id).map(({ private: _p, ...a }) => a);
-        const mail = workflowMail({ message: ctx.message, request: { id: r.id, subject: r.subject, confidential: !!r.confidential }, answers: theirs }, u.locale);
+        const mail = workflowMail({ message: messageFor(u.locale), request: { id: r.id, subject: r.subject, confidential: !!r.confidential }, answers: theirs }, u.locale);
         await sendMail({ to: u.email, subject: mail.subject, text: mail.text }, 15_000).catch((err) => console.warn(`workflow mail for request ${r.id} failed: ${err instanceof Error ? err.message : err}`));
       }
       await threadEvent(db, ctx, 'mailed');

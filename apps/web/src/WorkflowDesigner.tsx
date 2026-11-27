@@ -205,12 +205,18 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     const { each: _each, ...base } = rest;
     const keep = blockAllows(allows, rest.assignTo);
     const back = !keep && kept.assignTo && blockAllows(allows, kept.assignTo) ? kept.assignTo : null;
+    // "Send back" only where every block can be sent back (an automatic mail cannot); kept aside for a change back.
+    const rejectable = doBlocks.every((b) => kind.blocks[b]?.canReturn);
+    const ownReject = rest.reject && rest.reject !== 'none' ? rest.reject : kept.reject;
+    const reject: RejectMode | undefined = !rejectable ? 'none' : rest.reject === 'none' && kept.reject ? kept.reject : rest.reject;
     aside.current = {
       ...(fields ? { fields } : {}), ...(message ? { message } : {}), ...(privateAnswers ? { privateAnswers } : {}), ...(mailTo ? { mailTo } : {}),
       ...(keep ? (kept.assignTo ? { assignTo: kept.assignTo } : {}) : { assignTo: rest.assignTo }),
+      ...(ownReject ? { reject: ownReject } : {}),
     };
+    const moved = keep ? rest : { ...base, assignTo: back ?? defaultAssignee(allows) };
     return {
-      ...(keep ? rest : { ...base, assignTo: back ?? defaultAssignee(allows) }), do: doBlocks,
+      ...moved, ...(reject ? { reject } : {}), do: doBlocks,
       ...(asks ? { fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : {}),
       ...(asks && privateAnswers ? { privateAnswers: true } : {}),
       ...(sends ? { message: message ?? { subject: {} } } : {}),
