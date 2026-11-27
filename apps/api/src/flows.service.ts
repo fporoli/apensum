@@ -56,6 +56,8 @@ const MAX_SUBJECT = 200;
 const MAX_BODY = 10_000;
 /** How often the overdue alerts are looked for. */
 const ALERT_TICK_MS = 10 * 60_000;
+/** An urgent flow nobody has taken reminds its handlers after this long (once). */
+export const URGENT_UNTAKEN_MS = 4 * 3_600_000;
 
 type Lang = 'en' | 'de' | 'fr' | 'it';
 const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: string; title: string; confidential: string }> = {
@@ -92,6 +94,13 @@ const OVERDUE: Record<Lang, { subject: string; body: string; due: string; open: 
     open: 'Apri',
   },
 };
+/** The reminder that an urgent flow is still waiting for someone to take it (alertUrgentUntaken). */
+const URGENT_UNTAKEN: Record<Lang, { subject: string; body: string; open: string; confidential: string }> = {
+  en: { subject: 'Urgent, nobody has taken it yet: {{subject}}', body: 'This urgent flow has been waiting for {{hours}} hours without anyone taking it. Could you?', open: 'Open', confidential: 'Confidential flow' },
+  de: { subject: 'Dringend, noch niemand hat übernommen: {{subject}}', body: 'Dieser dringende Flow wartet seit {{hours}} Stunden, ohne dass ihn jemand übernommen hat. Können Sie es tun?', open: 'Öffnen', confidential: 'Vertraulicher Flow' },
+  fr: { subject: 'Urgent, personne ne l’a encore pris : {{subject}}', body: 'Ce flow urgent attend depuis {{hours}} heures sans que personne ne l’ait pris. Pouvez-vous le faire ?', open: 'Ouvrir', confidential: 'Flow confidentiel' },
+  it: { subject: 'Urgente, nessuno l’ha ancora preso: {{subject}}', body: 'Questo flow urgente attende da {{hours}} ore senza che nessuno l’abbia preso. Può farlo lei?', open: 'Apri', confidential: 'Flow confidenziale' },
+};
 const SWISS: Record<Lang, string> = { en: 'en-CH', de: 'de-CH', fr: 'fr-CH', it: 'it-CH' };
 const fill = (text: string, v: Record<string, string>) => text.replace(/\{\{(\w+)\}\}/g, (_, k: string) => v[k] ?? '');
 const langOf = (locale: string | null | undefined): Lang => {
@@ -108,6 +117,23 @@ export function noticeSubject(r: { subject: string; confidential?: boolean }): s
 }
 
 /** The overdue alert's mail in the recipient's language; a confidential request's without its subject. */
+/**
+ * Who hears that a flow is overdue: whoever has taken it, else everyone who handles it; an urgent one everyone who
+ * handles it as well, so someone can take it over.
+ */
+export function overdueRecipients(assignee: string | null, handlers: readonly string[], urgent: boolean): string[] {
+  if (!assignee) return [...new Set(handlers)];
+  return urgent ? [...new Set([assignee, ...handlers])] : [assignee];
+}
+
+export function urgentUntakenMail(r: { subject: string; confidential?: boolean; id: string }, locale: string | null | undefined): { subject: string; text: string; title: string } {
+  const m = URGENT_UNTAKEN[langOf(locale)];
+  const shown = r.confidential ? m.confidential : r.subject;
+  const vars = { subject: shown, hours: String(URGENT_UNTAKEN_MS / 3_600_000) };
+  const link = `${appBaseUrl()}/#/flows?id=${r.id}`;
+  return { subject: fill(m.subject, vars).slice(0, 250), title: fill(m.subject, vars), text: `${fill(m.body, vars)}\n\n${shown}\n\n${m.open}: ${link}\n` };
+}
+
 export function overdueMail(r: { subject: string; confidential?: boolean; due_date: string; id: string }, locale: string | null | undefined): { subject: string; text: string; title: string } {
   const lang = langOf(locale);
   const m = OVERDUE[lang];
@@ -142,7 +168,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (process.env.REQUEST_ALERTS === 'off' || !this.db.getDb()) return;
-    this.timer = setInterval(() => void this.alertOverdue(), ALERT_TICK_MS);
+    this.timer = setInterval(() => void this.alertOverdue().then(() => this.alertUrgentUntaken()), ALERT_TICK_MS);
     this.timer.unref?.();
   }
 
@@ -160,11 +186,16 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       return manager ? [manager] : [];
     }
     const rows = await db.execute(
+      // Whoever is in the department today, and its leader, while they are still there (not past their exit).
       sql`SELECT a.user_id FROM (${currentAssignments(r.organization_id)}) a
             JOIN organization_memberships m ON m.organization_id = ${r.organization_id} AND m.user_id = a.user_id AND m.status = 'active'
+              AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
             WHERE a.department_id = ${r.target_department_id}
           UNION
-          SELECT leader_user_id FROM departments WHERE id = ${r.target_department_id} AND leader_user_id IS NOT NULL`,
+          SELECT d.leader_user_id FROM departments d
+            JOIN organization_memberships lm ON lm.organization_id = ${r.organization_id} AND lm.user_id = d.leader_user_id AND lm.status = 'active'
+              AND (lm.exit_at IS NULL OR lm.exit_at > ${sqlNow()})
+            WHERE d.id = ${r.target_department_id}`,
     );
     return rows.rows.map((x: Record<string, unknown>) => x.user_id as string);
   }
@@ -298,12 +329,13 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
         await db.execute(
           sql`UPDATE flows SET overdue_alerted_at = ${sqlNow()}
               WHERE due_date < ${today}::date AND overdue_alerted_at IS NULL AND status <> 'resolved' AND archived_at IS NULL
-              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, due_date::text AS due_date`,
+              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, assignee_user_id, subject, confidential, urgent, due_date::text AS due_date`,
         )
-      ).rows as unknown as (FlowTarget & { id: string; assignee_user_id: string | null; subject: string; confidential: boolean; due_date: string })[];
+      ).rows as unknown as (FlowTarget & { id: string; assignee_user_id: string | null; subject: string; confidential: boolean; urgent: boolean; due_date: string })[];
       for (const r of due) {
         if (!(await this.enabled(db, r.organization_id))) continue;
-        const recipients = r.assignee_user_id ? [r.assignee_user_id] : await this.handlerIds(db, r);
+        const handlers = !r.assignee_user_id || r.urgent ? await this.handlerIds(db, r) : [];
+        const recipients = overdueRecipients(r.assignee_user_id, handlers, r.urgent);
         if (recipients.length === 0) continue;
         const users = (
           await db.execute(
@@ -341,4 +373,57 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     }
     return sent;
   }
+  /**
+   * An urgent flow nobody has taken (open, no assignee) for URGENT_UNTAKEN_MS reminds everyone who handles it, once
+   * (`urgent_alerted_at`), with a notification and a mail; a confidential one names neither subject nor text.
+   */
+  async alertUrgentUntaken(now: Date = clock.now()): Promise<number> {
+    const db = this.db.getDb();
+    if (!db || this.running) return 0;
+    this.running = true;
+    let sent = 0;
+    try {
+      const since = new Date(now.getTime() - URGENT_UNTAKEN_MS).toISOString();
+      // Claim them first, so a second instance or the next tick never mails twice.
+      const waiting = (
+        await db.execute(
+          sql`UPDATE flows SET urgent_alerted_at = ${sqlNow()}
+              WHERE urgent AND urgent_alerted_at IS NULL AND status = 'open' AND assignee_user_id IS NULL AND archived_at IS NULL
+                AND target_kind IN ('manager', 'department') AND opened_at <= ${since}::timestamptz
+              RETURNING id, organization_id, requester_user_id, target_kind, target_department_id, subject, confidential`,
+        )
+      ).rows as unknown as (FlowTarget & { id: string; subject: string; confidential: boolean })[];
+      for (const r of waiting) {
+        if (!(await this.enabled(db, r.organization_id))) continue;
+        const recipients = (await this.handlerIds(db, r)).filter((id) => id !== r.requester_user_id);
+        if (recipients.length === 0) continue;
+        const users = (
+          await db.execute(
+            sql`SELECT u.id, u.email, u.locale FROM users u
+                JOIN organization_memberships m ON m.user_id = u.id AND m.organization_id = ${r.organization_id} AND m.status = 'active'
+                WHERE u.id IN (${sql.join(recipients.map((x) => sql`${x}`), sql`, `)})`,
+          )
+        ).rows as { id: string; email: string | null; locale: string | null }[];
+        for (const u of users) {
+          const mail = urgentUntakenMail(r, u.locale);
+          await this.notifications
+            .notifyMany({ organizationId: r.organization_id, recipientUserIds: [u.id], type: 'flow.urgent', title: mail.title, sourceTable: 'flows', sourceTableUuid: r.id, data: { requestId: r.id } })
+            .catch(() => {});
+          if (!u.email) continue;
+          try {
+            await sendMail({ to: u.email, subject: mail.subject, text: mail.text }, 15_000);
+            sent++;
+          } catch (err) {
+            this.log.warn(`urgent reminder for flow ${r.id} to ${u.id} failed: ${err instanceof Error ? err.message : err}`);
+          }
+        }
+      }
+    } catch (err) {
+      this.log.error(`urgent reminders failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      this.running = false;
+    }
+    return sent;
+  }
+
 }

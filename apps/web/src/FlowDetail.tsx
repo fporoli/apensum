@@ -165,6 +165,8 @@ interface TypeRow {
 interface DetailsDraft {
   type: string;
   urgent: boolean;
+  /** Marked confidential by the requester (new flows only: once confidential, a flow stays so). */
+  confidential?: boolean;
   link: string;
   /** YYYY-MM-DD or empty. */
   due: string;
@@ -877,11 +879,14 @@ function DetailsFields({
   onChange,
   types,
   keepType,
+  askConfidential,
 }: {
   value: DetailsDraft;
   onChange: (next: DetailsDraft) => void;
   types: TypeRow;
   keepType?: string | null;
+  /** A new flow: the requester may mark it confidential (a confidential type is anyway). */
+  askConfidential?: boolean;
 }) {
   const { t, locale } = useI18n();
   const options = flowTypeOptions(types.values, types.translation, locale, [keepType]);
@@ -904,9 +909,16 @@ function DetailsFields({
             ))}
           </TextField>
         )}
-        {flowTypeConfidential(types.values, value.type) && (
+        {flowTypeConfidential(types.values, value.type) ? (
           <Chip size="small" icon={<LockIcon fontSize="small" />} label={t('flow.confidential')} />
-        )}
+        ) : askConfidential ? (
+          <Tooltip title={t('flow.confidentialHint')}>
+            <FormControlLabel
+              control={<Checkbox size="small" checked={!!value.confidential} onChange={(e) => onChange({ ...value, confidential: e.target.checked })} />}
+              label={t('flow.confidential')}
+            />
+          </Tooltip>
+        ) : null}
         <Tooltip title={t('flow.urgentHint')}>
           <FormControlLabel
             control={<Checkbox size="small" color="error" checked={value.urgent} onChange={(e) => onChange({ ...value, urgent: e.target.checked })} />}
@@ -914,7 +926,7 @@ function DetailsFields({
           />
         </Tooltip>
       </Box>
-      {flowTypeConfidential(types.values, value.type) && (
+      {(flowTypeConfidential(types.values, value.type) || (askConfidential && value.confidential)) && (
         <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>{t('flow.confidentialHint')}</Typography>
       )}
       <TextField
@@ -1095,6 +1107,7 @@ function NewFlowDialog({
           message,
           type: details.type || undefined,
           urgent: details.urgent ? 'true' : undefined,
+          confidential: details.confidential ? 'true' : undefined,
           link: details.link.trim() || undefined,
           dueDate: details.due || undefined,
           custom: Object.keys(checked.value).length ? JSON.stringify(checked.value) : undefined,
@@ -1172,7 +1185,7 @@ function NewFlowDialog({
         </>
         )}
         <TextField size="small" label={t('flow.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} inputProps={{ maxLength: 200 }} />
-        <DetailsFields value={details} onChange={setDetails} types={types} />
+        <DetailsFields value={details} onChange={setDetails} types={types} askConfidential />
         <FlowCustomFields template={{ ...template, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
         <FlowCustomFields template={{ ...typeTemplate, designer: null }} values={custom} onChange={setCustom} errors={customErrors} />
         <DropZone dragging={draft.dragging} dropProps={draft.dropProps}>

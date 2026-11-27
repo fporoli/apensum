@@ -35,8 +35,9 @@ import { sqlNow, sqlToday } from './clock';
  * request is open), and modules or plugins open requests themselves (`FlowsService.openTask`):
  * those have no requester but a `source` (shown as the sender) and the page they are about.
  *
- * A request of a confidential type (static_data attribute `confidential`, copied onto the request) is
- * seen only by the requester and its handlers: `nav.flows:edit:all` does not reach it, notifications
+ * A request of a confidential type (static_data attribute `confidential`, copied onto the request), or one its
+ * requester marked confidential when sending it, is seen only by the requester and its handlers (and stays
+ * confidential, whatever type it gets later): `nav.flows:edit:all` does not reach it, notifications
  * carry no text, and "Send by e-mail" and the AI assistant leave it alone. The organization's own
  * fields (configurable form `request`, design mode on the Requests page) are in `custom`.
  */
@@ -503,7 +504,7 @@ export class FlowsController {
   @UseInterceptors(Attachments())
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; link?: string; dueDate?: string; custom?: unknown },
+    @Body() body: { target?: string; departmentId?: string; subject?: string; message?: string; type?: string; urgent?: boolean | string; confidential?: boolean | string; link?: string; dueDate?: string; custom?: unknown },
     @UploadedFiles() uploaded: Express.Multer.File[] | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
@@ -523,7 +524,9 @@ export class FlowsController {
     const { flow_type, urgent, link_url, due_date } = details.value;
     const custom = await this.customValues(orgId, body.custom ?? (await this.customRequired(orgId, flow_type) ? {} : undefined), flow_type);
     if (!custom.ok) return custom;
-    const confidential = flowTypeConfidential(types, flow_type);
+    // Confidential by its type, or because the requester says so: only they and whoever handles it see it (not
+    // `nav.flows:edit:all`), and what is sent about it names neither subject nor text. (Multipart sends "true".)
+    const confidential = flowTypeConfidential(types, flow_type) || body.confidential === true || body.confidential === 'true';
 
     let departmentId: string | null = null;
     // A type with its own workflow: the workflow decides who handles it, not the requester.
@@ -643,7 +646,7 @@ export class FlowsController {
   /**
    * Changes the type, urgency, link, due date or custom values (`{ type?, urgent?, link?, dueDate?, custom? }`,
    * only the fields given). The requester and the handlers may, while the request is not archived; a new
-   * due date arms the overdue alert again, a new type brings its confidentiality.
+   * due date arms the overdue alert again, a new type brings its confidentiality (a confidential one stays so).
    */
   @Post(':id/details')
   async setDetails(
@@ -674,8 +677,9 @@ export class FlowsController {
     const customChanged = custom.value !== undefined && JSON.stringify(custom.value) !== JSON.stringify(current);
     if (Object.keys(changed).length === 0 && !customChanged) return { ok: true };
     const next = { ...a.r, ...changed };
-    // The type brings its confidentiality (a request moved to a confidential type leaves admins' sight).
-    const confidential = changed.flow_type !== undefined ? flowTypeConfidential(types, next.flow_type) : a.r.confidential;
+    // The type brings its confidentiality (a request moved to a confidential type leaves admins' sight); a confidential
+    // one stays so (the requester chose it, or its type did): another type never opens it to more people.
+    const confidential = a.r.confidential || (changed.flow_type !== undefined && flowTypeConfidential(types, next.flow_type));
     await db.execute(
       sql`UPDATE flows SET flow_type = ${next.flow_type}, urgent = ${next.urgent}, link_url = ${next.link_url}, due_date = ${next.due_date}::date,
             confidential = ${confidential}, custom = ${JSON.stringify(customChanged ? custom.value : current)}::jsonb,
