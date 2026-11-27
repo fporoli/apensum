@@ -430,6 +430,7 @@ export class WorkflowsService {
     const patch = { step_status: 'rejected', workflow_step_finished: now, workflow_finished: now, workflow_data: { ...(workflow.workflow_data as Record<string, unknown>), history } };
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+    this.changed(workflow, callerId);
     return true;
   }
 
@@ -795,6 +796,7 @@ export class WorkflowsService {
       .returning({ id: workflows.workflow_id });
     if (moved.length === 0) return { ok: false, error: 'already-taken' };
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+    this.changed(workflow, next);
     await this.kindOfTable(workflow.source_table)?.onTaken?.(db, workflow.source_table_uuid, callerId, { key: step.key, label: step.label, ...(step.labels ? { labels: step.labels } : {}) }, release);
     if (workflow.organization_id) {
       void this.audit.record(workflow.organization_id, callerId, release ? 'workflow.released' : 'workflow.taken', 'workflow', workflow.id).catch(() => {});
@@ -828,6 +830,7 @@ export class WorkflowsService {
     const patch = { workflow_data: { ...data, composed, history } };
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, { workflow_data: { composed } }).catch(() => {});
+    this.changed(workflow);
   }
 
   /** A workflow's pending step as a module needs it (e.g. to write the step's e-mail), or null. */
@@ -903,6 +906,7 @@ export class WorkflowsService {
       const patch = { assigned_to_user_id: remaining, workflow_data: { ...priorData, ...inputs, history: soFar } };
       await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
       void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+      this.changed(workflow, callerId);
       if (organizationId) void this.audit.record(organizationId, callerId, 'workflow.approved', 'workflow', workflow.id).catch(() => {});
       return { ok: true };
     }
@@ -934,6 +938,7 @@ export class WorkflowsService {
       : { step_status: outcome, workflow_step_finished: now, workflow_finished: now, workflow_data: workflowData };
     await db.update(workflows).set(patch).where(eq(workflows.workflow_id, workflow.id));
     void this.versions.record('workflows', workflow.id, 'update_delta', callerId, patch).catch(() => {});
+    this.changed(workflow, callerId, placed.assignees);
     if (!next && outcome === 'approved') await this.kindOfTable(workflow.source_table)?.onFinished?.(db, workflow.source_table_uuid, callerId, { versions: this.versions });
 
     if (organizationId) {
@@ -971,6 +976,13 @@ export class WorkflowsService {
       }
     }
     return { ok: true };
+  }
+
+  /** Tells whoever had or has the workflow's step (and who submitted it) that it changed: their lists load again. */
+  private changed(workflow: { source_table: string; source_table_uuid: string; assigned_to_user_id?: string[] | null; workflow_data?: unknown }, ...more: (readonly string[] | string | null | undefined)[]): void {
+    const submitter = (workflow.workflow_data as Record<string, unknown> | null | undefined)?.submittedByUserId;
+    const ids = [...(workflow.assigned_to_user_id ?? []), typeof submitter === 'string' ? submitter : null, ...more.flat()];
+    this.notifications.changed?.(ids, workflow.source_table, workflow.source_table_uuid);
   }
 
   /**

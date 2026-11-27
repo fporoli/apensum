@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Session } from './Login';
+import { publishLive } from './liveEvents';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -100,12 +101,19 @@ export function useNotifications(session: Session | null, authHeaders: () => Pro
           return;
         }
         if (typeof msg !== 'object' || msg === null) return;
-        const { type, notification } = msg as { type?: string; notification?: Notification };
-        if (type === 'ready') reconnectAttempt.current = 0;
+        const { type, notification, sourceTable, sourceId } = msg as { type?: string; notification?: Notification; sourceTable?: string; sourceId?: string };
+        // A record changed for this person (a step taken or done by someone else): open lists load again.
+        if (type === 'changed' && typeof sourceTable === 'string') publishLive({ sourceTable, sourceId: typeof sourceId === 'string' ? sourceId : null });
+        if (type === 'ready') {
+          // Back after a drop: a push may have been missed, open lists load again (the feed itself is refetched on close).
+          if (reconnectAttempt.current > 0) publishLive({ sourceTable: null, sourceId: null, resync: true });
+          reconnectAttempt.current = 0;
+        }
         if (type === 'notification' && notification) {
           setItems((prev) => [notification, ...prev]);
           setUnreadCount((c) => c + 1);
           setLive(notification);
+          publishLive({ sourceTable: notification.source_table ?? null, sourceId: notification.source_table_uuid ?? null });
         }
       };
       ws.onclose = () => {

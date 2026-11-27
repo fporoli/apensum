@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiRequest, type ApiResult } from './apiRequest';
+import { useLive } from './liveEvents';
 
 export interface UseApiOptions {
   /** Load again every so many milliseconds while the page is open (e.g. presence that changes during the day). */
   refreshMs?: number;
+  /**
+   * Load again when something about these tables changed for the signed-in person (a push, liveEvents.ts), e.g.
+   * `['expense_reports']`; `true`: on every push. After the connection came back it loads again in any case.
+   */
+  live?: true | readonly string[];
 }
 
 export interface UseApi<T> {
@@ -58,6 +64,7 @@ export function useApi<T>(url: string | null, authHeaders: () => Promise<Record<
     };
   }, [reload, options.refreshMs]);
 
+  useLive(() => void reload(), options.live ?? null);
   const clearError = useCallback(() => setError(null), []);
   return { data, error, loading, reload, clearError };
 }

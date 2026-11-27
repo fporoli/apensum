@@ -17,6 +17,7 @@ import {
 import { Button } from './Button';
 import { periodLabel } from './aggregate';
 import { useI18n } from './i18n';
+import { useLive } from './liveEvents';
 import { formatDurationMinutes } from './localeFormat';
 import { PageHeader, PersonPicker, TableEmptyRow } from './components';
 import { ChevronLeftIcon, ChevronRightIcon, WorkspacesIcon } from './icons';
@@ -105,6 +106,8 @@ export default function ProjectTimesheet({
     }
   }
 
+  // Live: a month submitted, approved or reopened by someone else.
+  useLive(() => void reload(), ['project_time_periods']);
   useEffect(() => {
     void reload(month);
     // eslint-disable-next-line react-hooks/exhaustive-deps

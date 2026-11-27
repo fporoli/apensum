@@ -55,6 +55,11 @@ export class NotificationsService {
     for (const row of rows) this.gateway.pushToUser(row.recipient_user_id, row);
   }
 
+  /** A record changed for these people (a step taken, done, moved on): their open lists load again; nothing stored. */
+  changed(userIds: readonly (string | null | undefined)[], sourceTable: string, sourceId: string): void {
+    this.gateway.pushChange(userIds.filter((id): id is string => !!id), sourceTable, sourceId);
+  }
+
   async list(recipientUserId: string, opts: { unreadOnly?: boolean; limit?: number } = {}) {
     const db = this.db.getDb();
     if (!db) return [];

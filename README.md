@@ -159,7 +159,9 @@ The API keeps these concerns separate; each has its own controller/service and t
 Timesheets, expense reports, absences, and timesheet reopen requests all go through `workflows.service.ts`.\
 A submission is routed to the requester's manager; a project timesheet goes to the project's owner instead (approved right away when the person owns the project or it has none).\
 Each state change creates a notification through `notifications.service.ts`.\
-That service persists the row and pushes it to connected clients over the WebSocket gateway at `/ws/notifications`, which the web app consumes via `useNotifications.ts` and `NotificationBell`.
+That service persists the row and pushes it to connected clients over the WebSocket gateway at `/ws/notifications`, which the web app consumes via `useNotifications.ts` and `NotificationBell`.\
+A step taken, done or moved on also sends a silent `changed` (which record, nothing stored, `NotificationsService.changed`) to whoever had or has it and who submitted it, so their open lists load again; pages listen with `useLive(handler, tables)` (`liveEvents.ts`, `useApi`'s `live` option, in the plugin contract), and after the socket was down every listening list loads again.\
+No list polls for this; one API process holds the sockets (a second one would need Postgres LISTEN/NOTIFY between them).
 
 ### Calendar feeds and integrations
 

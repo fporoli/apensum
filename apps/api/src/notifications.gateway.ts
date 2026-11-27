@@ -86,6 +86,20 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     }
   }
 
+  /**
+   * Tells these people's open tabs that a record changed (`{type:'changed', sourceTable, sourceId}`), so their lists
+   * load again (web liveEvents.ts). Nothing is stored and nothing of the record is sent: only which one; whoever gets
+   * it asks the API, which checks what they may see.
+   */
+  pushChange(userIds: readonly string[], sourceTable: string, sourceId: string): void {
+    const payload = JSON.stringify({ type: 'changed', sourceTable, sourceId });
+    for (const userId of new Set(userIds)) {
+      for (const ws of this.connectionsByUser.get(userId) ?? []) {
+        if (ws.readyState === ws.OPEN) ws.send(payload);
+      }
+    }
+  }
+
   private register(userId: string, client: WebSocket): void {
     this.userByConnection.set(client, userId);
     let set = this.connectionsByUser.get(userId);

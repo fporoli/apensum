@@ -29,6 +29,7 @@ import {
 } from '@mui/material';
 import { Button } from './Button';
 import { useI18n } from './i18n';
+import { useLive } from './liveEvents';
 import { stepFieldLabel, stepFieldValues, type StepField } from '@worktime3/shared/workflowConfig';
 import { StepAnswers, StepFieldsForm, type StepAnswer, type StepValues } from './StepFieldsForm';
 import { formatLocaleNumber } from './localeFormat';
@@ -355,6 +356,8 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
     if (selectedId) void loadDetail(selectedId);
     else setDetail(null);
   }, [selectedId, loadDetail, refreshKey]);
+  // Live: the open thread loads again when its flow changed (a reply, a step taken or done by someone else).
+  useLive((e) => { if (selectedId && (e.resync || e.sourceId === selectedId)) void loadDetail(selectedId); }, ['flows']);
 
   /** Takes over (or gives back) the step several people got (the Workflow page's endpoint). */
   async function takeStep(workflowId: string, release: boolean) {

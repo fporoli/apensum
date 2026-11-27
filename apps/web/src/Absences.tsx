@@ -36,6 +36,7 @@ import { Button } from './Button';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useI18n } from './i18n';
+import { useLive } from './liveEvents';
 import { formatFileSize, formatLocaleDate, formatRelativeTime, swissLocale } from './localeFormat';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import {
@@ -274,6 +275,8 @@ export default function Absences({ orgId, userId, authHeaders }: AbsencesProps) 
     } catch { /* offline: no types */ }
   }
 
+  // Live: an absence of this person decided or changed by someone else.
+  useLive(() => void reload(), ['absences']);
   useEffect(() => {
     void reload();
     void loadAbsenceTypes();

@@ -14,6 +14,7 @@ import Approvals, { actionItemLabel, correspondingObject, itemPerson, type Actio
 import FlowDetail, { type Box_, type ComposePreset, type FlowItem } from './FlowDetail';
 import { EmptyState, PageHeader } from './components';
 import { useI18n } from './i18n';
+import { useLive } from './liveEvents';
 import { AccountTreeIcon, AddIcon, ArrowDropDownIcon, LockIcon, SearchIcon, AssignmentIcon, PersonIcon, CheckCircleIcon } from './icons';
 import { formatRelativeTime } from './localeFormat';
 import { NO_FILTERS, flowQueries, flowRows, shownFrom, type FlowFilters, type FlowFocus, type FlowRow, type FlowsTab } from './flowRows';
@@ -201,7 +202,10 @@ export default function Flows(props: FlowsProps) {
 
   useEffect(() => {
     void load();
-  }, [load, props.refreshKey]);
+  }, [load]);
+  // Live: a push about any record whose steps the list shows (a flow, an absence, a report ...), a step taken or done by
+  // someone else, or the connection back.
+  useLive(() => void load(), true);
 
   /** Every flow that matches the filters: the rest of each source, ALL at a time, added below. */
   const loadAll = async () => {

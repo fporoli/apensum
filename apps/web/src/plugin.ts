@@ -271,6 +271,8 @@ export * from './icons';
 export { Button } from './Button';
 /** Loading from the API: useApi (a page's data, loading, error, reload), apiRequest (one call, ok + data or an error code). */
 export { useApi, type UseApi, type UseApiOptions } from './useApi';
+// Live reloads: an open list loads again when a push about its records arrives (liveEvents.ts).
+export { useLive, type LiveEvent } from './liveEvents';
 export { apiRequest, CANNOT_REACH_API, BAD_RESPONSE, type ApiResult, type ApiRequestInit } from './apiRequest';
 export { AttachmentView, DropZone, MAX_ATTACHMENT_BYTES, useAttachmentDraft, type Attachment } from './attachments';
 export { currencyOptions, type CurrencyOption } from './currencyOptions';

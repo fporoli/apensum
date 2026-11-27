@@ -95,7 +95,8 @@ That looks like success but does nothing.
 
 - Flat folder of PascalCase page components.\
   Each page is an entry in `corePages.tsx` (section, hash, permission object, role fallback, navbar entry with optional parent and count, render), the same shape plugins use (`PluginPage`); `App.tsx` builds the navbar (`navigation.ts`), hashes and gating from the core's and the plugins' entries alike and owns session, org switcher and badges.
-- Pages load through `useApi(url, authHeaders, { refreshMs })` (`useApi.ts`: data, loading, error code, `reload`, `clearError`; an answer that arrives after a newer request is dropped) and send with `apiRequest` (`apiRequest.ts`: `{ ok, data }` or `{ ok: false, error }`, network and HTTP failures as codes; both in the plugin contract).\
+- Pages load through `useApi(url, authHeaders, { refreshMs, live })` (`useApi.ts`: data, loading, error code, `reload`, `clearError`; an answer that arrives after a newer request is dropped) and send with `apiRequest` (`apiRequest.ts`: `{ ok, data }` or `{ ok: false, error }`, network and HTTP failures as codes; both in the plugin contract).\
+  A list of records others change (flows, absences, timesheets, reports) loads again live: `live: ['<source table>']`, or `useLive(reload, [...])` (`liveEvents.ts`), never by polling.\
   New pages use them; older pages still call `fetch(\`${API}/...\`, { headers: await authHeaders() })` themselves and move over when they are changed anyway (`Directory.tsx` and `AuditLog.tsx` show the pattern).\
   `const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1'` is declared per file.
 - Terms (one thing, one word, in the app, on the website, in the brochures and the support articles; new texts use only these):\

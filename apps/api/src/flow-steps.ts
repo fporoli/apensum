@@ -10,7 +10,7 @@ import { VersionsService } from './versions.service';
 import { WorkflowsService, type WorkflowActionContext, type WorkflowKind } from './workflows.service';
 import { sendMail } from './mailer';
 import { workflowMail, type MailAnswer } from './workflow-mail';
-import { composeLang, composeValues, filledMessage } from './flow-compose';
+import { composeLang, composeValues, filledMessage } from './flow-compose-text';
 import { sqlNow, sqlToday } from './clock';
 
 /** The configurable kind of a request's workflow: one per request type (its key is the variant). */

@@ -17,6 +17,7 @@ import {
 import { Button } from './Button';
 import { minutes, periodLabel, periodRange, type Entry } from './aggregate';
 import { useI18n } from './i18n';
+import { useLive } from './liveEvents';
 import { formatDurationMinutes, formatLocaleDate, formatSignedMinutes, swissLocale } from './localeFormat';
 import { holidayName, type Holiday } from '@worktime3/shared/worktime';
 import { formatDays, monthName, type MonthBalance } from './BalancesPanel';
@@ -172,6 +173,8 @@ export default function Timesheet({ orgId, userId, authHeaders, initialPersonId,
     } catch { /* offline fallback */ }
   }
 
+  // Live: a month submitted, approved or reopened by someone else.
+  useLive(() => void reload(), ['timesheet_periods']);
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
