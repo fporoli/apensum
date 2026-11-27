@@ -11,7 +11,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { TriggersService, triggersOf, type KnownEvent, type TriggerRunDetail } from './triggers.service';
 import { triggerKeyPrefix, validateTrigger, type FlowTrigger } from './triggers';
 import { sqlToday } from './clock';
-import { freeTypeKey, templateConfig } from '@worktime3/shared/triggerTemplates';
+import { freeTypeKey, templateConfig, templateNeedsDepartment } from '@worktime3/shared/triggerTemplates';
 import { validateWorkflowConfig } from '@worktime3/shared/workflowConfig';
 import { saveFlowType } from './flow-types';
 
@@ -170,30 +170,36 @@ export class FlowTriggersController {
     if (!a || a.editable.size === 0) return { ok: false, error: 'forbidden' };
     const tpl = typeof body?.event === 'string' ? this.triggers.templates().get(body.event) : undefined;
     if (!tpl || !a.editable.has(tpl.event) || !(await this.triggers.eventsOn(db, orgId)).has(tpl.event)) return { ok: false, error: 'unknown-event' };
-    if (typeof body.departmentId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.departmentId)) return { ok: false, error: 'invalid-department' };
-    const [department] = (await db.execute(sql`
-      SELECT id, code FROM departments WHERE id = ${body.departmentId}::uuid AND organization_id = ${orgId}::uuid AND is_active`)).rows as { id: string; code: string | null }[];
-    if (!department) return { ok: false, error: 'unknown-department' };
-    if (!department.code) return { ok: false, error: 'department-needs-code' };
+    // A department only where the template's steps go to one (else to everyone holding its permission).
+    let department: { id: string; code: string | null } | null = null;
+    if (templateNeedsDepartment(tpl)) {
+      if (typeof body.departmentId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.departmentId)) return { ok: false, error: 'invalid-department' };
+      [department] = (await db.execute(sql`
+        SELECT id, code FROM departments WHERE id = ${body.departmentId}::uuid AND organization_id = ${orgId}::uuid AND is_active`)).rows as { id: string; code: string | null }[];
+      if (!department) return { ok: false, error: 'unknown-department' };
+      if (!department.code) return { ok: false, error: 'department-needs-code' };
+    }
     const kind = this.workflows.kinds().get(FLOW_STEPS_KIND);
     if (!kind?.variants) return { ok: false, error: 'flows-off' };
     const key = freeTypeKey(tpl.typeKey, (await kind.variants(db, orgId)).map((v) => v.key));
     const saved = await saveFlowType(db, this.versions, orgId, a.callerId, key, tpl.typeName, true);
     if (!saved.ok) return saved;
-    const checked = validateWorkflowConfig((await this.workflows.catalogueOf(db, orgId, FLOW_STEPS_KIND, key))!, templateConfig(tpl, department.code));
+    const checked = validateWorkflowConfig((await this.workflows.catalogueOf(db, orgId, FLOW_STEPS_KIND, key))!, templateConfig(tpl, department?.code ?? null));
     if (!checked.ok) return { ok: false, error: 'invalid-config', errors: checked.errors };
     await this.workflows.saveConfig(db, orgId, FLOW_STEPS_KIND, checked.value, a.callerId, key);
     void this.audit.record(orgId, a.callerId, 'flow-type.save', 'flow_type', key).catch(() => {});
     // One trigger per event: an existing one goes through the new type from now on.
     const existing = (await triggersOf(db, orgId)).find((t) => t.event === tpl.event);
     if (existing) {
-      await db.execute(sql`UPDATE flow_triggers SET flow_type = ${key}, department_id = ${department.id}::uuid, enabled = TRUE WHERE id = ${existing.id}::uuid AND organization_id = ${orgId}::uuid`);
-      void this.versions.record('flow_triggers', existing.id, 'update_delta', a.callerId, { flow_type: key, department_id: department.id, enabled: true }).catch(() => {});
+      // The department stays where the template has none (a Free Flow's, should the type go).
+      const departmentId = department?.id ?? existing.departmentId;
+      await db.execute(sql`UPDATE flow_triggers SET flow_type = ${key}, department_id = ${departmentId}::uuid, enabled = TRUE WHERE id = ${existing.id}::uuid AND organization_id = ${orgId}::uuid`);
+      void this.versions.record('flow_triggers', existing.id, 'update_delta', a.callerId, { flow_type: key, department_id: departmentId, enabled: true }).catch(() => {});
     } else {
       const [row] = (await db.execute(sql`
         INSERT INTO flow_triggers (organization_id, event, enabled, lead_days, flow_type, target, department_id, confidential)
-        VALUES (${orgId}::uuid, ${tpl.event}, TRUE, ${tpl.leadDays}, ${key}, 'department', ${department.id}::uuid, TRUE) RETURNING id`)).rows as { id: string }[];
-      void this.versions.record('flow_triggers', row.id, 'insert', a.callerId, { organization_id: orgId, event: tpl.event, lead_days: tpl.leadDays, flow_type: key, department_id: department.id }).catch(() => {});
+        VALUES (${orgId}::uuid, ${tpl.event}, TRUE, ${tpl.leadDays}, ${key}, 'department', ${department?.id ?? null}::uuid, TRUE) RETURNING id`)).rows as { id: string }[];
+      void this.versions.record('flow_triggers', row.id, 'insert', a.callerId, { organization_id: orgId, event: tpl.event, lead_days: tpl.leadDays, flow_type: key, department_id: department?.id ?? null }).catch(() => {});
     }
     void this.audit.record(orgId, a.callerId, 'flow-trigger.template', 'flow_trigger', tpl.event).catch(() => {});
     await this.triggers.run(db, orgId, a.callerId).catch(() => null);

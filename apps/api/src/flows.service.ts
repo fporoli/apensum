@@ -277,7 +277,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
       if (viaWorkflow && old.target_kind === 'department' && old.status === 'open' && !old.assignee_user_id) {
         await db.execute(sql`UPDATE flows SET target_kind = 'workflow', target_department_id = NULL, flow_type = ${flowType}, last_activity_at = ${sqlNow()} WHERE id = ${old.id}`);
         void this.versions.record('flows', old.id, 'update_delta', null, { target_kind: 'workflow', flow_type: flowType }).catch(() => {});
-        await this.startTaskWorkflow(db, input.organizationId, old.id, flowType!, subject, input.confidential === true, message);
+        await this.startTaskWorkflow(db, input.organizationId, old.id, flowType!, subject, input.confidential === true, message, input.aboutUserId ?? null);
       }
       // Confidentiality follows the source's wish (also for tasks opened before it asked for it).
       await db.execute(sql`UPDATE flows SET confidential = ${input.confidential === true} WHERE id = ${old.id} AND confidential <> ${input.confidential === true}`);
@@ -320,7 +320,7 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, body, posted_at) VALUES (${id}, NULL, 'message', ${message}, ${sqlNow()})`);
     void this.versions.record('flows', id, 'insert', null, { source: input.source, source_key: input.key, subject, due_date: due, message, about_user_id: about, flow_type: viaWorkflow ? flowType : null }).catch(() => {});
     if (viaWorkflow) {
-      await this.startTaskWorkflow(db, input.organizationId, id, flowType!, subject, input.confidential === true, message);
+      await this.startTaskWorkflow(db, input.organizationId, id, flowType!, subject, input.confidential === true, message, input.aboutUserId ?? null);
       return { ok: true, id, created: true, changed: true };
     }
     const handlers = await this.handlerIds(db, {
@@ -346,10 +346,14 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
     return { ok: true, id, created: true, changed: true };
   }
 
-  /** Starts a task's type's steps: the first is assigned and notified by the engine; nobody submitted it (the system did). */
-  private async startTaskWorkflow(db: Db, orgId: string, id: string, flowType: string, subject: string, confidential: boolean, message: string): Promise<void> {
+  /**
+   * Starts a task's type's steps: the first is assigned and notified by the engine; nobody submitted it (the system
+   * did). The person it is about is kept for the steps that go to them (`about`) or to their manager.
+   */
+  private async startTaskWorkflow(db: Db, orgId: string, id: string, flowType: string, subject: string, confidential: boolean, message: string, aboutUserId: string | null): Promise<void> {
     await this.workflows?.start(db, {
-      kind: FLOW_STEPS_KIND, variant: flowType, organizationId: orgId, sourceTableUuid: id, actorUserId: null, workflowData: {},
+      kind: FLOW_STEPS_KIND, variant: flowType, organizationId: orgId, sourceTableUuid: id, actorUserId: null,
+      workflowData: aboutUserId ? { aboutUserId } : {},
       notification: {
         title: noticeSubject({ subject, confidential }),
         text: { key: 'notice.flow.task', vars: { subject: subjectValue({ subject, confidential }) } },

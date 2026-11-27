@@ -177,6 +177,13 @@ export type SourceRecordLoader = (db: Db, ids: string[]) => Promise<Array<{ id: 
  * registers the "timesheet.*" actions in its `onModuleInit`). Each workflow
  * row holds its organization (`organization_id`, 107).
  */
+
+/** The person a workflow's record is about, as a task keeps it (`workflow_data.aboutUserId`). */
+function aboutOf(data: unknown): string | undefined {
+  const v = (data as Record<string, unknown> | null | undefined)?.aboutUserId;
+  return typeof v === 'string' ? v : undefined;
+}
+
 @Injectable()
 export class WorkflowsService {
   private readonly actionHandlers = new Map<string, WorkflowActionHandler>();
@@ -310,7 +317,7 @@ export class WorkflowsService {
     const history: WorkflowEvent[] = [{ key: 'approvals.event.submitted', by: params.actorUserId, at: now }];
     const placed = await this.place(db, {
       steps, from: 0, organizationId: params.organizationId, sourceTable: kind.sourceTable, sourceTableUuid: params.sourceTableUuid,
-      submittedBy: params.actorUserId ?? undefined, actor, history,
+      submittedBy: params.actorUserId ?? undefined, about: aboutOf(params.workflowData), actor, history,
     });
     const values = {
       workflow_def_id: definition.workflow_def_id,
@@ -348,6 +355,8 @@ export class WorkflowsService {
     p: {
       steps: WorkflowStepDefinition[]; from: number; organizationId: string | null; sourceTable: string; sourceTableUuid: string;
       submittedBy: string | undefined; actor: string; history: WorkflowEvent[];
+      /** The person the record is about (a task a trigger opened), else the submitter. */
+      about?: string;
     },
   ): Promise<{ index: number; assignees: string[]; history: WorkflowEvent[]; autoApproved: string[] }> {
     const history = [...p.history];
@@ -361,7 +370,7 @@ export class WorkflowsService {
       for (const key of skipped) history.push({ key: 'approvals.event.skipped', by: null, at, note: p.steps.find((s) => s.key === key)?.label ?? key });
       if (index < 0) return { index, assignees: [], history, autoApproved };
       const step = p.steps[index];
-      const assignees = await this.stepAssignees(db, p.organizationId, step, p.submittedBy, p.actor);
+      const assignees = await this.stepAssignees(db, p.organizationId, step, p.submittedBy, p.actor, p.about);
       // An automatic step (a message): the system does it now, to its assignees, and the workflow moves on.
       if (step.automatic) {
         for (const action of step.actions ?? []) {
@@ -900,7 +909,7 @@ export class WorkflowsService {
     const placed = outcome === 'approved' && index >= 0
       ? await this.place(db, {
         steps: stepDefs, from: index + 1, organizationId, sourceTable: workflow.source_table, sourceTableUuid: workflow.source_table_uuid,
-        submittedBy: submittedByUserId, actor: callerId, history: soFar,
+        submittedBy: submittedByUserId, about: aboutOf(workflow.workflow_data), actor: callerId, history: soFar,
       })
       : { index: -1, assignees: [], history: soFar, autoApproved: [] };
     const next = placed.index >= 0 ? stepDefs[placed.index] : undefined;
@@ -965,14 +974,17 @@ export class WorkflowsService {
   }
 
   /**
-   * Who a step goes to: `manager` = the submitter's manager today; `permission:<object>` = every active member
+   * Who a step goes to: `manager` = the manager today of whom it is about (a task's person, else the submitter);
+   * `about` = that person themselves; `permission:<object>` = every active member
    * holding `<object>:edit:all`; `department:<id>` = its members and its leader today. The submitter never decides
    * their own step (four eyes). Nobody left: a manager's review of a configurable kind gets nobody (done at once by
    * `place`, the top of the chain); any other step goes to HR (`section.people.employment` edit on everyone), then
    * the organization's owners, then the one who completed the step before, so a request is never lost.
    */
-  private async stepAssignees(db: Db, organizationId: string | null, step: WorkflowStepDefinition, submittedByUserId: string | undefined, fallback: string): Promise<string[]> {
+  private async stepAssignees(db: Db, organizationId: string | null, step: WorkflowStepDefinition, submittedByUserId: string | undefined, fallback: string, aboutUserId?: string): Promise<string[]> {
     if (!organizationId) return [fallback];
+    // Whom the record is about: a task's person (a trigger's), else who submitted it.
+    const about = aboutUserId ?? submittedByUserId;
     const holders = async (permissionId: string) => {
       const rows = await db.execute(sql`
         SELECT DISTINCT m.user_id FROM organization_memberships m
@@ -1020,9 +1032,17 @@ export class WorkflowsService {
       ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
     } else if (step.assignTo === 'requester' && submittedByUserId) {
       ids = [submittedByUserId];
-    } else if (step.assignTo === 'manager' && submittedByUserId) {
-      // The manager who acts today: one who left is passed over for the next one up (actingManagerId).
-      const manager = await actingManagerId(db, organizationId, submittedByUserId);
+    } else if (step.assignTo === 'about' && about) {
+      // The person it is about, while an active member (a permit's holder does their part themselves).
+      const rows = await db.execute(sql`
+        SELECT m.user_id FROM organization_memberships m
+        WHERE m.organization_id = ${organizationId}::uuid AND m.user_id = ${about}::uuid
+          AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})`);
+      ids = (rows.rows as { user_id: string }[]).map((r) => r.user_id);
+    } else if (step.assignTo === 'manager' && about) {
+      // The manager who acts today (of the submitter, or of the person a task is about): one who left is passed over
+      // for the next one up (actingManagerId).
+      const manager = await actingManagerId(db, organizationId, about);
       if (manager) ids = [manager];
     }
     ids = others(ids);

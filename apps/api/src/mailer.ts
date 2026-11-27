@@ -10,7 +10,10 @@ import nodemailer from 'nodemailer';
  */
 
 export interface MailOptions {
-  to: string;
+  /** One address, or several who see each other (a written e-mail with Cc). */
+  to: string | string[];
+  /** Copies, seen by everyone (a written e-mail's Cc). */
+  cc?: string[];
   subject: string;
   text: string;
   from?: string;
@@ -98,6 +101,7 @@ export async function sendMail(options: MailOptions, timeoutMs = 5000): Promise<
     await transport.sendMail({
       from: options.from ?? config.from,
       to: options.to,
+      ...(options.cc?.length ? { cc: options.cc } : {}),
       subject: options.subject,
       text: options.text,
       html: options.html,

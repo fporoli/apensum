@@ -69,7 +69,10 @@ export interface WorkflowStepConfig {
   key: string;
   /** The blocks done in this step, in order (one or more of the kind's). */
   do: string[];
-  /** `manager`, `permission:<object>`, `department:<code>`, `team:<code>` or `person:<user id>`. */
+  /**
+   * `manager`, `permission:<object>`, `department:<code>`, `team:<code>`, `person:<user id>` or `about` (the person the
+   * flow is about: a task's, else who started it).
+   */
   assignTo: string;
   when?: Condition;
   reject?: RejectMode;
@@ -206,8 +209,9 @@ const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The kind of an assignee (`manager`, `department`, `team`, `permission`, `person`, `requester`), or null. */
-export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | 'person' | 'requester' | null {
+export function assigneeKind(value: string): 'manager' | 'department' | 'team' | 'permission' | 'person' | 'requester' | 'about' | null {
   if (value === 'manager') return 'manager';
+  if (value === 'about') return 'about';
   if (value === 'requester') return 'requester';
   if (value.startsWith('person:') && UUID.test(value.slice('person:'.length))) return 'person';
   if (value.startsWith('department:') && UNIT_CODE.test(value.slice('department:'.length))) return 'department';
@@ -224,6 +228,7 @@ function assigneeAllowed(block: WorkflowBlock, assignTo: string): boolean {
   if (kind === 'team') return block.assignees.includes('team');
   if (kind === 'person') return block.assignees.includes('person');
   if (kind === 'requester') return block.assignees.includes('requester');
+  if (kind === 'about') return block.assignees.includes('about');
   if (kind === 'permission') return block.assignees.includes(assignTo);
   return false;
 }

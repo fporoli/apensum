@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileWorkflow, fillPlaceholders, validateWorkflowConfig } from '@worktime3/shared/workflowConfig';
 import { FLOW_CATALOGUE } from '../../apps/api/src/flow-steps';
-import { composeDate, composeMailText, composeValues } from '../../apps/api/src/flow-compose';
+import { composeDate, composeMailText, composeValues, parseCc } from '../../apps/api/src/flow-compose';
 import { WorkflowsService, composeSent, takenOf } from '../../apps/api/src/workflows.service';
 
 const message = { subject: { de: '{{years}} Dienstjahre: {{name}}' }, text: { de: 'Liebe/r {{firstName}}, am {{date}} … {{unknown}}' } };
@@ -124,4 +124,44 @@ test('take over: only an assignee, then it waits for them alone; only who took i
   // Alone on it: nothing to take.
   e = engine(workflowOf(['u1']));
   assert.deepEqual(await e.svc.take(e.db, 'w1', 'u1'), { ok: false, error: 'already-taken' });
+});
+
+test('copies: ids of members, at most ten, without the recipients themselves', () => {
+  const a = '11111111-1111-1111-1111-111111111111';
+  const b = '22222222-2222-2222-2222-222222222222';
+  assert.deepEqual(parseCc(undefined, [a]), []);
+  assert.deepEqual(parseCc([b, b, a], [a]), [b]);
+  assert.equal(parseCc('x', [a]), null);
+  assert.equal(parseCc(['not-an-id'], [a]), null);
+  assert.equal(parseCc(Array.from({ length: 11 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, '0')}`), [a]), null);
+});
+
+test('assignee "about": the person the flow is about does a task or gets a mail, never a review or the e-mail to write', () => {
+  const base = { key: 'mail', do: ['compose'], assignTo: 'department:hr', reject: 'back', message };
+  const withStep = (s: Record<string, unknown>) => validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [base, s] });
+  assert.ok(withStep({ key: 'upload', do: ['task'], assignTo: 'about', reject: 'none' }).ok);
+  assert.ok(withStep({ key: 'answer', do: ['form'], assignTo: 'about', reject: 'none', fields: [{ key: 'until', type: 'date', label: { de: 'Gültig bis' } }] }).ok);
+  for (const block of ['review', 'compose']) {
+    const r = withStep({ key: 'x', do: [block], assignTo: 'about', reject: 'none', ...(block === 'compose' ? { message } : {}) });
+    assert.ok(!r.ok && r.errors.some((e) => e.code === 'assignee-not-allowed'), block);
+  }
+  // HR by permission: who keeps everyone's personal data.
+  assert.ok(validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [{ ...base, assignTo: 'permission:section.basicdata.personalien' }] }).ok);
+});
+
+test('the engine gives an `about` step to the person the task is about (an active member), a manager step to their manager', async () => {
+  const svc = new WorkflowsService({ record: async () => {} } as never, { record: async () => {} } as never, { notifyMany: async () => {} } as never);
+  const queries: string[] = [];
+  const db = {
+    execute: async (q: { queryChunks?: unknown[] }) => {
+      const text = JSON.stringify(q.queryChunks ?? []);
+      queries.push(text);
+      if (text.includes('organization_memberships m') && text.includes('m.user_id =')) return { rows: [{ user_id: 'uma' }] };
+      return { rows: [] };
+    },
+  };
+  const assignees = (svc as unknown as { stepAssignees: (...a: unknown[]) => Promise<string[]> }).stepAssignees.bind(svc);
+  assert.deepEqual(await assignees(db, 'o1', { key: 'upload', assignTo: 'about', blocks: ['task'] }, undefined, 'sys', 'uma'), ['uma']);
+  // Without a task's person: who submitted it.
+  assert.deepEqual(await assignees(db, 'o1', { key: 'upload', assignTo: 'about', blocks: ['task'] }, 'uma', 'sys'), ['uma']);
 });

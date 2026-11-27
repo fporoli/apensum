@@ -10,7 +10,8 @@ import { useI18n, useT } from './i18n';
 import { ConfirmDialog } from './components';
 import { formatLocaleDateTime } from './localeFormat';
 import { AddIcon, ArrowDropDownIcon, DeleteIcon, EditIcon } from './icons';
-import type { TriggerTemplate } from '@worktime3/shared/triggerTemplates';
+import { templateNeedsDepartment, type TriggerTemplate } from '@worktime3/shared/triggerTemplates';
+import { PERMISSION_OBJECTS } from '@worktime3/shared/permissions';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -338,8 +339,18 @@ function TemplateDialog({ tpl, orgId, list, authHeaders, label, errorText, onClo
   onClose: () => void; onDone: (name: string) => Promise<void>;
 }) {
   const t = useT();
-  // The step goes to a department by its code (`department:<code>`): only those with one.
+  const { locale } = useI18n();
+  // The steps go to a department by its code (`department:<code>`, only those with one), or to a permission's holders.
+  const needsDepartment = templateNeedsDepartment(tpl);
   const departments = list.departments.filter((d) => d.code);
+  const handler = needsDepartment
+    ? t('flowTriggers.templateWhoDepartment')
+    : t('flowTriggers.templateWhoPermission', { right: t(PERMISSION_OBJECTS.find((o) => `permission:${o.id}` === tpl.handler)?.caption ?? String(tpl.handler)) });
+  const stepLabel = (l: Record<string, string>) => l[locale] || l.en;
+  const steps = [
+    { label: stepLabel(tpl.stepLabel), who: handler },
+    ...(tpl.then ?? []).map((s) => ({ label: stepLabel(s.label), who: s.by === 'about' ? t('flowTriggers.templateWhoPerson') : handler })),
+  ];
   const [departmentId, setDepartmentId] = useState(guessHr(departments));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -349,7 +360,7 @@ function TemplateDialog({ tpl, orgId, list, authHeaders, label, errorText, onClo
     setBusy(true);
     setError(null);
     const res = await apiRequest(`${API}/organizations/${orgId}/flow-triggers/templates`, {
-      method: 'POST', headers: await authHeaders(), body: { event: tpl.event, departmentId },
+      method: 'POST', headers: await authHeaders(), body: { event: tpl.event, ...(needsDepartment ? { departmentId } : {}) },
     });
     setBusy(false);
     if (!res.ok) {
@@ -365,8 +376,13 @@ function TemplateDialog({ tpl, orgId, list, authHeaders, label, errorText, onClo
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
         <Typography variant="body2">{t('flowTriggers.templateHint', { type: name })}</Typography>
+        <Box component="ol" sx={{ m: 0, pl: 3 }}>
+          {steps.map((s, i) => (
+            <li key={i}><Typography variant="body2"><b>{s.label}</b> — {s.who}</Typography></li>
+          ))}
+        </Box>
         {list.triggers.some((x) => x.event === tpl.event) && <Alert severity="info">{t('flowTriggers.templateReplaces')}</Alert>}
-        {departments.length === 0 ? (
+        {!needsDepartment ? null : departments.length === 0 ? (
           <Alert severity="warning">{t('flowTriggers.templateNeedsCode')}</Alert>
         ) : (
           <TextField select size="small" label={t('flowTriggers.templateDepartment')} value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
@@ -376,7 +392,7 @@ function TemplateDialog({ tpl, orgId, list, authHeaders, label, errorText, onClo
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('common.cancel')}</Button>
-        <Button variant="contained" disabled={busy || !departmentId} onClick={() => void create()}>{t('flowTriggers.create')}</Button>
+        <Button variant="contained" disabled={busy || (needsDepartment && !departmentId)} onClick={() => void create()}>{t('flowTriggers.create')}</Button>
       </DialogActions>
     </Dialog>
   );

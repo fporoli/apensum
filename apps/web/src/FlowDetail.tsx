@@ -650,10 +650,15 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
 
       {r.source_section && navigate && (
         <Box>
-          {/* A task about someone opens that person on its page (`?user=`), e.g. their HR dashboard. */}
-          <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string, r.about_user_id ? `user=${r.about_user_id}` : undefined)}>
-            {r.about_user_id ? t('flow.goToPerson') : t('flow.openSource', { name: sourceLabel(r.source) })}
-          </Button>
+          {/* A task about someone opens that person on its page (`?user=`), e.g. their HR dashboard; the person
+              themselves (a step of theirs: a permit to renew) gets their own data, the page they may open. */}
+          {r.about_user_id && r.about_user_id === userId ? (
+            <Button size="small" variant="outlined" onClick={() => navigate('myData')}>{t('flow.goToMyData')}</Button>
+          ) : (
+            <Button size="small" variant="outlined" onClick={() => navigate(r.source_section as string, r.about_user_id ? `user=${r.about_user_id}` : undefined)}>
+              {r.about_user_id ? t('flow.goToPerson') : t('flow.openSource', { name: sourceLabel(r.source) })}
+            </Button>
+          )}
         </Box>
       )}
 
@@ -910,6 +915,7 @@ export default function FlowDetail({ orgId, userId, authHeaders, focusId, refres
           defaultMessage={composing.text}
           title={t('flow.compose.title')}
           hint={t('flow.compose.hint')}
+          allowCc
           authHeaders={authHeaders}
         />
       )}

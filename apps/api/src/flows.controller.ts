@@ -763,9 +763,9 @@ export class FlowsController {
     return this.compose.draft(db, orgId, id, callerId);
   }
 
-  /** Sends that e-mail (`{ userIds, subject, message }`); the step can be done afterwards. */
+  /** Sends that e-mail (`{ userIds, subject, message, ccUserIds? }`); the step can be done afterwards. */
   @Post(':id/compose')
-  async composeSend(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: ForwardInput, @Req() req: AuthenticatedRequest) {
+  async composeSend(@Param('orgId') orgId: string, @Param('id') id: string, @Body() body: ForwardInput & { ccUserIds?: unknown }, @Req() req: AuthenticatedRequest) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = await this.caller(db, orgId, req);

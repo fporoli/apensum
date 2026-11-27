@@ -30,6 +30,7 @@ export default function ForwardMailDialog({
   initialTo,
   title,
   hint,
+  allowCc,
   authHeaders,
 }: {
   open: boolean;
@@ -46,11 +47,14 @@ export default function ForwardMailDialog({
   /** The dialog's title and the line under the text (default: "Send by e-mail", with a link back). */
   title?: string;
   hint?: string;
+  /** Copies (a written e-mail, flow-compose.ts): one mail, everyone sees whom it went to. */
+  allowCc?: boolean;
   authHeaders: () => Promise<Record<string, string>>;
 }) {
   const t = useT();
   const [people, setPeople] = useState<Recipient[]>([]);
   const [to, setTo] = useState<Recipient[]>([]);
+  const [cc, setCc] = useState<Recipient[]>([]);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -59,6 +63,7 @@ export default function ForwardMailDialog({
   useEffect(() => {
     if (!open) return;
     setTo(initialTo ?? suggested);
+    setCc([]);
     setSubject(defaultSubject);
     setMessage(defaultMessage);
     setError(null);
@@ -84,7 +89,7 @@ export default function ForwardMailDialog({
       const res = await fetch(`${API}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
-        body: JSON.stringify({ userIds: to.map((r) => r.id), subject, message }),
+        body: JSON.stringify({ userIds: to.map((r) => r.id), subject, message, ...(allowCc && cc.length ? { ccUserIds: cc.map((r) => r.id) } : {}) }),
       });
       const data = await res.json();
       if (!data?.ok) {
@@ -107,37 +112,10 @@ export default function ForwardMailDialog({
       <DialogTitle>{title ?? t('mail.title')}</DialogTitle>
       <DialogContent sx={{ display: 'grid', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
-        <Autocomplete
-          multiple
-          options={options}
-          value={to}
-          onChange={(_, v) => setTo(v.slice(0, MAX_RECIPIENTS))}
-          getOptionLabel={(o) => o.name}
-          isOptionEqualToValue={(a, b) => a.id === b.id}
-          filterOptions={(opts, state) => {
-            const q = state.inputValue.trim().toLowerCase();
-            return q ? opts.filter((o) => `${o.name} ${o.email}`.toLowerCase().includes(q)) : opts;
-          }}
-          renderOption={(props, o) => {
-            const { key, ...rest } = props as typeof props & { key: string };
-            return (
-              <Box component="li" key={key} {...rest} sx={{ display: 'flex', gap: 1.25, alignItems: 'center' }}>
-                <Avatar sx={{ width: 28, height: 28, fontSize: '0.8rem' }}>{o.name.charAt(0).toUpperCase()}</Avatar>
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="body2">{o.name}</Typography>
-                  <Typography variant="caption" color="text.secondary">{o.email}</Typography>
-                </Box>
-              </Box>
-            );
-          }}
-          renderTags={(value, getTagProps) =>
-            value.map((o, i) => {
-              const { key, ...rest } = getTagProps({ index: i });
-              return <Chip key={key} size="small" label={o.name} {...rest} />;
-            })
-          }
-          renderInput={(params) => <TextField {...params} label={t('mail.to')} placeholder={to.length ? '' : t('mail.toPlaceholder')} />}
-        />
+        <RecipientsField options={options} value={to} onChange={setTo} label={t('mail.to')} placeholder={to.length ? '' : t('mail.toPlaceholder')} />
+        {allowCc && (
+          <RecipientsField options={options.filter((o) => !to.some((x) => x.id === o.id))} value={cc} onChange={(v) => setCc(v.slice(0, 10))} label={t('mail.cc')} placeholder={cc.length ? '' : t('mail.ccPlaceholder')} />
+        )}
         <TextField label={t('mail.subject')} value={subject} onChange={(e) => setSubject(e.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
         <TextField label={t('mail.message')} value={message} onChange={(e) => setMessage(e.target.value)} multiline minRows={6} slotProps={{ htmlInput: { maxLength: 5000 } }} />
         <Typography variant="caption" color="text.secondary">{hint ?? t('mail.hint')}</Typography>
@@ -149,5 +127,48 @@ export default function ForwardMailDialog({
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+/** Members to mail: search by name or e-mail, chips for the chosen ones. */
+function RecipientsField({ options, value, onChange, label, placeholder }: {
+  options: Recipient[];
+  value: Recipient[];
+  onChange: (v: Recipient[]) => void;
+  label: string;
+  placeholder: string;
+}) {
+  return (
+    <Autocomplete
+      multiple
+      options={options}
+      value={value}
+      onChange={(_, v) => onChange(v.slice(0, MAX_RECIPIENTS))}
+      getOptionLabel={(o) => o.name}
+      isOptionEqualToValue={(a, b) => a.id === b.id}
+      filterOptions={(opts, state) => {
+        const q = state.inputValue.trim().toLowerCase();
+        return q ? opts.filter((o) => `${o.name} ${o.email}`.toLowerCase().includes(q)) : opts;
+      }}
+      renderOption={(props, o) => {
+        const { key, ...rest } = props as typeof props & { key: string };
+        return (
+          <Box component="li" key={key} {...rest} sx={{ display: 'flex', gap: 1.25, alignItems: 'center' }}>
+            <Avatar sx={{ width: 28, height: 28, fontSize: '0.8rem' }}>{o.name.charAt(0).toUpperCase()}</Avatar>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2">{o.name}</Typography>
+              <Typography variant="caption" color="text.secondary">{o.email}</Typography>
+            </Box>
+          </Box>
+        );
+      }}
+      renderTags={(value, getTagProps) =>
+        value.map((o, i) => {
+          const { key, ...rest } = getTagProps({ index: i });
+          return <Chip key={key} size="small" label={o.name} {...rest} />;
+        })
+      }
+      renderInput={(params) => <TextField {...params} label={label} placeholder={placeholder} />}
+    />
   );
 }

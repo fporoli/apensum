@@ -19,7 +19,11 @@ export const FLOW_STEPS_KIND = 'flows.flow';
 const ASSIGNEES = [
   'manager', 'department', 'team', 'person',
   'permission:nav.flows', 'permission:section.people.employment', 'permission:nav.expensePayout',
+  // Who keeps everyone's personal data (HR): e.g. a permit's renewal.
+  'permission:section.basicdata.personalien',
 ];
+/** Work the person the flow is about does themselves (a permit to renew), or a mail to them; never a decision. */
+const WITH_ABOUT = [...ASSIGNEES, 'about'];
 
 /**
  * A request type's workflow (Admin settings -> Workflows, one per type): the steps a request of that type goes through
@@ -40,10 +44,10 @@ export const FLOW_CATALOGUE: WorkflowKindCatalogue = {
   blocks: {
     // A review may ask fields as well (an amount to enter while approving): whoever approves fills them.
     review: { label: 'Review', action: 'flow.reviewed', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.approve', decides: true, fieldsOptional: true },
-    task: { label: 'Task', action: 'flow.done', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.done' },
+    task: { label: 'Task', action: 'flow.done', returnAction: 'flow.returned', assignees: WITH_ABOUT, actionKey: 'flow.workflow.done' },
     // Sent by the system the moment the workflow gets there (its own step, nobody acts on it): to the step's assignees.
-    mail: { label: 'E-mail', action: 'flow.mail', assignees: [...ASSIGNEES, 'requester'], automatic: true, message: true, doneKey: 'approvals.event.sent' },
-    form: { label: 'Form', action: 'flow.done', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.submitForm', fields: true },
+    mail: { label: 'E-mail', action: 'flow.mail', assignees: [...WITH_ABOUT, 'requester'], automatic: true, message: true, doneKey: 'approvals.event.sent' },
+    form: { label: 'Form', action: 'flow.done', returnAction: 'flow.returned', assignees: WITH_ABOUT, actionKey: 'flow.workflow.submitForm', fields: true },
     // Whoever does the step writes an e-mail from its template (flow-compose.ts), then marks it done.
     compose: { label: 'Write an e-mail', action: 'flow.done', returnAction: 'flow.returned', assignees: ASSIGNEES, actionKey: 'flow.workflow.done', message: true, compose: true },
   },

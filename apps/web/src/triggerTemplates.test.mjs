@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateWorkflowConfig, MAX_MESSAGE_SUBJECT, MAX_MESSAGE_TEXT } from '@worktime3/shared/workflowConfig';
-import { TRIGGER_TEMPLATES, freeTypeKey, templateConfig } from '@worktime3/shared/triggerTemplates';
+import { TRIGGER_TEMPLATES, freeTypeKey, templateConfig, templateNeedsDepartment } from '@worktime3/shared/triggerTemplates';
 
 // The flow types' catalogue as the API registers it (apps/api/src/flow-steps.ts FLOW_CATALOGUE), as far as a template uses it.
 const FLOWS = {
@@ -11,18 +11,18 @@ const FLOWS = {
   each: true,
   facts: { urgent: 'boolean' },
   blocks: {
-    task: { label: 'Task', action: 'flow.done', returnAction: 'flow.returned', assignees: ['manager', 'department', 'team', 'person'] },
-    compose: { label: 'Write an e-mail', action: 'flow.done', returnAction: 'flow.returned', assignees: ['manager', 'department', 'team', 'person'], message: true, compose: true },
+    task: { label: 'Task', action: 'flow.done', returnAction: 'flow.returned', assignees: ['manager', 'department', 'team', 'person', 'permission:section.basicdata.personalien', 'about'] },
+    compose: { label: 'Write an e-mail', action: 'flow.done', returnAction: 'flow.returned', assignees: ['manager', 'department', 'team', 'person', 'permission:section.basicdata.personalien'], message: true, compose: true },
   },
   defaultConfig: { version: 1, steps: [] },
 };
 
-test('every template is a valid flow type configuration: an e-mail step to the person first, to the department by its code', () => {
+test('every template is a valid flow type configuration: an e-mail step to the person first, by its handler', () => {
   for (const tpl of TRIGGER_TEMPLATES) {
     const config = templateConfig(tpl, 'hr');
     const checked = validateWorkflowConfig(FLOWS, config);
     assert.ok(checked.ok, `${tpl.event}: ${JSON.stringify(checked.errors)}`);
-    assert.equal(config.steps[0].assignTo, 'department:hr');
+    assert.equal(config.steps[0].assignTo, templateNeedsDepartment(tpl) ? 'department:hr' : tpl.handler);
     assert.equal(config.steps[0].mailTo, 'about');
     for (const l of ['de', 'fr', 'it', 'en']) {
       assert.ok(tpl.typeName[l] && tpl.subject[l] && tpl.text[l], `${tpl.event} ${l}`);
@@ -31,11 +31,15 @@ test('every template is a valid flow type configuration: an e-mail step to the p
       if (l === 'de') assert.doesNotMatch(tpl.text[l], /\b(du|dich|dir|dein\w*)\b/i, tpl.event);
     }
   }
-  // The permit's goes on to a task for the same department, reminded after ten working days, and may go back to the e-mail.
-  const permit = templateConfig(TRIGGER_TEMPLATES[0], 'hr');
+  // The permit's: whoever keeps everyone's personal data writes, the holder uploads the new one, HR records it; no department asked.
+  const tpl = TRIGGER_TEMPLATES[0];
+  assert.equal(templateNeedsDepartment(tpl), false);
+  const permit = templateConfig(tpl, null);
+  const hr = 'permission:section.basicdata.personalien';
   assert.deepEqual(permit.steps.map((s) => [s.key, s.do[0], s.assignTo, s.reject, s.remindDays]), [
-    ['mail', 'compose', 'department:hr', 'back', undefined], ['record', 'task', 'department:hr', 'back', 10],
+    ['mail', 'compose', hr, 'back', undefined], ['upload', 'task', 'about', 'none', 5], ['record', 'task', hr, 'none', 5],
   ]);
+  assert.ok(validateWorkflowConfig(FLOWS, permit).ok);
   // The core's own events only; HR-Prozesse brings its own (plugins/hr/shared/trigger-templates.ts).
   assert.deepEqual(TRIGGER_TEMPLATES.map((t) => t.event), ['permitExpires']);
 });

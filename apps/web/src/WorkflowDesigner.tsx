@@ -235,6 +235,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     else if (kindOfAssignee === 'team') onChange(withAssignee(`team:${units.teams.find((d) => d.code)?.code ?? ''}`));
     else if (kindOfAssignee === 'person') onChange(withAssignee(`person:${people[0]?.id ?? ''}`));
     else if (kindOfAssignee === 'requester') onChange(withAssignee('requester'));
+    else if (kindOfAssignee === 'about') onChange(withAssignee('about'));
     else onChange(withAssignee(permissions[0] ?? 'manager'));
   };
   const kinds = [
@@ -243,6 +244,7 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     ...(allowed.includes('team') ? ['team'] : []),
     ...(allowed.includes('person') && people.length ? ['person'] : []),
     ...(allowed.includes('requester') ? ['requester'] : []),
+    ...(allowed.includes('about') ? ['about'] : []),
     ...(permissions.length ? ['permission'] : []),
   ];
 

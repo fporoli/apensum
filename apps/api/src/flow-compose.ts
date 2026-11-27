@@ -56,6 +56,14 @@ export function composeMailText(text: string): string {
   return `${text.trim()}\n`;
 }
 
+/** The copies of a written e-mail: active members' ids, at most 10, none of them also a recipient; null = invalid. */
+export function parseCc(raw: unknown, to: readonly string[]): string[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || !raw.every((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x))) return null;
+  const ids = [...new Set(raw as string[])].filter((id) => !to.includes(id));
+  return ids.length > 10 ? null : ids;
+}
+
 interface FlowRow {
   id: string;
   organization_id: string;
@@ -135,28 +143,47 @@ export class FlowComposeService {
   }
 
   /**
-   * Sends the step's e-mail (`{ userIds, subject, message }`, as "Send by e-mail" takes it) to active members of the
-   * organization, each in their own mail with Reply-To the sender, and records that it went out: the thread and the
-   * workflow say so (how many, never what). A mail that fails is reported, the others still go.
+   * Sends the step's e-mail (`{ userIds, subject, message, ccUserIds? }`, as "Send by e-mail" takes it, with copies)
+   * to active members of the organization with Reply-To the sender, and records that it went out: the thread and the
+   * workflow say so (how many, never what). Without Cc each gets their own mail (a mail that fails is reported, the
+   * others still go); with Cc it is one mail, everyone sees whom it went to (e.g. HR's lead in copy).
    */
-  async send(db: Db, orgId: string, flowId: string, callerId: string, body: ForwardInput) {
+  async send(db: Db, orgId: string, flowId: string, callerId: string, body: ForwardInput & { ccUserIds?: unknown }) {
     const found = await this.step(db, orgId, flowId, callerId);
     if (!found.ok) return found;
     const parsed = parseForward(body ?? {});
     if (!parsed.ok) return parsed;
+    const ccIds = parseCc(body?.ccUserIds, parsed.userIds);
+    if (!ccIds) return { ok: false as const, error: 'invalid-cc' };
     const recipients = await this.people(db, orgId, parsed.userIds);
     if (recipients.length !== parsed.userIds.length) return { ok: false as const, error: 'unknown-recipient' };
+    const copies = await this.people(db, orgId, ccIds);
+    if (copies.length !== ccIds.length) return { ok: false as const, error: 'unknown-recipient' };
     const [sender] = await this.people(db, orgId, [callerId]);
     if (!sender?.email) return { ok: false as const, error: 'forbidden' };
     let sent = 0;
-    for (const r of recipients) {
-      if (!r.email) continue;
+    const mail = { replyTo: sender.email, subject: parsed.subject, text: composeMailText(parsed.message) };
+    if (copies.length) {
+      const to = recipients.map((r) => r.email).filter((e): e is string => !!e);
+      const cc = copies.map((r) => r.email).filter((e): e is string => !!e);
       try {
-        await sendMail({ to: r.email, replyTo: sender.email, subject: parsed.subject, text: composeMailText(parsed.message) }, 15_000);
-        sent++;
+        if (to.length) {
+          await sendMail({ ...mail, to, cc }, 15_000);
+          sent = to.length + cc.length;
+        }
       } catch (err) {
-        console.warn(`compose mail failed after ${sent} of ${recipients.length}: ${err instanceof Error ? err.message : err}`);
-        break;
+        console.warn(`compose mail with cc failed: ${err instanceof Error ? err.message : err}`);
+      }
+    } else {
+      for (const r of recipients) {
+        if (!r.email) continue;
+        try {
+          await sendMail({ ...mail, to: r.email }, 15_000);
+          sent++;
+        } catch (err) {
+          console.warn(`compose mail failed after ${sent} of ${recipients.length}: ${err instanceof Error ? err.message : err}`);
+          break;
+        }
       }
     }
     if (sent === 0) return { ok: false as const, error: 'mail-failed' };
@@ -165,6 +192,6 @@ export class FlowComposeService {
     await db.execute(sql`INSERT INTO flow_messages (flow_id, author_user_id, kind, data, posted_at)
       VALUES (${flowId}::uuid, ${callerId}::uuid, 'event', ${JSON.stringify({ workflow: 'composed', recipients: sent, step: { key: pending.step.key, label: pending.step.label, ...(pending.step.labels ? { labels: pending.step.labels } : {}) } })}::jsonb, ${sqlNow()})`);
     void this.audit.record(orgId, callerId, 'flow.compose-mail', 'flow', flowId, { recipients: sent }).catch(() => {});
-    return { ok: true as const, sent, failed: recipients.length - sent };
+    return { ok: true as const, sent, failed: Math.max(0, recipients.length + copies.length - sent) };
   }
 }
