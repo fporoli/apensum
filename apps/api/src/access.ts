@@ -60,7 +60,7 @@ export function forgetAccess(): void {
 function cachedAccess<T>(db: Executor, key: string, load: () => Promise<T>): Promise<T> {
   let cache = accessCaches.get(db as object);
   if (!cache) accessCaches.set(db as object, (cache = new Map()));
-  const now = Date.now();
+  const now = Date.now(); // real time: cache
   const k = `${accessGeneration}:${key}`;
   const hit = cache.get(k);
   if (ACCESS_TTL_MS <= 0) return load();
@@ -418,7 +418,7 @@ async function loadPermissionIdsOf(db: Executor, organizationId: string, userId:
   const rows = await db.execute(
     sql`SELECT r.name, rp.permission_id, o.settings -> 'modules' AS modules,
           (SELECT jsonb_agg(l.module_id) FROM organization_licenses l
-            WHERE l.organization_id = o.id AND (l.valid_until IS NULL OR l.valid_until >= ${sqlToday()})) AS licenses
+            WHERE l.organization_id = o.id AND (l.valid_until IS NULL OR l.valid_until >= (now() AT TIME ZONE 'Europe/Zurich')::date)) AS licenses -- real time: licenses are contracts in real time
         FROM organization_memberships m
         JOIN organizations o ON o.id = m.organization_id
         JOIN membership_roles mr ON mr.membership_id = m.id

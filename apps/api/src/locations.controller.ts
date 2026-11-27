@@ -7,6 +7,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { VersionsService } from './versions.service';
 import { AuditService } from './audit.service';
 import { employee_assignments, locations } from './db/schema';
+import { sqlToday } from './clock';
 
 interface LocationBody {
   name?: string;
@@ -43,7 +44,7 @@ export class LocationsController {
     const counts = await db.execute(sql`
       SELECT location_id, COUNT(*)::int AS members FROM (
         SELECT DISTINCT ON (user_id) user_id, location_id FROM employee_assignments
-        WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+        WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
         ORDER BY user_id, valid_from DESC
       ) current_assignment WHERE location_id IS NOT NULL GROUP BY location_id`);
     const membersOf = new Map((counts.rows as { location_id: string; members: number }[]).map((r) => [r.location_id, r.members]));

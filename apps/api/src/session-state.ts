@@ -31,7 +31,7 @@ export async function mintSessionToken(db: Db, userId: string, email: string, ex
 const checked = new Map<string, { ok: boolean; at: number }>();
 
 /** Whether a local token's session still holds: the account exists, is active and (with `pv`) has the same password. */
-export async function sessionHolds(db: Db | null | undefined, principal: AuthenticatedPrincipal, now = Date.now()): Promise<boolean> {
+export async function sessionHolds(db: Db | null | undefined, principal: AuthenticatedPrincipal, now = Date.now()): Promise<boolean> { // real time: sessions
   if (principal.kind !== 'local' || !db) return true;
   const key = `${principal.sub}|${principal.pv ?? ''}`;
   const hit = checked.get(key);

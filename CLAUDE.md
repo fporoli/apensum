@@ -141,6 +141,9 @@ The areas are described in `docs/dev/` (below); these rules hold in all of them.
 - AI is Azure OpenAI in Switzerland only, every call through `AiBudgetService`; assistant tools call the controllers, so they check what the caller may do (`docs/dev/AI.md`).\
   Cases data is end-to-end encrypted: never read, log or index an encrypted row's fields on the server, never store a passphrase or key (`docs/dev/CASES.md`, `docs/CASES_ENCRYPTION.md`).
 - Holidays are counted per person (their location's), never from the organization's region alone (`docs/dev/TIME.md`).
+- Business time comes from the clock (`clock.ts`): `clock.now()`, and `sqlNow()` / `sqlToday()` in SQL (Zurich's date), never `new Date()`, `now()` or `CURRENT_DATE`, and an insert writes its times itself instead of a column's `DEFAULT now()`.\
+  It is the real time except inside `clock.at(...)`, which only code in the API's process calls (the Whale simulation, tests); no request can set it.\
+  Technical time stays real and says why on its line, `// real time: <why>` (`-- real time:` in SQL): sessions, tokens, two-step login, rate limits, expiring links, licenses, caches, the AI budget; `test/api/clock.test.ts` fails on any other.
 - Modules can be switched off per organization and licensed modules need a license; the core must work without plugins, and a plugin imports the core only through the `plugin` contracts (`docs/dev/MODULES.md`, `docs/PLUGINS.md`).
 - ntfy pushes to the operator never carry personal data.
 - What the website says must match the app (`docs/dev/WEBSITE.md`).

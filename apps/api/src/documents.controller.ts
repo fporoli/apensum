@@ -6,6 +6,7 @@ import { DocumentsService, type PersonalDocument } from './documents.service';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
 import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { clock } from './clock';
 
 export type { PersonalDocument } from './documents.service';
 
@@ -34,7 +35,7 @@ export class DocumentsController {
     if (!db) return { ok: true, offline: true, documents: [] };
     const callerId = await this.caller(db, orgId, req);
     if (!callerId) return { ok: false, error: 'forbidden', documents: [] };
-    await this.timesheetDocs.issueMissing(db, orgId, callerId, new Date().getFullYear());
+    await this.timesheetDocs.issueMissing(db, orgId, callerId, clock.now().getFullYear());
     return { ok: true, userId: callerId, documents: await this.own(db, orgId, callerId) };
   }
 

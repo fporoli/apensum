@@ -11,6 +11,7 @@ import { WorkflowsService } from './workflows.service';
 import { departments, employee_assignments, locations, organization_memberships, users } from './db/schema';
 import { probationUntilOf } from './vacation';
 import { addDays, isIsoDate } from '@worktime3/shared/worktime';
+import { clock, sqlNow, sqlToday } from './clock';
 
 /** Permission object of a person's employment (start date, department, function, manager). */
 export const EMPLOYMENT_OBJECT = 'section.people.employment';
@@ -103,7 +104,7 @@ export class EmploymentController {
     const counts = await db.execute(sql`
       SELECT department_id, COUNT(*)::int AS members FROM (
         SELECT DISTINCT ON (user_id) user_id, department_id FROM employee_assignments
-        WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+        WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
         ORDER BY user_id, valid_from DESC
       ) current_assignment WHERE department_id IS NOT NULL GROUP BY department_id`);
     const membersOf = new Map((counts.rows as { department_id: string; members: number }[]).map((r) => [r.department_id, r.members]));
@@ -250,7 +251,7 @@ export class EmploymentController {
       .leftJoin(locations, eq(locations.id, employee_assignments.location_id))
       .where(and(eq(employee_assignments.organization_id, orgId), eq(employee_assignments.user_id, userId)))
       .orderBy(desc(employee_assignments.valid_from));
-    const today = new Date().toISOString().slice(0, 10);
+    const today = clock.now().toISOString().slice(0, 10);
     return {
       ok: true,
       startDate: membership.start_date ?? membership.joined_at?.slice(0, 10) ?? null,
@@ -291,7 +292,7 @@ export class EmploymentController {
       if (deputyUserId === userId) return { ok: false, error: 'deputy-self' };
       const [member] = (await db.execute(sql`
         SELECT 1 FROM organization_memberships WHERE organization_id = ${orgId}::uuid AND user_id = ${deputyUserId}::uuid
-          AND status = 'active' AND (exit_at IS NULL OR exit_at > now())`)).rows;
+          AND status = 'active' AND (exit_at IS NULL OR exit_at > ${sqlNow()})`)).rows;
       if (!member) return { ok: false, error: 'unknown-user' };
     }
     const [membership] = await db

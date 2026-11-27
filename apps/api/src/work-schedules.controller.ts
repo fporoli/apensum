@@ -7,6 +7,7 @@ import { VersionsService } from './versions.service';
 import { WorkTimeModelService, localDate } from './work-time-model.service';
 import { locations, org_holidays, organizations, work_schedules } from './db/schema';
 import { addDays, isCanton, isIsoDate, validateSchedule } from '@worktime3/shared/worktime';
+import { clock } from './clock';
 
 /** Whether a submitted or approved timesheet of this person ends after `date` (its target is settled). */
 export async function hasLockedPeriodFrom(db: Db, orgId: string, userId: string, date: string): Promise<boolean> {
@@ -137,7 +138,7 @@ export class WorkSchedulesController {
     ]);
     return {
       ok: true,
-      today: localDate(new Date(), timeZone),
+      today: localDate(clock.now(), timeZone),
       days: targets.map((d) => ({ ...d, holidayInfo: holidays.get(d.date) ?? null, attended: d.notRecorded ? 0 : attendance.get(d.date) ?? 0 })),
     };
   }
@@ -156,7 +157,7 @@ export class WorkSchedulesController {
     if (!db) return { ok: true, offline: true, holidays: [], rows: [] };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return { ok: false, error: 'forbidden', holidays: [], rows: [] };
-    const year = /^\d{4}$/.test(yearParam ?? '') ? Number(yearParam) : new Date().getFullYear();
+    const year = /^\d{4}$/.test(yearParam ?? '') ? Number(yearParam) : clock.now().getFullYear();
     const [from, toExclusive] = yearRange(year);
     const locs = await this.workTime.locations(db, orgId);
     const location = locationId ? locs.find((l) => l.id === locationId) ?? null : null;

@@ -12,6 +12,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { BalancesService } from '../balances.service';
 import { WorkTimeModelService, localDate } from '../work-time-model.service';
 import type { Db } from '../db.service';
+import { clock } from '../clock';
 
 const ACME = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 /** Ulla, Acme's HR: recorded as the one who closed. */
@@ -50,7 +51,7 @@ async function main() {
     console.error('close-demo-years: DATABASE_URL is not set');
     process.exit(1);
   }
-  const year = Number(process.argv[2] ?? Number(localDate(new Date(), 'Europe/Zurich').slice(0, 4)) - 1);
+  const year = Number(process.argv[2] ?? Number(localDate(clock.now(), 'Europe/Zurich').slice(0, 4)) - 1);
   const pool = new Pool({ connectionString: url });
   try {
     const exists = await pool.query('SELECT 1 FROM organizations WHERE id = $1', [ACME]);

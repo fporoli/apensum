@@ -9,6 +9,7 @@ import { VersionsService } from './versions.service';
 import { WorkflowsService, APPROVE_PROJECT_TIMESHEET_WORKFLOW_NAME } from './workflows.service';
 import { nextMonth } from '@worktime3/shared/worktime';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
+import { clock } from './clock';
 
 const OBJECT = 'nav.projectTimesheet';
 
@@ -48,13 +49,13 @@ export class ProjectTimesheetsController implements OnModuleInit {
 
   onModuleInit() {
     this.workflowsSvc.registerAction('project-timesheet.approve', async (db, ctx) => {
-      const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
+      const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: clock.now().toISOString(), review_note: null };
       await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, ctx.sourceTableUuid));
       void this.versions.record('project_time_periods', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
       await this.timesheetDocs.issue(db, 'project_timesheet', ctx.sourceTableUuid, ctx.actorUserId);
     });
     this.workflowsSvc.registerAction('project-timesheet.reject', async (db, ctx) => {
-      const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: ctx.decisionNote };
+      const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: clock.now().toISOString(), review_note: ctx.decisionNote };
       await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, ctx.sourceTableUuid));
       void this.versions.record('project_time_periods', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
     });
@@ -143,7 +144,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
     const toSubmit = totals.filter((t) => t.project_id && !['submitted', 'approved'].includes(byProject.get(t.project_id)?.status ?? 'open'));
     if (toSubmit.length === 0) return { ok: false, error: 'nothing-to-submit' };
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     const definition = await this.workflowsSvc.ensureDefinition(db, orgId, APPROVE_PROJECT_TIMESHEET_WORKFLOW_NAME, "A month of an employee's project time awaiting the project owner's approval.", [
       {
         key: 'project_owner_review',
@@ -243,7 +244,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
     if (!mayReopen) return { ok: false, error: 'forbidden' };
     if (period.status !== 'approved' && period.status !== 'submitted') return { ok: false, error: 'not-locked' };
     const pending = await this.workflowsSvc.findPending(db, 'project_time_periods', id);
-    if (pending) await db.update(workflows).set({ step_status: 'cancelled', workflow_finished: new Date().toISOString() }).where(eq(workflows.workflow_id, pending.id));
+    if (pending) await db.update(workflows).set({ step_status: 'cancelled', workflow_finished: clock.now().toISOString() }).where(eq(workflows.workflow_id, pending.id));
     const patch = { status: 'open' as const, submitted_at: null, reviewed_by_user_id: null, reviewed_at: null, review_note: null };
     await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, id));
     void this.versions.record('project_time_periods', id, 'update_delta', callerId, patch).catch(() => {});
@@ -264,7 +265,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
     if (period.user_id !== callerId) return { ok: false, error: 'forbidden' };
     if (period.status !== 'submitted') return { ok: false, error: 'not-submitted' };
     const pending = await this.workflowsSvc.findPending(db, 'project_time_periods', id);
-    if (pending) await db.update(workflows).set({ step_status: 'cancelled', workflow_finished: new Date().toISOString() }).where(eq(workflows.workflow_id, pending.id));
+    if (pending) await db.update(workflows).set({ step_status: 'cancelled', workflow_finished: clock.now().toISOString() }).where(eq(workflows.workflow_id, pending.id));
     const patch = { status: 'open' as const, submitted_at: null };
     await db.update(project_time_periods).set(patch).where(eq(project_time_periods.id, id));
     void this.versions.record('project_time_periods', id, 'update_delta', callerId, patch).catch(() => {});

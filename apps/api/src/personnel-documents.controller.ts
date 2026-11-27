@@ -10,6 +10,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { NotificationsService } from './notifications.service';
 import { VersionsService } from './versions.service';
 import { AuditService } from './audit.service';
+import { clock, sqlToday } from './clock';
 
 export const PERSONNEL_OBJECT = 'section.people.documents';
 
@@ -232,7 +233,7 @@ export class PersonnelDocumentsController {
     if (!row || !row.visible_to_employee) return { ok: false, error: 'not-found' };
     if (!row.require_ack) return { ok: false, error: 'no-confirmation-asked' };
     if (row.acknowledged_at) return { ok: true, acknowledgedAt: row.acknowledged_at };
-    const at = new Date().toISOString();
+    const at = clock.now().toISOString();
     await db.execute(sql`UPDATE personnel_documents SET acknowledged_at = ${at} WHERE id = ${id} AND acknowledged_at IS NULL`);
     void this.versions.record('personnel_documents', id, 'update_delta', access.callerId, { acknowledged_at: at }).catch(() => {});
     void this.audit.record(orgId, access.callerId, 'personnel-document.acknowledge', 'personnel_document', id, { userId }).catch(() => {});
@@ -341,7 +342,7 @@ export class PersonnelDocumentsController {
     const rows = await db.execute(sql`
       SELECT a.manager_user_id, coalesce(u.display_name, u.email) AS name
       FROM employee_assignments a JOIN users u ON u.id = a.user_id
-      WHERE a.organization_id = ${orgId} AND a.user_id = ${userId} AND a.valid_from <= CURRENT_DATE
+      WHERE a.organization_id = ${orgId} AND a.user_id = ${userId} AND a.valid_from <= ${sqlToday()}
       ORDER BY a.valid_from DESC LIMIT 1`);
     const r = rows.rows[0] as { manager_user_id: string | null; name: string } | undefined;
     if (!r?.manager_user_id || r.manager_user_id === userId) return;

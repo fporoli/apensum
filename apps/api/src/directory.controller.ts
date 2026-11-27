@@ -5,6 +5,7 @@ import { callerUserId, can, isOrgMember } from './access';
 import { avatarUrlFor } from './avatars';
 import { publicApiRoot } from './news-newsletter';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { sqlNow, sqlToday } from './clock';
 
 export interface DirectoryEntry {
   userId: string;
@@ -62,7 +63,7 @@ export class DirectoryController {
       JOIN users u ON u.id = m.user_id
       LEFT JOIN (
         SELECT DISTINCT ON (user_id) user_id, department_id, job_function, manager_user_id, location_id FROM employee_assignments
-        WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+        WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
         ORDER BY user_id, valid_from DESC
       ) a ON a.user_id = m.user_id
       LEFT JOIN departments d ON d.id = a.department_id
@@ -76,15 +77,15 @@ export class DirectoryController {
       LEFT JOIN LATERAL (
         SELECT max(date_end) AS date_end FROM absences
         WHERE organization_id = ${orgId} AND user_id = m.user_id AND status = 'approved'
-          AND date_start <= (now() AT TIME ZONE 'Europe/Zurich')::date AND date_end >= (now() AT TIME ZONE 'Europe/Zurich')::date
+          AND date_start <= ${sqlToday()} AND date_end >= ${sqlToday()}
       ) ab ON TRUE
       LEFT JOIN LATERAL (
         SELECT time_recording FROM work_schedules
-        WHERE organization_id = ${orgId} AND user_id = m.user_id AND valid_from <= (now() AT TIME ZONE 'Europe/Zurich')::date
+        WHERE organization_id = ${orgId} AND user_id = m.user_id AND valid_from <= ${sqlToday()}
         ORDER BY valid_from DESC LIMIT 1
       ) rec ON TRUE
       WHERE m.organization_id = ${orgId} AND m.status = 'active' AND u.is_active
-        AND (m.exit_at IS NULL OR m.exit_at > now())
+        AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
       ORDER BY lower(coalesce(u.last_name, u.display_name, u.email)), lower(coalesce(u.first_name, ''))`);
     const apiRoot = publicApiRoot(req);
     const people: DirectoryEntry[] = (result.rows as Record<string, unknown>[]).map((r) => ({

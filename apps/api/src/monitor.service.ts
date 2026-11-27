@@ -94,7 +94,7 @@ export class MonitorService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** One round; `facts` only in tests (else this server's disk and mail relay). */
-  async run(now = new Date(), facts?: MonitorFacts): Promise<Finding[]> {
+  async run(now = new Date(), facts?: MonitorFacts): Promise<Finding[]> { // real time: monitoring
     const found = findings(facts ?? { ...(await diskFacts()), smtp: lastSmtpStatus() });
     const day = now.toISOString().slice(0, 10);
     const fresh = found.filter((f) => !this.told.has(`${f.id}:${day}`));

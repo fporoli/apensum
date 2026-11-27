@@ -42,10 +42,9 @@ It runs on **test** or **preprod** (GitHub workflow), on a developer's **dev** d
 - A day has an **agenda**: the company's things first (people come and go, structure), then what people do (in parallel, `SIM_PARALLEL`), then everyone at work books the day.
 - **Decisions** go to whoever the record's open flow step waits for (`decide()`), step by step, with the step's rules (a work step such as paying cannot be sent back).
 - **SQL** only where no service can act in the past or the spec asks for something the service refuses; each place says `SQL:` in the code:
-  - an account's join date (the service says now, a leaver's exit must lie after it);
   - the admin's 8-character-short demo password `admin`, set once (as the demo seed does), never changed after;
-  - the billing licence where the instance has no operator (a fresh dev database; on test and preprod the operator grants it);
-  - the time stamps of flows, their messages and workflows (with their history), which the API writes with the real time: each simulated day's are moved to that day, spread over 8:00 to 17:00 in the order they happened, so "the last 30 days" and "waiting since" read as in a company that lived those years.
+  - the billing licence where the instance has no operator (a fresh dev database; on test and preprod the operator grants it).
+- **Time:** every simulated day runs inside the API's business clock (`clock.at`, `apps/api/src/clock.ts`), from 8:00 with the time running on (a real second ten simulated minutes, at most until 18:00): whatever the services write (join dates, flows and their history, decisions, notifications, the audit log, documents) carries the simulated day, and "today" in every rule (the manager in force, overdue, the last 30 days) is that day.
 - Mails are read as the person's mailbox would show them (invitation token, password reset link); the instance's mail goes to its Mailpit.
 - The API's own timers (reminders, HR tasks) are off in the simulation's process; the instance itself keeps them.
 - Random but reproducible: the same `SIM_SEED` gives the same company.

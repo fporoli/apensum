@@ -7,6 +7,7 @@ import type { Db } from './db.service';
 import type { Response } from 'express';
 import { documents } from './db/schema';
 import { currentMasterKey, decryptDocument, encryptDocument, masterKeys } from './document-crypto';
+import { clock } from './clock';
 
 export const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 
@@ -105,6 +106,7 @@ export class DocumentsService {
         uploaded_by_user_id: uploadedByUserId,
         encrypted_key: sealed?.encryptedKey ?? null,
         key_id: sealed?.keyId ?? null,
+        created_at: clock.now().toISOString(),
       })
       .returning({ id: documents.id });
     return row.id;

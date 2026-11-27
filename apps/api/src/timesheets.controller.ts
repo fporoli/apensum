@@ -10,6 +10,7 @@ import { VersionsService } from './versions.service';
 import { WorkflowsService, REOPEN_TIMESHEET_WORKFLOW_NAME, APPROVE_TIMESHEET_WORKFLOW_NAME } from './workflows.service';
 import { BalancesService } from './balances.service';
 import { TimesheetDocumentsService } from './timesheet-documents.service';
+import { clock } from './clock';
 
 const STATUSES = ['open', 'submitted', 'approved', 'rejected'] as const;
 type Status = (typeof STATUSES)[number];
@@ -40,7 +41,7 @@ export class TimesheetsController implements OnModuleInit {
   onModuleInit() {
 
     this.workflowsSvc.registerAction('timesheet.approve', async (db, ctx) => {
-      const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
+      const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: clock.now().toISOString(), review_note: null };
       await db.update(timesheet_periods).set(patch).where(eq(timesheet_periods.id, ctx.sourceTableUuid));
       void this.versions.record('timesheet_periods', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
       await this.balances.closeMonth(db, ctx.sourceTableUuid, ctx.actorUserId);
@@ -48,7 +49,7 @@ export class TimesheetsController implements OnModuleInit {
     });
 
     this.workflowsSvc.registerAction('timesheet.reject', async (db, ctx) => {
-      const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: ctx.decisionNote };
+      const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: clock.now().toISOString(), review_note: ctx.decisionNote };
       await db.update(timesheet_periods).set(patch).where(eq(timesheet_periods.id, ctx.sourceTableUuid));
       void this.versions.record('timesheet_periods', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
     });
@@ -133,7 +134,7 @@ export class TimesheetsController implements OnModuleInit {
       return { ok: false, error: 'time-not-recorded' };
     }
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     // No manager on record ("top of the chain") — nobody to route the request to, so it's approved on submit.
     const managerUserId = await membershipManagerId(db, orgId, callerId);
     const autoApproved = !managerUserId;
@@ -248,7 +249,7 @@ export class TimesheetsController implements OnModuleInit {
     const patch = {
       status: newStatus,
       reviewed_by_user_id: callerId,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: clock.now().toISOString(),
       review_note: note?.trim() || null,
     };
     await db.update(timesheet_periods).set(patch).where(eq(timesheet_periods.id, id));
@@ -287,7 +288,7 @@ export class TimesheetsController implements OnModuleInit {
     if (await isYearClosed(db, period.organization_id, period.user_id, Number(period.period_start.slice(0, 4)))) return { ok: false, error: 'year-closed' };
     await db
       .update(workflows)
-      .set({ step_status: 'cancelled', workflow_finished: new Date().toISOString() })
+      .set({ step_status: 'cancelled', workflow_finished: clock.now().toISOString() })
       .where(and(eq(workflows.source_table, 'timesheet_periods'), eq(workflows.source_table_uuid, id), eq(workflows.step_status, 'pending')));
     const patch = { status: 'open' as const, submitted_at: null, reviewed_by_user_id: null, reviewed_at: null, review_note: null };
     await db.update(timesheet_periods).set(patch).where(eq(timesheet_periods.id, id));

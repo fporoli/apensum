@@ -102,7 +102,7 @@ export class VersionsService implements OnModuleDestroy {
       VALUES ${values}
       ON CONFLICT (source_table, source_table_uuid) DO UPDATE SET
         version_nr = versions.version_nr + jsonb_array_length(EXCLUDED.history),
-        lastmodified = now(),
+        lastmodified = now(), -- real time: the row's own bookkeeping (its entries carry the business time)
         lastmodified_by_user_id = EXCLUDED.lastmodified_by_user_id,
         history = versions.history || (
           SELECT jsonb_agg(e || jsonb_build_object('version', versions.version_nr + n) ORDER BY n)

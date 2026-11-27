@@ -9,6 +9,7 @@ import { WorkflowsService } from './workflows.service';
 import { can, callerUserId } from './access';
 import { departments, organization_memberships, static_data, teams, users } from './db/schema';
 import type { AuthenticatedRequest } from './jwt.guard';
+import { sqlNow } from './clock';
 
 /** The errors of assignees naming a department or team (by code), or a person, this organization doesn't have. */
 export async function unknownUnits(db: NonNullable<ReturnType<DbService['getDb']>>, orgId: string, assignees: string[]): Promise<WorkflowConfigError[]> {
@@ -96,7 +97,7 @@ export class WorkflowConfigsController {
         SELECT DISTINCT split_part(rp.permission_id, ':', 1) AS object, m.user_id FROM organization_memberships m
         JOIN membership_roles mr ON mr.membership_id = m.id
         JOIN role_permissions rp ON rp.role_id = mr.role_id
-        WHERE m.organization_id = ${orgId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+        WHERE m.organization_id = ${orgId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
           AND rp.permission_id IN (${sql.join(objects.map((o) => sql`${`${o}:edit:all`}`), sql`, `)})`);
       for (const r of rows.rows as { object: string; user_id: string }[]) holders[r.object]?.push(r.user_id);
     }

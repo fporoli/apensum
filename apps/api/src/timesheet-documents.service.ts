@@ -7,6 +7,7 @@ import type { Executor } from './access';
 import { DocumentsService } from './documents.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { VersionsService } from './versions.service';
+import { clock, sqlNow } from './clock';
 
 /**
  * The PDF frozen when a month is approved (Documents page): the working-time timesheet
@@ -359,7 +360,7 @@ function approvalFacts(L: Record<string, string>, d: { approvedBy: string | null
   return out;
 }
 
-export async function renderTimesheetPdf(d: TimesheetPdfData, lang: Lang, issuedAt = new Date().toISOString()): Promise<Buffer> {
+export async function renderTimesheetPdf(d: TimesheetPdfData, lang: Lang, issuedAt = clock.now().toISOString()): Promise<Buffer> {
   const L = LABELS[lang];
   const sheet = new Sheet(L.timesheet, monthTitle(d.periodStart, lang));
   sheet.facts([[L.person, d.person], [L.organization, d.organization], ...approvalFacts(L, d, lang)]);
@@ -399,7 +400,7 @@ export async function renderTimesheetPdf(d: TimesheetPdfData, lang: Lang, issued
   return sheet.finish(`${d.organization} · ${d.person} · ${L.issued} ${formatInstant(issuedAt, lang, d.timeZone)}`);
 }
 
-export async function renderProjectReportPdf(d: ProjectReportPdfData, lang: Lang, issuedAt = new Date().toISOString()): Promise<Buffer> {
+export async function renderProjectReportPdf(d: ProjectReportPdfData, lang: Lang, issuedAt = clock.now().toISOString()): Promise<Buffer> {
   const L = LABELS[lang];
   const sheet = new Sheet(L.projectTimesheet, monthTitle(d.periodStart, lang));
   sheet.facts([[L.person, d.person], [L.organization, d.organization]]);
@@ -494,7 +495,7 @@ export class TimesheetDocumentsService {
    */
   async supersede(db: Db, kind: PeriodKind, periodId: string): Promise<void> {
     if (kind === 'timesheet') {
-      await db.execute(sql`UPDATE timesheet_documents SET superseded_at = now() WHERE timesheet_period_id = ${periodId} AND superseded_at IS NULL`);
+      await db.execute(sql`UPDATE timesheet_documents SET superseded_at = ${sqlNow()} WHERE timesheet_period_id = ${periodId} AND superseded_at IS NULL`);
       return;
     }
     const month = await this.projectMonthOf(db, periodId);
@@ -541,7 +542,7 @@ export class TimesheetDocumentsService {
 
   private async supersedeProjectReport(db: Executor, orgId: string, userId: string, periodStart: string): Promise<void> {
     await db.execute(sql`
-      UPDATE timesheet_documents SET superseded_at = now()
+      UPDATE timesheet_documents SET superseded_at = ${sqlNow()}
       WHERE kind = 'project_timesheet' AND organization_id = ${orgId} AND user_id = ${userId}
         AND period_start = ${periodStart}::date AND superseded_at IS NULL`);
   }
@@ -557,13 +558,13 @@ export class TimesheetDocumentsService {
   private async link(db: Db, owner: Owner, kind: PeriodKind, periodStart: string, timesheetPeriodId: string | null, buffer: Buffer, actorUserId: string | null, source: { table: string; id: string }): Promise<string | null> {
     const documentId = await this.documents.store(db, owner.organization_id, actorUserId, { name: pdfFileName(kind, periodStart), mimeType: 'application/pdf', buffer }, source);
     if (kind === 'timesheet') {
-      await db.execute(sql`UPDATE timesheet_documents SET superseded_at = now() WHERE timesheet_period_id = ${timesheetPeriodId} AND superseded_at IS NULL`);
+      await db.execute(sql`UPDATE timesheet_documents SET superseded_at = ${sqlNow()} WHERE timesheet_period_id = ${timesheetPeriodId} AND superseded_at IS NULL`);
     } else {
       await this.supersedeProjectReport(db, owner.organization_id, owner.user_id, periodStart);
     }
     const inserted = await db.execute(sql`
-      INSERT INTO timesheet_documents (organization_id, user_id, document_id, kind, timesheet_period_id, period_start)
-      VALUES (${owner.organization_id}, ${owner.user_id}, ${documentId}, ${kind}, ${timesheetPeriodId}, ${periodStart}::date)
+      INSERT INTO timesheet_documents (organization_id, user_id, document_id, kind, timesheet_period_id, period_start, issued_at)
+      VALUES (${owner.organization_id}, ${owner.user_id}, ${documentId}, ${kind}, ${timesheetPeriodId}, ${periodStart}::date, ${sqlNow()})
       ON CONFLICT DO NOTHING
       RETURNING id`);
     const row = inserted.rows[0] as { id: string } | undefined;

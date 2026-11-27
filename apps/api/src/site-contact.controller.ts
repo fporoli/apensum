@@ -124,7 +124,7 @@ export class SiteContactController {
   send: (mail: MailOptions) => Promise<void> = (mail) => sendMail(mail, 10_000);
   /** The hint on the operator's phone (operator-push.ts); replaceable in tests. */
   push: (push: OperatorPush) => Promise<boolean> = (push) => pushToOperator(push);
-  now: () => number = () => Date.now();
+  now: () => number = () => Date.now(); // real time: rate limit
   private readonly perIp = new Map<string, number[]>();
   private sentToday: number[] = [];
 

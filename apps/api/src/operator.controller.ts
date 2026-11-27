@@ -77,7 +77,7 @@ export class OperatorController {
            JOIN membership_roles mr ON mr.membership_id = m.id JOIN roles r ON r.id = mr.role_id
            WHERE m.organization_id = o.id AND m.status = 'active' AND r.name = 'owner'), '{}') AS owners,
         coalesce((SELECT jsonb_agg(jsonb_build_object('moduleId', l.module_id, 'validUntil', l.valid_until::text,
-             'expired', l.valid_until IS NOT NULL AND l.valid_until < (now() AT TIME ZONE 'Europe/Zurich')::date) ORDER BY l.module_id)
+             'expired', l.valid_until IS NOT NULL AND l.valid_until < (now() AT TIME ZONE 'Europe/Zurich')::date) ORDER BY l.module_id) -- real time: licenses are contracts in real time
            FROM organization_licenses l WHERE l.organization_id = o.id), '[]'::jsonb) AS licenses
       FROM organizations o WHERE o.id <> ${OPERATOR_ORG_ID} ORDER BY lower(o.name), o.id`);
     return { ok: true, organizations: rows.rows, modules: licensableModules() };
@@ -240,7 +240,7 @@ export class OperatorController {
           (SELECT count(*)::int FROM users WHERE status = 'active') AS "activeUsers",
           (SELECT count(*)::int FROM organization_memberships WHERE status = 'active' AND organization_id <> ${OPERATOR_ORG_ID}) AS memberships,
           (SELECT count(*)::int FROM organization_licenses
-             WHERE valid_until IS NULL OR valid_until >= (now() AT TIME ZONE 'Europe/Zurich')::date) AS licenses,
+             WHERE valid_until IS NULL OR valid_until >= (now() AT TIME ZONE 'Europe/Zurich')::date) AS licenses, -- real time: licenses are contracts in real time
           (SELECT count(*)::int FROM newsletter_subscribers WHERE status = 'confirmed') AS subscribers,
           (SELECT count(*)::int FROM documents) AS documents,
           pg_database_size(current_database())::bigint AS "databaseBytes"`)

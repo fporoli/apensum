@@ -19,7 +19,7 @@ import {
   REGISTRATIONS_PER_IP, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail,
 } from './password-reset';
 import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
-import { clock } from './clock';
+import { clock, sqlNow } from './clock';
 
 /** Second-step attempts per account within an hour (in memory, per API process). */
 export const TWO_FACTOR_ATTEMPTS_PER_HOUR = 10;
@@ -191,7 +191,7 @@ export class AuthController {
   async register(@Body() body: { email: string; displayName: string; password: string }, @Req() req?: { headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
-    if (req && !this.registrationsPerIp.allow(clientIp(req), Date.now())) return { ok: false, error: 'too-many-attempts' };
+    if (req && !this.registrationsPerIp.allow(clientIp(req), Date.now())) return { ok: false, error: 'too-many-attempts' }; // real time: rate limits, tokens, invitation expiry
     const email = (body.email ?? '').trim().toLowerCase();
     if (!isValidEmail(email)) return { ok: false, error: 'invalid-email' };
     if (!body.displayName?.trim()) return { ok: false, error: 'display-name-required' };
@@ -223,7 +223,7 @@ export class AuthController {
         .insert(organization_memberships)
         .values({ organization_id: org.id, user_id: uid, status: 'active', joined_at: clock.now().toISOString() })
         .returning({ id: organization_memberships.id });
-      await tx.insert(membership_roles).values(registrationRoleIds().map((role_id) => ({ membership_id: membership.id, role_id })));
+      await tx.insert(membership_roles).values(registrationRoleIds().map((role_id) => ({ membership_id: membership.id, role_id, granted_at: clock.now().toISOString() })));
       // Static data (absence types, `locales`, `countries`) is inherited from the global rows
       // (`organization_id = null`); an org gets its own copy only when it customizes one.
       return { u, orgId: org.id, membershipId: membership.id, slug: workspaceSlug };
@@ -278,7 +278,7 @@ export class AuthController {
     if (!isValidEmail(email) || typeof body.password !== 'string') return { ok: false, error: 'invalid-credentials' };
     // Too many failures from here, for this account, or for this account from anywhere: wait (before any password check).
     const ip = req ? clientIp(req) : 'unknown';
-    const now = Date.now();
+    const now = Date.now(); // real time: rate limits, tokens, invitation expiry
     if (this.loginFailsPerAccountAndIp.full(`${email}|${ip}`, now) || this.loginFailsPerIp.full(ip, now) || this.loginFailsPerAccount.full(email, now)) {
       return { ok: false, error: 'too-many-attempts' };
     }
@@ -305,7 +305,7 @@ export class AuthController {
     if (!match) return failed();
     // Two-step login on: the password only earns a short token for the second step (bound to this password).
     if (!twoFactorOff() && (await twoFactorRow(db, row.id))?.enabled) {
-      const challenge = mintResetToken(twoFactorChallengeKey(), row.id, row.password_hash, Math.floor(Date.now() / 1000), TWO_FACTOR_CHALLENGE_SEC);
+      const challenge = mintResetToken(twoFactorChallengeKey(), row.id, row.password_hash, Math.floor(Date.now() / 1000), TWO_FACTOR_CHALLENGE_SEC); // real time: rate limits, tokens, invitation expiry
       return { ok: false, error: 'two-factor-code', challenge };
     }
     await this.signedIn(db, row.id);
@@ -318,9 +318,9 @@ export class AuthController {
   async loginSecondStep(@Body() body: { challenge?: unknown; code?: unknown }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
-    const read = readResetToken(twoFactorChallengeKey(), body?.challenge, Math.floor(Date.now() / 1000));
+    const read = readResetToken(twoFactorChallengeKey(), body?.challenge, Math.floor(Date.now() / 1000)); // real time: rate limits, tokens, invitation expiry
     if (!read) return { ok: false, error: 'two-factor-expired' };
-    if (!this.secondStepPerUser.allow(read.userId, Date.now())) return { ok: false, error: 'too-many-attempts' };
+    if (!this.secondStepPerUser.allow(read.userId, Date.now())) return { ok: false, error: 'too-many-attempts' }; // real time: rate limits, tokens, invitation expiry
     const [row] = await db
       .select({ id: users.id, email: users.email, display_name: users.display_name, status: users.status, password_hash: user_identities.password_hash })
       .from(users)
@@ -339,7 +339,7 @@ export class AuthController {
   private async signedIn(db: Db, userId: string) {
     await db
       .update(user_identities)
-      .set({ last_sign_in_at: new Date().toISOString() })
+      .set({ last_sign_in_at: new Date().toISOString() }) // real time: the last sign-in
       .where(and(eq(user_identities.provider, 'password'), eq(user_identities.user_id, userId)));
   }
 
@@ -354,7 +354,7 @@ export class AuthController {
     if (!db) return { ok: true, offline: true };
     const email = (body?.email ?? '').trim().toLowerCase();
     if (!isValidEmail(email)) return { ok: true };
-    const now = Date.now();
+    const now = Date.now(); // real time: rate limits, tokens, invitation expiry
     if (!this.resetPerIp.allow(clientIp(req), now) || !this.resetPerEmail.allow(email, now)) return { ok: true };
     void this.sendResetLink(db, email, now).catch(() => {});
     return { ok: true };
@@ -378,7 +378,7 @@ export class AuthController {
   async confirmReset(@Body() body: { token?: string; newPassword?: string }) {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
-    const claim = readResetToken(purposeKey('password-reset'), body?.token, Math.floor(Date.now() / 1000));
+    const claim = readResetToken(purposeKey('password-reset'), body?.token, Math.floor(Date.now() / 1000)); // real time: rate limits, tokens, invitation expiry
     if (!claim) return { ok: false, error: 'reset-link-invalid' };
     if (!isValidPassword(body.newPassword)) return { ok: false, error: 'password-too-short' };
     const [identity] = await db
@@ -428,7 +428,7 @@ export class AuthController {
       .where(eq(organization_invitations.token, token));
     if (!invitation) return { ok: false, error: 'invalid-token' };
     if (invitation.status !== 'pending') return { ok: false, error: 'invitation-not-pending' };
-    if (new Date(invitation.expires_at).getTime() < Date.now()) {
+    if (new Date(invitation.expires_at).getTime() < Date.now()) { // real time: rate limits, tokens, invitation expiry
       await db.update(organization_invitations).set({ status: 'expired' }).where(eq(organization_invitations.token, token));
       void this.versions.record('organization_invitations', invitation.id, 'update_delta', null, { status: 'expired' }).catch(() => {});
       return { ok: false, error: 'invitation-expired' };
@@ -496,12 +496,12 @@ export class AuthController {
         .returning({ id: organization_memberships.id });
       await tx
         .insert(membership_roles)
-        .values({ membership_id: membership.id, role_id: invitation.role_id })
+        .values({ membership_id: membership.id, role_id: invitation.role_id, granted_at: clock.now().toISOString() })
         .onConflictDoNothing();
       // Owner only governs: invited as one and nothing else, they are an ordinary member as well.
       await tx.execute(sql`
-        INSERT INTO membership_roles (membership_id, role_id)
-        SELECT ${membership.id}::uuid, member.id
+        INSERT INTO membership_roles (membership_id, role_id, granted_at)
+        SELECT ${membership.id}::uuid, member.id, ${sqlNow()}
         FROM (SELECT id FROM roles
               WHERE name = 'member' AND (organization_id = ${invitation.organization_id} OR organization_id IS NULL)
               ORDER BY organization_id NULLS LAST LIMIT 1) member

@@ -106,7 +106,7 @@ function parseToken(token: string): { header: JwtHeader; payload: Record<string,
   }
 }
 
-function checkTimeClaims(payload: Record<string, unknown>, nowSec = Math.floor(Date.now() / 1000)): boolean {
+function checkTimeClaims(payload: Record<string, unknown>, nowSec = Math.floor(Date.now() / 1000)): boolean { // real time: token expiry
   if (typeof payload.exp === 'number' && nowSec >= payload.exp) return false;
   if (typeof payload.nbf === 'number' && nowSec < payload.nbf) return false;
   return true;
@@ -148,11 +148,11 @@ async function jwksUrl(): Promise<string> {
 }
 
 async function getJwks(): Promise<Jwk[]> {
-  if (jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS) return jwksCache.keys;
+  if (jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS) return jwksCache.keys; // real time: token expiry
   const res = await fetch(await jwksUrl());
   if (!res.ok) throw new Error(`jwks-fetch-failed:${res.status}`);
   const data = (await res.json()) as { keys?: Jwk[] };
-  jwksCache = { keys: data.keys ?? [], fetchedAt: Date.now() };
+  jwksCache = { keys: data.keys ?? [], fetchedAt: Date.now() }; // real time: token expiry
   return jwksCache.keys;
 }
 
@@ -163,7 +163,7 @@ async function getJwks(): Promise<Jwk[]> {
 export async function verifySsoIdToken(
   token: string,
   keys?: Jwk[],
-  nowSec = Math.floor(Date.now() / 1000),
+  nowSec = Math.floor(Date.now() / 1000), // real time: token expiry
 ): Promise<AuthenticatedPrincipal | null> {
   if (!ssoPublicConfig()) return null;
   const parsed = parseToken(token);
@@ -206,7 +206,7 @@ export async function verifySsoIdToken(
 /** A local session token; `pv` is the stamp of the password it was issued for (session-state.ts). */
 export async function mintLocalToken(userId: string, email: string, expiresInSec = 12 * 3600, scope?: 'two-factor-setup', pv?: string): Promise<string> {
   const header = b64urlEncode(Buffer.from(JSON.stringify({ alg: LOCAL_ALG, typ: 'JWT' })));
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000); // real time: token expiry
   const body = b64urlEncode(
     Buffer.from(JSON.stringify({ iss: LOCAL_ISSUER, sub: userId, email, iat: now, exp: now + expiresInSec, ...(scope ? { scope } : {}), ...(pv ? { pv } : {}) })),
   );

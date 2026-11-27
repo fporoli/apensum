@@ -17,6 +17,7 @@ import type { WorkflowKindCatalogue } from '@worktime3/shared/workflowConfig';
 import { sql } from 'drizzle-orm';
 import { NotificationsService } from './notifications.service';
 import { DocumentsService, MAX_DOCUMENT_BYTES } from './documents.service';
+import { clock, sqlToday } from './clock';
 
 const STATUSES = ['pending', 'approved', 'rejected'] as const;
 type Status = (typeof STATUSES)[number];
@@ -70,7 +71,7 @@ export class AbsencesController implements OnModuleInit {
   /** Absences own what "absence.*" workflow actions actually do, and how to resolve an absences row's organization. */
   onModuleInit() {
     this.workflowsSvc.registerAction('absence.approve', async (db, ctx) => {
-      const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
+      const patch = { status: 'approved' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: clock.now().toISOString(), review_note: null };
       await db.update(absences).set(patch).where(eq(absences.id, ctx.sourceTableUuid));
       void this.versions.record('absences', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
     });
@@ -83,14 +84,14 @@ export class AbsencesController implements OnModuleInit {
       sourceTable: 'absences',
       facts: (db, id) => this.facts(db, id),
       onFinished: async (db, id, actorUserId) => {
-        const patch = { status: 'approved' as const, reviewed_by_user_id: actorUserId, reviewed_at: new Date().toISOString(), review_note: null };
+        const patch = { status: 'approved' as const, reviewed_by_user_id: actorUserId, reviewed_at: clock.now().toISOString(), review_note: null };
         await db.update(absences).set(patch).where(and(eq(absences.id, id), eq(absences.status, 'pending')));
         void this.versions.record('absences', id, 'update_delta', actorUserId, patch).catch(() => {});
       },
     });
 
     this.workflowsSvc.registerAction('absence.reject', async (db, ctx) => {
-      const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: new Date().toISOString(), review_note: ctx.decisionNote };
+      const patch = { status: 'rejected' as const, reviewed_by_user_id: ctx.actorUserId, reviewed_at: clock.now().toISOString(), review_note: ctx.decisionNote };
       await db.update(absences).set(patch).where(eq(absences.id, ctx.sourceTableUuid));
       void this.versions.record('absences', ctx.sourceTableUuid, 'update_delta', ctx.actorUserId, patch).catch(() => {});
     });
@@ -106,7 +107,7 @@ export class AbsencesController implements OnModuleInit {
     const probationUntil = await probationUntilOf(db, a.organization_id, a.user_id);
     const rows = await db.execute(sql`
       SELECT d.code, ea.is_management FROM employee_assignments ea LEFT JOIN departments d ON d.id = ea.department_id
-      WHERE ea.organization_id = ${a.organization_id}::uuid AND ea.user_id = ${a.user_id}::uuid AND ea.valid_from <= CURRENT_DATE
+      WHERE ea.organization_id = ${a.organization_id}::uuid AND ea.user_id = ${a.user_id}::uuid AND ea.valid_from <= ${sqlToday()}
       ORDER BY ea.valid_from DESC LIMIT 1`);
     const assignment = rows.rows[0] as { code: string | null; is_management: boolean | null } | undefined;
     return {
@@ -161,7 +162,7 @@ export class AbsencesController implements OnModuleInit {
     // A submitted or approved timesheet freezes its month's balance; the absence would change it.
     if (await touchesLockedPeriod(db, orgId, callerId, dateStart, dateEnd)) return { ok: false, error: 'period-locked' };
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     const managerUserId = await membershipManagerId(db, orgId, callerId);
     // A type flagged {approval: false} in static data (sickness, accident) is recorded at once; the others go through
     // the organization's absence workflow (a manager's approval without a manager is done at once there).
@@ -285,7 +286,7 @@ export class AbsencesController implements OnModuleInit {
     // isn't the assignee, so resolve() would (correctly) reject them.
     const pending = await this.workflowsSvc.findPending(db, 'absences', id, APPROVE_ABSENCE_WORKFLOW_NAME);
     if (pending) {
-      await db.update(workflows).set({ step_status: 'cancelled', workflow_finished: new Date().toISOString() }).where(eq(workflows.workflow_id, pending.id));
+      await db.update(workflows).set({ step_status: 'cancelled', workflow_finished: clock.now().toISOString() }).where(eq(workflows.workflow_id, pending.id));
     }
 
     await db.delete(absences).where(eq(absences.id, id));

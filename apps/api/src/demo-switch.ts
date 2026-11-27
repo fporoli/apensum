@@ -8,6 +8,7 @@
 import * as bcrypt from 'bcryptjs';
 import { sql } from 'drizzle-orm';
 import type { Db } from './db.service';
+import { sqlNow, sqlToday } from './clock';
 
 export interface DemoPerson {
   name: string;
@@ -31,7 +32,7 @@ let cache: { key: string; at: number; people: DemoPerson[] } | null = null;
  * among them (first), or [] when it is unset, unknown or not a demo account. Cached for ten minutes (bcrypt is slow
  * on purpose); a demo reset keeps the same accounts.
  */
-export async function demoPeople(db: Db, autoLogin: string | undefined, now = Date.now()): Promise<DemoPerson[]> {
+export async function demoPeople(db: Db, autoLogin: string | undefined, now = Date.now()): Promise<DemoPerson[]> { // real time: cache
   const email = (autoLogin ?? '').trim().toLowerCase();
   if (!email) return [];
   if (cache && cache.key === email && now - cache.at < CACHE_MS) return cache.people;
@@ -50,11 +51,11 @@ export async function demoPeople(db: Db, autoLogin: string | undefined, now = Da
     JOIN user_identities i ON i.user_id = u.id AND i.provider = 'password'
     LEFT JOIN (
       SELECT DISTINCT ON (a.user_id) a.user_id, a.department_id FROM employee_assignments a, org
-      WHERE a.organization_id = org.organization_id AND a.valid_from <= CURRENT_DATE
+      WHERE a.organization_id = org.organization_id AND a.valid_from <= ${sqlToday()}
       ORDER BY a.user_id, a.valid_from DESC
     ) a ON a.user_id = u.id
     LEFT JOIN departments d ON d.id = a.department_id
-    WHERE m.status = 'active' AND u.is_active AND u.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > now())
+    WHERE m.status = 'active' AND u.is_active AND u.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
     ORDER BY lower(coalesce(nullif(u.display_name, ''), u.email))`);
   const people: DemoPerson[] = [];
   for (const r of result.rows as Record<string, unknown>[]) {

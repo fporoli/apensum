@@ -43,7 +43,7 @@ export class ScreenShareService {
   }
 
   /** One share per person: a new one ends the one before. */
-  start(orgId: string, sharerId: string, viewerId: string, now = Date.now()): ScreenShare {
+  start(orgId: string, sharerId: string, viewerId: string, now = Date.now()): ScreenShare { // real time: live sessions
     this.sweep(now);
     for (const s of this.shares.values()) if (s.sharerId === sharerId) this.shares.delete(s.id);
     const share: ScreenShare = { id: randomUUID(), orgId, sharerId, viewerId, until: now + SHARE_MS, alive: now, seen: 0, frame: null };
@@ -52,7 +52,7 @@ export class ScreenShareService {
   }
 
   /** The sharer's picture; null when the share is over or not theirs. */
-  put(orgId: string, id: string, userId: string, frame: Buffer, now = Date.now()): { watching: boolean } | null {
+  put(orgId: string, id: string, userId: string, frame: Buffer, now = Date.now()): { watching: boolean } | null { // real time: live sessions
     this.sweep(now);
     const s = this.shares.get(id);
     if (!s || s.orgId !== orgId || s.sharerId !== userId) return null;
@@ -62,7 +62,7 @@ export class ScreenShareService {
   }
 
   /** The viewer's look; null when the share is over or not for them. */
-  look(orgId: string, id: string, userId: string, now = Date.now()): { frame: Buffer | null } | null {
+  look(orgId: string, id: string, userId: string, now = Date.now()): { frame: Buffer | null } | null { // real time: live sessions
     this.sweep(now);
     const s = this.shares.get(id);
     if (!s || s.orgId !== orgId || s.viewerId !== userId) return null;
@@ -79,7 +79,7 @@ export class ScreenShareService {
   }
 
   /** At most one ask a minute per pair. */
-  mayAsk(orgId: string, fromId: string, toId: string, now = Date.now()): boolean {
+  mayAsk(orgId: string, fromId: string, toId: string, now = Date.now()): boolean { // real time: live sessions
     this.sweep(now);
     const key = `${orgId}:${fromId}:${toId}`;
     if (this.asked.has(key)) return false;

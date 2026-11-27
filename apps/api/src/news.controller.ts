@@ -15,6 +15,7 @@ import { allowedOrigins } from './site-contact.controller';
 import { markdownImages, markdownPlain } from '@worktime3/shared/markdown';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 import { MAX_NEWS_IMAGES, newsImageId, newsTextFor, validateNewsTexts, type NewsTexts } from '@worktime3/shared/news';
+import { sqlNow, sqlToday } from './clock';
 
 /**
  * News (module "news", packages/shared/src/news.ts; tables in 080-news.sql): posts an organization's
@@ -47,7 +48,7 @@ const iso = (column: string) => sql.raw(`to_char(${column} AT TIME ZONE 'UTC', '
 /** Assignments in force today, one row per person of the organization. */
 function currentAssignments(orgId: string): SQL {
   return sql`SELECT DISTINCT ON (user_id) user_id, department_id FROM employee_assignments
-             WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+             WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
              ORDER BY user_id, valid_from DESC`;
 }
 
@@ -367,10 +368,10 @@ export class NewsController {
     if ('error' in post) return { ok: false, error: post.error };
     if (post.published_at) return { ok: false, error: 'news-already-published' };
     const authorId = caller!.id;
-    await db.execute(sql`UPDATE news_posts SET published_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE news_posts SET published_at = ${sqlNow()} WHERE id = ${id}`);
     // The author has read (and, when asked for, confirmed) their own post.
     await db.execute(
-      sql`INSERT INTO news_post_reads (post_id, user_id, acknowledged_at) VALUES (${id}, ${authorId}, ${post.require_ack ? sql`now()` : sql`NULL`})
+      sql`INSERT INTO news_post_reads (post_id, user_id, acknowledged_at, read_at) VALUES (${id}, ${authorId}, ${post.require_ack ? sqlNow() : sql`NULL`}, ${sqlNow()})
           ON CONFLICT (post_id, user_id) DO UPDATE SET acknowledged_at = coalesce(news_post_reads.acknowledged_at, EXCLUDED.acknowledged_at)`,
     );
     void this.versions.record('news_posts', id, 'update_delta', authorId, { published: true }).catch(() => {});
@@ -438,7 +439,7 @@ export class NewsController {
     const caller = await this.caller(db, orgId, req);
     const post = caller ? await this.readable(db, orgId, caller, id) : null;
     if (!caller || !post?.published_at) return { ok: false, error: 'not-found' };
-    await db.execute(sql`INSERT INTO news_post_reads (post_id, user_id) VALUES (${id}, ${caller.id}) ON CONFLICT DO NOTHING`);
+    await db.execute(sql`INSERT INTO news_post_reads (post_id, user_id, read_at) VALUES (${id}, ${caller.id}, ${sqlNow()}) ON CONFLICT DO NOTHING`);
     return { ok: true };
   }
 
@@ -452,8 +453,8 @@ export class NewsController {
     if (!caller || !post?.published_at) return { ok: false, error: 'not-found' };
     if (!post.require_ack) return { ok: false, error: 'news-no-confirmation' };
     await db.execute(
-      sql`INSERT INTO news_post_reads (post_id, user_id, acknowledged_at) VALUES (${id}, ${caller.id}, now())
-          ON CONFLICT (post_id, user_id) DO UPDATE SET acknowledged_at = coalesce(news_post_reads.acknowledged_at, now())`,
+      sql`INSERT INTO news_post_reads (post_id, user_id, acknowledged_at, read_at) VALUES (${id}, ${caller.id}, ${sqlNow()}, ${sqlNow()})
+          ON CONFLICT (post_id, user_id) DO UPDATE SET acknowledged_at = coalesce(news_post_reads.acknowledged_at, ${sqlNow()})`,
     );
     return { ok: true };
   }

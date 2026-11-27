@@ -22,6 +22,7 @@ import {
 import { buildCsv, buildXlsx, type Cell, type SheetColumn } from '@worktime3/shared/xlsx';
 import { AuditService } from './audit.service';
 import { randomUUID } from 'node:crypto';
+import { clock } from './clock';
 
 /** Absence types the payroll export counts as sick leave (the global types' keys). */
 export const SICK_LEAVE_TYPES: ReadonlySet<string> = new Set(['sickness', 'accident']);
@@ -647,7 +648,7 @@ export class ImportExportService {
       return { ok: false, created: 0, updated: 0, errors: ['no-valid-rows'] };
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = clock.now().toISOString().slice(0, 10);
     let created = 0;
     let updated = 0;
     let invited = 0;
@@ -752,6 +753,7 @@ export class ImportExportService {
             await tx
               .insert(membership_roles)
               .values({
+                granted_at: clock.now().toISOString(),
                 membership_id: membershipId,
                 role_id: memberRole.id,
                 granted_by_user_id: callerId,
@@ -851,7 +853,7 @@ async function inviteExistingAccount(db: Pick<Db, 'select' | 'insert'>, orgId: s
     .select({ expires_at: organization_invitations.expires_at })
     .from(organization_invitations)
     .where(and(eq(organization_invitations.organization_id, orgId), eq(organization_invitations.email, email), eq(organization_invitations.status, 'pending')));
-  if (pending.some((i) => Date.parse(i.expires_at) > Date.now())) return null;
+  if (pending.some((i) => Date.parse(i.expires_at) > Date.now())) return null; // real time: invitations expire in real time
   const candidates = await db
     .select({ id: roles.id, organization_id: roles.organization_id })
     .from(roles)
@@ -866,7 +868,7 @@ async function inviteExistingAccount(db: Pick<Db, 'select' | 'insert'>, orgId: s
     role_id: role.id,
     token,
     invited_by_user_id: callerId,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // real time: invitations expire in real time
   });
   return { email, token };
 }

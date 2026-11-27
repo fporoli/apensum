@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { WorkTimeModelService, localDate } from './work-time-model.service';
 import { organization_memberships, timesheet_periods, users } from './db/schema';
 import { addDays, type Holiday } from '@worktime3/shared/worktime';
+import { clock } from './clock';
 
 /** Which permission object decides whose records each of the core's team tables lists. */
 export const TEAM_OBJECTS: Record<string, string> = {
@@ -145,7 +146,7 @@ export class TeamOverviewController {
           this.workTime.targets(db, orgId, userId, from, toExclusive),
           this.workTime.attendanceByDay(db, orgId, userId, from, toExclusive, timeZone, true),
         ]);
-        const today = localDate(new Date(), timeZone);
+        const today = localDate(clock.now(), timeZone);
         let target = 0;
         let attended = 0;
         let difference = 0;

@@ -88,11 +88,11 @@ export class TwoFactorController {
     if (!db) return { ok: true, offline: true };
     const me = await this.me(db, req);
     if (!me) return { ok: false, error: 'two-factor-unavailable' };
-    if (!this.attempts.allow(me.id, Date.now())) return { ok: false, error: 'too-many-attempts' };
+    if (!this.attempts.allow(me.id, Date.now())) return { ok: false, error: 'too-many-attempts' }; // real time: rate limit and TOTP codes
     const row = await twoFactorRow(db, me.id);
     if (!row) return { ok: false, error: 'two-factor-not-set-up' };
     if (row.enabled) return { ok: false, error: 'two-factor-enabled' };
-    const step = typeof body?.code === 'string' ? verifyTotp(openSecret(row.secret_enc, twoFactorKey()), body.code, Date.now(), 0) : null;
+    const step = typeof body?.code === 'string' ? verifyTotp(openSecret(row.secret_enc, twoFactorKey()), body.code, Date.now(), 0) : null; // real time: rate limit and TOTP codes
     if (step === null) return { ok: false, error: 'two-factor-invalid' };
     const codes = newRecoveryCodes();
     await db.execute(
@@ -112,7 +112,7 @@ export class TwoFactorController {
     const me = await this.me(db, req);
     if (!me) return { ok: false, error: 'two-factor-unavailable' };
     if (await twoFactorRequired(db, me.id)) return { ok: false, error: 'two-factor-required' };
-    if (!this.attempts.allow(me.id, Date.now())) return { ok: false, error: 'too-many-attempts' };
+    if (!this.attempts.allow(me.id, Date.now())) return { ok: false, error: 'too-many-attempts' }; // real time: rate limit and TOTP codes
     if (!(await useSecondFactor(db, me.id, body?.code))) return { ok: false, error: 'two-factor-invalid' };
     await db.execute(sql`DELETE FROM user_two_factor WHERE user_id = ${me.id}`);
     void this.versions.record('users', me.id, 'update_delta', me.id, { twoFactor: 'disabled' }).catch(() => {});
@@ -126,7 +126,7 @@ export class TwoFactorController {
     if (!db) return { ok: true, offline: true };
     const me = await this.me(db, req);
     if (!me) return { ok: false, error: 'two-factor-unavailable' };
-    if (!this.attempts.allow(me.id, Date.now())) return { ok: false, error: 'too-many-attempts' };
+    if (!this.attempts.allow(me.id, Date.now())) return { ok: false, error: 'too-many-attempts' }; // real time: rate limit and TOTP codes
     if (!(await useSecondFactor(db, me.id, body?.code))) return { ok: false, error: 'two-factor-invalid' };
     const codes = newRecoveryCodes();
     await db.execute(

@@ -12,6 +12,7 @@ import { clientIp } from './client-ip';
 import { crossesMonthEnd, dayContextFrom, dayContextTo, dayFindings, overlappingSessions, splitAtMonthEnds } from './work-time-day';
 import { WorkTimeModelService } from './work-time-model.service';
 import { zonedTime } from './report-schedule';
+import { clock } from './clock';
 
 /** A session as the API returns it: everything but `client_ip`, which is stored and never shown (085). */
 const { client_ip: _hiddenIp, ...SESSION_COLUMNS } = getTableColumns(work_times);
@@ -53,7 +54,7 @@ export class WorkTimeController {
     if (!userId) return { ok: false, error: 'unknown-user' };
     if (!(await isOrgMember(db, orgId, userId))) return { ok: false, error: 'forbidden' };
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     if (await isPeriodLocked(db, orgId, userId, now)) return { ok: false, error: 'period-locked' };
     if (await isTimeNotRecorded(db, orgId, userId, now)) return { ok: false, error: 'time-not-recorded' };
 
@@ -87,7 +88,7 @@ export class WorkTimeController {
     const open = await this.findOpenSession(db, userId);
     if (!open) return { ok: false, error: 'not-checked-in' };
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     if (isLongSession(open.check_in, now) && !body?.acknowledgeLongSession) {
       return { ok: false, error: 'long-session-confirm', checkIn: open.check_in };
     }

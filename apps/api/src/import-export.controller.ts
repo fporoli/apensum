@@ -4,6 +4,7 @@ import { DbService } from './db.service';
 import { callerUserId, can, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { ImportExportService, payrollItems, type RawEmployeeImportRow } from './import-export.service';
+import { clock } from './clock';
 
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -36,7 +37,7 @@ export class ImportExportController {
     const auth = await this.canAccess(db, orgId, req, 'see');
     if (!auth.ok) return { ok: false, error: auth.error };
 
-    const selectedMonth = month && MONTH_RE.test(month) ? month : new Date().toISOString().slice(0, 7);
+    const selectedMonth = month && MONTH_RE.test(month) ? month : clock.now().toISOString().slice(0, 7);
     const rows = await this.importExport.getPayrollData(db, orgId, selectedMonth);
     // The plugins' columns (e.g. expenses): each row has their amounts under `items`.
     const items = payrollItems().map((i) => ({ key: i.key, caption: i.caption }));
@@ -58,7 +59,7 @@ export class ImportExportController {
     const auth = await this.canAccess(db, orgId, req, 'see');
     if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
 
-    const selectedMonth = month && MONTH_RE.test(month) ? month : new Date().toISOString().slice(0, 7);
+    const selectedMonth = month && MONTH_RE.test(month) ? month : clock.now().toISOString().slice(0, 7);
     const rows = await this.importExport.getPayrollData(db, orgId, selectedMonth);
     const csv = this.importExport.formatAbacusCsv(selectedMonth, rows);
 
@@ -84,7 +85,7 @@ export class ImportExportController {
     const auth = await this.canAccess(db, orgId, req, 'see');
     if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
 
-    const selectedMonth = month && MONTH_RE.test(month) ? month : new Date().toISOString().slice(0, 7);
+    const selectedMonth = month && MONTH_RE.test(month) ? month : clock.now().toISOString().slice(0, 7);
     const rows = await this.importExport.getPayrollData(db, orgId, selectedMonth);
     const csv = this.importExport.formatBexioCsv(selectedMonth, rows);
 
@@ -110,7 +111,7 @@ export class ImportExportController {
     const auth = await this.canAccess(db, orgId, req, 'see');
     if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
 
-    const selectedMonth = month && MONTH_RE.test(month) ? month : new Date().toISOString().slice(0, 7);
+    const selectedMonth = month && MONTH_RE.test(month) ? month : clock.now().toISOString().slice(0, 7);
     const rows = await this.importExport.getPayrollData(db, orgId, selectedMonth);
     const csv = this.importExport.formatGenericCsv(selectedMonth, rows);
 
@@ -136,7 +137,7 @@ export class ImportExportController {
     const auth = await this.canAccess(db, orgId, req, 'see');
     if (!auth.ok) return res.status(403).json({ ok: false, error: auth.error });
 
-    const selectedMonth = month && MONTH_RE.test(month) ? month : new Date().toISOString().slice(0, 7);
+    const selectedMonth = month && MONTH_RE.test(month) ? month : clock.now().toISOString().slice(0, 7);
     const rows = await this.importExport.getPayrollData(db, orgId, selectedMonth);
     const xlsxBuffer = this.importExport.formatGenericXlsx(selectedMonth, rows);
 

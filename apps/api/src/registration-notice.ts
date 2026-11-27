@@ -50,7 +50,7 @@ export function registrationMail(locale: string | null | undefined, r: Registrat
   return { subject: m.subject(safe), text: m.text(safe, when), title: m.title };
 }
 
-export async function noticeRegistration(db: Executor, notifications: NotificationsService | undefined, r: Registration, at = new Date()): Promise<void> {
+export async function noticeRegistration(db: Executor, notifications: NotificationsService | undefined, r: Registration, at = new Date()): Promise<void> { // real time: the operator is told when it really happened
   const operators = (
     await db.execute(sql`
       SELECT u.id, u.email::text AS email, u.locale FROM organization_memberships m JOIN users u ON u.id = m.user_id

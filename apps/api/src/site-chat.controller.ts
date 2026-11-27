@@ -67,7 +67,7 @@ export class SiteChatController {
   private today: number[] = [];
   private handoversToday: number[] = [];
   /** Replaceable in tests. */
-  now: () => number = () => Date.now();
+  now: () => number = () => Date.now(); // real time: rate limit
   send: (mail: MailOptions) => Promise<void> = (mail) => sendMail(mail, 10_000);
   push: (push: OperatorPush) => Promise<boolean> = (push) => pushToOperator(push);
   /** One round with the model (Azure OpenAI), offering the documentation search or not; replaceable in tests. */

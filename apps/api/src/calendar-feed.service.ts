@@ -12,6 +12,7 @@ import {
 import { directReportUserIds, isOrgMember, listableUserIds } from './access';
 import { HOLIDAY_NAMES } from '@worktime3/shared/worktime';
 import { holidaysFor, parseWorkTimeSettings } from './work-time-model.service';
+import { clock, sqlToday } from './clock';
 
 export type CalendarFeedScope = 'personal' | 'team' | 'all';
 
@@ -87,7 +88,7 @@ export function buildIcsCalendar(params: {
   calendarName: string;
   events: CalendarEventItem[];
 }): string {
-  const nowUtc = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const nowUtc = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); // real time: the feed file is made now
   const lines: string[] = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -165,7 +166,7 @@ export class CalendarFeedService {
     try {
       const deptRows = await db.execute(
         sql`SELECT department_id FROM employee_assignments
-            WHERE organization_id = ${orgId} AND user_id = ${userId} AND valid_from <= CURRENT_DATE
+            WHERE organization_id = ${orgId} AND user_id = ${userId} AND valid_from <= ${sqlToday()}
             ORDER BY valid_from DESC LIMIT 1`,
       );
       const deptId = deptRows.rows?.[0]?.department_id as string | undefined;
@@ -173,7 +174,7 @@ export class CalendarFeedService {
         const peerRows = await db.execute(
           sql`SELECT DISTINCT user_id FROM (
                 SELECT DISTINCT ON (user_id) user_id, department_id FROM employee_assignments
-                WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+                WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
                 ORDER BY user_id, valid_from DESC
               ) cur WHERE department_id = ${deptId}`,
         );
@@ -279,7 +280,7 @@ export class CalendarFeedService {
       enabled: options.enabled !== undefined ? options.enabled : (existingFeed?.enabled ?? true),
       scope: targetScope,
       include_holidays: options.includeHolidays !== undefined ? options.includeHolidays : (existingFeed?.include_holidays ?? true),
-      created_at: options.regenerate || !existingFeed?.created_at ? new Date().toISOString() : existingFeed.created_at,
+      created_at: options.regenerate || !existingFeed?.created_at ? new Date().toISOString() : existingFeed.created_at, // real time: the feed link
       last_accessed_at: existingFeed?.last_accessed_at ?? null,
     };
 
@@ -382,7 +383,7 @@ export class CalendarFeedService {
           ...((member.settings as Record<string, unknown>) ?? {}),
           calendar_feed: {
             ...feed,
-            last_accessed_at: new Date().toISOString(),
+            last_accessed_at: new Date().toISOString(), // real time: the feed link
           },
         };
         await db
@@ -395,7 +396,7 @@ export class CalendarFeedService {
     })();
 
     // Date range: recent 90 days past + next 365 days
-    const today = new Date().toISOString().slice(0, 10);
+    const today = clock.now().toISOString().slice(0, 10);
     const fromDate = addDaysIso(today, -90);
     const toDate = addDaysIso(today, 365);
 

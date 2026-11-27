@@ -164,6 +164,7 @@ A plugin's static data lists may map each key to properties instead of a label (
 ## Notifications, mail and balances
 
 A plugin's providers and controllers may inject the core's `NotificationsService` (`notifyMany`: one row per recipient, pushed live; the web part's `notificationSections` maps the source table to the section a click opens) and `BalancesService` (a person's `year` and `closings`, the year-end closings of the Time balances page), and `WorkTimeModelService` (a person's `model` and day `targets`: schedule, holidays of their location, approved absences; with `dayTargets` of `@worktime3/shared/worktime`).\
+The business clock comes from the contract too (`clock`, `sqlNow`, `sqlToday`, `todayIn`): a plugin's "now" and "today" are `clock.now()` and, in SQL, `sqlNow()` / `sqlToday()`, and its inserts write their times; real time only where it must be real, marked `// real time: <why>` (the core's `clock.test.ts` checks the plugins' code as well).\
 `sendMail` sends through the instance's SMTP and `appBaseUrl()` gives the web app's address for links; mail is best effort: catch and log, never fail a request on it, and never send a document itself, only a link.
 
 Tasks for people go through the flows module (`FlowsService`, injected like the others): `openTask({ organizationId, source: '<id>', key: '<id>:...', section, departmentId, subject, message, dueDate })` opens one Free Flow per key to a department, or brings an open one up to date; `closeTasks(db, orgId, '<id>', keepKeys, dueFrom)` resolves the open ones that no longer apply.\

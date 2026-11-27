@@ -226,7 +226,7 @@ export class SavedReportsController {
       format,
       recipient_user_ids: asked,
       is_active: body.active !== false,
-      next_run_at: nextRunAt(rule, new Date()).toISOString(),
+      next_run_at: nextRunAt(rule, new Date()).toISOString(), // real time: scheduled deliveries run in real time
     };
     const [row] = await db
       .insert(report_schedules)

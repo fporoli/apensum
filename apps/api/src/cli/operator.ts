@@ -183,7 +183,7 @@ async function listLicenses(pool: Pool, orgId: string): Promise<string[]> {
   const { rows } = await pool.query<{ line: string }>(
     `SELECT module_id || CASE
               WHEN valid_until IS NULL THEN ' (open-ended)'
-              WHEN valid_until < (now() AT TIME ZONE 'Europe/Zurich')::date THEN ' (expired ' || valid_until::text || ')'
+              WHEN valid_until < (now() AT TIME ZONE 'Europe/Zurich')::date THEN ' (expired ' || valid_until::text || ')' -- real time: licenses are contracts in real time
               ELSE ' (until ' || valid_until::text || ')' END AS line
      FROM organization_licenses WHERE organization_id = $1 ORDER BY module_id`,
     [orgId],

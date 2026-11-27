@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
 import { users, versions } from './db/schema';
+import { clock } from './clock';
 
 /** The person's "My data" history is the versions row of this source table with their id (116). */
 export const BASICDATA_HISTORY = 'basicdata';
@@ -135,7 +136,7 @@ export class BasicDataService {
       status: partial.status,
       data: partial.data,
       requested_by_user_id: partial.requested_by_user_id,
-      requested_at: new Date().toISOString(),
+      requested_at: clock.now().toISOString(),
       reviewed_by_user_id: partial.reviewed_by_user_id,
       reviewed_at: partial.reviewed_at,
       note: null,
@@ -154,7 +155,7 @@ export class BasicDataService {
     }
     await db
       .update(versions)
-      .set({ version_nr: entry.version, history, lastmodified: sql`now()`, lastmodified_by_user_id: by })
+      .set({ version_nr: entry.version, history, lastmodified: sql`now()`, lastmodified_by_user_id: by }) // real time: the row's own bookkeeping (its entries carry the business time)
       .where(ofUser(userId));
     return entry;
   }
@@ -164,7 +165,7 @@ export class BasicDataService {
     const db = this.db.getDb();
     if (!db) return;
     await db.update(users).set({ basicdata: mergedBasicdata(patch) }).where(eq(users.id, userId));
-    await this.appendEntry(db, userId, { status: 'approved', data: patch, requested_by_user_id: actorUserId, reviewed_by_user_id: actorUserId, reviewed_at: new Date().toISOString() });
+    await this.appendEntry(db, userId, { status: 'approved', data: patch, requested_by_user_id: actorUserId, reviewed_by_user_id: actorUserId, reviewed_at: clock.now().toISOString() });
   }
 
   /** Employee self-service: records a 'changerequested' entry without touching users.basicdata yet. */
@@ -197,11 +198,11 @@ export class BasicDataService {
     const idx = history.findIndex((e) => e.version === versionNr);
     if (idx === -1 || history[idx].status !== 'changerequested') return { ok: false, error: 'not-found' };
 
-    const now = new Date().toISOString();
+    const now = clock.now().toISOString();
     history[idx] = { ...history[idx], status: outcome, reviewed_by_user_id: actorUserId, reviewed_at: now, note };
     await db
       .update(versions)
-      .set({ history, lastmodified: sql`now()`, lastmodified_by_user_id: actorUserId })
+      .set({ history, lastmodified: sql`now()`, lastmodified_by_user_id: actorUserId }) // real time: the row's own bookkeeping (its entries carry the business time)
       .where(ofUser(userId));
 
     if (outcome === 'approved') {

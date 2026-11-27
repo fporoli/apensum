@@ -62,7 +62,7 @@ export async function twoFactorRequired(db: Executor, userId: string): Promise<b
  * Checks a code of an enabled second step and uses it up: an app code only once (its time step must be
  * newer than the last one used), a recovery code is removed. Returns how it was passed, or null.
  */
-export async function useSecondFactor(db: Executor, userId: string, code: unknown, nowMs = Date.now()): Promise<'app' | 'recovery' | null> {
+export async function useSecondFactor(db: Executor, userId: string, code: unknown, nowMs = Date.now()): Promise<'app' | 'recovery' | null> { // real time: TOTP codes
   if (typeof code !== 'string' || code.length > 40) return null;
   const row = await twoFactorRow(db, userId);
   if (!row?.enabled) return null;

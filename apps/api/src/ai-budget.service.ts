@@ -114,7 +114,7 @@ export type AiUsageKind = string;
 
 const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 /** Start of the current calendar month in Zurich, as a SQL timestamptz expression. */
-export const MONTH_START = sql`(date_trunc('month', now() AT TIME ZONE 'Europe/Zurich') AT TIME ZONE 'Europe/Zurich')`;
+export const MONTH_START = sql`(date_trunc('month', now() AT TIME ZONE 'Europe/Zurich') AT TIME ZONE 'Europe/Zurich')`; // real time: the AI budget is real money
 
 @Injectable()
 export class AiBudgetService {
@@ -160,13 +160,13 @@ export class AiBudgetService {
         SELECT
           COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START}), 0) AS instance_spent,
           COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START} AND organization_id = ${input.orgId}::uuid), 0) AS org_spent,
-          COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND created_at > now() - interval '1 hour'
+          COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND created_at > now() - interval '1 hour' -- real time: the AI budget is real money
                              AND (kind = ${ASSISTANT_KIND}) = ${input.kind === ASSISTANT_KIND}) AS user_calls,
           COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND status = 'pending'
-                             AND created_at > now() - make_interval(mins => ${PENDING_BLOCKS_MINUTES})
+                             AND created_at > now() - make_interval(mins => ${PENDING_BLOCKS_MINUTES}) -- real time: the AI budget is real money
                              AND (kind = ${ASSISTANT_KIND}) = ${input.kind === ASSISTANT_KIND}) AS user_pending
         FROM ai_usage
-        WHERE created_at >= LEAST(${MONTH_START}, now() - interval '1 hour')
+        WHERE created_at >= LEAST(${MONTH_START}, now() - interval '1 hour') -- real time: the AI budget is real money
       `);
       const row = spent.rows[0] as Record<string, unknown>;
       const state: BudgetState = {
@@ -218,7 +218,7 @@ export class AiBudgetService {
           input_tokens = ${result.inputTokens ?? null},
           output_tokens = ${result.outputTokens ?? null},
           actual_chf = ${result.actualChf === null ? null : round4(result.actualChf)},
-          finished_at = now()
+          finished_at = now() -- real time: the AI budget is real money
         WHERE id = ${id}::uuid
       `);
       const totals = await this.totals(context.orgId);
@@ -250,7 +250,7 @@ export class AiBudgetService {
   }
 
   private alert(scope: string, threshold: '80' | 'exhausted', text: string): void {
-    const key = `${new Date().toISOString().slice(0, 7)}:${scope}:${threshold}`;
+    const key = `${new Date().toISOString().slice(0, 7)}:${scope}:${threshold}`; // real time: the AI budget is real money
     if (this.alerted.has(key)) return;
     this.alerted.add(key);
     this.logger.warn(text);

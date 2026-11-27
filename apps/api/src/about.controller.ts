@@ -9,7 +9,7 @@ import { DbService } from './db.service';
 import { callerUserId, isOperator, type Executor } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 
-const STARTED_AT = new Date().toISOString();
+const STARTED_AT = new Date().toISOString(); // real time: server start and time
 
 /** Baked into the image by build-push (see apps/api/Dockerfile) — unset on a host build. */
 export function buildInfo(env: Record<string, string | undefined> = process.env) {
@@ -98,7 +98,7 @@ export class AboutController {
         ...(operator ? { hostname: hostname(), environment: process.env.NODE_ENV || null, nodeVersion: process.version } : {}),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         startedAt: STARTED_AT,
-        time: new Date().toISOString(),
+        time: new Date().toISOString(), // real time: server start and time
       },
       database: operator ? database : { status: database.status },
       plugins: (plugins ??= pluginInfos()),

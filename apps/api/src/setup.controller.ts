@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { organizations } from './db/schema';
 import { VersionsService } from './versions.service';
 import { isCanton } from '@worktime3/shared/worktime';
+import { sqlToday } from './clock';
 
 /**
  * The setup checklist on Home (SetupChecklist.tsx): what a new organization still needs before the
@@ -107,7 +108,7 @@ export class SetupController {
         JOIN users u ON u.id = m.user_id
         LEFT JOIN (
           SELECT DISTINCT ON (user_id) user_id, manager_user_id FROM employee_assignments
-          WHERE organization_id = ${orgId} AND valid_from <= CURRENT_DATE
+          WHERE organization_id = ${orgId} AND valid_from <= ${sqlToday()}
           ORDER BY user_id, valid_from DESC
         ) a ON a.user_id = m.user_id
         WHERE m.organization_id = ${orgId} AND m.status = 'active'
@@ -116,7 +117,7 @@ export class SetupController {
     const [counts] = (
       await db.execute(sql`
         SELECT
-          (SELECT count(*)::int FROM organization_invitations WHERE organization_id = ${orgId} AND status = 'pending' AND expires_at > now()) AS invitations,
+          (SELECT count(*)::int FROM organization_invitations WHERE organization_id = ${orgId} AND status = 'pending' AND expires_at > now()) AS invitations, -- real time: invitations expire in real time
           (SELECT count(*)::int FROM departments WHERE organization_id = ${orgId} AND is_active) AS departments,
           (SELECT count(*)::int FROM departments WHERE organization_id = ${orgId} AND is_active AND leader_user_id IS NULL) AS without_leader,
           (SELECT count(*)::int FROM work_schedules WHERE organization_id = ${orgId}) AS schedules,

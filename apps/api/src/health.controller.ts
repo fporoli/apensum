@@ -7,7 +7,7 @@ import { Public } from './jwt.guard';
 import { lastSmtpStatus } from './mailer';
 
 /** When this process started: lets scripts/wait-for-api.mjs tell a fresh API from a leftover one. */
-export const STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString();
+export const STARTED_AT = new Date(Date.now() - process.uptime() * 1000).toISOString(); // real time: server start
 
 /**
  * A demo instance that starts over on a schedule (DEMO_RESET_EVERY_HOURS, set for the GitHub Environment
@@ -58,7 +58,7 @@ export class HealthController {
   health() {
     // smtp: the mail relay as last seen (startup check, then each send); details only in the log.
     const everyHours = demoResetEveryHours();
-    return { status: 'ok', time: new Date().toISOString(), startedAt: STARTED_AT, smtp: lastSmtpStatus(), demoReset: everyHours ? { everyHours } : null, instance: instanceInfo() };
+    return { status: 'ok', time: new Date().toISOString(), startedAt: STARTED_AT, smtp: lastSmtpStatus(), demoReset: everyHours ? { everyHours } : null, instance: instanceInfo() }; // real time: server time
   }
 
   /** For outside monitors (HTTP status only): 200 while the database answers, else 503. */

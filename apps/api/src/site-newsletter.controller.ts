@@ -203,7 +203,7 @@ export interface NewsletterForm {
 export class SiteNewsletterController {
   /** Replaceable in tests. */
   send: (mail: MailOptions) => Promise<void> = (mail) => sendMail(mail, 10_000);
-  now: () => number = () => Date.now();
+  now: () => number = () => Date.now(); // real time: rate limit
   store: SubscriberStore;
   private readonly perIp = new Map<string, number[]>();
   private mailedToday: number[] = [];

@@ -115,6 +115,9 @@ export type { PlannedMinutesSource } from './work-time-model.service';
 export type { ApiReport, ReportRowsContext } from './report-sources';
 export type { ReportDefinition, ReportRow } from '@worktime3/shared/reports';
 
+// The business clock (clock.ts): "now" and "today" for what a company does, instead of new Date(), SQL now() and
+// CURRENT_DATE; technical time (rate limits, expiring links) stays real and says so (`// real time: <why>`).
+export { clock, sqlNow, sqlToday, todayIn } from './clock';
 // Database and history
 export { DbService, type Db } from './db.service';
 export { VersionsService } from './versions.service';

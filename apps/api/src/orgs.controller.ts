@@ -24,6 +24,7 @@ import {
 } from './db/schema';
 
 import { appBaseUrl } from './app-url';
+import { clock, sqlToday } from './clock';
 
 export { appBaseUrl };
 
@@ -261,7 +262,7 @@ export class OrgsController {
       FROM employee_assignments a
       LEFT JOIN users m ON m.id = a.manager_user_id
       LEFT JOIN departments d ON d.id = a.department_id
-      WHERE a.organization_id = ${id} AND a.valid_from <= CURRENT_DATE
+      WHERE a.organization_id = ${id} AND a.valid_from <= ${sqlToday()}
       ORDER BY a.user_id, a.valid_from DESC`);
     type Current = { user_id: string; manager_user_id: string | null; manager_name: string | null; department_id: string | null; department_name: string | null; job_function: string | null };
     const current = new Map((assigned.rows as Current[]).map((r) => [r.user_id, r]));
@@ -372,7 +373,7 @@ export class OrgsController {
     if (refused) return { ok: false, error: refused };
     await db
       .insert(membership_roles)
-      .values({ membership_id: membershipId, role_id: body.roleId, granted_by_user_id: callerId })
+      .values({ membership_id: membershipId, role_id: body.roleId, granted_by_user_id: callerId, granted_at: clock.now().toISOString() })
       .onConflictDoNothing();
     void this.audit.record(id, callerId, 'role.grant', 'membership', membershipId, { roleId: body.roleId }).catch(() => {});
     return { ok: true };
@@ -448,7 +449,7 @@ export class OrgsController {
     const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, id));
     if (!org) return { ok: false, error: 'unknown-organization' };
     const token = randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // real time: invitations expire in real time
     const [inserted] = await db
       .insert(organization_invitations)
       .values({
@@ -612,7 +613,7 @@ export class OrgsController {
       idp_entity_id: idpEntityId,
       idp_sso_url: idpSsoUrl,
       is_active: true,
-      updated_at: new Date().toISOString(),
+      updated_at: clock.now().toISOString(),
     };
     await db.update(organizations).set({ sso_config: ssoConfig }).where(eq(organizations.id, id));
     void this.audit.record(id, callerId, 'sso.upsert', 'organization', id, { protocol, idpEntityId }).catch(() => {});

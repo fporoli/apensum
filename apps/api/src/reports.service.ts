@@ -9,6 +9,7 @@ import { can, isOrgMember, listableUserIds } from './access';
 import { employee_assignments, organization_memberships, project_times, projects, users, work_times } from './db/schema';
 import { reportSource } from './report-sources';
 import { groupReport, monthEnd, monthsBetween, parseGroupBy, reportById, type ReportDefinition, type ReportRow } from '@worktime3/shared/reports';
+import { clock, sqlToday } from './clock';
 
 type Db = NonNullable<ReturnType<DbService['getDb']>>;
 
@@ -130,7 +131,7 @@ export class ReportsService {
       const inDept = await db
         .selectDistinctOn([employee_assignments.user_id], { userId: employee_assignments.user_id, departmentId: employee_assignments.department_id })
         .from(employee_assignments)
-        .where(and(eq(employee_assignments.organization_id, orgId), sql`${employee_assignments.valid_from} <= CURRENT_DATE`))
+        .where(and(eq(employee_assignments.organization_id, orgId), sql`${employee_assignments.valid_from} <= ${sqlToday()}`))
         .orderBy(employee_assignments.user_id, sql`${employee_assignments.valid_from} DESC`);
       const members = new Set(inDept.filter((a) => a.departmentId === departmentId).map((a) => a.userId));
       people = people.filter((p) => members.has(p.id));
@@ -257,7 +258,7 @@ export class ReportsService {
    * the assignment and work schedule in force on that day. FTE = workload / 100.
    */
   private async peopleRows(db: Db, orgId: string, people: Array<{ id: string; name: string }>, last: string): Promise<ReportRow[]> {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = clock.now().toISOString().slice(0, 10);
     const at = monthEnd(last) < today ? monthEnd(last) : today;
     const names = new Map(people.map((p) => [p.id, p.name]));
     const ids = sql.join(people.map((p) => sql`${p.id}::uuid`), sql`, `);

@@ -12,6 +12,7 @@ import {
   assistantTools, assistantZone, findOrgMember, findOrgProject, toolPayload, zonedInstant, zonedLocal,
   type AssistantTool, type AssistantToolContext,
 } from './assistant-tools';
+import { clock } from './clock';
 
 export interface AssistantMessage {
   role: 'user' | 'assistant';
@@ -110,7 +111,7 @@ export class AssistantService {
 
     const [me] = await db.select({ name: users.display_name, timezone: users.timezone }).from(users).where(eq(users.id, callerId));
     const timeZone = assistantZone(me?.timezone);
-    const today = zonedLocal(new Date(), timeZone).date;
+    const today = zonedLocal(clock.now(), timeZone).date;
     const ctx: AssistantToolContext = {
       db, orgId, callerId, timeZone, today,
       req: { user: { kind: 'local', sub: callerId } },

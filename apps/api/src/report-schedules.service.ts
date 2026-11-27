@@ -72,7 +72,7 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Runs what is due. Public for tests and for a manual nudge. */
-  async tick(now = new Date()): Promise<void> {
+  async tick(now = new Date()): Promise<void> { // real time: scheduled deliveries run in real time
     const db = this.db.getDb();
     if (!db || this.running) return;
     this.running = true;
@@ -106,7 +106,7 @@ export class ReportSchedulesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** One run of a schedule for all its recipients ("Run now" too). */
-  async deliver(db: Db, schedule: Schedule, now = new Date()): Promise<RunOutcome> {
+  async deliver(db: Db, schedule: Schedule, now = new Date()): Promise<RunOutcome> { // real time: scheduled deliveries run in real time
     const [saved] = await db.select().from(saved_reports).where(eq(saved_reports.id, schedule.saved_report_id));
     const def = saved ? reportById(saved.report_id) : undefined;
     if (!saved || !def) return { delivered: 0, failed: 0 };

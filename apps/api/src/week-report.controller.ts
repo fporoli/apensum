@@ -6,6 +6,7 @@ import { callerUserId, canSeeUserData, isOrgMember } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { localDate, WorkTimeModelService } from './work-time-model.service';
 import { isoWeek, projectTotals, weekDates, weekGrid, type WeekDay, type WeekEntry } from './week-report';
+import { clock } from './clock';
 
 /** The page the weekly report belongs to (project time). */
 const OBJECT = 'nav.time';
@@ -71,6 +72,6 @@ export class WeekReportController {
         ...(target?.notRecorded ? { notRecorded: true as const } : {}),
       };
     });
-    return { ok: true, weekStart: start, week: isoWeek(start), today: localDate(new Date(), timeZone), days, grid };
+    return { ok: true, weekStart: start, week: isoWeek(start), today: localDate(clock.now(), timeZone), days, grid };
   }
 }

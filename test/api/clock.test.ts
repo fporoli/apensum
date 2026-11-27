@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { clock, todayIn } from '../../apps/api/src/clock';
 
@@ -22,20 +22,36 @@ test('clock.at with a function: time that runs on (the simulation)', () => {
   assert.deepEqual(days, ['2020-01-31', '2020-02-01'], '23:59 and 00:00 in Zurich');
 });
 
-// The files moved to the business clock keep to it: no SQL now()/CURRENT_DATE and no new Date() (technical time,
-// such as the role cache's Date.now(), stays allowed). Extend the list as more files move.
-const ON_THE_CLOCK = [
-  'flows.controller.ts', 'flows.service.ts', 'flow-steps.ts', 'workflows.service.ts', 'workflows.controller.ts', 'workflow-dues.service.ts',
-  'access.ts', 'work-time-model.service.ts', 'balances.service.ts', 'balances.controller.ts', 'notifications.service.ts', 'audit.service.ts',
-];
+const ROOT = join(__dirname, '../..');
+const TIME = /(?<![\w.])now\(\)|\bCURRENT_DATE\b|new Date\(\)|Date\.now\(\)/i;
 
-test('files on the business clock do not read the real time', () => {
-  for (const file of ON_THE_CLOCK) {
-    const text = readFileSync(join(__dirname, '../../apps/api/src', file), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/\/\/.*$/gm, '');
-    assert.ok(!/(?<![\w.])now\(\)/.test(text), `${file}: SQL now() (use sqlNow())`);
-    assert.ok(!/\bCURRENT_DATE\b/i.test(text), `${file}: CURRENT_DATE (use sqlToday())`);
-    assert.ok(!/new Date\(\)/.test(text), `${file}: new Date() (use clock.now())`);
+/** The API's and the plugins' own code (not the generated schema, not tests, not the clock itself). */
+function sources(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) {
+        if (name !== 'db' && name !== 'node_modules' && name !== 'dist') walk(path);
+      } else if (name.endsWith('.ts') && !name.endsWith('.test.ts') && name !== 'clock.ts') out.push(path);
+    }
+  };
+  walk(join(ROOT, 'apps/api/src'));
+  const plugins = join(ROOT, 'plugins');
+  for (const id of existsSync(plugins) ? readdirSync(plugins) : []) if (existsSync(join(plugins, id, 'api'))) walk(join(plugins, id, 'api'));
+  return out;
+}
+
+// Business time goes through the clock (clock.now(), sqlNow(), sqlToday()); a line that reads the real time on
+// purpose (sessions, tokens, rate limits, licenses, caches) says why: `// real time: <why>` (`-- real time:` in SQL).
+test('the API reads the real time only where it says why', () => {
+  const offenders: string[] = [];
+  for (const file of sources()) {
+    readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+      const code = line.trim();
+      if (code.startsWith('*') || code.startsWith('//') || code.startsWith('/*')) return;
+      if (TIME.test(line) && !/(\/\/|--) real time: \S/.test(line)) offenders.push(`${relative(ROOT, file)}:${i + 1}: ${code.slice(0, 100)}`);
+    });
   }
+  assert.deepEqual(offenders, [], 'use the business clock, or say `// real time: <why>`');
 });

@@ -111,7 +111,7 @@ export class AssistantController {
       .values({ organization_id: orgId, user_id: userId, prompt })
       .onConflictDoUpdate({
         target: [assistant_prompts.organization_id, assistant_prompts.user_id, assistant_prompts.prompt],
-        set: { last_used_at: sql`now()`, use_count: sql`${assistant_prompts.use_count} + 1` },
+        set: { last_used_at: sql`now()`, use_count: sql`${assistant_prompts.use_count} + 1` }, // real time: bookkeeping
       });
     await db.execute(sql`
       DELETE FROM assistant_prompts WHERE id IN (
