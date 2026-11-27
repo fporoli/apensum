@@ -1,8 +1,8 @@
 name: Whale simulation (VPS)
 
-# A company's life since 2008 on a test instance (docs/OPERATIONS.md "Whale simulation"): the instance is reset (demo
-# seed), then test/simulation/life.cjs plays Whale day by day through the API's services inside the API container,
-# and checks it over HTTP. Only from the branch test/dolphin-whale-simulation, only on test or preprod.
+# A company's life since 2008 on a test instance (test/simulation/README.md): the instance is reset (demo seed), then
+# test/simulation/life.cjs plays Whale day by day through the API's services inside the API container, and checks it
+# over HTTP. From main, only on test or preprod (preprod with a typed confirmation).
 
 on:
   workflow_dispatch:
@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   simulate:
-    if: github.ref == 'refs/heads/test/dolphin-whale-simulation'
+    if: github.ref == 'refs/heads/main'
     environment: ${{ inputs.environment }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
@@ -54,8 +54,7 @@ jobs:
           TARGET_ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -eu
-          git fetch --quiet origin main
-          tag="sha-$(git merge-base HEAD origin/main | cut -c1-7)"
+          tag="sha-$(git rev-parse HEAD | cut -c1-7)"
           echo "Resetting $TARGET_ENVIRONMENT with $tag"
           before=$(gh run list --workflow vps.yml -L 1 --json databaseId -q '.[0].databaseId' || echo 0)
           gh workflow run vps.yml --ref main -f action=reset-seed -f environment="$TARGET_ENVIRONMENT" -f image_tag="$tag" -f confirmation='RESET worktime3 public schema'
