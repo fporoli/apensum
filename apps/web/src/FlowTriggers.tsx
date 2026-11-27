@@ -9,7 +9,7 @@ import { apiRequest } from './apiRequest';
 import { useI18n, useT } from './i18n';
 import { ConfirmDialog } from './components';
 import { AddIcon, ArrowDropDownIcon, DeleteIcon, EditIcon } from './icons';
-import { TRIGGER_TEMPLATES, type TriggerTemplate } from '@worktime3/shared/triggerTemplates';
+import type { TriggerTemplate } from '@worktime3/shared/triggerTemplates';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -51,6 +51,8 @@ interface TriggerList {
   triggers: Trigger[];
   flowTypes: { key: string; label: string; labels: Record<string, string> | null }[];
   departments: { id: string; name: string; code: string | null }[];
+  /** Vorlagen of the events the caller sets up: the core's and the plugins' that are on (HR-Prozesse's). */
+  templates?: TriggerTemplate[];
 }
 
 type Draft = Omit<Trigger, 'id'> & { id: string | null };
@@ -134,8 +136,8 @@ export default function FlowTriggers({ orgId, authHeaders, onTypesChanged }: {
     if (tr.target === 'department') return data?.departments.find((d) => d.id === tr.departmentId)?.name ?? t('flowTriggers.departmentMissing');
     return t(`flowTriggers.target.${tr.target}`);
   };
-  // Vorlagen for the events the caller sets up (the API adds their flow type, fixed by the template).
-  const templates = TRIGGER_TEMPLATES.filter((tpl) => editableEvents.some((e) => e.id === tpl.event));
+  // Vorlagen for the events the caller sets up (the API lists them and adds their flow type, fixed by the template).
+  const templates = (data?.templates ?? []).filter((tpl) => editableEvents.some((e) => e.id === tpl.event));
 
   return (
     <Box sx={{ display: 'grid', gap: 2 }}>

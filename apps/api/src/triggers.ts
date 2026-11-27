@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { Db } from './db.service';
 import { sqlNow } from './clock';
+import { TRIGGER_TEMPLATES, type TriggerTemplate } from '@worktime3/shared/triggerTemplates';
 
 // Auslöser (flow triggers, docs/dev/FLOWS.md): events the core and plugins offer (a residence permit ending, an
 // anniversary, ...), and an organization's rules for the flows they open (table flow_triggers, 123). Pure parts here,
@@ -66,6 +67,11 @@ export interface TriggerSource {
   /** The module whose switch (and license) decides whether its events run (a plugin's id), none for the core's. */
   module?: string;
   events: TriggerEventDef[];
+  /**
+   * Vorlagen for its events (the Auslöser tab's "Vorlagen"): a flow type with an e-mail from a template, and the
+   * trigger that opens it (`@worktime3/shared/triggerTemplates`). Offered while its module is on.
+   */
+  templates?: readonly TriggerTemplate[];
   due(db: Db, orgId: string, today: string, horizons: Record<string, number>): Promise<TriggerOccurrence[]>;
 }
 
@@ -156,6 +162,7 @@ export const PERMIT_EVENT = 'permitExpires';
  * people's personal data for everyone (HR) sees its triggers.
  */
 export const CORE_TRIGGERS: TriggerSource = {
+  templates: TRIGGER_TEMPLATES,
   events: [{
     id: PERMIT_EVENT,
     label: { de: 'Bewilligung läuft ab', fr: "Autorisation de séjour échue", it: 'Permesso in scadenza', en: 'Permit expires' },

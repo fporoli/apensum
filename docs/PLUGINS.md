@@ -271,6 +271,7 @@ Leave out what must not reach the model: the cases module (end-to-end encrypted)
 
 `triggers` (a `TriggerSource`, types in the contract): events for Auslöser, the core's triggers (docs/dev/FLOWS.md).\
 Its `events` have ids that start with the plugin's id (`hr.anniversary`), labels in four languages, the placeholders they give the flow types' e-mail templates, a default lead time (`false`: as soon as known), the section their flows link to (`?user=<id>`) and `sensitive` (a permission object: only who edits it for everyone sees and sets up their triggers).\
+`templates` (optional, `TriggerTemplate` from `@worktime3/shared/triggerTemplates`) are Vorlagen for its own events: the Auslöser tab offers them while the module is on, and the core creates the flow type with its e-mail step and the trigger.\
 `due(db, orgId, today, horizons)` returns the occurrences of the events asked for (key, the person, date, optional due date and department, values, `text(lang)`); the core opens, updates and closes the flows, and runs a plugin's events only while its module (`triggers.module`, else the plugin's id) is on.\
 The web part may show the same panel (`FlowTriggers` in `@worktime3/web/plugin`), e.g. in its settings.\
 `permitReminders(db, orgId)` (deprecated): true when the plugin reminds of residence permits ending itself; an enabled `permitExpires` trigger silences the core's reminder now.\

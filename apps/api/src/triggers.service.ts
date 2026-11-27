@@ -8,6 +8,7 @@ import { clock } from './clock';
 import { localDate } from './work-time-model.service';
 import { API_PLUGINS } from './plugin-registrar';
 import type { ApiPlugin } from './plugin';
+import type { TriggerTemplate } from '@worktime3/shared/triggerTemplates';
 import {
   CORE_TRIGGERS, triggerFlowKey, triggerKeyPrefix, withinLead,
   type FlowTrigger, type TriggerEventDef, type TriggerLang, type TriggerOccurrence, type TriggerSource,
@@ -89,6 +90,16 @@ export class TriggersService implements OnModuleInit, OnModuleDestroy {
   events(): Map<string, KnownEvent> {
     const out = new Map<string, KnownEvent>();
     for (const source of this.sources()) for (const def of source.events) if (!out.has(def.id)) out.set(def.id, { def, source, module: source.module ?? null });
+    return out;
+  }
+
+  /** The Vorlagen of the core and the plugins, by event (the first for an event wins, as with events). */
+  templates(): Map<string, TriggerTemplate> {
+    const out = new Map<string, TriggerTemplate>();
+    // A source brings Vorlagen only for its own events.
+    for (const source of this.sources()) {
+      for (const tpl of source.templates ?? []) if (source.events.some((e) => e.id === tpl.event) && !out.has(tpl.event)) out.set(tpl.event, tpl);
+    }
     return out;
   }
 

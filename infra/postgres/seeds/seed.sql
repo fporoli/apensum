@@ -843,8 +843,34 @@ FROM (VALUES
 ) AS d(person, deputy)
 WHERE m.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND m.user_id = d.person::uuid AND m.deputy_user_id IS NULL;
 
--- A residence permit ending soon (118): Uma's B permit ends 45 days after the seed runs, so the reminder to her and to
--- HR (workflow-dues.service.ts, 60 days ahead) shows on the demo; set only where she has none.
+-- A residence permit ending soon (118): Uma's B permit ends 45 days after the seed runs, so the trigger below opens a
+-- flow for HR on the demo; set only where she has none.
 UPDATE users SET basicdata = COALESCE(basicdata, '{}'::jsonb)
   || jsonb_build_object('residencePermitCode', 'B', 'residencePermitValidUntil', to_char(CURRENT_DATE + 45, 'YYYY-MM-DD'))
 WHERE email = 'uma@acme.com' AND NOT COALESCE(basicdata, '{}'::jsonb) ? 'residencePermitCode';
+
+-- Auslöser with a flow type (Admin settings -> Flow-Designer -> Auslöser, the core's Vorlage "Bewilligung erneuern",
+-- shared/triggerTemplates.ts): when a permit is about to end, HR (the department, code hr) writes the person an e-mail
+-- from the template, then is done; Uma's permit above opens one. The type (confidential), its step and the trigger as
+-- the Vorlage creates them; HR-Prozesse's events (plugins/hr/seed.sql) stay Free Flows, its Vorlagen are offered there.
+UPDATE static_data SET
+  "values" = "values" || jsonb_build_object('bewilligung_erneuern', jsonb_build_object('confidential', true,
+    'sort', (SELECT COALESCE(max((e.value->>'sort')::numeric), 0) + 1 FROM jsonb_each("values") e))),
+  translation = jsonb_build_object(
+    'de', COALESCE(translation->'de', '{}'::jsonb) || '{"bewilligung_erneuern":"Bewilligung erneuern"}'::jsonb,
+    'en', COALESCE(translation->'en', '{}'::jsonb) || '{"bewilligung_erneuern":"Renew the permit"}'::jsonb,
+    'fr', COALESCE(translation->'fr', '{}'::jsonb) || '{"bewilligung_erneuern":"Renouveler l''autorisation"}'::jsonb,
+    'it', COALESCE(translation->'it', '{}'::jsonb) || '{"bewilligung_erneuern":"Rinnovare il permesso"}'::jsonb)
+WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND entity = 'flows' AND enum_name = 'flow_type'
+  AND NOT "values" ? 'bewilligung_erneuern';
+
+INSERT INTO workflow_definitions (organization_id, name, description, steps, config)
+SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'flow:bewilligung_erneuern', 'A flow of a type with set steps: its steps, one after the other.', '[]'::jsonb,
+  '{"version":1,"steps":[{"key":"mail","do":["compose"],"assignTo":"department:hr","reject":"back","mailTo":"about","label":{"de":"E-Mail schreiben","fr":"Écrire un e-mail","it":"Scrivere un''e-mail","en":"Write an e-mail"},"message":{"subject":{"de":"Ihre Bewilligung läuft am {{date}} ab","fr":"Votre autorisation échoit le {{date}}","it":"Il Suo permesso scade il {{date}}","en":"Your permit expires on {{date}}"},"text":{"de":"Guten Tag {{name}}\n\nIhre Aufenthalts- bzw. Arbeitsbewilligung ({{type}}) läuft am {{date}} ab. Bitte leiten Sie die Verlängerung rechtzeitig ein und senden Sie uns eine Kopie der neuen Bewilligung, sobald Sie sie erhalten haben.\n\nBei Fragen helfen wir Ihnen gerne weiter.\n\nFreundliche Grüsse\n{{sender}}","fr":"Bonjour {{name}},\n\nVotre autorisation de séjour ou de travail ({{type}}) échoit le {{date}}. Veuillez lancer le renouvellement à temps et nous envoyer une copie de la nouvelle autorisation dès que vous l''aurez reçue.\n\nNous restons volontiers à votre disposition pour toute question.\n\nMeilleures salutations\n{{sender}}","it":"Buongiorno {{name}},\n\nIl Suo permesso di soggiorno o di lavoro ({{type}}) scade il {{date}}. La preghiamo di avviare per tempo il rinnovo e di inviarci una copia del nuovo permesso non appena lo avrà ricevuto.\n\nRestiamo volentieri a disposizione per qualsiasi domanda.\n\nCordiali saluti\n{{sender}}","en":"Hello {{name}},\n\nYour residence or work permit ({{type}}) expires on {{date}}. Please start the renewal in time and send us a copy of the new permit as soon as you have received it.\n\nWe are happy to help if you have any questions.\n\nKind regards\n{{sender}}"}}}]}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM workflow_definitions WHERE organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND name = 'flow:bewilligung_erneuern');
+
+INSERT INTO flow_triggers (id, organization_id, event, enabled, lead_days, flow_type, target, department_id, confidential)
+SELECT 'f1000000-0000-4000-8000-000000000009', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'permitExpires', TRUE, 90, 'bewilligung_erneuern', 'department', 'dddddddd-0000-0000-0000-000000000002', TRUE
+WHERE EXISTS (SELECT 1 FROM departments WHERE id = 'dddddddd-0000-0000-0000-000000000002')
+  AND NOT EXISTS (SELECT 1 FROM flow_triggers t WHERE t.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND t.event = 'permitExpires')
+ON CONFLICT (id) DO NOTHING;

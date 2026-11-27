@@ -11,7 +11,7 @@ import type { AuthenticatedRequest } from './jwt.guard';
 import { TriggersService, triggersOf, type KnownEvent } from './triggers.service';
 import { triggerKeyPrefix, validateTrigger, type FlowTrigger } from './triggers';
 import { sqlToday } from './clock';
-import { TRIGGER_TEMPLATES, freeTypeKey, templateConfig } from '@worktime3/shared/triggerTemplates';
+import { freeTypeKey, templateConfig } from '@worktime3/shared/triggerTemplates';
 import { validateWorkflowConfig } from '@worktime3/shared/workflowConfig';
 import { saveFlowType } from './flow-types';
 
@@ -71,7 +71,7 @@ export class FlowTriggersController {
 
   @Get()
   async list(@Param('orgId') orgId: string, @Req() req: AuthenticatedRequest) {
-    const empty = { ok: true, editable: false, designer: false, events: [], triggers: [], flowTypes: [], departments: [] };
+    const empty = { ok: true, editable: false, designer: false, events: [], triggers: [], flowTypes: [], departments: [], templates: [] };
     const db = this.db.getDb();
     if (!db) return { ...empty, offline: true };
     const a = await this.access(db, orgId, req);
@@ -92,7 +92,9 @@ export class FlowTriggersController {
     const departments = (await db.execute(sql`
       SELECT id, name, code FROM departments WHERE organization_id = ${orgId}::uuid AND is_active ORDER BY name
     `)).rows as { id: string; name: string; code: string | null }[];
-    return { ok: true, editable: a.editable.size > 0, designer: a.designer, events, triggers, flowTypes, departments };
+    // The Vorlagen of the events the caller sets up whose module is on (the core's, a plugin's: HR-Prozesse's).
+    const templates = [...this.triggers.templates().values()].filter((tpl) => a.editable.has(tpl.event) && on.has(tpl.event));
+    return { ok: true, editable: a.editable.size > 0, designer: a.designer, events, triggers, flowTypes, departments, templates };
   }
 
   @Post()
@@ -155,7 +157,7 @@ export class FlowTriggersController {
   }
 
   /**
-   * Creates a Vorlage (`{event, departmentId}`, shared/triggerTemplates.ts): its flow type (confidential, names in four
+   * Creates a Vorlage (`{event, departmentId}`, the core's shared/triggerTemplates.ts or a plugin's `TriggerSource.templates`): its flow type (confidential, names in four
    * languages, a key not yet taken), the type's one step (an e-mail to the person from the template, to the department
    * by its code), and the event's trigger, or the event's existing trigger now goes through the type. For whoever may
    * set up the event's triggers (HR for its own events, without the Flow-Designer): the type is fixed by the template.
@@ -166,8 +168,8 @@ export class FlowTriggersController {
     if (!db) return { ok: true, offline: true };
     const a = await this.access(db, orgId, req);
     if (!a || a.editable.size === 0) return { ok: false, error: 'forbidden' };
-    const tpl = TRIGGER_TEMPLATES.find((x) => x.event === body?.event);
-    if (!tpl || !a.editable.has(tpl.event)) return { ok: false, error: 'unknown-event' };
+    const tpl = typeof body?.event === 'string' ? this.triggers.templates().get(body.event) : undefined;
+    if (!tpl || !a.editable.has(tpl.event) || !(await this.triggers.eventsOn(db, orgId)).has(tpl.event)) return { ok: false, error: 'unknown-event' };
     if (typeof body.departmentId !== 'string' || !/^[0-9a-f-]{36}$/i.test(body.departmentId)) return { ok: false, error: 'invalid-department' };
     const [department] = (await db.execute(sql`
       SELECT id, code FROM departments WHERE id = ${body.departmentId}::uuid AND organization_id = ${orgId}::uuid AND is_active`)).rows as { id: string; code: string | null }[];

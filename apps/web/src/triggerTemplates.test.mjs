@@ -30,7 +30,8 @@ test('every template is a valid flow type configuration: one e-mail step to the 
       if (l === 'de') assert.doesNotMatch(tpl.text[l], /\b(du|dich|dir|dein\w*)\b/i, tpl.event);
     }
   }
-  assert.deepEqual(TRIGGER_TEMPLATES.map((t) => t.event), ['hr.anniversary', 'hr.probationEnd', 'permitExpires', 'hr.exit']);
+  // The core's own events only; HR-Prozesse brings its own (plugins/hr/shared/trigger-templates.ts).
+  assert.deepEqual(TRIGGER_TEMPLATES.map((t) => t.event), ['permitExpires']);
 });
 
 test('a template takes a free flow type key', () => {
