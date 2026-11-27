@@ -17,7 +17,7 @@ test('compose values: the first name falls back to the name, dates the Swiss way
   assert.deepEqual(v, { name: 'Marco Arnold', firstName: 'Marco', date: '01.01.2027', years: '5', subject: null, sender: 'Hanna' });
   assert.equal(composeDate('2027-01-01', 'fr'), '01.01.2027');
   assert.equal(composeDate('soon', 'de'), 'soon');
-  assert.match(composeMailText('Hallo', 'Hanna', 'de-CH'), /^Hallo\n\n--\nGesendet von Hanna über Apensum\./);
+  assert.equal(composeMailText('  Hallo\n\nFreundliche Grüsse\nHanna  '), 'Hallo\n\nFreundliche Grüsse\nHanna\n');
 });
 
 test('config: a compose step needs its template, its recipient defaults to the person and is checked', () => {

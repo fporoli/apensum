@@ -12,7 +12,7 @@ const MAX_MESSAGE = 5000;
 
 const FOOTER: Record<string, (name: string) => string> = {
   en: (name) => `Sent by ${name} via Apensum. Reply to this e-mail to answer ${name}.`,
-  de: (name) => `Gesendet von ${name} über Apensum. Antworte auf diese E-Mail, um ${name} zu antworten.`,
+  de: (name) => `Gesendet von ${name} über Apensum. Antworten Sie auf diese E-Mail, um ${name} zu antworten.`,
   fr: (name) => `Envoyé par ${name} via Apensum. Répondez à cet e-mail pour répondre à ${name}.`,
   it: (name) => `Inviato da ${name} tramite Apensum. Rispondi a questa e-mail per rispondere a ${name}.`,
 };

@@ -21,13 +21,6 @@ export const composeLang = (locale: string | null | undefined): Lang => {
 };
 const SWISS: Record<Lang, string> = { de: 'de-CH', fr: 'fr-CH', it: 'it-CH', en: 'en-CH' };
 
-const FOOTER: Record<Lang, (name: string) => string> = {
-  de: (name) => `Gesendet von ${name} über Apensum. Antworten Sie auf diese E-Mail, um ${name} zu antworten.`,
-  fr: (name) => `Envoyé par ${name} via Apensum. Répondez à cet e-mail pour répondre à ${name}.`,
-  it: (name) => `Inviato da ${name} tramite Apensum. Risponda a questa e-mail per rispondere a ${name}.`,
-  en: (name) => `Sent by ${name} via Apensum. Reply to this e-mail to answer ${name}.`,
-};
-
 /** A date (YYYY-MM-DD) the Swiss way in a language (17.11.2026), else the value as it is. */
 export function composeDate(value: unknown, lang: Lang): string | null {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return typeof value === 'string' ? value : null;
@@ -55,9 +48,12 @@ export function composeValues(
   };
 }
 
-/** The mail's text: what the sender wrote, then who sent it (in the recipient's language). */
-export function composeMailText(text: string, senderName: string, locale: string | null | undefined): string {
-  return `${text.trim()}\n\n--\n${FOOTER[composeLang(locale)](senderName)}\n`;
+/**
+ * The mail's text: what the sender wrote, as it is. It carries no footer of its own: the templates end with the
+ * sender's greeting ({{sender}}), and a reply goes to the sender (Reply-To).
+ */
+export function composeMailText(text: string): string {
+  return `${text.trim()}\n`;
 }
 
 interface FlowRow {
@@ -155,7 +151,7 @@ export class FlowComposeService {
     for (const r of recipients) {
       if (!r.email) continue;
       try {
-        await sendMail({ to: r.email, replyTo: sender.email, subject: parsed.subject, text: composeMailText(parsed.message, sender.name, r.locale) }, 15_000);
+        await sendMail({ to: r.email, replyTo: sender.email, subject: parsed.subject, text: composeMailText(parsed.message) }, 15_000);
         sent++;
       } catch (err) {
         console.warn(`compose mail failed after ${sent} of ${recipients.length}: ${err instanceof Error ? err.message : err}`);
