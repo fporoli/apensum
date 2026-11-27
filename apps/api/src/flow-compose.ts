@@ -104,7 +104,8 @@ export class FlowComposeService {
   private async recipients(db: Db, orgId: string, flow: FlowRow, mailTo: MailTo) {
     const about = flow.about_user_id ?? flow.requester_user_id;
     const manager = about ? await actingManagerId(db, orgId, about) : null;
-    const byRole: Record<MailTo, string | null> = { about, requester: flow.requester_user_id, aboutManager: manager };
+    // `choose`: nobody set, the writer picks from the organization (the others are suggested).
+    const byRole: Record<MailTo, string | null> = { about, requester: flow.requester_user_id, aboutManager: manager, choose: null };
     const people = await this.people(db, orgId, [byRole[mailTo], about, flow.requester_user_id, manager]);
     return { to: people.filter((p) => p.id === byRole[mailTo]), suggested: people, aboutId: about };
   }

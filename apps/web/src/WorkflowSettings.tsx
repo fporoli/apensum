@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Checkbox, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Paper, Tab, Tabs, TextField, Tooltip, Typography,
+  Alert, Box, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, Paper, Tab, Tabs, TextField, Tooltip, Typography,
 } from '@mui/material';
 import { Button } from './Button';
 import { FLOW_TYPE_KEY, MAX_FLOW_TYPE_NAME, flowTypeKeyFromName } from '@worktime3/shared/flows';
@@ -10,7 +10,7 @@ import {
 } from '@worktime3/shared/workflowConfig';
 import { useI18n, useT } from './i18n';
 import { ConfirmDialog, PageHeader } from './components';
-import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon, AccountTreeIcon, CodeIcon, BoltIcon } from './icons';
+import { AddIcon, ContentCopyIcon, DeleteIcon, EditIcon, RestartAltIcon, SaveIcon, AccountTreeIcon, CodeIcon, BoltIcon, CloseIcon, ExpandLessIcon, ExpandMoreIcon } from './icons';
 import FlowTriggers from './FlowTriggers';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
@@ -258,6 +258,23 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRena
   const [serverErrors, setServerErrors] = useState<WorkflowConfigError[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
   useEffect(() => { setText(pretty(kind.config ?? kind.defaultConfig)); }, [kind]);
+  // Folded by default, so the page lists the kinds and types at a glance; kept per kind for the session.
+  const foldKey = `workflowConfig.expanded.${kind.id}:${kind.variant ?? ''}`;
+  const [expanded, setExpandedState] = useState(() => {
+    try {
+      return sessionStorage.getItem(foldKey) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setExpanded = (next: boolean) => {
+    setExpandedState(next);
+    try {
+      sessionStorage.setItem(foldKey, next ? '1' : '0');
+    } catch {
+      // private window: just not remembered
+    }
+  };
 
   // Checked while typing, with the same rules the API applies.
   const checked = useMemo((): { parsed: unknown; errors: WorkflowConfigError[]; jsonError: string | null } => {
@@ -303,6 +320,13 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRena
   }
 
   const changed = text !== pretty(kind.config ?? kind.defaultConfig);
+  /** Back to what is saved: the designer and the JSON alike (a type without steps folds its editor away again). */
+  const discard = () => {
+    setText(pretty(kind.config ?? kind.defaultConfig));
+    setServerErrors([]);
+    setMessage(null);
+    if (kind.optional && !kind.config) setOpened(false);
+  };
   // What the designer can show: a parsed object with a list of steps (anything else is fixed in the JSON first).
   const designable = (() => {
     const p = checked.parsed as Partial<WorkflowConfig> | null;
@@ -310,18 +334,25 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRena
       ? (p as WorkflowConfig) : null;
   })();
   return (
-    <Paper sx={{ p: 2, display: 'grid', gap: 1.5 }}>
+    <Paper sx={{ p: 2, display: 'grid' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Typography variant="h6" sx={{ flex: 1 }}>
+        <IconButton size="small" aria-expanded={expanded} aria-label={t(expanded ? 'common.collapse' : 'common.expand')} onClick={() => setExpanded(!expanded)}>
+          {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+        </IconButton>
+        <Typography variant="h6" sx={{ flex: 1, cursor: 'pointer' }} onClick={() => setExpanded(!expanded)}>
           {title}
           {onRename && (
             <Tooltip title={t('workflowConfig.flowType.rename')}>
-              <IconButton size="small" sx={{ ml: 0.5 }} aria-label={t('workflowConfig.flowType.rename')} onClick={onRename}><EditIcon fontSize="small" /></IconButton>
+              <IconButton size="small" sx={{ ml: 0.5 }} aria-label={t('workflowConfig.flowType.rename')} onClick={(e) => { e.stopPropagation(); onRename(); }}><EditIcon fontSize="small" /></IconButton>
             </Tooltip>
           )}
         </Typography>
+        {changed && <Chip size="small" color="warning" variant="outlined" label={t('workflowConfig.unsaved')} />}
         <Chip size="small" color={kind.config ? 'primary' : 'default'} label={t(kind.config ? 'workflowConfig.own' : kind.optional ? 'workflowConfig.noWorkflow' : 'workflowConfig.default')} />
       </Box>
+      {/* Kept mounted while folded: unsaved changes stay. */}
+      <Collapse in={expanded}>
+      <Box sx={{ display: 'grid', gap: 1.5, pt: 1.5 }}>
       {!opened && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>{t('workflowConfig.noWorkflowHint')}</Typography>
@@ -369,6 +400,9 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRena
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
           <Button variant="contained" startIcon={<SaveIcon />} disabled={busy || !changed || !!checked.jsonError || errors.length > 0} onClick={() => void save(checked.parsed)}>
             {t('workflowConfig.save')}
+          </Button>
+          <Button startIcon={<CloseIcon />} disabled={busy || (!changed && !(kind.optional && !kind.config))} onClick={discard}>
+            {t('workflowConfig.cancel')}
           </Button>
           {kind.config && (
             <Button startIcon={kind.optional ? <DeleteIcon /> : <RestartAltIcon />} disabled={busy} onClick={() => setConfirmReset(true)}>
@@ -429,6 +463,8 @@ function KindEditor({ orgId, kind, units, editable, authHeaders, onSaved, onRena
         </Box>
       </Box>
       </>)}
+      </Box>
+      </Collapse>
       <ConfirmDialog
         open={confirmReset}
         title={t(kind.optional ? 'workflowConfig.remove' : 'workflowConfig.reset')}

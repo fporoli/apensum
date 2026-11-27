@@ -20,12 +20,23 @@ test('compose values: the first name falls back to the name, dates the Swiss way
   assert.equal(composeMailText('  Hallo\n\nFreundliche Grüsse\nHanna  '), 'Hallo\n\nFreundliche Grüsse\nHanna\n');
 });
 
-test('config: a compose step needs its template, its recipient defaults to the person and is checked', () => {
+test('config: a compose step may go without a template, its recipient defaults to the person and is checked', () => {
   const ok = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [step({ reject: 'back' })] });
   assert.ok(ok.ok);
   assert.equal(ok.ok && ok.value.steps[0].mailTo, 'about');
-  const noTemplate = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [step({ reject: 'back', message: undefined })] });
-  assert.ok(!noTemplate.ok && noTemplate.errors.some((e) => e.code === 'invalid-message'));
+  // No template, or one left blank: the window opens empty, recipients chosen there.
+  for (const blank of [undefined, { subject: {} }, { subject: { de: ' ' }, text: { de: '' } }]) {
+    const free = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [step({ reject: 'back', message: blank, mailTo: 'choose' })] });
+    assert.ok(free.ok, JSON.stringify(blank));
+    assert.equal(free.ok && free.value.steps[0].message, undefined);
+    assert.equal(free.ok && free.value.steps[0].mailTo, 'choose');
+  }
+  // Text without a subject is not blank: that template is incomplete.
+  const halfTemplate = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [step({ reject: 'back', message: { subject: {}, text: { de: 'Hallo' } } })] });
+  assert.ok(!halfTemplate.ok && halfTemplate.errors.some((e) => e.code === 'invalid-message'));
+  // The automatic mail still needs one.
+  const automatic = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [{ key: 'a', do: ['task'], assignTo: 'manager', reject: 'back' }, { key: 'm', do: ['mail'], assignTo: 'requester' }] });
+  assert.ok(!automatic.ok && automatic.errors.some((e) => e.code === 'invalid-message'));
   const badTo = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [step({ reject: 'back', mailTo: 'everyone' })] });
   assert.ok(!badTo.ok && badTo.errors.some((e) => e.code === 'invalid-mail-to'));
   const notCompose = validateWorkflowConfig(FLOW_CATALOGUE, { version: 1, steps: [{ key: 'a', do: ['task'], assignTo: 'manager', reject: 'back', mailTo: 'about' }] });

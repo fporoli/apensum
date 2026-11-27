@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Box, Checkbox, Chip, FormControlLabel, IconButton, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material';
 import { Button } from './Button';
 import {
@@ -160,6 +160,9 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
 }) {
   const t = useT();
   const [showLabels, setShowLabels] = useState(!!step.label);
+  // What a change of the step's blocks set aside (its template, fields, recipients, assignee): switching back to a
+  // block that uses them brings them back, so trying another block loses nothing until the page is left.
+  const aside = useRef<Partial<WorkflowStepConfig>>({});
   const blockLabel = (name: string) => {
     const key = `workflowDesigner.block.${name}`;
     return t(key) === key ? kind.blocks[name]?.label ?? name : t(key);
@@ -188,7 +191,12 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
   const composes = step.do.some((b) => kind.blocks[b]?.compose);
   /** The step with its blocks changed: fields only while a block asks them, a first empty field when one starts to. */
   const withBlocks = (doBlocks: string[]): WorkflowStepConfig => {
-    const { fields, message, privateAnswers, mailTo, ...rest } = step;
+    const kept = aside.current;
+    const { fields: ownFields, message: ownMessage, privateAnswers: ownPrivate, mailTo: ownMailTo, ...rest } = step;
+    const fields = ownFields ?? kept.fields;
+    const message = ownMessage ?? kept.message;
+    const privateAnswers = ownPrivate ?? kept.privateAnswers;
+    const mailTo = ownMailTo ?? kept.mailTo;
     const composesNow = doBlocks.some((b) => kind.blocks[b]?.compose);
     const asks = doBlocks.some((b) => kind.blocks[b]?.fields) || (!!fields && doBlocks.every((b) => kind.blocks[b]?.fieldsOptional));
     const sends = doBlocks.some((b) => kind.blocks[b]?.message);
@@ -196,8 +204,13 @@ function StepCard({ kind, units, step, index, count, errors, editable, onChange,
     const allows = doBlocks.map((b) => kind.blocks[b]?.assignees ?? []).reduce((a, b) => a.filter((x) => b.includes(x)));
     const { each: _each, ...base } = rest;
     const keep = blockAllows(allows, rest.assignTo);
+    const back = !keep && kept.assignTo && blockAllows(allows, kept.assignTo) ? kept.assignTo : null;
+    aside.current = {
+      ...(fields ? { fields } : {}), ...(message ? { message } : {}), ...(privateAnswers ? { privateAnswers } : {}), ...(mailTo ? { mailTo } : {}),
+      ...(keep ? (kept.assignTo ? { assignTo: kept.assignTo } : {}) : { assignTo: rest.assignTo }),
+    };
     return {
-      ...(keep ? rest : { ...base, assignTo: defaultAssignee(allows) }), do: doBlocks,
+      ...(keep ? rest : { ...base, assignTo: back ?? defaultAssignee(allows) }), do: doBlocks,
       ...(asks ? { fields: fields?.length ? fields : [{ key: 'field_1', type: 'text', label: {} }] } : {}),
       ...(asks && privateAnswers ? { privateAnswers: true } : {}),
       ...(sends ? { message: message ?? { subject: {} } } : {}),

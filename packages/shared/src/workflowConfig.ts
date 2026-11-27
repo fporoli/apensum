@@ -110,9 +110,10 @@ export const MAX_MESSAGE_TEXT = 2000;
 
 /**
  * Whom a person's e-mail (block with `compose`) goes to: `about` = the person the flow is about (who started it, or
- * whom a task is about), `requester` = who started it, `aboutManager` = the manager of the person it is about.
+ * whom a task is about), `requester` = who started it, `aboutManager` = the manager of the person it is about,
+ * `choose` = nobody set: whoever writes it picks the recipients in the window.
  */
-export const MAIL_TO = ['about', 'requester', 'aboutManager'] as const;
+export const MAIL_TO = ['about', 'requester', 'aboutManager', 'choose'] as const;
 export type MailTo = (typeof MAIL_TO)[number];
 
 /** The placeholders an e-mail template may use (the tokens stay English in every language). */
@@ -304,6 +305,14 @@ function stepMessageOf(raw: unknown): StepMessage | null {
   return { subject, ...(Object.keys(text).length ? { text } : {}), ...(raw.answers ? { answers: true } : {}) };
 }
 
+/** No message, or one whose subject and text are blank in every language. */
+function emptyMessage(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return true;
+  if (!isObject(raw)) return false;
+  const blank = (v: unknown) => v === undefined || (isObject(v) && Object.values(v).every((t) => typeof t === 'string' && !t.trim()));
+  return blank(raw.subject) && blank(raw.text) && Object.keys(raw).every((k) => ['subject', 'text', 'answers'].includes(k));
+}
+
 /** A message's text in a language (else English, else any), or ''. */
 export function messageText(map: StepMessage['subject'] | undefined, lang: string): string {
   if (!map) return '';
@@ -410,11 +419,15 @@ export function validateWorkflowConfig(kind: WorkflowKindCatalogue, raw: unknown
     else if (each && (!kind.each || !['department', 'team', 'permission'].includes(assigneeKind(assignTo) ?? '') || blocks.some((b: string) => kind.blocks[b]?.automatic))) errors.push({ path: `${at}.each`, code: 'each-not-allowed' });
     // An automatic block (nobody acts on it) stands alone in its step.
     if (blocks.length > 1 && blocks.some((b: string) => kind.blocks[b]?.automatic)) errors.push({ path: `${at}.do`, code: 'automatic-alone' });
-    // The message a block with `message` sends: required with it, refused without.
+    // The message a block with `message` sends: required with it, refused without. A person's e-mail (`compose`) may
+    // go without one (an empty window to write in): no message, or one with nothing filled in.
     const sends = blocks.some((b: string) => kind.blocks[b]?.message);
+    const writesOwn = blocks.some((b: string) => kind.blocks[b]?.compose);
     let message: StepMessage | undefined;
     if (s.message !== undefined && !sends) errors.push({ path: `${at}.message`, code: 'message-not-allowed' });
-    else if (sends) {
+    else if (sends && writesOwn && emptyMessage(s.message)) {
+      // nothing to fill in: the window opens empty
+    } else if (sends) {
       const m = stepMessageOf(s.message);
       if (!m) errors.push({ path: `${at}.message`, code: 'invalid-message' });
       else message = m;
