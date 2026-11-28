@@ -165,6 +165,8 @@ export { notRecordingUserIds } from './time-recording';
 // and resolves the ones that no longer apply (`closeTasks`); past its due date an open task alerts its
 // handlers by e-mail. 'flows-off' when the organization has the flows module off.
 export { FlowsService, type SystemTaskInput, type SystemTaskResult } from './flows.service';
+// Projects for plugins: customers with their projects, a new customer project or subproject (e.g. one case), a subproject's summary.
+export { ProjectsService, type CustomerProjects, type SubprojectSummary } from './projects.service';
 
 // Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
 export { BalancesService, type YearBalances, type YearClosing } from './balances.service';

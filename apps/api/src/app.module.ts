@@ -48,6 +48,7 @@ import { ForwardMailService } from './forward-mail.service';
 import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { FlowsService } from './flows.service';
+import { ProjectsService } from './projects.service';
 import { TriggersService } from './triggers.service';
 import { FlowTriggersController } from './flow-triggers.controller';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
@@ -155,6 +156,7 @@ const plugins = loadApiPlugins();
     WorkTimeService,
     BalancesService,
     FlowsService,
+    ProjectsService,
     TriggersService,
     ReportsService,
     ReportSchedulesService,
