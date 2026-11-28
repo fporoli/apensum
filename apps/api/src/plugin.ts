@@ -149,7 +149,7 @@ export { AuditService } from './audit.service';
 export { Public, type AuthenticatedRequest } from './jwt.guard';
 export {
   callerUserId, can, canSeeUserData, canEditUserData, canEditBeyondOwn, isOrgMember, isManagerOf, isOperator,
-  listableUserIds, membershipManagerId, actingManagerId, permissionIdsOf, reachesAll,
+  listableUserIds, membershipManagerId, actingManagerId, permissionIdsOf, projectBookingError, reachesAll,
 } from './access';
 
 // Documents, form templates, approval workflows

@@ -3,7 +3,7 @@ import { cleanUnitCode, codeFromName } from '@worktime3/shared/workflowConfig';
 import { and, asc, count, desc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DbService, type Db } from './db.service';
-import { callerUserId, can, canSeeUserData, isOrgMember, membershipManagerId, reachesAll } from './access';
+import { callerUserId, can, canSeeUserData, isOrgMember, membershipManagerId, reachesAll, canEditBeyondOwn } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { AuditService } from './audit.service';
 import { VersionsService } from './versions.service';
@@ -261,7 +261,7 @@ export class EmploymentController {
       probationSet: !!membership.probation_until,
       currentId: assignments.find((a) => a.valid_from <= today)?.id ?? null,
       assignments,
-      canEdit: await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId),
+      canEdit: await canEditBeyondOwn(db, orgId, callerId, EMPLOYMENT_OBJECT, userId),
       /** Who takes the person's flow steps while they are away (workflow-dues.service.ts). */
       deputy: deputy ? { userId: deputy.id, name: deputy.name || deputy.email } : null,
       /** The person sets their own deputy; HR (employment edit) anyone's. */
@@ -493,7 +493,8 @@ export class EmploymentController {
   private async employmentEditor(db: Db, orgId: string, userId: string, req: AuthenticatedRequest): Promise<string | null> {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
     if (!callerId || !(await isOrgMember(db, orgId, callerId))) return null;
-    return (await can(db, orgId, callerId, EMPLOYMENT_OBJECT, 'edit', userId)) ? callerId : null;
+    // Someone else's employment only (four eyes: nobody sets their own manager, exit or exemption), beyond `own`.
+    return (await canEditBeyondOwn(db, orgId, callerId, EMPLOYMENT_OBJECT, userId)) ? callerId : null;
   }
 
   /** The leader id to store: null for none, false when not a member of the org. */

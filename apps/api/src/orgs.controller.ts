@@ -503,7 +503,7 @@ export class OrgsController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const [invitation] = await db
-      .select({ organization_id: organization_invitations.organization_id, status: organization_invitations.status })
+      .select({ organization_id: organization_invitations.organization_id, status: organization_invitations.status, role_id: organization_invitations.role_id })
       .from(organization_invitations)
       .where(eq(organization_invitations.id, invitationId));
     if (!invitation) return { ok: false, error: 'invitation-not-found' };
@@ -512,6 +512,9 @@ export class OrgsController {
     if (!(await can(db, invitation.organization_id, callerId, 'nav.invitations', 'edit'))) {
       return { ok: false, error: 'forbidden' };
     }
+    // Whoever may not invite with a role (owner, admin, ... only by an owner) may not revoke such an invitation either.
+    const refused = await this.refusal(db, invitation.organization_id, callerId, invitation.role_id);
+    if (refused) return { ok: false, error: refused };
     if (invitation.status !== 'pending') return { ok: false, error: 'invitation-not-pending' };
     await db
       .update(organization_invitations)

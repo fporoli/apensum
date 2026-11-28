@@ -255,6 +255,11 @@ export class TeamsController {
         .where(and(eq(organization_memberships.id, membershipId), eq(organization_memberships.organization_id, team.organization_id)));
       if (!own) return { ok: false, error: 'membership-not-found' };
     }
+    // A team role of this organization or a global one, never another organization's.
+    if (body.teamRoleId) {
+      const [role] = await db.select({ organization_id: roles.organization_id }).from(roles).where(eq(roles.id, body.teamRoleId));
+      if (!role || (role.organization_id !== null && role.organization_id !== team.organization_id)) return { ok: false, error: 'unknown-role' };
+    }
 
     await db
       .insert(team_members)

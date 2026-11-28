@@ -691,11 +691,13 @@ export async function listableUserIds(db: Executor, organizationId: string, call
 }
 
 /**
- * An override on someone's data: an `edit` grant on `object` covering the target that goes
+ * An override on someone else's data: an `edit` grant on `object` covering the target that goes
  * beyond `own` (e.g. admin `all`). Everyone's `own` grant is ignored, so a member does not
- * gain admin-only actions on their own records.
+ * gain admin-only actions on their own records; and the caller's own records are never covered
+ * (four eyes: nobody books their own balances, approves their own month, sets their own manager).
  */
 export async function canEditBeyondOwn(db: Executor, organizationId: string, callerId: string, object: string, targetUserId: string): Promise<boolean> {
+  if (targetUserId === callerId) return false;
   const ids = await permissionIdsOf(db, organizationId, callerId);
   const beyond = new Set([...ids].filter((id) => id !== `${object}:edit:own`));
   return can(db, organizationId, callerId, object, 'edit', targetUserId, beyond);

@@ -307,6 +307,11 @@ export class ProjectsController {
     const name = (body.name ?? '').trim();
     if (!name) return { ok: false, error: 'name-required' };
     const ownerUserId = body.ownerUserId || callerId;
+    // Someone else as owner: a member of the organization, and only with Team Management on all projects (as a project).
+    if (ownerUserId !== callerId) {
+      if (!(await isOrgMember(db, orgId, ownerUserId))) return { ok: false, error: 'unknown-user' };
+      if (!(await reachesAll(db, orgId, callerId, 'nav.management', 'edit'))) return { ok: false, error: 'forbidden-owner' };
+    }
     const customer = await this.subprojectCustomer(db, orgId, body, project.customer_id);
     if (!customer.ok) return customer;
 

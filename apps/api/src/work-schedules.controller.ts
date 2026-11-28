@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DbService, type Db } from './db.service';
-import { callerUserId, can, isOrgMember } from './access';
+import { callerUserId, can, isOrgMember, canEditBeyondOwn } from './access';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { VersionsService } from './versions.service';
 import { WorkTimeModelService, localDate } from './work-time-model.service';
@@ -51,7 +51,7 @@ export class WorkSchedulesController {
       schedules,
       holidayRegion: settings.holidayRegion,
       fullTimeWeeklyMinutes: settings.fullTimeWeeklyMinutes,
-      canEdit: await can(db, orgId, callerId, 'section.workTime.schedule', 'edit', userId),
+      canEdit: await canEditBeyondOwn(db, orgId, callerId, 'section.workTime.schedule', userId),
     };
   }
 
@@ -61,7 +61,7 @@ export class WorkSchedulesController {
     const db = this.db.getDb();
     if (!db) return { ok: true, offline: true };
     const callerId = req.user ? await callerUserId(db, req.user) : null;
-    if (!callerId || !(await can(db, orgId, callerId, 'section.workTime.schedule', 'edit', userId))) return { ok: false, error: 'forbidden' };
+    if (!callerId || !(await canEditBeyondOwn(db, orgId, callerId, 'section.workTime.schedule', userId))) return { ok: false, error: 'forbidden' };
     if (!(await isOrgMember(db, orgId, userId))) return { ok: false, error: 'unknown-user' };
     const result = validateSchedule(body);
     if (!result.ok) return result;
@@ -101,7 +101,7 @@ export class WorkSchedulesController {
       .from(work_schedules)
       .where(and(eq(work_schedules.id, id), eq(work_schedules.organization_id, orgId)));
     if (!row) return { ok: false, error: 'not-found' };
-    if (!(await can(db, orgId, callerId, 'section.workTime.schedule', 'edit', row.user_id))) return { ok: false, error: 'forbidden' };
+    if (!(await canEditBeyondOwn(db, orgId, callerId, 'section.workTime.schedule', row.user_id))) return { ok: false, error: 'forbidden' };
     if (await hasLockedPeriodFrom(db, orgId, row.user_id, row.valid_from)) return { ok: false, error: 'period-locked' };
     await db.delete(work_schedules).where(eq(work_schedules.id, id));
     void this.versions.record('work_schedules', id, 'delete', callerId, row).catch(() => {});

@@ -687,6 +687,8 @@ export class FlowsController {
     const current = ((await db.execute(sql`SELECT custom FROM flows WHERE id = ${id}`)).rows[0]?.custom ?? {}) as Record<string, unknown>;
     const customChanged = custom.value !== undefined && JSON.stringify(custom.value) !== JSON.stringify(current);
     if (Object.keys(changed).length === 0 && !customChanged) return { ok: true };
+    // A flow going through its type's set steps keeps its type: another type would restart it on other (perhaps fewer) steps.
+    if (changed.flow_type !== undefined && a.r.target_kind === 'workflow') return { ok: false, error: 'flow-type-fixed' };
     const next = { ...a.r, ...changed };
     // The type brings its confidentiality (a request moved to a confidential type leaves admins' sight); a confidential
     // one stays so (the requester chose it, or its type did): another type never opens it to more people.
