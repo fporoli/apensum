@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Req } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { appBaseUrl, AuditService, callerUserId, can, DbService, NotificationsService, sendMail, VersionsService, type AuthenticatedRequest, type Db, sqlNow, sqlToday } from '@worktime3/api/plugin';
+import { appBaseUrl, AuditService, callerUserId, can, DbService, NotificationsService, PeopleService, sendMail, sqlNow, VersionsService, type AuthenticatedRequest, type Db } from '@worktime3/api/plugin';
 import { HourlyLimit, MAX_MAILS_PER_HOUR, mailLang, noteMail, parseAddresses } from './sharing';
 
 /** Longest note, in characters. */
@@ -33,6 +33,7 @@ export class NotesController {
     private readonly versions: VersionsService,
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
+    private readonly people: PeopleService,
   ) {}
 
   /** The caller when they may `action` their own notes here, else null. */
@@ -51,20 +52,31 @@ export class NotesController {
     if (!userId) return { ok: true, notes: [], shared: [] };
     const [own, shared] = await Promise.all([
       db.execute(sql`
-        SELECT n.id, n.text, n.created_at::text AS created_at,
-          COALESCE((SELECT json_agg(json_build_object('userId', u.id, 'name', COALESCE(u.display_name, u.email)) ORDER BY lower(COALESCE(u.display_name, u.email)))
-            FROM users u WHERE u.id = ANY(n.shared_with)), '[]'::json) AS shared_with
+        SELECT n.id, n.text, n.created_at::text AS created_at, n.shared_with
         FROM notes.notes n
         WHERE n.organization_id = ${orgId}::uuid AND n.user_id = ${userId}::uuid
         ORDER BY n.created_at DESC LIMIT 500`),
       db.execute(sql`
-        SELECT n.id, n.text, n.created_at::text AS created_at, COALESCE(u.display_name, u.email) AS author,
+        SELECT n.id, n.text, n.created_at::text AS created_at, n.user_id AS author_id,
           ${userId}::uuid = ANY(n.hidden_by) AS hidden
-        FROM notes.notes n JOIN users u ON u.id = n.user_id
+        FROM notes.notes n
         WHERE n.organization_id = ${orgId}::uuid AND n.shared_with @> ARRAY[${userId}::uuid]
         ORDER BY n.created_at DESC LIMIT 500`),
     ]);
-    return { ok: true, notes: own.rows, shared: shared.rows };
+    // Names through the core (one query for every person shown).
+    const ownRows = own.rows as { id: string; text: string; created_at: string; shared_with: string[] | null }[];
+    const sharedRows = shared.rows as { id: string; text: string; created_at: string; author_id: string; hidden: boolean }[];
+    const names = await this.people.names(db, orgId, [...ownRows.flatMap((n) => n.shared_with ?? []), ...sharedRows.map((n) => n.author_id)]);
+    const nameOf = (id: string) => names.get(id) ?? '';
+    return {
+      ok: true,
+      notes: ownRows.map((n) => ({
+        id: n.id, text: n.text, created_at: n.created_at,
+        shared_with: (n.shared_with ?? []).filter((id) => names.has(id)).map((id) => ({ userId: id, name: nameOf(id) }))
+          .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
+      })),
+      shared: sharedRows.map(({ author_id, ...n }) => ({ ...n, author: nameOf(author_id) })),
+    };
   }
 
   /** The caller's own note, or null. */
@@ -77,16 +89,7 @@ export class NotesController {
   /** The active members among `userIds`, and everyone of `departmentIds` (their assignment in force, and its leader) today. */
   private async recipients(db: Db, orgId: string, userIds: string[], departmentIds: string[]): Promise<string[]> {
     if (!userIds.length && !departmentIds.length) return [];
-    const rows = await db.execute(sql`
-      SELECT m.user_id FROM organization_memberships m
-      WHERE m.organization_id = ${orgId}::uuid AND m.status = 'active' AND (m.exit_at IS NULL OR m.exit_at > ${sqlNow()})
-        AND (m.user_id = ANY(${uuidArray(userIds)}::uuid[])
-          OR m.user_id IN (SELECT d.leader_user_id FROM departments d WHERE d.organization_id = ${orgId}::uuid AND d.id = ANY(${uuidArray(departmentIds)}::uuid[]))
-          OR EXISTS (SELECT 1 FROM employee_assignments a WHERE a.organization_id = m.organization_id AND a.user_id = m.user_id
-                       AND a.department_id = ANY(${uuidArray(departmentIds)}::uuid[])
-                       AND a.valid_from = (SELECT max(b.valid_from) FROM employee_assignments b
-                                           WHERE b.organization_id = a.organization_id AND b.user_id = a.user_id AND b.valid_from <= ${sqlToday()})))`);
-    return (rows.rows as { user_id: string }[]).map((r) => r.user_id);
+    return this.people.activePeople(db, orgId, { userIds, departmentIds });
   }
 
   /** Gives a note to recipients who don't have it yet and tells them (in their language); returns how many were new. */
@@ -101,7 +104,7 @@ export class NotesController {
       WHERE id = ${note.id}::uuid RETURNING (SELECT ids FROM add) AS added`)).rows as { added: string[] | null }[];
     const added = (row?.added ?? []).map((user_id) => ({ user_id }));
     if (!added.length) return 0;
-    const [author] = (await db.execute(sql`SELECT COALESCE(display_name, email) AS name FROM users WHERE id = ${authorId}::uuid`)).rows as { name: string }[];
+    const author = (await this.people.profiles(db, orgId, [authorId])).get(authorId);
     void this.versions.record('notes.notes', note.id, 'update_delta', authorId, { shared_with_added: added.map((a) => a.user_id) }).catch(() => {});
     await this.notifications.notifyMany({
       organizationId: orgId, recipientUserIds: added.map((a) => a.user_id), type: 'notes.shared',
@@ -181,11 +184,10 @@ export class NotesController {
     if (!parsed.ok) return parsed;
     const message = typeof body?.message === 'string' ? body.message.trim().slice(0, 1000) : '';
     if (!mailLimit.take(userId, parsed.addresses.length)) return { ok: false, error: 'mail-limit' };
-    const [me] = (await db.execute(sql`SELECT COALESCE(display_name, email) AS name, email, locale FROM users WHERE id = ${userId}::uuid`)).rows as { name: string; email: string; locale: string | null }[];
+    const me = (await this.people.profiles(db, orgId, [userId])).get(userId);
+    if (!me) return { ok: false, error: 'forbidden' };
     // Colleagues by their address: shared (notified), mailed in their language with the link.
-    const members = (await db.execute(sql`
-      SELECT u.id, lower(u.email) AS email, u.locale FROM organization_memberships m JOIN users u ON u.id = m.user_id
-      WHERE m.organization_id = ${orgId}::uuid AND m.status = 'active' AND lower(u.email) = ANY(${`{${parsed.addresses.join(',')}}`}::text[])`)).rows as { id: string; email: string; locale: string | null }[];
+    const members = await this.people.activeByEmail(db, orgId, parsed.addresses);
     await this.give(db, orgId, userId, note, members.map((m) => m.id));
     const link = `${appBaseUrl()}/#/notes?id=${note.id}`;
     let failed = 0;

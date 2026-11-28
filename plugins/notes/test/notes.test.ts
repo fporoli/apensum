@@ -1,3 +1,4 @@
+import { PeopleService } from '@worktime3/api/plugin';
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -41,7 +42,7 @@ function setup(grants: string[]) {
   };
   const notified: { recipientUserIds: string[]; text?: { key: string } }[] = [];
   const controller = new NotesController({ getDb: () => db } as any, { record: async () => {} } as any,
-    { notifyMany: async (n: any) => { notified.push(n); } } as any, { record: async () => {} } as any);
+    { notifyMany: async (n: any) => { notified.push(n); } } as any, { record: async () => {} } as any, new PeopleService());
   const req = { user: { kind: 'local' as const, sub: ME } } as any;
   return { controller, req, statements, notified };
 }
