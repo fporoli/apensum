@@ -23,7 +23,6 @@ import { LOCALES, useI18n, useT, type Locale } from './i18n';
 import { infoUrl } from './infoUrl';
 import AboutDialog from './AboutDialog';
 import AvatarEditor from './AvatarEditor';
-import { TwoFactorPanel } from './TwoFactor';
 import { canShareScreen } from './ScreenShare';
 import {
   ArrowDropDownIcon,
@@ -31,17 +30,17 @@ import {
   DarkModeIcon,
   DesignServicesIcon,
   InfoOutlinedIcon,
-  KeyIcon,
   LightModeIcon,
   LogoutIcon,
   PublicIcon,
   SettingsIcon,
   SwapHorizIcon,
+  VerifiedUserIcon,
   VisibilityIcon,
 } from './icons';
 import { useThemeMode } from './theme';
-import { VaultDialog, type VaultDialogMode } from './VaultControl';
-import { loadKeyring, useKeyringState } from './vaultKeyring';
+import { SecurityDialog } from './SecurityDialog';
+import { loadKeyring } from './vaultKeyring';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -68,8 +67,7 @@ interface UserMenuProps {
 }
 
 export default function UserMenu({ session, authHeaders, currentOrgId, canDesign, designMode, onDesignModeChange, onShareScreen, onLogout, demo, onLocaleChange, onSettingsChange }: UserMenuProps) {
-  const keyring = useKeyringState();
-  const [vaultMode, setVaultMode] = useState<VaultDialogMode | null>(null);
+  const [securityOpen, setSecurityOpen] = useState(false);
   useEffect(() => {
     if (currentOrgId) loadKeyring(currentOrgId, authHeaders).catch(() => {});
   }, [currentOrgId, authHeaders]);
@@ -188,13 +186,11 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           <ListItemIcon sx={{ minWidth: 32 }}><SettingsIcon fontSize="small" /></ListItemIcon>
           {t('usermenu.settings')}
         </MenuItem>
-        {/* The vault's passphrase (docs/VAULT.md): set it up, or change it (only the private key is sealed again). */}
-        {currentOrgId && (keyring === 'none' || keyring === 'locked' || keyring === 'unlocked') && (
-          <MenuItem onClick={() => { setAnchorEl(null); setVaultMode(keyring === 'none' ? 'setUp' : 'change'); }}>
-            <ListItemIcon sx={{ minWidth: 32 }}><KeyIcon fontSize="small" /></ListItemIcon>
-            {keyring === 'none' ? t('vault.setUp') : t('vault.changePassphrase')}
-          </MenuItem>
-        )}
+        {/* Security: the password (sign in, two-step login) and the encryption passphrase (docs/VAULT.md), side by side. */}
+        <MenuItem onClick={() => { setAnchorEl(null); setSecurityOpen(true); }}>
+          <ListItemIcon sx={{ minWidth: 32 }}><VerifiedUserIcon fontSize="small" /></ListItemIcon>
+          {t('security.title')}
+        </MenuItem>
         <MenuItem onClick={() => { setAnchorEl(null); setAboutOpen(true); }}>
           <ListItemIcon sx={{ minWidth: 32 }}><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
           {t('usermenu.information')}
@@ -228,7 +224,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           {t('usermenu.logout')}
         </MenuItem>
       </Menu>
-      {currentOrgId && <VaultDialog orgId={currentOrgId} authHeaders={authHeaders} mode={vaultMode} onClose={() => setVaultMode(null)} />}
+      <SecurityDialog open={securityOpen} onClose={() => setSecurityOpen(false)} email={session.email} orgId={currentOrgId ?? null} authHeaders={authHeaders} />
 
       <Dialog open={!!switchError} onClose={() => setSwitchError(null)}>
         <DialogContent>
@@ -269,7 +265,6 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1.5 }}>
             {t('usermenu.useProjectTimeRangesHint')}
           </Typography>
-          <TwoFactorPanel authHeaders={authHeaders} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSettingsOpen(false)}>{t('usermenu.cancel')}</Button>
