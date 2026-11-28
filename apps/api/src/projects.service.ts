@@ -6,6 +6,9 @@ import { VersionsService } from './versions.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A project with its customer fields (127). */
+export interface ProjectRecord { id: string; name: string; type: string; customerId: string | null; customerReference: string | null; customerContactId: string | null }
+
 /** A customer with its projects, for a plugin's choice (e.g. a case's time tracking). */
 export interface CustomerProjects {
   id: string;
@@ -121,5 +124,77 @@ export class ProjectsService {
       subprojectId: r.id, subprojectName: r.name, projectId: r.project_id, projectName: r.project_name, customerId: r.customer_id,
       customerName: r.customer_name, reference: r.reference, contactName: r.contact_name, minutes: Math.round(Number(r.minutes)), entries: Number(r.entries),
     };
+  }
+
+  /** The organization's projects (only these ids, or of one customer, when given) with their customer fields. */
+  async projects(db: Db, orgId: string, filter: { ids?: readonly string[]; customerId?: string } = {}): Promise<ProjectRecord[]> {
+    const ids = filter.ids ? sql`AND p.id = ANY(${`{${filter.ids.filter((id) => UUID.test(id)).join(',')}}`}::uuid[])` : sql``;
+    const customer = filter.customerId !== undefined ? (UUID.test(filter.customerId) ? sql`AND p.customer_id = ${filter.customerId}::uuid` : sql`AND false`) : sql``;
+    const rows = await db.execute(sql`SELECT p.id, p.name, p.type, p.customer_id, p.customer_reference, p.customer_contact_id
+      FROM projects p WHERE p.organization_id = ${orgId}::uuid ${ids} ${customer} ORDER BY lower(p.name)`);
+    return (rows.rows as { id: string; name: string; type: string; customer_id: string | null; customer_reference: string | null; customer_contact_id: string | null }[])
+      .map((p) => ({ id: p.id, name: p.name, type: p.type, customerId: p.customer_id, customerReference: p.customer_reference, customerContactId: p.customer_contact_id }));
+  }
+
+  /** The subprojects of these projects (of the organization). */
+  async subprojects(db: Db, orgId: string, projectIds: readonly string[]): Promise<{ id: string; projectId: string; name: string; customerReference: string | null; customerContactId: string | null }[]> {
+    if (!projectIds.length) return [];
+    const rows = await db.execute(sql`SELECT s.id, s.project_id, s.name, s.customer_reference, s.customer_contact_id FROM subprojects s
+      WHERE s.organization_id = ${orgId}::uuid AND s.project_id = ANY(${`{${projectIds.filter((id) => UUID.test(id)).join(',')}}`}::uuid[])
+      ORDER BY lower(s.name)`);
+    return (rows.rows as { id: string; project_id: string; name: string; customer_reference: string | null; customer_contact_id: string | null }[])
+      .map((s) => ({ id: s.id, projectId: s.project_id, name: s.name, customerReference: s.customer_reference, customerContactId: s.customer_contact_id }));
+  }
+
+  /**
+   * "Ihre Referenz" and "z. H." for a project of the customer, or one of its subprojects (the subproject's where set,
+   * else the project's); null when the project is not the customer's or the subproject not the project's.
+   */
+  async addressee(db: Db, orgId: string, customerId: string, projectId: string, subprojectId: string | null):
+    Promise<{ project: { reference: string | null; contactName: string | null }; subproject: { reference: string | null; contactName: string | null } | null } | null> {
+    if (!UUID.test(projectId) || !UUID.test(customerId) || (subprojectId && !UUID.test(subprojectId))) return null;
+    const [p] = (await db.execute(sql`SELECT p.customer_reference AS reference, k.name AS contact FROM projects p
+      LEFT JOIN customer_contacts k ON k.id = p.customer_contact_id
+      WHERE p.id = ${projectId}::uuid AND p.customer_id = ${customerId}::uuid AND p.organization_id = ${orgId}::uuid`)).rows as { reference: string | null; contact: string | null }[];
+    if (!p) return null;
+    let sub: { reference: string | null; contactName: string | null } | null = null;
+    if (subprojectId) {
+      const [s] = (await db.execute(sql`SELECT s.customer_reference AS reference, k.name AS contact FROM subprojects s
+        LEFT JOIN customer_contacts k ON k.id = s.customer_contact_id
+        WHERE s.id = ${subprojectId}::uuid AND s.project_id = ${projectId}::uuid AND s.organization_id = ${orgId}::uuid`)).rows as { reference: string | null; contact: string | null }[];
+      if (!s) return null;
+      sub = { reference: s.reference, contactName: s.contact };
+    }
+    return { project: { reference: p.reference, contactName: p.contact }, subproject: sub };
+  }
+
+  /** Who booked project time on the organization's projects: per project, the people (with names). */
+  async bookers(db: Db, orgId: string): Promise<{ projectId: string; userId: string; name: string }[]> {
+    const rows = await db.execute(sql`SELECT DISTINCT pt.project_id, pt.user_id, COALESCE(u.display_name, u.email) AS name FROM project_times pt
+      JOIN users u ON u.id = pt.user_id WHERE pt.organization_id = ${orgId}::uuid AND pt.project_id IS NOT NULL`);
+    return (rows.rows as { project_id: string; user_id: string; name: string }[]).map((r) => ({ projectId: r.project_id, userId: r.user_id, name: r.name }));
+  }
+
+  /**
+   * Project time on these projects (one subproject only, when set) dated within [from, to] in each person's time zone,
+   * with whether that person's project timesheet of its month is approved; entries in `except` left out.
+   */
+  async timeEntries(db: Db, orgId: string, q: { projectIds: readonly string[]; subprojectId: string | null; from: string; to: string }):
+    Promise<{ id: string; projectId: string; projectName: string; userId: string; userName: string; minutes: number; approved: boolean }[]> {
+    if (!q.projectIds.length) return [];
+    const sub = q.subprojectId && UUID.test(q.subprojectId) ? sql`AND pt.subproject_id = ${q.subprojectId}::uuid` : sql``;
+    const rows = await db.execute(sql`
+      SELECT pt.id, pt.project_id, p.name AS project_name, pt.user_id, COALESCE(u.display_name, u.email) AS user_name,
+        EXTRACT(EPOCH FROM (pt.end_time - pt.start_time)) / 60 AS minutes,
+        COALESCE(ptp.status::text = 'approved', false) AS approved
+      FROM project_times pt
+      JOIN projects p ON p.id = pt.project_id
+      JOIN users u ON u.id = pt.user_id
+      LEFT JOIN project_time_periods ptp ON ptp.organization_id = pt.organization_id AND ptp.user_id = pt.user_id AND ptp.project_id = pt.project_id
+        AND ptp.period_start = date_trunc('month', (pt.start_time AT TIME ZONE COALESCE(u.timezone, 'Europe/Zurich')))::date
+      WHERE pt.organization_id = ${orgId}::uuid AND pt.project_id = ANY(${`{${q.projectIds.filter((id) => UUID.test(id)).join(',')}}`}::uuid[])
+        AND (pt.start_time AT TIME ZONE COALESCE(u.timezone, 'Europe/Zurich'))::date BETWEEN ${q.from}::date AND ${q.to}::date ${sub}`);
+    return (rows.rows as { id: string; project_id: string; project_name: string; user_id: string; user_name: string; minutes: string; approved: boolean }[])
+      .map((r) => ({ id: r.id, projectId: r.project_id, projectName: r.project_name, userId: r.user_id, userName: r.user_name, minutes: Number(r.minutes), approved: r.approved }));
   }
 }

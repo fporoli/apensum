@@ -341,6 +341,12 @@ and its receipt (a core `documents` id, read through `DocumentsService`).
   (its manifest's `tables` or `dbSchema`), and imports no other plugin's code; `test/api/plugin-boundaries.test.ts`
   fails on either. What one module offers another goes through an interface of the core: billables (below), document
   categories, reports, the web's slots (`projectDialog`, `projectActions`). A module then works without the other.
+- **The core's data through its services.** A plugin reads and writes the core's data through the services of the
+  contract, not its tables: `PeopleService` (names, members), `CustomersService` (customers, contacts, the term),
+  `ProjectsService` (projects, subprojects, "Ihre Referenz"/"z. H.", who booked, project time with its approval),
+  `DocumentsService` (`rowsOf`, `read`), `BillablesService`; the queries are the same, they run in the core.
+  `CORE_TABLES_STILL_DIRECT` in `test/api/plugin-boundaries.test.ts` lists what a plugin still reads itself; it only
+  shrinks (billing is off it; a new direct use fails the test). A service a plugin needs is added to the core.
 - **No dependencies of its own.** Plugins are not npm workspaces. React, MUI, Nest, drizzle and so on
   resolve from the repository's `node_modules`, so there is exactly one copy of each: two Reacts break
   hooks, two Nests break dependency injection. A cloned plugin therefore changes neither

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -113,6 +113,15 @@ export class DocumentsService {
   }
 
   /** A document's content, decrypted. */
+  /** The organization's documents with these ids, as `read` takes them (for a plugin that holds their ids). */
+  async rowsOf(db: Db, orgId: string, ids: readonly string[]): Promise<{ id: string; file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }[]> {
+    const ok = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+    if (!ok.length) return [];
+    const rows = await db.execute(sql`SELECT id, file_name, mime_type, storage_path, encrypted_key, key_id FROM documents
+      WHERE organization_id = ${orgId}::uuid AND id = ANY(${`{${ok.join(',')}}`}::uuid[])`);
+    return rows.rows as { id: string; file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }[];
+  }
+
   async read(doc: { storage_path: string; encrypted_key: string | null; key_id: string | null }): Promise<Buffer> {
     const file = await readFile(join(DOCUMENTS_ROOT, doc.storage_path));
     return doc.encrypted_key && doc.key_id ? decryptDocument(file, doc.encrypted_key, doc.key_id, masterKeys()) : file;

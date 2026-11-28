@@ -172,7 +172,10 @@ export { notRecordingUserIds } from './time-recording';
 // handlers by e-mail. 'flows-off' when the organization has the flows module off.
 export { FlowsService, type SystemTaskInput, type SystemTaskResult } from './flows.service';
 // Projects for plugins: customers with their projects, a new customer project or subproject (e.g. one case), a subproject's summary.
-export { ProjectsService, type CustomerProjects, type SubprojectSummary } from './projects.service';
+export { ProjectsService, type CustomerProjects, type ProjectRecord, type SubprojectSummary } from './projects.service';
+// The core's data for plugins, instead of its tables (docs/PLUGINS.md): people, customers.
+export { PeopleService } from './people.service';
+export { CustomersService, type CustomerRecord } from './customers.service';
 // Billables: what modules offer to bill (expenses), read by another module (billing) through the core only.
 export { BillablesService, type BillableItem, type BillableSource } from './billables.service';
 

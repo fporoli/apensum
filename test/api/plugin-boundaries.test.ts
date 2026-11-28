@@ -53,3 +53,39 @@ test('no module reads another module\'s tables or imports its code', () => {
   }
   assert.deepEqual(problems, []);
 });
+
+/**
+ * The core's tables a plugin still reads or writes itself, instead of through the core's services (PeopleService,
+ * CustomersService, ProjectsService, DocumentsService, BillablesService, ...). The list only shrinks: a plugin moved
+ * to the services leaves it (billing has), a new direct use fails, and so does an entry no longer needed.
+ */
+const CORE_TABLES_STILL_DIRECT: Record<string, string[]> = {
+  billing: [],
+  cases: ['@worktime3/api/schema', 'documents', 'organization_memberships', 'organizations', 'users'],
+  expenses: ['@worktime3/api/schema', 'departments', 'documents', 'employee_assignments', 'organizations', 'projects', 'static_data', 'users', 'workflow_definitions', 'workflows'],
+  hr: ['absences', 'balance_years', 'departments', 'documents', 'employee_assignments', 'locations', 'organization_memberships', 'organizations', 'personnel_documents', 'project_time_periods', 'project_times', 'projects', 'timesheet_periods', 'users', 'work_schedules', 'workflows'],
+  hrplus: ['departments', 'flows', 'organization_licenses', 'organization_memberships', 'organizations', 'users', 'versions'],
+  notes: ['departments', 'employee_assignments', 'organization_memberships', 'users'],
+  roster: ['absences', 'departments', 'employee_assignments', 'organization_memberships', 'organizations', 'team_members', 'teams', 'users'],
+  whistle: ['organization_licenses', 'organization_memberships', 'organizations', 'users'],
+};
+
+test('a plugin reaches the core\'s data through its services, apart from what is still listed', () => {
+  const schema = readFileSync(join(__dirname, '../../apps/api/src/db/schema.ts'), 'utf8');
+  const core = new Set([...schema.matchAll(/pgTable\("(\w+)"/g)].map((m) => m[1]));
+  const problems: string[] = [];
+  for (const p of plugins()) {
+    const used = new Set<string>();
+    for (const file of sources(p.dir)) {
+      const text = readFileSync(file, 'utf8');
+      for (const m of text.matchAll(/\b(?:FROM|JOIN|INTO|UPDATE)\s+(?:public\.)?([a-z_][a-z0-9_]*)\b(?!\.)/g)) {
+        if (core.has(m[1]) && !p.tables.includes(m[1])) used.add(m[1]);
+      }
+      if (text.includes('@worktime3/api/schema')) used.add('@worktime3/api/schema');
+    }
+    const allowed = new Set(CORE_TABLES_STILL_DIRECT[p.id] ?? []);
+    for (const t of used) if (!allowed.has(t)) problems.push(`${p.id} reads the core's ${t} directly: use a core service`);
+    for (const t of allowed) if (!used.has(t)) problems.push(`${p.id} no longer reads ${t}: take it off CORE_TABLES_STILL_DIRECT`);
+  }
+  assert.deepEqual(problems, []);
+});

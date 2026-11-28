@@ -148,7 +148,7 @@ The areas are described in `docs/dev/` (below); these rules hold in all of them.
   It is the real time except inside `clock.at(...)`, which only code in the API's process calls (the Whale simulation, tests); no request can set it.\
   Technical time stays real and says why on its line, `// real time: <why>` (`-- real time:` in SQL): sessions, tokens, two-step login, rate limits, expiring links, licenses, caches, the AI budget; `test/api/clock.test.ts` fails on any other.
 - Modules can be switched off per organization and licensed modules need a license; the core must work without plugins, and a plugin imports the core only through the `plugin` contracts (`docs/dev/MODULES.md`, `docs/PLUGINS.md`).\
-  A module reaches another module's data only through an interface of the core (billables, documents, reports, the web's slots), never its tables or code (`test/api/plugin-boundaries.test.ts`).
+  A module reaches another module's data only through an interface of the core (billables, documents, reports, the web's slots), never its tables or code, and the core's data through the core's services (`PeopleService`, `CustomersService`, `ProjectsService`, ...): `test/api/plugin-boundaries.test.ts` lists the direct uses still left, a list that only shrinks.
 - ntfy pushes to the operator never carry personal data.
 - What the website says must match the app (`docs/dev/WEBSITE.md`).
 - `seed.sql` stays re-runnable: fixed keys on every row, `ON CONFLICT DO NOTHING`, UPDATEs that only fill in unset values (`docs/dev/DEMO_DATA.md`).

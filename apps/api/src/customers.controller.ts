@@ -5,6 +5,7 @@ import { callerUserId, can, isOrgMember } from './access';
 import { DbService, type Db } from './db.service';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { VersionsService } from './versions.service';
+import { customerTerm } from './customers.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,11 +27,6 @@ export function customerJson(c: CustomerRow, contacts: ContactRow[] = []) {
   };
 }
 
-/** The organization's term for its customers (organizations.settings.customers.term). */
-export async function customerTerm(db: Db, orgId: string) {
-  const rows = await db.execute(sql`SELECT settings->'customers'->'term' AS term FROM organizations WHERE id = ${orgId}::uuid`);
-  return parseCustomerTerm((rows.rows[0] as { term?: unknown } | undefined)?.term);
-}
 
 /**
  * Customers (127, docs/dev/FEATURES.md): whom the organization works for, with address and contact people, and what it
