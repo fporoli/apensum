@@ -656,11 +656,12 @@ export class ImportExportService {
     const invitations: { email: string; token: string }[] = [];
 
     await db.transaction(async (tx) => {
-      // Find default member role
-      const [memberRole] = await tx
-        .select({ id: roles.id })
+      // The member role: the organization's own copy when it has one (as an invitation does), else the system role.
+      const memberCandidates = await tx
+        .select({ id: roles.id, organization_id: roles.organization_id })
         .from(roles)
-        .where(and(eq(roles.name, 'member'), isNull(roles.organization_id)));
+        .where(and(eq(roles.name, 'member'), or(eq(roles.organization_id, orgId), isNull(roles.organization_id))));
+      const memberRole = memberCandidates.find((r) => r.organization_id === orgId) ?? memberCandidates[0];
 
       const userIdByEmail = new Map<string, string>();
 

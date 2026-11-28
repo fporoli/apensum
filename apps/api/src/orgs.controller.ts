@@ -563,11 +563,14 @@ export class OrgsController {
         verification_token: randomUUID(),
         auto_join_enabled: body.autoJoin ?? false,
       })
+      // Only this organization's own row: a domain another organization holds stays theirs.
       .onConflictDoUpdate({
         target: organization_domains.domain,
         set: { auto_join_enabled: body.autoJoin ?? false },
+        setWhere: eq(organization_domains.organization_id, id),
       })
       .returning({ id: organization_domains.id });
+    if (!row) return { ok: false, error: 'domain-taken' };
     void this.audit
       .record(id, callerId, 'domain.upsert', 'organization_domain', domain, { autoJoin: body.autoJoin ?? false })
       .catch(() => {});

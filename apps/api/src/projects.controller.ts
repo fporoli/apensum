@@ -22,6 +22,19 @@ export function teamIdsFromBody(value: unknown): string[] | null | undefined {
 /** A project's or subproject's customer fields as a request sends them (undefined = leave as it is). */
 interface CustomerBody { customerId?: string | null; customerReference?: string | null; customerContactId?: string | null }
 
+/**
+ * Whether a project's (or subproject's) owner may change to `next`: it must be a member of the organization, and
+ * nobody makes themselves the owner of someone else's project (the owner approves the hours booked on it, people's
+ * data that an editing right alone must not open). Null when the change is fine (or no change).
+ */
+export async function ownerChangeError(db: Db, orgId: string, callerId: string, current: string | null, next: string | null | undefined): Promise<string | null> {
+  if (next === undefined || (next || null) === current) return null;
+  if (!next) return null;
+  if (!(await isOrgMember(db, orgId, next))) return 'unknown-user';
+  if (next === callerId && current !== null) return 'self-owner';
+  return null;
+}
+
 @Controller()
 export class ProjectsController {
   constructor(
@@ -125,6 +138,9 @@ export class ProjectsController {
     if (teamIds === null || (teamIds && !(await this.teamsInOrg(db, project.organization_id, teamIds)))) {
       return { ok: false, error: 'unknown-team' };
     }
+
+    const ownerError = await ownerChangeError(db, project.organization_id, callerId, project.owner_user_id, body.ownerUserId);
+    if (ownerError) return { ok: false, error: ownerError };
 
     const patch: Partial<typeof projects.$inferInsert> = {};
     if (body.name !== undefined) patch.name = body.name.trim();
@@ -343,6 +359,9 @@ export class ProjectsController {
     if (!(await canManageItem(db, subproject.organization_id, callerId, [subproject.project_owner_user_id, subproject.owner_user_id]))) {
       return { ok: false, error: 'forbidden' };
     }
+
+    const ownerError = await ownerChangeError(db, subproject.organization_id, callerId, subproject.owner_user_id, body.ownerUserId);
+    if (ownerError) return { ok: false, error: ownerError };
 
     const patch: Partial<typeof subprojects.$inferInsert> = {};
     if (body.name !== undefined) patch.name = body.name.trim();

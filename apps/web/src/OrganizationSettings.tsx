@@ -169,7 +169,7 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
       });
       const data = await res.json();
       if (!data.ok) {
-        setError(data.error === 'forbidden' ? t('orgSettings.forbiddenDomains') : t('orgSettings.addDomainFailed'));
+        setError(data.error === 'forbidden' ? t('orgSettings.forbiddenDomains') : data.error === 'domain-taken' ? t('orgSettings.domainTaken', { domain }) : t('orgSettings.addDomainFailed'));
         return;
       }
       setNewDomain('');

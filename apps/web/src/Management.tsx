@@ -423,7 +423,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
         });
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          setError(t('management.projectSaveFailed'));
+          setError(unitError(data?.error) ?? t('management.projectSaveFailed'));
           return;
         }
         setSuccess(t('management.projectUpdated', { name: projectName.trim() }));
@@ -443,7 +443,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
         });
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          setError(t('management.projectSaveFailed'));
+          setError(unitError(data?.error) ?? t('management.projectSaveFailed'));
           return;
         }
         setSuccess(t('management.projectCreated', { name: projectName.trim() }));
@@ -532,7 +532,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
         });
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          setError(t('management.subprojectSaveFailed'));
+          setError(unitError(data?.error) ?? t('management.subprojectSaveFailed'));
           return;
         }
         setSuccess(t('management.subprojectUpdated', { name: subprojectName.trim() }));
@@ -552,7 +552,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
         });
         const data = await res.json();
         if (!res.ok || data.ok === false) {
-          setError(t('management.subprojectSaveFailed'));
+          setError(unitError(data?.error) ?? t('management.subprojectSaveFailed'));
           return;
         }
         setSuccess(t('management.subprojectAdded', { name: subprojectName.trim() }));

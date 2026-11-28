@@ -407,6 +407,8 @@ export class BasicDataController implements OnModuleInit {
     // A request with a flow is decided there (its steps, who decides).
     const flow = await this.workflowsSvc.findPending(db, BASICDATA_SOURCE, userId);
     if (flow) return this.workflowsSvc.resolve(db, flow.id, callerId, 'approved', undefined);
+    // Four eyes, as in a flow: nobody approves the change of their own data, whatever their rights.
+    if (callerId === userId) return { ok: false, error: 'own-submission' };
     if (!(await this.mayResolve(db, orgId, callerId, userId))) return { ok: false, error: 'forbidden' };
 
     const result = await this.basicData.resolveRequest(userId, Number(versionNr), 'approved', callerId, null, orgId, USER_COLUMN_MAP);
