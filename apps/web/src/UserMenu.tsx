@@ -31,6 +31,7 @@ import {
   DarkModeIcon,
   DesignServicesIcon,
   InfoOutlinedIcon,
+  KeyIcon,
   LightModeIcon,
   LogoutIcon,
   PublicIcon,
@@ -39,6 +40,8 @@ import {
   VisibilityIcon,
 } from './icons';
 import { useThemeMode } from './theme';
+import { VaultDialog, type VaultDialogMode } from './VaultControl';
+import { loadKeyring, useKeyringState } from './vaultKeyring';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -65,6 +68,11 @@ interface UserMenuProps {
 }
 
 export default function UserMenu({ session, authHeaders, currentOrgId, canDesign, designMode, onDesignModeChange, onShareScreen, onLogout, demo, onLocaleChange, onSettingsChange }: UserMenuProps) {
+  const keyring = useKeyringState();
+  const [vaultMode, setVaultMode] = useState<VaultDialogMode | null>(null);
+  useEffect(() => {
+    if (currentOrgId) loadKeyring(currentOrgId, authHeaders).catch(() => {});
+  }, [currentOrgId, authHeaders]);
   const t = useT();
   const { locale } = useI18n();
   const { mode, toggleMode } = useThemeMode();
@@ -180,6 +188,13 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           <ListItemIcon sx={{ minWidth: 32 }}><SettingsIcon fontSize="small" /></ListItemIcon>
           {t('usermenu.settings')}
         </MenuItem>
+        {/* The vault's passphrase (docs/VAULT.md): set it up, or change it (only the private key is sealed again). */}
+        {currentOrgId && (keyring === 'none' || keyring === 'locked' || keyring === 'unlocked') && (
+          <MenuItem onClick={() => { setAnchorEl(null); setVaultMode(keyring === 'none' ? 'setUp' : 'change'); }}>
+            <ListItemIcon sx={{ minWidth: 32 }}><KeyIcon fontSize="small" /></ListItemIcon>
+            {keyring === 'none' ? t('vault.setUp') : t('vault.changePassphrase')}
+          </MenuItem>
+        )}
         <MenuItem onClick={() => { setAnchorEl(null); setAboutOpen(true); }}>
           <ListItemIcon sx={{ minWidth: 32 }}><InfoOutlinedIcon fontSize="small" /></ListItemIcon>
           {t('usermenu.information')}
@@ -213,6 +228,7 @@ export default function UserMenu({ session, authHeaders, currentOrgId, canDesign
           {t('usermenu.logout')}
         </MenuItem>
       </Menu>
+      {currentOrgId && <VaultDialog orgId={currentOrgId} authHeaders={authHeaders} mode={vaultMode} onClose={() => setVaultMode(null)} />}
 
       <Dialog open={!!switchError} onClose={() => setSwitchError(null)}>
         <DialogContent>

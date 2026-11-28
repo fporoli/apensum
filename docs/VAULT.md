@@ -48,8 +48,9 @@ A module reads and writes keys only through `VaultService` (plugin contract: `ke
 ## In the browser
 
 - `apps/web/src/vaultKeyring.ts` (plugin contract): the unlocked private key and object keys live in memory only, gone on reload, on lock, on logout and after the organization's idle minutes without use.
-- `VaultControl` (plugin contract) shows "Entsperren" while locked, and "Entsperrt" (not clickable), "Sperren" (its tooltip: the minutes left) and "Passphrase ändern" while unlocked.
-- While the keys are unlocked, the header shows a key after the logo; its tooltip says in how many minutes they lock themselves (`VaultIndicator.tsx`).
+- `VaultControl` (plugin contract), where a module shows encrypted data, shows "Entsperren" while the keys are locked and "Verschlüsselung einrichten" the first time; once unlocked it shows nothing.
+- While the keys are unlocked, the header shows a key after the logo (`VaultIndicator.tsx`): its tooltip says in how many minutes they lock themselves, a click offers "Jetzt sperren".
+- The user menu has "Passphrase ändern" (or "Verschlüsselung einrichten"), the `VaultDialog`; a new passphrase re-seals only the private key, so no object is decrypted or encrypted again, however many there are.
 - Organization settings -> End-to-end encryption sets the idle minutes (`organizations.settings.vault.idleMinutes`, 5 to 480, default 30; `GET/PUT organizations/:orgId/vault/settings`, `nav.orgSettings`).
 
 ## Database
