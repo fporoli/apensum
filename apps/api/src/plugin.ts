@@ -22,6 +22,7 @@ import type { SourceOrgResolver, SourceRecordLoader, WorkflowActionContext, Work
 import type { AssistantTool } from './assistant-tools';
 import type { PlannedMinutesSource } from './work-time-model.service';
 import type { TriggerSource } from './triggers';
+import type { BillableSource } from './billables.service';
 
 /** Core services a plugin's declared functions get as their last argument. */
 export interface PluginCore {
@@ -103,6 +104,11 @@ export interface ApiPlugin {
    * plugin's id (`hr.anniversary`); they run only while the plugin's module (`module`, else the plugin's id) is on.
    */
   triggers?: TriggerSource;
+  /**
+   * What it offers to bill a customer for (e.g. the expenses to bill on): another module (billing) reads them through
+   * BillablesService, never this plugin's tables (docs/PLUGINS.md "Billables").
+   */
+  billables?: BillableSource[];
 }
 
 export function defineApiPlugin(plugin: ApiPlugin): ApiPlugin {
@@ -167,6 +173,8 @@ export { notRecordingUserIds } from './time-recording';
 export { FlowsService, type SystemTaskInput, type SystemTaskResult } from './flows.service';
 // Projects for plugins: customers with their projects, a new customer project or subproject (e.g. one case), a subproject's summary.
 export { ProjectsService, type CustomerProjects, type SubprojectSummary } from './projects.service';
+// Billables: what modules offer to bill (expenses), read by another module (billing) through the core only.
+export { BillablesService, type BillableItem, type BillableSource } from './billables.service';
 
 // Time balances (Time balances page): a person's year and their year-end closings (`balance_years`).
 export { BalancesService, type YearBalances, type YearClosing } from './balances.service';

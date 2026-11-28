@@ -49,6 +49,7 @@ import { WorkTimeModelService } from './work-time-model.service';
 import { BalancesService } from './balances.service';
 import { FlowsService } from './flows.service';
 import { ProjectsService } from './projects.service';
+import { BillablesService } from './billables.service';
 import { TriggersService } from './triggers.service';
 import { FlowTriggersController } from './flow-triggers.controller';
 import { ProjectTimesheetsController } from './project-timesheets.controller';
@@ -157,6 +158,7 @@ const plugins = loadApiPlugins();
     BalancesService,
     FlowsService,
     ProjectsService,
+    BillablesService,
     TriggersService,
     ReportsService,
     ReportSchedulesService,

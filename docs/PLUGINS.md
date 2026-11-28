@@ -319,6 +319,16 @@ changeset. Use the plugin id as changeset author.
   in the core's changelog, since applied changesets cannot move; new changes go into the plugin's.
   A database without the plugin still has the (empty) tables.
 
+## Billables
+
+A plugin offers what may be billed to a customer (`billables: BillableSource[]` in its API plugin; `apps/api/src/billables.service.ts`):
+each source has a `kind` (named like the plugin, e.g. `expenses`), an optional `module` that must be on, `open` (what is ready
+to bill on given projects, one subproject, up to a date) and `byIds` (its records by id, for what was billed or written off).\
+Whoever bills (the billing plugin) asks `BillablesService` (`open`, `byIds`, `kinds`), never the owner's tables; a source of a
+module switched off offers nothing, one that fails is logged and left out.\
+An item carries the project, the date, the text the customer may see (never an internal note), amount and currency, the person,
+and its receipt (a core `documents` id, read through `DocumentsService`).
+
 ## Rules
 
 - **Import the core only through the contracts.**
@@ -327,6 +337,10 @@ changeset. Use the plugin id as changeset author.
 
   If a plugin needs something more, add it to `apps/api/src/plugin.ts` or `apps/web/src/plugin.ts`.
   Those files are the public surface, so change them with care.
+- **Another module only through the core.** A plugin reads its own tables and the core's, never another plugin's
+  (its manifest's `tables` or `dbSchema`), and imports no other plugin's code; `test/api/plugin-boundaries.test.ts`
+  fails on either. What one module offers another goes through an interface of the core: billables (below), document
+  categories, reports, the web's slots (`projectDialog`, `projectActions`). A module then works without the other.
 - **No dependencies of its own.** Plugins are not npm workspaces. React, MUI, Nest, drizzle and so on
   resolve from the repository's `node_modules`, so there is exactly one copy of each: two Reacts break
   hooks, two Nests break dependency injection. A cloned plugin therefore changes neither
