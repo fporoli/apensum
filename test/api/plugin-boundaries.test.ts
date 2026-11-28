@@ -55,22 +55,11 @@ test('no module reads another module\'s tables or imports its code', () => {
 });
 
 /**
- * The core's tables a plugin still reads or writes itself, instead of through the core's services (PeopleService,
- * CustomersService, ProjectsService, DocumentsService, BillablesService, ...). The list only shrinks: a plugin moved
- * to the services leaves it (billing has), a new direct use fails, and so does an entry no longer needed.
+ * A plugin reads and writes the core's tables only through the core's services (PeopleService, ProjectsService,
+ * EmploymentService, DocumentsService, ...), never by SQL or the generated schema: every plugin has moved, so any
+ * direct use fails. A service a plugin needs is added to the core (docs/PLUGINS.md).
  */
-const CORE_TABLES_STILL_DIRECT: Record<string, string[]> = {
-  billing: [],
-  cases: [],
-  expenses: [],
-  hr: ['absences', 'balance_years', 'departments', 'documents', 'employee_assignments', 'locations', 'organization_memberships', 'organizations', 'personnel_documents', 'project_time_periods', 'project_times', 'projects', 'timesheet_periods', 'users', 'work_schedules', 'workflows'],
-  hrplus: [],
-  notes: [],
-  roster: [],
-  whistle: [],
-};
-
-test('a plugin reaches the core\'s data through its services, apart from what is still listed', () => {
+test('a plugin reaches the core\'s data only through its services', () => {
   const schema = readFileSync(join(__dirname, '../../apps/api/src/db/schema.ts'), 'utf8');
   const core = new Set([...schema.matchAll(/pgTable\("(\w+)"/g)].map((m) => m[1]));
   const problems: string[] = [];
@@ -83,9 +72,7 @@ test('a plugin reaches the core\'s data through its services, apart from what is
       }
       if (text.includes('@worktime3/api/schema')) used.add('@worktime3/api/schema');
     }
-    const allowed = new Set(CORE_TABLES_STILL_DIRECT[p.id] ?? []);
-    for (const t of used) if (!allowed.has(t)) problems.push(`${p.id} reads the core's ${t} directly: use a core service`);
-    for (const t of allowed) if (!used.has(t)) problems.push(`${p.id} no longer reads ${t}: take it off CORE_TABLES_STILL_DIRECT`);
+    for (const t of used) problems.push(`${p.id} reads the core's ${t} directly: use a core service`);
   }
   assert.deepEqual(problems, []);
 });

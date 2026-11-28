@@ -177,7 +177,10 @@ export { ProjectsService, type CustomerProjects, type ProjectRecord, type Subpro
 export { PeopleService } from './people.service';
 export { OrganizationsService } from './organizations.service';
 export { StructureService, type StaffMember } from './structure.service';
-export { AbsencesReadService, type ApprovedAbsence } from './absences-read.service';
+export { AbsencesReadService, type ApprovedAbsence, type AbsenceRecord } from './absences-read.service';
+export { EmploymentService, type Employment, type AssignmentRecord, type PermitRecord } from './employment.service';
+export { PersonnelFilesService, type PersonnelEntry, type PersonnelFiling } from './personnel-files.service';
+export { TimesheetsReadService, type ProjectMonth } from './timesheets-read.service';
 export { StaticDataService, type StaticDataEntry } from './static-data.service';
 export { CustomersService, type CustomerRecord } from './customers.service';
 // Billables: what modules offer to bill (expenses), read by another module (billing) through the core only.

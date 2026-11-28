@@ -343,14 +343,16 @@ and its receipt (a core `documents` id, read through `DocumentsService`).
   categories, reports, the web's slots (`projectDialog`, `projectActions`). A module then works without the other.
 - **The core's data through its services.** A plugin reads and writes the core's data through the services of the
   contract, not its tables: `PeopleService` (names, members, profiles, basic data), `CustomersService` (customers,
-  contacts, the term), `ProjectsService` (projects with their cost item, subprojects, names, those matching a word,
-  "Ihre Referenz"/"z. H.", who booked, project time with its approval), `OrganizationsService` (the organization, its
-  modules and settings), `StructureService` (departments, teams, leaders, management), `AbsencesReadService`,
-  `StaticDataService` (an entry, the organization's own values), `WorkflowsService` (`latestOf`, `latestIds`,
-  `finishPendingSteps`), `DocumentsService` (`rowsOf`, `read`), `VersionsService` (histories), `BillablesService`;
-  the queries are the same, they run in the core.
-  `CORE_TABLES_STILL_DIRECT` in `test/api/plugin-boundaries.test.ts` lists what a plugin still reads itself; it only
-  shrinks (all plugins but hr are off it; a new direct use fails the test). A service a plugin needs is added to the core.
+  contacts, the term), `ProjectsService` (projects with their owner and cost item, subprojects, names, those matching a
+  word, "Ihre Referenz"/"z. H.", who booked, project time with its approval), `OrganizationsService` (the organization,
+  its modules and settings), `StructureService` (departments, teams, leaders, management), `EmploymentService` (start,
+  probation and exit, assignments and managers, workloads, work permits), `AbsencesReadService` (`approved`, `list`),
+  `TimesheetsReadService` (the working-time and project months' status), `PersonnelFilesService` (follow-ups, entries,
+  filing a document), `BalancesService` (`year`, `closings`, `yearClosings`), `StaticDataService` (an entry, the
+  organization's own values), `WorkflowsService` (`latestOf`, `latestIds`, `finishPendingSteps`), `DocumentsService`
+  (`rowsOf`, `read`), `VersionsService` (histories), `BillablesService`; the queries are the same, they run in the core.
+  `test/api/plugin-boundaries.test.ts` fails on any SQL of a plugin on a core table and on any import of the core's
+  generated schema. A service a plugin needs is added to the core.
 - **No dependencies of its own.** Plugins are not npm workspaces. React, MUI, Nest, drizzle and so on
   resolve from the repository's `node_modules`, so there is exactly one copy of each: two Reacts break
   hooks, two Nests break dependency injection. A cloned plugin therefore changes neither

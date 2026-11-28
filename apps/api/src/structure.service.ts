@@ -14,9 +14,11 @@ export interface StaffMember { userId: string; name: string; departmentId: strin
  */
 @Injectable()
 export class StructureService {
-  async departments(db: Db, orgId: string, opts: { activeOnly?: boolean } = {}): Promise<{ id: string; name: string; leaderUserId: string | null }[]> {
+  /** The departments by name, or in the organization's own order (`sortOrder`). */
+  async departments(db: Db, orgId: string, opts: { activeOnly?: boolean; sortOrder?: boolean } = {}): Promise<{ id: string; name: string; leaderUserId: string | null }[]> {
     const active = opts.activeOnly ? sql`AND is_active` : sql``;
-    const rows = await db.execute(sql`SELECT id, name, leader_user_id FROM departments WHERE organization_id = ${orgId}::uuid ${active} ORDER BY lower(name)`);
+    const order = opts.sortOrder ? sql`sort_order, name` : sql`lower(name)`;
+    const rows = await db.execute(sql`SELECT id, name, leader_user_id FROM departments WHERE organization_id = ${orgId}::uuid ${active} ORDER BY ${order}`);
     return (rows.rows as { id: string; name: string; leader_user_id: string | null }[]).map((d) => ({ id: d.id, name: d.name, leaderUserId: d.leader_user_id }));
   }
 

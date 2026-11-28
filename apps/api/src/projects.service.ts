@@ -7,7 +7,7 @@ import { VersionsService } from './versions.service';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A project with its customer fields (127). */
-export interface ProjectRecord { id: string; name: string; type: string; costItem: string | null; customerId: string | null; customerReference: string | null; customerContactId: string | null }
+export interface ProjectRecord { id: string; name: string; type: string; ownerUserId: string | null; costItem: string | null; customerId: string | null; customerReference: string | null; customerContactId: string | null }
 
 /** A customer with its projects, for a plugin's choice (e.g. a case's time tracking). */
 export interface CustomerProjects {
@@ -131,10 +131,10 @@ export class ProjectsService {
   async projects(db: Db, orgId: string, filter: { ids?: readonly string[]; customerId?: string } = {}): Promise<ProjectRecord[]> {
     const ids = filter.ids ? sql`AND p.id = ANY(${`{${filter.ids.filter((id) => UUID.test(id)).join(',')}}`}::uuid[])` : sql``;
     const customer = filter.customerId !== undefined ? (UUID.test(filter.customerId) ? sql`AND p.customer_id = ${filter.customerId}::uuid` : sql`AND false`) : sql``;
-    const rows = await db.execute(sql`SELECT p.id, p.name, p.type, p.cost_item, p.customer_id, p.customer_reference, p.customer_contact_id
+    const rows = await db.execute(sql`SELECT p.id, p.name, p.type, p.owner_user_id, p.cost_item, p.customer_id, p.customer_reference, p.customer_contact_id
       FROM projects p WHERE p.organization_id = ${orgId}::uuid ${ids} ${customer} ORDER BY lower(p.name)`);
-    return (rows.rows as { id: string; name: string; type: string; cost_item: string | null; customer_id: string | null; customer_reference: string | null; customer_contact_id: string | null }[])
-      .map((p) => ({ id: p.id, name: p.name, type: p.type, costItem: p.cost_item, customerId: p.customer_id, customerReference: p.customer_reference, customerContactId: p.customer_contact_id }));
+    return (rows.rows as { id: string; name: string; type: string; owner_user_id: string | null; cost_item: string | null; customer_id: string | null; customer_reference: string | null; customer_contact_id: string | null }[])
+      .map((p) => ({ id: p.id, name: p.name, type: p.type, ownerUserId: p.owner_user_id, costItem: p.cost_item, customerId: p.customer_id, customerReference: p.customer_reference, customerContactId: p.customer_contact_id }));
   }
 
   /** The subprojects of these projects (of the organization). */

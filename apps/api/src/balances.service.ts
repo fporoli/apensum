@@ -626,6 +626,18 @@ export class BalancesService {
     return new Map(rows.map((r) => [r.year, Number(r.days)]));
   }
 
+  /** The year-end closings of these people for one year (by user id; vacation days as written, closedAt as text). */
+  async yearClosings(db: Db, orgId: string, userIds: readonly string[], year: number): Promise<Map<string, { overtime: number; legalOvertime: number; vacationDays: string; closedAt: string }>> {
+    const ids = userIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+    if (!ids.length) return new Map();
+    const rows = (await db.execute(sql`
+      SELECT user_id, overtime_minutes, legal_overtime_minutes, vacation_days::text AS vacation_days, closed_at::text AS closed_at
+      FROM balance_years
+      WHERE organization_id = ${orgId}::uuid AND year = ${year} AND user_id = ANY(${`{${ids.join(',')}}`}::uuid[])
+    `)).rows as { user_id: string; overtime_minutes: number; legal_overtime_minutes: number; vacation_days: string; closed_at: string }[];
+    return new Map(rows.map((r) => [r.user_id, { overtime: r.overtime_minutes, legalOvertime: r.legal_overtime_minutes, vacationDays: r.vacation_days, closedAt: r.closed_at }]));
+  }
+
   /** A person's year-end closings, oldest first. */
   async closings(db: Db, orgId: string, userId: string): Promise<Array<YearClosing & { closedAt: string; closedByUserId: string | null; incompleteMonths: number }>> {
     const rows = await db

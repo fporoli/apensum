@@ -55,6 +55,9 @@ import { OrganizationsService } from './organizations.service';
 import { StructureService } from './structure.service';
 import { AbsencesReadService } from './absences-read.service';
 import { StaticDataService } from './static-data.service';
+import { EmploymentService } from './employment.service';
+import { PersonnelFilesService } from './personnel-files.service';
+import { TimesheetsReadService } from './timesheets-read.service';
 import { CustomersService } from './customers.service';
 import { TriggersService } from './triggers.service';
 import { FlowTriggersController } from './flow-triggers.controller';
@@ -170,6 +173,9 @@ const plugins = loadApiPlugins();
     StructureService,
     AbsencesReadService,
     StaticDataService,
+    EmploymentService,
+    PersonnelFilesService,
+    TimesheetsReadService,
     CustomersService,
     TriggersService,
     ReportsService,
