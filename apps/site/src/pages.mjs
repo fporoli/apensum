@@ -250,7 +250,7 @@ export function home(ctx) {
         <div>
           <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
             <div class="feature-icon">${icon('lock')}</div>
-            <span class="chip chip-ok"><b></b>${t('common.freeBadge')}</span>
+            <span class="chip chip-brand"><b></b>${t('common.onRequestBadge')}</span>
           </div>
           <h3>${t('home.modules.cases.title')}</h3>
           <p>${t('home.modules.cases.text')}</p>
@@ -938,13 +938,15 @@ export function about(ctx) {
 
 export function cases(ctx) {
   const { t, assets, lang } = ctx;
+  // The licensed module: price on request; free to try on the demo (made-up data, Acme's passphrase).
+  const steps = [['s1', 'doc'], ['s2', 'chat'], ['s3', 'sparkle'], ['s4', 'check'], ['s5', 'receipt']];
   const cards = [
-    ['dossier', 'lock'],
-    ['evidence', 'doc'],
+    ['e2e', 'lock'],
+    ['evidence', 'sparkle'],
     ['interviews', 'chat'],
     ['templates', 'layers'],
-    ['security', 'shield'],
-    ['export', 'check'],
+    ['sharing', 'key'],
+    ['billing', 'receipt'],
   ];
 
   const video = assets.media?.['demo-cases.mp4'];
@@ -961,7 +963,7 @@ export function cases(ctx) {
   const body = `
 <section class="page-head">
   <div class="wrap">
-    <p class="eyebrow">${t('cases.hero.eyebrow')} · <span class="chip chip-ok"><b></b>${t('common.freeBadge')}</span></p>
+    <p class="eyebrow">${t('cases.hero.eyebrow')} · <span class="chip chip-brand"><b></b>${t('common.onRequestBadge')}</span></p>
     <h1>${t('cases.hero.title')}</h1>
     <p class="lead">${t('cases.hero.lead')}</p>
     <div class="actions" style="margin-top: 24px; display: flex; gap: 12px; flex-wrap: wrap;">
@@ -974,17 +976,41 @@ export function cases(ctx) {
 <section class="section tight">
   <div class="wrap">
     ${videoBlock}
-    <div class="card pricing-teaser" style="margin-bottom: 40px;">
-      <div>
-        <p class="eyebrow">${icon('shield')}${t('common.includedInFramework')}</p>
-        <h2>${t('cases.freeBox.title')}</h2>
-        <p class="lead">${t('cases.freeBox.text')}</p>
+    <div class="grid grid-2" style="margin-bottom: 40px;">
+      <div class="card pricing-teaser">
+        <div>
+          <p class="eyebrow">${icon('tag')}${t('nav.cases')}</p>
+          <h2>${t('cases.price.title')}</h2>
+          <p class="lead">${t('cases.price.text')}</p>
+        </div>
+        <div class="price-badge word"><strong>${t('cases.price.badge')}</strong></div>
       </div>
-      <div class="price-badge"><strong>CHF&nbsp;0</strong><span>${t('common.freeBadge')}</span></div>
+      <div class="card">
+        <p class="eyebrow">${icon('sparkle')}${t('cta.demo')}</p>
+        <h3>${t('cases.demo.title')}</h3>
+        <p>${t('cases.demo.text')}</p>
+        <div class="actions" style="margin-top: 16px;">
+          <a class="btn btn-primary btn-sm" href="${ctx.demo}">${t('cta.demo')}${icon('arrow')}</a>
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="wrap">
+    <div class="section-head">
+      <h2>${t('cases.steps.title')}</h2>
+      <p class="lead">${t('cases.steps.lead')}</p>
+    </div>
+    <ol class="case-steps">
+    ${steps.map(([k, ic], i) => `<li class="card feature">
+        <div class="plugin-step-head"><span class="step-no">${i + 1}</span><div class="feature-icon">${icon(ic)}</div></div>
+        <h3>${t(`cases.steps.${k}.title`)}</h3>
+        <p>${t(`cases.steps.${k}.text`)}</p>
+      </li>`).join('\n    ')}
+    </ol>
+  </div>
+
+  <div class="wrap" style="margin-top: 56px;">
     <div class="section-head">
       <h2>${t('cases.features.title')}</h2>
       <p class="lead">${t('cases.features.lead')}</p>
@@ -1002,17 +1028,17 @@ export function cases(ctx) {
 <section class="section band">
   <div class="wrap split">
     <div>
-      <p class="eyebrow">${icon('shield')}${t('cases.hero.eyebrow')}</p>
-      <h2>${t('cases.features.title')}</h2>
-      <p class="lead">${t('cases.features.lead')}</p>
-      ${checklist(t.list('cases.checkItems'))}
+      <p class="eyebrow">${icon('shield')}${t('cases.cards.e2e.title')}</p>
+      <h2>${t('cases.security.title')}</h2>
+      <p class="lead">${t('cases.security.lead')}</p>
+      ${checklist(t.list('cases.security.items'))}
     </div>
     <div class="card">
-      <div class="feature-icon">${icon('lock')}</div>
-      <h3>${t('cases.cards.security.title')}</h3>
-      <p class="muted" style="margin-bottom: 20px;">${t('cases.cards.security.text')}</p>
+      <div class="feature-icon">${icon('users')}</div>
+      <h3>${t('cases.who.title')}</h3>
+      <p class="muted" style="margin-bottom: 20px;">${t('cases.who.text')}</p>
       <div class="actions">
-        <a class="btn btn-primary btn-sm" href="${ctx.demo}">${t('cta.demo')}${icon('arrow')}</a>
+        <a class="btn btn-primary btn-sm" href="${ctx.contactLink('demo')}">${icon('mail')}${t('cta.contact')}</a>
       </div>
     </div>
   </div>
@@ -1021,6 +1047,7 @@ ${ctaBand(ctx)}`;
 
   return layout(ctx, { title: t('cases.meta.title'), description: t('cases.meta.description'), body });
 }
+
 
 export function expenses(ctx) {
   const { t } = ctx;

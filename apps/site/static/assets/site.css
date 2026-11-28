@@ -252,6 +252,9 @@ a:hover { color: var(--brand-strong); }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 99px; }
 .chip-ok { background: var(--ok-soft); color: var(--ok); }
 .chip-ok b { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.chip-brand { background: color-mix(in srgb, var(--brand) 12%, transparent); color: var(--brand); }
+.chip-brand b { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.price-badge.word strong { font-size: 1.6rem; }
 .mock-week { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; height: 110px; margin-top: 14px; align-items: end; }
 .mock-week .day { display: grid; grid-template-rows: 1fr auto; height: 100%; gap: 6px; text-align: center; }
 .mock-week .day span { align-self: end; display: block; border-radius: 6px 6px 3px 3px; background: color-mix(in srgb, var(--brand) 75%, transparent); }
@@ -387,6 +390,10 @@ a:hover { color: var(--brand-strong); }
 .footer-grid p { margin-top: 12px; max-width: 40ch; }
 .footer-base { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); font-size: 0.875rem; }
 @media (max-width: 700px) { .footer-grid { grid-template-columns: 1fr 1fr; } .footer-grid > div:first-child { grid-column: 1 / -1; } }
+
+/* Gutachten page: the five steps of an assessment */
+.case-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.case-steps .plugin-step-head { margin-bottom: 12px; }
 
 /* Plugin page: numbered steps, each with its code example */
 .plugin-steps { list-style: none; display: grid; gap: 20px; padding: 0; margin: 0; counter-reset: none; }
