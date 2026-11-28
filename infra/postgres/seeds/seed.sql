@@ -136,7 +136,8 @@ SET settings = jsonb_build_object('fullTimeWeeklyMinutes', 2400, 'legalMaxWeekly
 WHERE id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 
 -- Acme reporting lines, dated (employee_assignments; approvals route to the manager in force):
---   Alice  -> Admin, Adam
+--   Alice  -> Admin (until 2025), Adam
+--   Super  -> Admin from 2026 (the test account approves someone's flows too)
 --   Adam   -> Marta, Marco, Uma
 --   Marta  -> Ulla, and Ueli until mid-2025 (Sales), when he moved to R&D under Marco
 --   Marco  -> Ueli
@@ -157,7 +158,8 @@ FROM (VALUES
   ('22222222-2222-2222-2222-222222222227', NULL, 'dddddddd-0000-0000-0000-000000000003', 'Sales Assistant', '22222222-2222-2222-2222-222222222224'),      -- Ueli  <- Marta (Sales)
   ('22222222-2222-2222-2222-222222222227', '2025-07-01', 'dddddddd-0000-0000-0000-000000000005', 'Software Developer', '22222222-2222-2222-2222-222222222225'), -- Ueli  <- Marco (R&D)
   ('22222222-2222-2222-2222-222222222229', NULL, 'dddddddd-0000-0000-0000-000000000007', 'Accountant', '22222222-2222-2222-2222-222222222222'),         -- Fido  <- Alice (Finance)
-  ('22222222-2222-2222-2222-22222222222a', NULL, 'dddddddd-0000-0000-0000-000000000007', 'Test Account', '22222222-2222-2222-2222-222222222222')        -- Super <- Alice (Finance: the payment runs' steps reach him too)
+  ('22222222-2222-2222-2222-22222222222a', NULL, 'dddddddd-0000-0000-0000-000000000007', 'Test Account', '22222222-2222-2222-2222-222222222222'),       -- Super <- Alice (Finance: the payment runs' steps reach him too)
+  ('11111111-1111-1111-1111-111111111111', '2026-01-01', 'dddddddd-0000-0000-0000-000000000001', 'System Administrator', '22222222-2222-2222-2222-22222222222a') -- Admin <- Super from 2026
 ) AS v(user_id, valid_from, department_id, job_function, manager_user_id)
 JOIN organization_memberships m ON m.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND m.user_id = v.user_id::uuid
 ON CONFLICT (organization_id, user_id, valid_from) DO UPDATE
