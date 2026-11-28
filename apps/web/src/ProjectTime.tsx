@@ -38,7 +38,7 @@ import WeekReport from './WeekReport';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 const DEFAULT_PROJECT_TIME_START = '08:00';
-const PROJECT_TIME_ERRORS = new Set(['period-locked', 'forbidden', 'not-found', 'unknown-user', 'project-not-allowed', 'unknown-project']);
+const PROJECT_TIME_ERRORS = new Set(['description-required', 'period-locked', 'forbidden', 'not-found', 'unknown-user', 'project-not-allowed', 'unknown-project']);
 const DURATION_PRESETS = [15, 30, 60, 120, 240, 480];
 
 interface Option {
@@ -46,6 +46,8 @@ interface Option {
   name: string;
   /** Projects only: whether the person shown may book on it (teams, project_teams). */
   bookable?: boolean;
+  /** Projects only: the customer it bills; its time then needs an item text (the customer sees it). */
+  customer_id?: string | null;
 }
 
 interface Draft {
@@ -372,6 +374,9 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
     if (e.project_id) void loadSubprojects(e.project_id);
   }
 
+  const isCustomer = (id: string) => !!projects.find((p) => p.id === id)?.customer_id;
+  const addTextMissing = isCustomer(projectId) && !description.trim();
+  const draftTextMissing = !!draft && isCustomer(draft.projectId) && !draft.description.trim();
   const addDurationInvalid = !(entryDurationMinutes && entryDurationMinutes > 0) || (useProjectTimeRanges && !entryStartTime);
   const draftDurationInvalid = !!draft && (!(draft.durationMinutes && draft.durationMinutes > 0) || (useProjectTimeRanges && !draft.startTime));
   const sortedEntries = useMemo(
@@ -480,6 +485,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
             <TextField
               label={t('time.description')}
               placeholder={t('time.description.placeholder')}
+              required={isCustomer(projectId)}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               size="small"
@@ -496,7 +502,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
             minRows={2}
             sx={{ flex: 1, minWidth: 260, '& textarea': { resize: 'vertical' } }}
           />
-          <Button type="submit" variant="contained" disabled={addDurationInvalid || isEntryDateLocked}>
+          <Button type="submit" variant="contained" disabled={addDurationInvalid || isEntryDateLocked || addTextMissing}>
             {t('time.add')}
           </Button>
         </Box>
@@ -697,7 +703,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           component="form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!draftDurationInvalid) void saveDraft();
+            if (!draftDurationInvalid && !draftTextMissing) void saveDraft();
           }}
         >
           <DialogTitle>{t('time.editEntry')}</DialogTitle>
@@ -751,6 +757,8 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                 <TextField
                   label={t('time.description')}
                   placeholder={t('time.description.placeholder')}
+                  required={isCustomer(draft.projectId)}
+                  error={draftTextMissing}
                   value={draft.description}
                   onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                   size="small"
@@ -770,7 +778,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           )}
           <DialogActions>
             <Button onClick={closeDraft}>{t('time.cancel')}</Button>
-            <Button type="submit" variant="contained" disabled={draftDurationInvalid}>{t('time.save')}</Button>
+            <Button type="submit" variant="contained" disabled={draftDurationInvalid || draftTextMissing}>{t('time.save')}</Button>
           </DialogActions>
         </Box>
       </Dialog>

@@ -8,6 +8,13 @@ import { callerUserId, canEditUserData, canSeeUserData, isOrgMember, isProjectPe
 import type { AuthenticatedRequest } from './jwt.guard';
 import { project_times, projects, subprojects, users } from './db/schema';
 
+/** Whether the project bills a customer (has one): its time then needs an item text, which the customer sees. */
+async function isCustomerProject(db: Db, projectId: string | null | undefined): Promise<boolean> {
+  if (!projectId) return false;
+  const [p] = await db.select({ customer_id: projects.customer_id }).from(projects).where(eq(projects.id, projectId));
+  return !!p?.customer_id;
+}
+
 /** The item text as stored: trimmed, at most 500 characters, empty = none. */
 export function itemText(v: unknown): string | null {
   const t = typeof v === 'string' ? v.trim().slice(0, 500) : '';
@@ -59,6 +66,8 @@ export class ProjectTimeController {
     // The project must be open to the person (its teams, project_teams); checked for whoever books it.
     const bookingError = await projectBookingError(db, orgId, userId, body.projectId, body.subprojectId);
     if (bookingError) return { ok: false, error: bookingError };
+    // On a customer project the customer sees the item text on the invoice's hours report: it is required there.
+    if (!itemText(body.description) && (await isCustomerProject(db, body.projectId))) return { ok: false, error: 'description-required' };
     // Project time is locked per project and month by the project timesheet, not by the working-time one.
     if (await isProjectPeriodLocked(db, orgId, userId, body.projectId, body.startTime, body.endTime)) return { ok: false, error: 'period-locked' };
     // Only "ranges" users care about overlap at all — everyone else logs duration-only entries that
@@ -174,6 +183,11 @@ export class ProjectTimeController {
       if (bookingError) return { ok: false, error: bookingError };
     }
     const targetEnd = body.endTime ?? owned.entry.end_time;
+    // A customer project's entry keeps an item text (required there, the customer sees it).
+    const targetText = body.description !== undefined ? itemText(body.description) : owned.entry.description;
+    if (!targetText && (body.description !== undefined || targetProject !== owned.entry.project_id) && (await isCustomerProject(db, targetProject))) {
+      return { ok: false, error: 'description-required' };
+    }
     if (owned.entry.organization_id && (targetProject !== owned.entry.project_id || targetStart !== owned.entry.start_time || targetEnd !== owned.entry.end_time)) {
       if (await isProjectPeriodLocked(db, owned.entry.organization_id, owned.userId, targetProject, targetStart, targetEnd)) {
         return { ok: false, error: 'period-locked' };
@@ -241,7 +255,7 @@ export class ProjectTimeController {
     | {
         userId: string;
         actorId: string;
-        entry: { organization_id: string | null; project_id: string | null; subproject_id: string | null; start_time: string; end_time: string };
+        entry: { organization_id: string | null; project_id: string | null; subproject_id: string | null; start_time: string; end_time: string; description: string | null };
       }
   > {
     const callerId = req.user ? await callerUserId(db, req.user) : null;
@@ -254,6 +268,7 @@ export class ProjectTimeController {
         subproject_id: project_times.subproject_id,
         start_time: project_times.start_time,
         end_time: project_times.end_time,
+        description: project_times.description,
       })
       .from(project_times)
       .where(eq(project_times.id, id));

@@ -216,11 +216,15 @@ const projectTimeAdd: AssistantTool = {
   description:
     'PROJECT TIME: book hours on projects (as on the Project time page). Separate from working time: it does not count as attendance. ' +
     "A day's project time should not exceed that day's working time, so when the user wants both, call work_time_add first. " +
-    'An answer "project-exceeds-attendance-confirm" or "overlapping-entry-confirm" is a warning: tell the user and only resend with confirmWarnings after they agree.',
+    'An answer "project-exceeds-attendance-confirm" or "overlapping-entry-confirm" is a warning: tell the user and only resend with confirmWarnings after they agree. ' +
+    '"description-required": a customer project needs an item text the customer may read; ask the user for it.',
   parameters: {
     type: 'object',
     properties: {
-      entries: entriesParam({ project: { type: 'string', description: 'Project name (projects_list); leave out for time without a project' } }),
+      entries: entriesParam({
+        project: { type: 'string', description: 'Project name (projects_list); leave out for time without a project' },
+        description: { type: 'string', description: 'Item text: what was done, as the customer may read it on an invoice (required on customer projects); the comment stays internal' },
+      }),
       ...person,
       confirmWarnings: { type: 'boolean', description: 'Only after the user agreed to save despite the warning.' },
     },
@@ -244,7 +248,7 @@ const projectTimeAdd: AssistantTool = {
         projectId = p.id;
       }
       const res = await controller.create(ctx.orgId, {
-        projectId, startTime: s.start, endTime: s.end, comment: str(e.comment), userId: who.id,
+        projectId, startTime: s.start, endTime: s.end, comment: str(e.comment), description: str(e.description), userId: who.id,
         acknowledgeOverlap: args.confirmWarnings === true, acknowledgeAttendance: args.confirmWarnings === true,
       }, ctx.req) as { ok: boolean; error?: string; id?: string; projectMinutes?: number; attendanceMinutes?: number };
       if (res.ok) created += 1;

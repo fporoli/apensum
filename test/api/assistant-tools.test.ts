@@ -135,7 +135,7 @@ test('project_time_add books on the named project and confirms warnings only whe
   const ctx = context(new Map([[ProjectTimeController, projectTime]]));
   const first = await tool('project_time_add').run({ entries: [{ date: '2026-11-19', startTime: '08:00', endTime: '12:00', project: 'website' }, { date: '2026-11-19', startTime: '13:00', endTime: '14:00', project: 'Moon' }] }, ctx);
   assert.equal(bodies.length, 1, 'an unknown project is refused before the endpoint');
-  assert.deepEqual(bodies[0], { projectId: 'p-1', startTime: '2026-11-19T07:00:00.000Z', endTime: '2026-11-19T11:00:00.000Z', comment: undefined, userId: 'me', acknowledgeOverlap: false, acknowledgeAttendance: false });
+  assert.deepEqual(bodies[0], { projectId: 'p-1', startTime: '2026-11-19T07:00:00.000Z', endTime: '2026-11-19T11:00:00.000Z', comment: undefined, description: undefined, userId: 'me', acknowledgeOverlap: false, acknowledgeAttendance: false });
   const r = (first.data as { results: Record<string, unknown>[] }).results;
   assert.equal(r[0].error, 'project-exceeds-attendance-confirm');
   assert.equal(r[0].workingMinutesThatDay, 0);
