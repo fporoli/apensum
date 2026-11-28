@@ -86,7 +86,7 @@ interface DemoAccount {
 const DEMO_INVITE_TOKEN = 'dev-invite-0001';
 
 /** API error codes with their own message; the text is `login.error.<code>` in the dictionaries. */
-const KNOWN_ERRORS = new Set([
+const KNOWN_ERRORS = new Set(['email-unconfirmed', 
   'invalid-credentials',
   'two-factor-invalid',
   'two-factor-expired',
@@ -142,6 +142,8 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
   });
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // An account whose address is not proven yet: the page offers to send its link again.
+  const [unverified, setUnverified] = useState<string | null>(null);
   // Signed out because the session ended (sessionWatch.ts): say so once.
   useEffect(() => { if (takeSessionEnded()) setNotice(t('login.sessionEnded')); }, [t]);
   const [busy, setBusy] = useState(false);
@@ -224,6 +226,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
         setCode('');
         return;
       }
+      if (!data.ok && data.error === 'email-unconfirmed') setUnverified(loginEmail);
       if (!data.ok) fail(data.error ?? 'invalid-credentials');
       const session = data as Session;
       saveSession(session);
@@ -267,7 +270,13 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
           <Tab value="invite" icon={<MailIcon />} label={t('login.tab.invite')} />
           <Tab value="reset" icon={<KeyIcon />} label={t('login.tab.reset')} />
         </Tabs>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        {error && <Alert severity="error" sx={{ mb: 2 }} action={unverified ? (
+          <Button color="inherit" size="small" disabled={busy} onClick={() => void run(async () => {
+            await post('/auth/verify/resend', { email: unverified });
+            setUnverified(null);
+            setNotice(t('login.verifySent', { email: unverified }));
+          })}>{t('login.verifyResend')}</Button>
+        ) : undefined}>{error}</Alert>}
         {notice && <Alert severity="success" sx={{ mb: 2 }}>{notice}</Alert>}
 
         {mode === 'login' && challenge && (
@@ -365,6 +374,12 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
               void run(async () => {
                 const data = await post('/auth/register', { email, displayName, password });
                 if (!data.ok) fail(data.error ?? 'request-failed');
+                // The address is proven by the link mailed to it, which signs in.
+                if (data.verify) {
+                  setMode('login');
+                  setNotice(t('login.verifySent', { email }));
+                  return;
+                }
                 const session = { ...(data as Session), sso: true };
                 saveSession(session);
                 onLoggedIn(session);
@@ -392,6 +407,12 @@ export default function Login({ onLoggedIn }: { onLoggedIn: (s: Session) => void
               void run(async () => {
                 const data = await post('/auth/invitations/accept', { token, displayName, password });
                 if (!data.ok) fail(data.error ?? 'request-failed');
+                // A new account: its address is proven by the link mailed to it, which signs in.
+                if (data.verify) {
+                  setMode('login');
+                  setNotice(t('login.verifySent', { email: String(data.email ?? '') }));
+                  return;
+                }
                 // Accepted with an account that has two-step login: it signs in with its code.
                 if (data.signInRequired) {
                   setMode('login');

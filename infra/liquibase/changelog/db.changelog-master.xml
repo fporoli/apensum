@@ -147,6 +147,7 @@
     <include file="129-project-time-description.sql" relativeToChangelogFile="true"/>
     <include file="130-vault.sql" relativeToChangelogFile="true"/>
     <include file="131-vault-escrow.sql" relativeToChangelogFile="true"/>
+    <include file="132-email-verified.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

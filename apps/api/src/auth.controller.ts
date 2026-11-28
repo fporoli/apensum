@@ -17,6 +17,9 @@ import { demoPeople } from './demo-switch';
 import {
   HourlyLimiter, LOGIN_FAILS_PER_ACCOUNT, LOGIN_FAILS_PER_ACCOUNT_AND_IP, LOGIN_FAILS_PER_IP, mintResetToken, passwordStamp, readResetToken,
   REGISTRATIONS_PER_IP, RESET_LIMIT_PER_EMAIL, RESET_LIMIT_PER_IP, resetLink, resetMail,
+  VERIFY_TTL_SEC,
+  verifyLink,
+  verifyMail,
 } from './password-reset';
 import { TWO_FACTOR_CHALLENGE_SEC, twoFactorChallengeKey, twoFactorOff, twoFactorRequired, twoFactorRow, useSecondFactor } from './two-factor';
 import { clock, sqlNow } from './clock';
@@ -234,22 +237,66 @@ export class AuthController {
     void this.versions.record('organizations', orgId, 'insert', userId, { id: orgId, slug, name: `${body.displayName.trim()}'s workspace`, type: 'personal' }).catch(() => {});
     void this.versions.record('organization_memberships', membershipId, 'insert', userId, { id: membershipId, organization_id: orgId, user_id: userId, status: 'active' }).catch(() => {});
 
-    const session: Session = {
-      userId,
-      email: user.email,
-      displayName: user.display_name,
-      token: await mintSessionToken(db, userId, email),
-      memberships: await membershipsOf(db, userId),
-    };
-    // Best-effort welcome mail (local catcher); never fail registration over it.
-    void sendMail({
-      to: email,
-      subject: 'Welcome to Apensum',
-      text: `Hi ${body.displayName.trim()},\n\nYour account and personal workspace "${slug}" are ready.\n`,
-    }).catch(() => {});
+    // No session yet: the address is proven first, by the link mailed to it (which signs in). Until then the account
+    // cannot sign in, so registering with someone else's address gets nobody in.
+    void this.sendVerifyLink(db, userId, Date.now()).catch(() => {}); // real time: rate limits, tokens, invitation expiry
     // The instance's operators hear of every registration (registration is open), by mail and in the Admin organization.
     void noticeRegistration(db, this.notifications, { name: body.displayName.trim(), email, workspace: `${body.displayName.trim()}'s workspace`, orgId }).catch(() => {});
-    return { ok: true, ...session };
+    return { ok: true, verify: true, email };
+  }
+
+  /** Mails the address-proving link of an account not proven yet (registration, a new invited account, resend). */
+  private async sendVerifyLink(db: Db, userId: string, nowMs: number): Promise<void> {
+    const [row] = await db
+      .select({ email: users.email, name: users.display_name, locale: users.locale, verified: users.email_verified_at, hash: user_identities.password_hash })
+      .from(users)
+      .innerJoin(user_identities, and(eq(user_identities.user_id, users.id), eq(user_identities.provider, 'password')))
+      .where(eq(users.id, userId));
+    if (!row || row.verified) return;
+    const token = mintResetToken(purposeKey('email-verify'), userId, row.hash, Math.floor(nowMs / 1000), VERIFY_TTL_SEC);
+    const link = verifyLink(process.env.APP_BASE_URL ?? 'http://localhost:3001', token, row.locale ?? 'de');
+    await sendMail({ to: row.email, ...verifyMail(row.locale ?? 'de', row.name ?? row.email, link) }, 10_000);
+  }
+
+  /** The registration link: proves the address (once, while the password is the one it was issued for) and signs in. */
+  @Public()
+  @Post('verify')
+  async verifyEmail(@Body() body: { token?: string }) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const claim = readResetToken(purposeKey('email-verify'), body?.token, Math.floor(Date.now() / 1000)); // real time: rate limits, tokens, invitation expiry
+    if (!claim) return { ok: false, error: 'verify-link-invalid' };
+    const [row] = await db
+      .select({ id: users.id, email: users.email, display_name: users.display_name, status: users.status, verified: users.email_verified_at, hash: user_identities.password_hash })
+      .from(users)
+      .innerJoin(user_identities, and(eq(user_identities.user_id, users.id), eq(user_identities.provider, 'password')))
+      .where(eq(users.id, claim.userId));
+    if (!row || passwordStamp(row.hash) !== claim.stamp) return { ok: false, error: 'verify-link-invalid' };
+    if (row.status !== 'active') return { ok: false, error: 'account-inactive' };
+    // The link signs in once: proven already (opened before), it only says so and the person signs in with the password.
+    if (row.verified) return { ok: true, signInRequired: true };
+    const proven = await db.update(users).set({ email_verified_at: clock.now().toISOString() })
+      .where(and(eq(users.id, row.id), isNull(users.email_verified_at))).returning({ id: users.id });
+    if (!proven.length) return { ok: true, signInRequired: true };
+    void this.versions.record('users', row.id, 'update_delta', row.id, { email_verified: true }).catch(() => {});
+    if (!twoFactorOff() && (await twoFactorRow(db, row.id))?.enabled) return { ok: true, signInRequired: true };
+    await this.signedIn(db, row.id);
+    return { ok: true, ...(await issueSession(db, row)) };
+  }
+
+  /** The registration link again, for an account not proven yet. Always answers ok (no account enumeration). */
+  @Public()
+  @Post('verify/resend')
+  async resendVerify(@Body() body: { email?: string }, @Req() req: Request) {
+    const db = this.db.getDb();
+    if (!db) return { ok: true, offline: true };
+    const email = (body?.email ?? '').trim().toLowerCase();
+    if (!isValidEmail(email)) return { ok: true };
+    const now = Date.now(); // real time: rate limits, tokens, invitation expiry
+    if (!this.resetPerIp.allow(clientIp(req), now) || !this.resetPerEmail.allow(email, now)) return { ok: true };
+    const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (row) void this.sendVerifyLink(db, row.id, now).catch(() => {});
+    return { ok: true };
   }
 
   /** Local login: verifies the password identity and returns the session. */
@@ -294,6 +341,7 @@ export class AuthController {
         email: users.email,
         display_name: users.display_name,
         status: users.status,
+        verified: users.email_verified_at,
         password_hash: user_identities.password_hash,
       })
       .from(users)
@@ -303,6 +351,8 @@ export class AuthController {
     if (row.status !== 'active') return { ok: false, error: 'account-inactive' };
     const match = row.password_hash ? await bcrypt.compare(body.password, row.password_hash) : false;
     if (!match) return failed();
+    // The address not proven yet (its registration link not opened): no sign-in (the page offers to send the link again).
+    if (!row.verified) return { ok: false, error: 'email-unconfirmed' };
     // Two-step login on: the password only earns a short token for the second step (bound to this password).
     if (!twoFactorOff() && (await twoFactorRow(db, row.id))?.enabled) {
       const challenge = mintResetToken(twoFactorChallengeKey(), row.id, row.password_hash, Math.floor(Date.now() / 1000), TWO_FACTOR_CHALLENGE_SEC); // real time: rate limits, tokens, invitation expiry
@@ -394,6 +444,8 @@ export class AuthController {
       .where(and(eq(user_identities.id, identity.id), identity.hash === null ? isNull(user_identities.password_hash) : eq(user_identities.password_hash, identity.hash)))
       .returning({ id: user_identities.id });
     if (updated.length === 0) return { ok: false, error: 'reset-link-invalid' };
+    // The link came by e-mail: the address is proven too.
+    await db.update(users).set({ email_verified_at: clock.now().toISOString() }).where(and(eq(users.id, claim.userId), isNull(users.email_verified_at)));
     // Every session of the old password ends now (session-state.ts), here at once, in other processes within seconds.
     forgetSessions(claim.userId);
     void this.versions.record('users', claim.userId, 'update_delta', claim.userId, { password: 'reset by e-mail link' }).catch(() => {});
@@ -518,6 +570,15 @@ export class AuthController {
     void this.versions.record('organization_memberships', membershipId, 'update_delta', userId, { organization_id: invitation.organization_id, user_id: userId, status: 'active' }).catch(() => {});
     void this.versions.record('organization_invitations', invitation.id, 'update_delta', userId, { status: 'accepted' }).catch(() => {});
 
+    // An account whose address is not proven (new, or created by an import without a login): the invitation's link proves
+    // nothing (the inviter knows it), so it signs in through the link mailed to the address, as a registration does.
+    if (passwordHash) {
+      const [u] = await db.select({ verified: users.email_verified_at }).from(users).where(eq(users.id, userId));
+      if (!u?.verified) {
+        void this.sendVerifyLink(db, userId, Date.now()).catch(() => {}); // real time: rate limits, tokens, invitation expiry
+        return { ok: true, verify: true, email };
+      }
+    }
     // An existing account with two-step login: joined, but it signs in itself (password and code).
     if (!wasNewUser && !twoFactorOff() && (await twoFactorRow(db, userId))?.enabled) return { ok: true, signInRequired: true };
     return { ok: true, ...(await issueSession(db, { id: userId, email, display_name: displayName })) };
@@ -582,8 +643,15 @@ export class AuthController {
       .insert(users)
       .values({ email, display_name: principal.name?.trim().slice(0, 100) || email })
       .onConflictDoUpdate({ target: users.email, set: { email } })
-      .returning({ id: users.id });
+      .returning({ id: users.id, verified: users.email_verified_at });
     const userId = created.id;
+    // The identity provider proved the address. An account of it that was never proven (registered by someone who
+    // could not open its mail) loses that password: only the address's owner signs in from now on.
+    if (!created.verified) {
+      await db.delete(user_identities).where(and(eq(user_identities.user_id, userId), eq(user_identities.provider, 'password')));
+      await db.update(users).set({ email_verified_at: clock.now().toISOString() }).where(eq(users.id, userId));
+      forgetSessions(userId);
+    }
     await db
       .insert(user_identities)
       .values({ user_id: userId, provider: 'oidc', provider_user_id: principal.sub })

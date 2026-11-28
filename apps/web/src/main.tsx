@@ -8,7 +8,7 @@ import { I18nProvider } from './i18n';
 import { BrandingContext, createAppTheme, DEFAULT_BRANDING_COLORS, ThemeModeContext, type ThemeMode } from './theme';
 import type { OrgBranding } from '@worktime3/shared/branding';
 import { DatePickerLocalization } from './ConfigField';
-import { parseResetHash } from './resetHash';
+import { parseResetHash, parseVerifyHash } from './resetHash';
 import { PLUGIN_PUBLIC_ROUTES } from './plugins';
 
 // A plugin's page opened without signing in (e.g. the expenses plugin's phone upload for a QR code).
@@ -16,6 +16,9 @@ const publicRoute = PLUGIN_PUBLIC_ROUTES.map((r) => ({ route: r, match: r.match(
 const ResetPassword = lazy(() => import('./ResetPassword'));
 // The link in a password-reset e-mail opens the page that sets the new password, without signing in.
 const passwordReset = parseResetHash(window.location.hash);
+// The link in a registration e-mail proves the address and signs in.
+const emailVerify = parseVerifyHash(window.location.hash);
+const VerifyEmail = lazy(() => import('./VerifyEmail'));
 
 const THEME_STORAGE_KEY = 'worktime.themeMode';
 
@@ -61,6 +64,10 @@ function Root() {
             <DatePickerLocalization>
               {publicRoute ? (
                 <Suspense fallback={null}>{publicRoute.route.render(publicRoute.match)}</Suspense>
+              ) : emailVerify ? (
+                <Suspense fallback={null}>
+                  <VerifyEmail token={emailVerify.token} lang={emailVerify.lang} />
+                </Suspense>
               ) : passwordReset ? (
                 <Suspense fallback={null}>
                   <ResetPassword token={passwordReset.token} lang={passwordReset.lang} />

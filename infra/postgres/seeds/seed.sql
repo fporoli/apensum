@@ -362,6 +362,9 @@ VALUES
   ('22222222-2222-2222-2222-22222222222a', 'password', 'super@acme.com', '$2a$10$L5y6XsIJ0kJxmf.Q0dM6n.ItdmYxhWoqMEReNvwkjofC9H6kpnXlu')
 ON CONFLICT (provider, provider_user_id) DO NOTHING;
 -- In case you need to force.... DO UPDATE SET password_hash = EXCLUDED.password_hash;
+-- The demo accounts' addresses count as proven (a password login needs it, 132). Only while unset.
+-- real time: an account's proof is a technical fact
+UPDATE users SET email_verified_at = now() WHERE email LIKE '%@acme.com' AND email_verified_at IS NULL;
 
 -- Demo-account dropdown on the login screen (GET /auth/demo-accounts, public). Global row.
 -- Key = dropdown order; value = a JSON string {name, user, password}, kept a string so the

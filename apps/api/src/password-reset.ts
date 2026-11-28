@@ -71,6 +71,38 @@ export function resetMail(locale: string, name: string, link: string): { subject
   return { subject: m.subject, text: m.text(name.replace(/[\r\n]+/g, ' ').trim(), link) };
 }
 
+/** A registration's e-mail link: valid a day, bound to the password it was issued for (registration.ts, auth.controller). */
+export const VERIFY_TTL_SEC = 24 * 60 * 60;
+
+/** The page that confirms the address and signs in: the web app renders it without a session (main.tsx). */
+export function verifyLink(appBaseUrl: string, token: string, locale: string): string {
+  return `${appBaseUrl.replace(/\/+$/, '')}/#/verify/${token}?lang=${encodeURIComponent(locale)}`;
+}
+
+const VERIFY_MAIL: Record<string, { subject: string; text: (name: string, link: string) => string }> = {
+  en: {
+    subject: 'Apensum: confirm your e-mail address',
+    text: (name, link) => `Hello ${name}\n\nWelcome to Apensum. Please confirm that this address is yours; the link signs you in:\n\n${link}\n\nThe link is valid for 24 hours. If you did not create an account, ignore this e-mail: without the confirmation nobody can sign in with it.\n`,
+  },
+  de: {
+    subject: 'Apensum: E-Mail-Adresse bestätigen',
+    text: (name, link) => `Grüezi ${name}\n\nWillkommen bei Apensum. Bitte bestätigen Sie, dass diese Adresse Ihnen gehört; der Link meldet Sie gleich an:\n\n${link}\n\nDer Link ist 24 Stunden gültig. Falls Sie kein Konto angelegt haben, ignorieren Sie diese E-Mail: Ohne Bestätigung kann sich niemand damit anmelden.\n`,
+  },
+  fr: {
+    subject: 'Apensum : confirmez votre adresse e-mail',
+    text: (name, link) => `Bonjour ${name}\n\nBienvenue sur Apensum. Veuillez confirmer que cette adresse est la vôtre ; le lien vous connecte directement :\n\n${link}\n\nLe lien est valable 24 heures. Si vous n’avez pas créé de compte, ignorez cet e-mail : sans confirmation, personne ne peut s’y connecter.\n`,
+  },
+  it: {
+    subject: 'Apensum: confermi il suo indirizzo e-mail',
+    text: (name, link) => `Buongiorno ${name}\n\nBenvenuto in Apensum. Confermi che questo indirizzo è suo; il link la collega subito:\n\n${link}\n\nIl link è valido 24 ore. Se non ha creato un account, ignori questa e-mail: senza conferma nessuno può accedere.\n`,
+  },
+};
+
+export function verifyMail(locale: string, name: string, link: string): { subject: string; text: string } {
+  const m = VERIFY_MAIL[locale] ?? VERIFY_MAIL.en;
+  return { subject: m.subject, text: m.text(name.replace(/[\r\n]+/g, ' ').trim(), link) };
+}
+
 /** Sliding one-hour window of request times per key. */
 export class HourlyLimiter {
   private readonly hits = new Map<string, number[]>();

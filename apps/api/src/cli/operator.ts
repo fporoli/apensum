@@ -88,6 +88,8 @@ async function ensureOperator(pool: Pool, email: string, password: string): Prom
       created = true;
     }
     const userId = rows[0].id;
+    // The operator's address is the deploy's own: taken as proven (a password login needs it, auth.controller).
+    await client.query('UPDATE users SET email_verified_at = COALESCE(email_verified_at, now()) WHERE id = $1', [userId]); // real time: an account's proof is a technical fact
     const updated = await client.query(
       `UPDATE user_identities SET password_hash = $2 WHERE user_id = $1 AND provider = 'password'`,
       [userId, hash],

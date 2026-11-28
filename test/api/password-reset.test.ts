@@ -96,7 +96,8 @@ test('confirmReset sets the password once with a valid link', async () => {
   const { db, updates } = mockDb(identity);
   const token = mintResetToken(key, 'user-1', identity.hash, Math.floor(Date.now() / 1000));
   assert.deepEqual(await controller(db).confirmReset({ token, newPassword: 'new-secret-1' }), { ok: true, email: 'anna@example.ch' });
-  assert.equal(updates.length, 1);
+  // The password, and the address proven (the link came by e-mail).
+  assert.equal(updates.length, 2);
 });
 
 test('confirmReset refuses a used link, a short password and a bad token', async () => {
