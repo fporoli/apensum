@@ -249,6 +249,22 @@ export interface WebPlugin {
   notificationSections?: Record<string, string>;
   /** Fields in the project and subproject dialogs (Projects & Teams), e.g. Billing's customer, rate and reference. */
   projectDialog?: PluginProjectDialog[];
+  /** Actions on a project or subproject wherever one is shown (`ProjectActions`), e.g. Billing's "Rechnung erstellen". */
+  projectActions?: PluginProjectAction[];
+}
+
+/** Where a project action is shown: the project, and the subproject when it is about one (e.g. a case's). */
+export interface ProjectActionContext {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  projectId: string;
+  subprojectId: string | null;
+}
+
+/** A plugin's action on a project or subproject (a button); renders nothing when it does not apply to the caller. */
+export interface PluginProjectAction {
+  id: string;
+  render: (ctx: ProjectActionContext) => ReactNode;
 }
 
 /** What a plugin's part of the project or subproject dialog gets (`WebPlugin.projectDialog`). */
@@ -294,6 +310,7 @@ export * from './icons';
 /** The app's button (MUI's, with the organization's colorful look): use it instead of MUI's. */
 export { Button } from './Button';
 export { TestFileButton } from './TestFileButton';
+export { ProjectActions } from './ProjectActions';
 export { useCustomerTerm, useTermT, termKeyOf } from './customerTerm';
 export { CustomerDialog, EMPTY_CUSTOMER, loadCustomers, type Customer, type CustomerDraft } from './CustomerDialog';
 export { DocumentPreviewDialog, previewKind } from './DocumentPreviewDialog';
