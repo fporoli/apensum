@@ -101,7 +101,7 @@ export interface PluginSettingsSection {
    * Shown inside a core section instead of as a section of its own: 'org.ai' (AI and costs, after the
    * organization's limit; e.g. the Cases providers).
    */
-  within?: 'org.ai';
+  within?: 'org.ai' | 'org.vault';
   title: (t: TFunction) => string;
   subtitle?: (t: TFunction, org: { defaultCurrency: string }) => string;
   render: (ctx: { orgId: string; authHeaders: () => Promise<Record<string, string>> }) => ReactNode;
@@ -337,7 +337,7 @@ export { default as FlowTriggers } from './FlowTriggers';
 // of the organization's minutes) and objects' keys by kind and id; VaultControl is the unlock/lock/passphrase control.
 export {
   KeyringError, WrongPassphraseError, changeKeyringPassphrase, createObjectKeyFor, forgetObjectKey, idleMinutes, isUnlocked,
-  loadKeyring, lockKeyring, minutesUntilAutoLock, newObjectKey, objectKeyCandidates, objectKeyFor, objectKeyFromList,
+  loadKeyring, lockKeyring, minutesUntilAutoLock, newObjectKey, newStandardObjectKey, objectKeyCandidates, objectKeyFor, objectKeyFromList,
   rememberObjectKey, setUpKeyring, shareObjectKey, unlockKeyring, useKeyringState, type KeyringState,
 } from './vaultKeyring';
 export { VaultControl } from './VaultControl';

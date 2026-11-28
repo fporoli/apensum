@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import type { Db } from './db.service';
 import type { UserKeyRecord } from '@worktime3/shared/vault';
+import { currentMasterKey, masterKeys, openSecret, sealSecret } from './document-crypto';
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const uuidArray = (ids: readonly string[]) => `{${[...new Set(ids)].filter((id) => UUID.test(id)).join(',')}}`;
@@ -30,6 +31,10 @@ export function registerVaultObjects(source: VaultObjectSource): void {
 export function vaultObjectSource(kind: string): VaultObjectSource | undefined {
   return SOURCES.get(kind);
 }
+
+/** A raw AES-256 key as base64 (32 bytes): what the level Standard hands to whoever may see the object. */
+export const isRawObjectKey = (v: unknown): v is string =>
+  typeof v === 'string' && /^[A-Za-z0-9+/]{43}=$/.test(v) && Buffer.from(v, 'base64').length === 32;
 
 /** One holder's wrapped copy of an object's key. */
 export interface ObjectKey { userId: string; wrappedKey: string }
@@ -104,5 +109,37 @@ export class VaultService {
   async replaceKeys(db: Db, orgId: string, kind: string, objectId: string, keys: readonly ObjectKey[], grantedBy: string): Promise<void> {
     await db.execute(sql`DELETE FROM vault_object_keys WHERE object_kind = ${kind} AND object_id = ${objectId}::uuid`);
     for (const k of keys) await this.grant(db, orgId, kind, objectId, k.userId, k.wrappedKey, grantedBy);
+  }
+
+  // ---- level Standard: the key held by the server (vault_object_escrow, 131) ----------------------
+
+  /** Whether the instance can hold keys (DOCUMENTS_KEY is set); without it there is no level Standard. */
+  standardAvailable(): boolean {
+    return currentMasterKey() !== null;
+  }
+
+  /** Keeps a Standard object's key, sealed with the instance's master key. The caller checked who may. */
+  async escrow(db: Db, orgId: string, kind: string, objectId: string, rawKey: string): Promise<void> {
+    const master = currentMasterKey();
+    if (!master) throw new Error('standard-unavailable');
+    if (!isRawObjectKey(rawKey)) throw new Error('invalid-key');
+    const sealed = sealSecret(rawKey, master);
+    await db.execute(sql`
+      INSERT INTO vault_object_escrow (organization_id, object_kind, object_id, sealed_key, key_id)
+      VALUES (${orgId}::uuid, ${kind}, ${objectId}::uuid, ${sealed.sealed}, ${sealed.keyId})`);
+  }
+
+  /** The raw keys of these Standard objects of the organization (by object id); others are missing. */
+  async escrowed(db: Db, orgId: string, kind: string, objectIds: readonly string[]): Promise<Map<string, string>> {
+    if (!objectIds.length) return new Map();
+    const rows = (await db.execute(sql`
+      SELECT object_id, sealed_key, key_id FROM vault_object_escrow
+      WHERE organization_id = ${orgId}::uuid AND object_kind = ${kind} AND object_id = ANY(${uuidArray(objectIds)}::uuid[])`)).rows as { object_id: string; sealed_key: string; key_id: string }[];
+    const keys = masterKeys();
+    const out = new Map<string, string>();
+    for (const r of rows) {
+      try { out.set(r.object_id, openSecret(r.sealed_key, r.key_id, keys)); } catch { /* key not configured: the object stays closed */ }
+    }
+    return out;
   }
 }

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { organizations, organization_ai_keys, users, user_identities, customers, organization_domains, customer_contacts, roles, projects, subprojects, organization_invitations, audit_logs, organization_memberships, teams, timesheet_periods, project_times, versions, workflow_definitions, static_data, workflows, notifications, work_times, documents, absences, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, vault_user_keys, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, personnel_documents, ai_usage, exchange_rates, news_posts, assistant_prompts, balance_years, user_two_factor, flow_triggers, flow_trigger_runs, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads, vault_object_keys } from "./schema";
+import { organizations, organization_ai_keys, users, user_identities, customers, organization_domains, customer_contacts, roles, projects, subprojects, organization_invitations, audit_logs, organization_memberships, teams, timesheet_periods, project_times, versions, workflow_definitions, static_data, workflows, notifications, work_times, documents, absences, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, vault_user_keys, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, personnel_documents, ai_usage, exchange_rates, news_posts, assistant_prompts, balance_years, user_two_factor, flow_triggers, flow_trigger_runs, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads, vault_object_escrow, vault_object_keys } from "./schema";
 
 export const organization_ai_keysRelations = relations(organization_ai_keys, ({one}) => ({
 	organization: one(organizations, {
@@ -65,6 +65,7 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 	flow_triggers: many(flow_triggers),
 	flow_trigger_runs: many(flow_trigger_runs),
 	organization_licenses: many(organization_licenses),
+	vault_object_escrows: many(vault_object_escrow),
 	vault_object_keys: many(vault_object_keys),
 }));
 
@@ -914,6 +915,13 @@ export const news_post_readsRelations = relations(news_post_reads, ({one}) => ({
 	user: one(users, {
 		fields: [news_post_reads.user_id],
 		references: [users.id]
+	}),
+}));
+
+export const vault_object_escrowRelations = relations(vault_object_escrow, ({one}) => ({
+	organization: one(organizations, {
+		fields: [vault_object_escrow.organization_id],
+		references: [organizations.id]
 	}),
 }));
 

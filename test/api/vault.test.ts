@@ -29,6 +29,7 @@ function setup(opts: { holders?: string[]; withKeys?: string[] } = {}) {
   const withKeys = new Set(opts.withKeys ?? [LEAD, MEMBER, OTHER]);
   const people = Object.keys(RIGHTS);
   const writes: string[] = [];
+  const escrow = new Map<string, { sealed_key: string; key_id: string }>();
   const db = {
     execute: async (q: any) => {
       const { sql: text, params } = dialect.sqlToQuery(q);
@@ -43,13 +44,15 @@ function setup(opts: { holders?: string[]; withKeys?: string[] } = {}) {
       if (text.includes('INSERT INTO vault_object_keys')) { writes.push(`grant:${params[3]}`); holders.set(params[3] as string, WRAPPED); return { rows: [] }; }
       if (text.includes('FROM vault_object_keys')) return { rows: [...holders].map(([id, w]) => ({ user_id: id, wrapped_key: w })) };
       if (text.includes('INSERT INTO vault_user_keys')) return { rows: [{ user_id: user }] };
+      if (text.includes('INSERT INTO vault_object_escrow')) { escrow.set(params[2] as string, { sealed_key: params[3] as string, key_id: params[4] as string }); return { rows: [] }; }
+      if (text.includes('FROM vault_object_escrow')) return { rows: [...escrow].map(([object_id, e]) => ({ object_id, ...e })) };
       if (text.includes('FROM vault_user_keys')) return { rows: user && withKeys.has(user) ? [KEYREC] : [] };
       return { rows: user ? [{ name: 'member' }] : [] }; // membership
     },
   };
   const controller = new VaultController({ getDb: () => db } as any);
   const as = (sub: string) => ({ user: { kind: 'local', sub } }) as any;
-  return { controller, as, writes };
+  return { controller, as, writes, db };
 }
 
 const K = 'testmod.thing';
@@ -113,4 +116,24 @@ test('the sharing dialog lists who may open the object and who holds its key; a 
     [NOKEYS]: { holder: false, canAccess: true, hasKeys: false },
   });
   assert.ok(!(STRANGER in view), 'someone who may not open the object and holds no key is not listed');
+});
+
+test('level Standard: the server keeps the key sealed and hands it to whoever may see the object, nobody else; no holders', async () => {
+  const before = process.env.DOCUMENTS_KEY;
+  process.env.DOCUMENTS_KEY = Buffer.alloc(32, 7).toString('base64');
+  try {
+    const { VaultService } = await import('../../apps/api/src/vault.service');
+    const vault = new VaultService();
+    assert.equal(vault.standardAvailable(), true);
+    const { controller, as, db } = setup();
+    const raw = Buffer.alloc(32, 9).toString('base64');
+    await assert.rejects(vault.escrow(db as any, ORG, K, OBJ, 'not-a-key'), /invalid-key/);
+    await vault.escrow(db as any, ORG, K, OBJ, raw);
+    const mine = await controller.objectKeys(ORG, K, OBJ, as(LEAD));
+    assert.deepEqual(mine, { ok: true, encrypted: true, standard: true, key: raw, mine: null, members: [] });
+    assert.deepEqual(await controller.objectKeys(ORG, K, OBJ, as(OTHER)), { ok: true, encrypted: false, mine: null, members: [] });
+    assert.deepEqual(await controller.grantKey(ORG, K, OBJ, LEAD, as(LEAD), { wrappedKey: WRAPPED }), { ok: false, error: 'standard-object' });
+  } finally {
+    if (before === undefined) delete process.env.DOCUMENTS_KEY; else process.env.DOCUMENTS_KEY = before;
+  }
 });

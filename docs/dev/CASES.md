@@ -5,6 +5,7 @@ Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere 
 
 - Cases encryption (`docs/CASES_ENCRYPTION.md`, `plugins/cases/shared/caseCrypto.ts`, `caseVault.ts`): a case is end-to-end encrypted in the browser (passphrase -> RSA key pair -> a case key per case, wrapped per member; each file has its own key sealed in its row).\
   The keys are the core's vault (docs/VAULT.md, object kind `cases.case`, plugin changeset 011 moved them); the plugin keeps its access rule (`api/case-vault.ts`) and the rotation, which re-seals its rows.\
+  A case's level (Confidential or Standard, `vault_level`, changeset 012) is chosen when it is created and never changes; the organization's default is under Organization settings -> End-to-end encryption (`CaseVaultSettingsPanel`).\
   Rows carry an `enc` envelope and blanked plaintext columns; the API refuses plaintext writes to an encrypted case (`case-encrypted`) and its server-side AI/PDF/transcription paths.\
   Those jobs run as stateless `compute/*` calls with the decrypted content in the request and store nothing.\
   Never store a document id from a request body: a row links only the file uploaded with it, and downloads check the file's `source_table` and id.\

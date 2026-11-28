@@ -132,6 +132,9 @@ export class VaultController {
     if (!a) return none;
     const s = await this.source(a.db, orgId, kind, objectId);
     if (!s || !(await this.may(a.db, orgId, s, objectId, a.userId, 'see'))) return none;
+    // Level Standard: the server holds the key and hands it to whoever may see the object; there are no holders.
+    const standard = (await this.vault.escrowed(a.db, orgId, kind, [objectId])).get(objectId);
+    if (standard) return { ok: true, encrypted: true, standard: true, key: standard, mine: null, members: [] };
     const keys = await this.vault.holders(a.db, kind, objectId);
     // Their names (the core's), in name order.
     const names = await this.people.names(a.db, orgId, keys.map((k) => k.userId));
@@ -158,6 +161,8 @@ export class VaultController {
     const s = await this.source(a.db, orgId, kind, objectId);
     if (!s || !UUID.test(target) || (await s.access(a.db, { orgId, objectId, userId: a.userId, action: 'see' })) === null) return { ok: false, error: 'not-found' };
     if (!isWrappedKey(body?.wrappedKey)) return { ok: false, error: 'invalid-key' };
+    // A Standard object has no holders: whoever may see it gets its key from the server.
+    if ((await this.vault.escrowed(a.db, orgId, kind, [objectId])).size) return { ok: false, error: 'standard-object' };
     const holders = new Set((await this.vault.holders(a.db, kind, objectId)).map((k) => k.userId));
     if (holders.size === 0) {
       // Encrypting an object for the first time: whoever may edit it makes the first key, for themselves.

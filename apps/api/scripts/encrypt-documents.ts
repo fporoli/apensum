@@ -74,6 +74,16 @@ async function main() {
         await pool.query('UPDATE organization_ai_keys SET sealed_key = $1, key_id = $2 WHERE organization_id = $3', [next.sealed, next.keyId, row.organization_id]);
         rewrapped += 1;
       }
+      // The vault's level Standard keeps objects' keys sealed with it too (vault_object_escrow, 131).
+      const escrow = await pool.query<{ object_kind: string; object_id: string; sealed_key: string; key_id: string }>(
+        'SELECT object_kind, object_id, sealed_key, key_id FROM vault_object_escrow WHERE key_id <> $1',
+        [master.id],
+      );
+      for (const row of escrow.rows) {
+        const next = sealSecret(openSecret(row.sealed_key, row.key_id, keys), master);
+        await pool.query('UPDATE vault_object_escrow SET sealed_key = $1, key_id = $2 WHERE object_kind = $3 AND object_id = $4', [next.sealed, next.keyId, row.object_kind, row.object_id]);
+        rewrapped += 1;
+      }
     }
     console.log(`db:encrypt-documents: encrypted ${encrypted}, re-wrapped ${rewrapped}, files missing ${missing}`);
   } finally {

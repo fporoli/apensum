@@ -298,6 +298,9 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
 
       <SettingsSection id="org.vault" title={t('vault.settings.title')} subtitle={t('vault.settings.idleHint')}>
         <VaultSettingsPanel orgId={orgId} authHeaders={authHeaders} />
+        {PLUGIN_ORG_SETTINGS.filter((section) => section.within === 'org.vault').map((section) => (
+          <Suspense key={section.id} fallback={<LinearProgress />}>{section.render({ orgId, authHeaders })}</Suspense>
+        ))}
       </SettingsSection>
 
       <SettingsSection id="org.domains" title={t('orgSettings.domains')}>

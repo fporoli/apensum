@@ -1597,6 +1597,23 @@ export const news_post_reads = pgTable("news_post_reads", {
 	primaryKey({ columns: [table.post_id, table.user_id], name: "news_post_reads_pkey"}),
 ]);
 
+export const vault_object_escrow = pgTable("vault_object_escrow", {
+	organization_id: uuid().notNull(),
+	object_kind: text().notNull(),
+	object_id: uuid().notNull(),
+	sealed_key: text().notNull(),
+	key_id: text().notNull(),
+}, (table) => [
+	index("idx_vault_object_escrow_org").using("btree", table.organization_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "vault_object_escrow_organization_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.object_kind, table.object_id], name: "vault_object_escrow_pkey"}),
+	check("vault_object_escrow_object_kind_check", sql`object_kind ~ '^[a-z][a-z0-9]*\.[a-z][a-z0-9_]*$'::text`),
+]);
+
 export const vault_object_keys = pgTable("vault_object_keys", {
 	organization_id: uuid().notNull(),
 	object_kind: text().notNull(),

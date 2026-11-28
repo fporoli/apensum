@@ -20,6 +20,17 @@ file key   (random, one per file) --sealed inside its row's envelope
   `vault_object_keys` holds one wrapped copy of its key per holder, with the organization and who granted it.\
   A module's object rows carry the envelope `{v, iv, ct}` (AES-GCM, bound to the row) and blanked plaintext columns.
 
+## Two levels
+
+An object's level is fixed when it is created and never changes (a different level means a new object):
+
+- **Confidential** (end to end): the object's key is wrapped for each holder (`vault_object_keys`); only holders read it, not even the operator, and opening it needs the passphrase.
+- **Standard**: the same envelopes, but the server holds the key, sealed with the instance's master key (`DOCUMENTS_KEY`, `vault_object_escrow`, changeset 131, rotated by `db:encrypt-documents -- --rewrap`).\
+  Whoever the module lets see the object gets the key from the server (`objects/:kind/:id/keys` answers `standard: true` and the key), without a passphrase; there are no holders to share with or remove.\
+  A database dump or backup alone stays unreadable; the operator could read it.\
+  Without `DOCUMENTS_KEY` there is no level Standard (`VaultService.standardAvailable`).
+- The browser code is the same for both: `objectKeyFor` and `objectKeyFromList` take a Standard key as it comes, `newStandardObjectKey` makes one for a new object.
+
 ## Who may hold a key
 
 A plugin declares its objects in `ApiPlugin.vaultObjects`: the kind (its id as prefix), the module that must be on, and `access(db, {orgId, objectId, userId, action})`, which says whether the person may see or edit the object (null: no such object).\

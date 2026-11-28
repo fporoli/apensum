@@ -8,8 +8,10 @@ import { useSyncExternalStore } from 'react';
 import {
   WrongPassphraseError,
   changePassphrase as rewrapPrivateKey,
+  createFileKey,
   createObjectKey,
   createUserKeys,
+  importFileKey,
   unlockPrivateKey,
   unwrapObjectKey,
   wrapObjectKey,
@@ -154,12 +156,21 @@ export const isUnlocked = () => state === 'unlocked';
 
 /** The object's key for this user, or null when the object is not encrypted. Needs an unlocked keyring. */
 export async function objectKeyFor(orgId: string, headers: Headers, kind: string, id: string): Promise<CryptoKey | null> {
-  if (!privateKey) throw new KeyringError('locked');
-  touch();
   const cached = objectKeys.get(keyOf(kind, id));
-  if (cached) return cached;
+  if (cached) {
+    touch();
+    return cached;
+  }
   const info = await call(orgId, headers, `${objectPath(kind, id)}/keys`);
   if (!info.encrypted) return null;
+  // Level Standard: the server hands the key to whoever may see the object; no passphrase, no unlocking.
+  if (info.standard && typeof info.key === 'string') {
+    const key = await importFileKey(info.key);
+    objectKeys.set(keyOf(kind, id), key);
+    return key;
+  }
+  if (!privateKey) throw new KeyringError('locked');
+  touch();
   if (!info.mine) throw new KeyringError('no-object-key');
   const key = await unwrapObjectKey(info.mine, privateKey);
   objectKeys.set(keyOf(kind, id), key);
@@ -175,14 +186,29 @@ export async function newObjectKey(kind: string, id: string): Promise<{ key: Cry
   return { key, wrappedKey: await wrapObjectKey(key, record.publicKey) };
 }
 
+/** A fresh key for a Standard object about to be created: the raw key goes to the server, which holds it. */
+export async function newStandardObjectKey(kind: string, id: string): Promise<{ key: CryptoKey; rawKey: string }> {
+  const { key, raw } = await createFileKey();
+  objectKeys.set(keyOf(kind, id), key);
+  return { key, rawKey: raw };
+}
+
 /** Forgets a key whose object was not created after all. */
 export const forgetObjectKey = (kind: string, id: string) => void objectKeys.delete(keyOf(kind, id));
 
-/** The object key from the wrapped copy a list returns, or null when locked / not ours (the object then stays closed). */
-export async function objectKeyFromList(kind: string, id: string, wrapped: string | null | undefined): Promise<CryptoKey | null> {
-  if (!privateKey || !wrapped) return null;
+/**
+ * The object key from what a list returns: a Standard object's key as is, else the caller's wrapped copy; null when
+ * locked / not ours (the object then stays closed).
+ */
+export async function objectKeyFromList(kind: string, id: string, wrapped: string | null | undefined, standardKey?: string | null): Promise<CryptoKey | null> {
   const cached = objectKeys.get(keyOf(kind, id));
   if (cached) return cached;
+  if (standardKey) {
+    const key = await importFileKey(standardKey);
+    objectKeys.set(keyOf(kind, id), key);
+    return key;
+  }
+  if (!privateKey || !wrapped) return null;
   try {
     const key = await unwrapObjectKey(wrapped, privateKey);
     objectKeys.set(keyOf(kind, id), key);

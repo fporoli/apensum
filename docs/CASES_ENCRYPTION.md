@@ -36,6 +36,13 @@ cannot move a secret to another row). The plaintext columns are blanked (`''`, `
 Files (documents, interview audio) are stored as ciphertext named `document.bin` / `interview-audio.bin`, under their
 own key, which is sealed in the row. Fields list: `shared/caseVault.ts`.
 
+## Levels
+
+A case is created at one of the vault's two levels (docs/VAULT.md) and keeps it: Confidential (end to end, as every case before) or Standard (the same sealed rows, the key held by the server, no passphrase; `cases.cases.vault_level`, plugin changeset 012).\
+The organization's default for new cases is in Organization settings -> End-to-end encryption (`settings.cases.defaultVaultLevel`, `GET/PUT case-vault-settings`); whoever creates a case still chooses.\
+A Standard case has no members' keys and no rotation (`standard-object`); who may open it is the right to the case alone.\
+A deleted case takes its keys along (trigger, plugin changesets 011 and 013).
+
 ## Who holds a key
 
 The core's `vault_object_keys` has one wrapped copy of the case key per member (kind `cases.case`). The core's vault
