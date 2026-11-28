@@ -17,7 +17,7 @@ plugins/<id>/
   shared/             optional: code both parts import (e.g. a report's definition and texts)
   changelog/          Liquibase: db.changelog-master.xml + NNN-name.sql, run after the core's (below)
   api/index.ts        export default defineApiPlugin({ id, controllers, providers, reports, teamViews, payroll, workflows, documents, assistantTools, triggers })
-  web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections })
+  web/index.tsx       export default defineWebPlugin({ id, texts, pages, navGroups, orgSettings, publicRoutes, workflowKinds, notificationSections, projectDialog })
   web/tsconfig.json   editor only: extends apps/web/tsconfig.json
   web/texts.ts        the plugin's UI texts, en/de/fr/it with the same keys
   test/*.test.ts      API tests (tsx, node:test), like test/api
@@ -111,6 +111,9 @@ hashes and who may open a page are built from the core's and the plugins' pages 
 ```
 
 Core groups: `myWork`, `projectTracking`, `organization`, `administration`, `personal`.
+
+A project dialog part (`projectDialog`: `{ id, render(ctx) }`) adds fields below the core's in the project and subproject dialogs of Projects & Teams (`ProjectDialogContext`: `orgId`, `authHeaders`, `kind`, `projectId`, `subprojectId`, `onSave`).\
+It renders nothing where it does not apply (its API refuses, the module is off), and registers with `onSave(fn)` what to save once the core saved the project (`fn({ projectId, subprojectId })` returns an error text or null, shown after the save; `onSave(null)` when it unmounts); e.g. Billing's customer, rate and reference.
 
 A settings section (`orgSettings`) is a section of Organization settings of its own, or with
 `within: 'org.ai'` a part of the core's "AI and costs" (the cases plugin's providers).

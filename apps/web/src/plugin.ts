@@ -247,6 +247,30 @@ export interface WebPlugin {
   reports?: PluginReport[];
   /** A notification's source_table -> the section its click opens. */
   notificationSections?: Record<string, string>;
+  /** Fields in the project and subproject dialogs (Projects & Teams), e.g. Billing's customer, rate and reference. */
+  projectDialog?: PluginProjectDialog[];
+}
+
+/** What a plugin's part of the project or subproject dialog gets (`WebPlugin.projectDialog`). */
+export interface ProjectDialogContext {
+  orgId: string;
+  authHeaders: () => Promise<Record<string, string>>;
+  kind: 'project' | 'subproject';
+  /** The project (being edited, or the subproject's); null for a new project. */
+  projectId: string | null;
+  /** The subproject being edited; null for a project or a new subproject. */
+  subprojectId: string | null;
+  /**
+   * Registers what to save once the core saved the project or subproject (with its ids; null: nothing to save):
+   * returns an error text to show, or null. The core saves its own fields first, then each plugin's.
+   */
+  onSave: (save: ((saved: { projectId: string; subprojectId: string | null }) => Promise<string | null>) | null) => void;
+}
+
+/** A plugin's part of the project dialog: shown below the core's fields; renders nothing when it does not apply. */
+export interface PluginProjectDialog {
+  id: string;
+  render: (ctx: ProjectDialogContext) => ReactNode;
 }
 
 export function defineWebPlugin(plugin: WebPlugin): WebPlugin {

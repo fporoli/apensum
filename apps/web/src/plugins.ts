@@ -4,7 +4,7 @@ import { registerPermissionObjects } from '@worktime3/shared/permissions';
 import { registerReport } from '@worktime3/shared/reports';
 import { DICTIONARIES, type Locale } from './dictionaries';
 import { CORE_WORKFLOW_KINDS } from './coreWorkflowKinds';
-import type { PluginDocumentCategory, PluginTeamView, PluginNavGroup, PluginPage, PluginPublicRoute, PluginSettingsSection, PluginWorkflowKind, WebPlugin } from './plugin';
+import type { PluginDocumentCategory, PluginTeamView, PluginNavGroup, PluginPage, PluginProjectDialog, PluginPublicRoute, PluginSettingsSection, PluginWorkflowKind, WebPlugin } from './plugin';
 
 /**
  * The web parts of the installed plugins (plugins/<id>, found by vite.config.ts at build time) and
@@ -52,6 +52,7 @@ for (const report of WEB_PLUGINS.flatMap((p) => p.reports ?? [])) registerReport
 export const PLUGIN_PAGES: readonly PluginPage[] = WEB_PLUGINS.flatMap((p) => p.pages ?? []);
 export const PLUGIN_NAV_GROUPS: readonly PluginNavGroup[] = WEB_PLUGINS.flatMap((p) => p.navGroups ?? []);
 export const PLUGIN_ORG_SETTINGS: readonly PluginSettingsSection[] = WEB_PLUGINS.flatMap((p) => p.orgSettings ?? []);
+export const PLUGIN_PROJECT_DIALOGS: readonly PluginProjectDialog[] = WEB_PLUGINS.flatMap((p) => p.projectDialog ?? []);
 export const PLUGIN_PUBLIC_ROUTES: readonly PluginPublicRoute[] = WEB_PLUGINS.flatMap((p) => p.publicRoutes ?? []);
 /**
  * The flow kinds the Flows page shows with their own record, label and review dialog: the core's that work like a

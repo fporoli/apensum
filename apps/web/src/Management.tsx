@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -27,6 +27,8 @@ import { useT } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
 import { AddIcon, DeleteIcon, EditIcon, PeopleIcon, WorkspacesIcon } from './icons';
 import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
+import { PLUGIN_PROJECT_DIALOGS } from './plugins';
+import type { ProjectDialogContext } from './plugin';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
 
@@ -127,6 +129,27 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
   const [subprojectsByProject, setSubprojectsByProject] = useState<Record<string, SubprojectItem[]>>({});
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
 
+  // The plugins' parts of the project and subproject dialogs (e.g. Billing's customer): what each saves after the core.
+  type PluginSave = Parameters<ProjectDialogContext['onSave']>[0];
+  const pluginSaves = useRef(new Map<string, NonNullable<PluginSave>>());
+  const pluginParts = (kind: 'project' | 'subproject', projectId: string | null, subprojectId: string | null) =>
+    PLUGIN_PROJECT_DIALOGS.map((part) => (
+      <Box key={`${part.id}:${projectId ?? 'new'}:${subprojectId ?? ''}`}>
+        {part.render({
+          orgId, authHeaders, kind, projectId, subprojectId,
+          onSave: (save) => { if (save) pluginSaves.current.set(part.id, save); else pluginSaves.current.delete(part.id); },
+        })}
+      </Box>
+    ));
+  /** Runs the plugins' saves for the saved (sub)project; their errors, if any, as one text. */
+  async function savePluginParts(saved: { projectId: string; subprojectId: string | null }): Promise<string | null> {
+    const errors: string[] = [];
+    for (const save of pluginSaves.current.values()) {
+      const err = await save(saved).catch(() => t('common.cannotReachApi'));
+      if (err) errors.push(err);
+    }
+    return errors.length ? errors.join(' ') : null;
+  }
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectItem | null>(null);
   const [projectName, setProjectName] = useState('');
@@ -360,6 +383,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     if (!projectName.trim()) return;
     setError(null);
     setSuccess(null);
+    let savedId: string | null = null;
     try {
       if (editingProject) {
         const res = await fetch(`${API}/projects/${editingProject.id}`, {
@@ -379,6 +403,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
           return;
         }
         setSuccess(t('management.projectUpdated', { name: projectName.trim() }));
+        savedId = editingProject.id;
       } else {
         const res = await fetch(`${API}/organizations/${orgId}/projects`, {
           method: 'POST',
@@ -397,7 +422,11 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
           return;
         }
         setSuccess(t('management.projectCreated', { name: projectName.trim() }));
+        savedId = typeof data.id === 'string' ? data.id : null;
       }
+      // The plugins' parts (e.g. the customer) once the project exists; their error shown, the project stays saved.
+      const pluginError = savedId ? await savePluginParts({ projectId: savedId, subprojectId: null }) : null;
+      if (pluginError) setError(pluginError);
       setProjectDialogOpen(false);
       onDataChanged?.();
       await reloadProjects();
@@ -460,6 +489,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     if (!subprojectName.trim() || !subprojectParentId) return;
     setError(null);
     setSuccess(null);
+    let savedId: string | null = null;
     try {
       if (editingSubproject) {
         const res = await fetch(`${API}/subprojects/${editingSubproject.id}`, {
@@ -478,6 +508,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
           return;
         }
         setSuccess(t('management.subprojectUpdated', { name: subprojectName.trim() }));
+        savedId = editingSubproject.id;
       } else {
         const res = await fetch(`${API}/projects/${subprojectParentId}/subprojects`, {
           method: 'POST',
@@ -496,7 +527,10 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
           return;
         }
         setSuccess(t('management.subprojectAdded', { name: subprojectName.trim() }));
+        savedId = typeof data.id === 'string' ? data.id : null;
       }
+      const pluginError = savedId ? await savePluginParts({ projectId: subprojectParentId, subprojectId: savedId }) : null;
+      if (pluginError) setError(pluginError);
       setSubprojectDialogOpen(false);
       onDataChanged?.();
       await Promise.all([reloadSubprojects(subprojectParentId), reloadProjects()]);
@@ -1012,6 +1046,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                 <MenuItem key={tm.id} value={tm.id}>{tm.name}</MenuItem>
               ))}
             </TextField>
+            {projectDialogOpen && pluginParts('project', editingProject?.id ?? null, null)}
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setProjectDialogOpen(false)}>{t('common.cancel')}</Button>
@@ -1044,6 +1079,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                 </MenuItem>
               ))}
             </TextField>
+            {subprojectDialogOpen && pluginParts('subproject', subprojectParentId, editingSubproject?.id ?? null)}
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setSubprojectDialogOpen(false)}>{t('common.cancel')}</Button>
