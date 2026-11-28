@@ -141,6 +141,11 @@
       "source": "./src/customers.ts",
       "types": "./dist/customers.d.ts",
       "default": "./dist/customers.js"
+    },
+    "./vault": {
+      "source": "./src/vault.ts",
+      "types": "./dist/vault.d.ts",
+      "default": "./dist/vault.js"
     }
   }
 }

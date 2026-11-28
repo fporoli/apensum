@@ -58,6 +58,8 @@ import { StaticDataService } from './static-data.service';
 import { EmploymentService } from './employment.service';
 import { PersonnelFilesService } from './personnel-files.service';
 import { TimesheetsReadService } from './timesheets-read.service';
+import { VaultService } from './vault.service';
+import { VaultController } from './vault.controller';
 import { CustomersService } from './customers.service';
 import { TriggersService } from './triggers.service';
 import { FlowTriggersController } from './flow-triggers.controller';
@@ -116,6 +118,7 @@ const plugins = loadApiPlugins();
     TeamsController,
     ProjectsController,
     CustomersController,
+    VaultController,
     ProjectTimeController,
     WorkTimeController,
     AbsencesController,
@@ -176,6 +179,7 @@ const plugins = loadApiPlugins();
     EmploymentService,
     PersonnelFilesService,
     TimesheetsReadService,
+    VaultService,
     CustomersService,
     TriggersService,
     ReportsService,

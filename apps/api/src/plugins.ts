@@ -1,4 +1,5 @@
 import { registerBillableSource } from './billables.service';
+import { registerVaultObjects } from './vault.service';
 import { registerPlannedMinutes } from './work-time-model.service';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -107,6 +108,7 @@ export function pluginNames(manifest: PluginManifest, plugin: ApiPlugin | undefi
   for (const f of plugin?.forms ?? []) names.push({ kind: 'form', name: f.id });
   for (const t of plugin?.assistantTools ?? []) names.push({ kind: 'assistant tool', name: t.name });
   for (const b of plugin?.billables ?? []) names.push({ kind: 'billable kind', name: b.kind });
+  for (const v of plugin?.vaultObjects ?? []) names.push({ kind: 'vault object kind', name: v.kind });
   return names;
 }
 
@@ -144,6 +146,7 @@ export function loadApiPlugins(dir = pluginsDir()): LoadedPlugins {
       for (const item of plugin.payroll ?? []) registerPayrollItem(item);
       if (plugin.plannedMinutes) registerPlannedMinutes(plugin.plannedMinutes);
       for (const source of plugin.billables ?? []) registerBillableSource(source);
+      for (const source of plugin.vaultObjects ?? []) registerVaultObjects(source);
       for (const form of plugin.forms ?? []) registerForm(form);
       for (const tool of plugin.assistantTools ?? []) registerAssistantTool(tool);
     }

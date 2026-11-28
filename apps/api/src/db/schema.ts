@@ -922,6 +922,21 @@ export const employee_assignments = pgTable("employee_assignments", {
 	check("chk_employee_assignments_manager", sql`(manager_user_id IS NULL) OR (manager_user_id <> user_id)`),
 ]);
 
+export const vault_user_keys = pgTable("vault_user_keys", {
+	user_id: uuid().primaryKey().notNull(),
+	public_key: text().notNull(),
+	wrapped_private_key: text().notNull(),
+	salt: text().notNull(),
+	iterations: integer().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "vault_user_keys_user_id_fkey"
+		}).onDelete("cascade"),
+	check("vault_user_keys_iterations_check", sql`iterations >= 100000`),
+]);
+
 export const documents = pgTable("documents", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -1580,6 +1595,35 @@ export const news_post_reads = pgTable("news_post_reads", {
 			name: "news_post_reads_user_id_fkey"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.post_id, table.user_id], name: "news_post_reads_pkey"}),
+]);
+
+export const vault_object_keys = pgTable("vault_object_keys", {
+	organization_id: uuid().notNull(),
+	object_kind: text().notNull(),
+	object_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	wrapped_key: text().notNull(),
+	granted_by: uuid(),
+}, (table) => [
+	index("idx_vault_object_keys_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_vault_object_keys_user").using("btree", table.user_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.granted_by],
+			foreignColumns: [users.id],
+			name: "vault_object_keys_granted_by_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "vault_object_keys_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "vault_object_keys_user_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.object_kind, table.object_id, table.user_id], name: "vault_object_keys_pkey"}),
+	check("vault_object_keys_object_kind_check", sql`object_kind ~ '^[a-z][a-z0-9]*\.[a-z][a-z0-9_]*$'::text`),
 ]);
 export const audit = pgView("audit", {	uuid: uuid(),
 	entity: varchar({ length: 64 }),

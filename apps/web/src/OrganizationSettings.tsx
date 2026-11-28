@@ -26,6 +26,7 @@ import WorkTimeSettings from './WorkTimeSettings';
 import ModuleSettings from './ModuleSettings';
 import { PLUGIN_ORG_SETTINGS } from './plugins';
 import { AiSettingsPanel } from './AiSettingsPanel';
+import { VaultSettingsPanel } from './VaultSettingsPanel';
 import ExchangeRateSettings from './ExchangeRateSettings';
 import { TwoFactorPolicyPanel } from './TwoFactor';
 import { SettingsSection } from './SettingsSection';
@@ -293,6 +294,10 @@ export default function OrganizationSettings({ orgId, authHeaders, onModulesChan
 
       <SettingsSection id="org.security" title={t('twoFactor.policy.title')} subtitle={t('twoFactor.policy.subtitle')}>
         <TwoFactorPolicyPanel orgId={orgId} authHeaders={authHeaders} />
+      </SettingsSection>
+
+      <SettingsSection id="org.vault" title={t('vault.settings.title')} subtitle={t('vault.settings.idleHint')}>
+        <VaultSettingsPanel orgId={orgId} authHeaders={authHeaders} />
       </SettingsSection>
 
       <SettingsSection id="org.domains" title={t('orgSettings.domains')}>

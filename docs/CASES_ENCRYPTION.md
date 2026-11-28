@@ -8,13 +8,13 @@ administrator with server access reads no case content.
 
 ```
 passphrase --PBKDF2-SHA256 (600 000)--> KEK --AES-GCM--> user's RSA-OAEP 3072 private key   (stored wrapped)
-case key   (random AES-256-GCM)  --RSA-OAEP, one copy per member--> cases.case_keys
+case key   (random AES-256-GCM)  --RSA-OAEP, one copy per member--> vault_object_keys (kind cases.case)
 file key   (random, one per document / audio) --sealed inside that file's row (enc)
 ```
 
-- Code: `plugins/cases/shared/caseCrypto.ts` (WebCrypto only, no dependency, same file in browser and Node tests).
+- Code: the core's vault (docs/VAULT.md): `packages/shared/src/vault.ts`, re-exported by `plugins/cases/shared/caseCrypto.ts` (WebCrypto only, no dependency, same file in browser and Node tests).
 - A user sets a passphrase the first time they open Cases (`CaseKeyControl`). The unlocked private key and case keys
-  live in memory only (`web/caseKeyring.ts`): gone on reload, on lock and after 30 minutes without use.
+  live in memory only (the core's `vaultKeyring.ts`, wrapped by `web/caseKeyring.ts`): gone on reload, on lock and after the organization's idle minutes without use (default 30).
 - **A lost passphrase cannot be recovered**, not even by an administrator. The cases a person alone holds are then
   unreadable to them, and there is no reset of the key pair (that would need a new feature). Colleagues who hold the
   case key still read it, so share important cases with a second person. The setup dialog says so before the
@@ -38,8 +38,8 @@ own key, which is sealed in the row. Fields list: `shared/caseVault.ts`.
 
 ## Who holds a key
 
-`cases.case_keys` has one wrapped copy of the case key per member. The server enforces who may hold one
-(`api/case-keys.controller.ts`): the first key is made by someone who may edit the case, for themselves; after that a
+The core's `vault_object_keys` has one wrapped copy of the case key per member (kind `cases.case`). The core's vault
+routes enforce who may hold one, asking this plugin's rule (`api/case-vault.ts`, `caseVaultAccess`): the first key is made by someone who may edit the case, for themselves; after that a
 holder gives it to an organization member who has set up keys and may see the case. Access to the row (`nav.cases`
 scopes) still applies on top: a key alone opens nothing the person may not list.
 
@@ -76,12 +76,13 @@ for encrypted ones. They are not in the PDF/Word export yet.
 
 ## Database
 
-Changelogs in `plugins/cases/changelog/`: `002` (`user_keys`, `case_keys`), `003` (`enc`, `custom` on cases, interviews,
-assessments), `004` (`enc` on documents).
+Changelogs in `plugins/cases/changelog/`: `002` (`user_keys`, `case_keys`, moved to the core's vault tables by `011`), `003`
+(`enc`, `custom` on cases, interviews, assessments), `004` (`enc` on documents); the core's `130` (`vault_user_keys`,
+`vault_object_keys`).
 
 ## Tests
 
-`plugins/cases/test/`: `case-crypto` (key wrapping, tampering, passphrase change), `case-keys` (who may hold a key),
+`plugins/cases/test/`: `case-crypto` (key wrapping, tampering, passphrase change), the core's `test/api/vault.test.ts` (who may hold a key),
 `case-encryption` (write rules, rotation coverage, compute content), `case-draft`, `case-docx`, `cases`. Run by `npm test`.
 
 ## Claims

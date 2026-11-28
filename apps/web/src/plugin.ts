@@ -332,3 +332,12 @@ export { default as BalanceOverview } from './BalanceOverview';
 export { default as PersonnelDocumentsPanel } from './PersonnelDocumentsPanel';
 // Auslöser (triggers): a plugin's settings show the triggers of its own events (e.g. HR-Prozesse's deadlines).
 export { default as FlowTriggers } from './FlowTriggers';
+
+// The vault (docs/VAULT.md): end-to-end encryption for a module's objects. The keyring (unlock, lock, the idle lock
+// of the organization's minutes) and objects' keys by kind and id; VaultControl is the unlock/lock/passphrase control.
+export {
+  KeyringError, WrongPassphraseError, changeKeyringPassphrase, createObjectKeyFor, forgetObjectKey, idleMinutes, isUnlocked,
+  loadKeyring, lockKeyring, minutesUntilAutoLock, newObjectKey, objectKeyCandidates, objectKeyFor, objectKeyFromList,
+  rememberObjectKey, setUpKeyring, shareObjectKey, unlockKeyring, useKeyringState, type KeyringState,
+} from './vaultKeyring';
+export { VaultControl } from './VaultControl';

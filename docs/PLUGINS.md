@@ -319,6 +319,14 @@ changeset. Use the plugin id as changeset author.
   in the core's changelog, since applied changesets cannot move; new changes go into the plugin's.
   A database without the plugin still has the (empty) tables.
 
+## Encrypted objects (the vault)
+
+A plugin that encrypts records end to end declares them in `vaultObjects` (`{ kind: '<id>.<kind>', module, access }`,
+`access` says whether a person may see or edit one): the core's vault keeps the key pairs and each object's keys, lets a
+holder share them and lists who may be given one (docs/VAULT.md). The web part uses the contract's keyring
+(`objectKeyFor`, `newObjectKey`, `shareObjectKey`, ...) and `VaultControl`; the API uses `VaultService` (e.g. `grant` for
+an object's first key, `replaceKeys` in its rotation). The cases plugin is the example.
+
 ## Billables
 
 A plugin offers what may be billed to a customer (`billables: BillableSource[]` in its API plugin; `apps/api/src/billables.service.ts`):
@@ -350,7 +358,7 @@ and its receipt (a core `documents` id, read through `DocumentsService`).
   `TimesheetsReadService` (the working-time and project months' status), `PersonnelFilesService` (follow-ups, entries,
   filing a document), `BalancesService` (`year`, `closings`, `yearClosings`), `StaticDataService` (an entry, the
   organization's own values), `WorkflowsService` (`latestOf`, `latestIds`, `finishPendingSteps`), `DocumentsService`
-  (`rowsOf`, `read`), `VersionsService` (histories), `BillablesService`; the queries are the same, they run in the core.
+  (`rowsOf`, `read`), `VersionsService` (histories), `BillablesService`, `VaultService` (encrypted objects' keys); the queries are the same, they run in the core.
   `test/api/plugin-boundaries.test.ts` fails on any SQL of a plugin on a core table and on any import of the core's
   generated schema. A service a plugin needs is added to the core.
 - **No dependencies of its own.** Plugins are not npm workspaces. React, MUI, Nest, drizzle and so on

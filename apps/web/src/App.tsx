@@ -39,6 +39,8 @@ import { formatDurationMinutes } from './localeFormat';
 import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES, PLUGIN_WORKFLOW_KINDS } from './plugins';
 import { ApensumMark } from './ApensumMark';
 import InstanceInfo from './InstanceInfo';
+import { VaultIndicator } from './VaultIndicator';
+import { lockKeyring } from './vaultKeyring';
 import { loadCustomerTerm, termKeyOf, useCustomerTerm } from './customerTerm';
 import { CORE_NAV_GROUPS, CORE_PAGES, type AppPage, type CorePageContext } from './corePages';
 import { buildNavTree, placeForCaller, sectionHashes } from './navigation';
@@ -460,6 +462,8 @@ export default function App() {
   }
 
   async function logout() {
+    // The vault's unlocked keys are forgotten with the session.
+    lockKeyring();
     setDemoAutoLoginOff();
     clearSession();
     setSession(null);
@@ -761,6 +765,7 @@ export default function App() {
                 <ApensumMark size={28} variant="onColor" sx={{ display: { xs: 'none', sm: 'block' } }} />
               )}
               <Typography variant="h6" sx={{ fontWeight: 700 }}>{t('appbar.title')}</Typography>
+              <VaultIndicator />
               <InstanceInfo />
             </Box>
 

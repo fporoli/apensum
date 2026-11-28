@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Modular Swiss Business Framework & Enterprise Suite: NestJS API (`apps/api`), React 18 + MUI + Vite web (`apps/web`), static marketing site (`apps/site`), extensible plugins (`plugins/<id>`, e.g. `cases`, `expenses`), Postgres, optional single sign-on through Dex or Keycloak (`SSO_PROVIDER`, none by default), Caddy edge proxy. npm workspaces, Node >= 24.\
-`README.md` covers architecture and development, `docs/OPERATIONS.md` operations and deploys, `docs/dev/` each area (see below); `docs/PLUGINS.md` covers plugin authoring; `docs/BUILD_PROMPT.md` holds the product spec and architectural rules; `docs/DATABASE_SCHEMA.md` describes the tables; `docs/CASES_ENCRYPTION.md` details the zero-knowledge dossier envelope encryption.
+`README.md` covers architecture and development, `docs/OPERATIONS.md` operations and deploys, `docs/dev/` each area (see below); `docs/PLUGINS.md` covers plugin authoring; `docs/BUILD_PROMPT.md` holds the product spec and architectural rules; `docs/DATABASE_SCHEMA.md` describes the tables; `docs/CASES_ENCRYPTION.md` details the zero-knowledge dossier envelope encryption; `docs/VAULT.md` the core's vault it uses.
 
 ## Commands
 
@@ -142,7 +142,8 @@ The areas are described in `docs/dev/` (below); these rules hold in all of them.
 - Documents are read only through `DocumentsService.read`/`send` (encrypted at rest with `DOCUMENTS_KEY`).\
   There is no ZIP export or restore of an organization: don't add one.
 - AI is Azure OpenAI in Switzerland only, every call through `AiBudgetService`; assistant tools call the controllers, so they check what the caller may do (`docs/dev/AI.md`).\
-  Cases data is end-to-end encrypted: never read, log or index an encrypted row's fields on the server, never store a passphrase or key (`docs/dev/CASES.md`, `docs/CASES_ENCRYPTION.md`).
+  Cases data is end-to-end encrypted: never read, log or index an encrypted row's fields on the server, never store a passphrase or key (`docs/dev/CASES.md`, `docs/CASES_ENCRYPTION.md`).\
+  End-to-end encryption is the core's vault (`docs/VAULT.md`): a module declares its objects (`vaultObjects`) and uses the vault's keyring and `VaultService`, never its own key crypto or the key tables.
 - Holidays are counted per person (their location's), never from the organization's region alone (`docs/dev/TIME.md`).
 - Business time comes from the clock (`clock.ts`): `clock.now()`, and `sqlNow()` / `sqlToday()` in SQL (Zurich's date), never `new Date()`, `now()` or `CURRENT_DATE`, and an insert writes its times itself instead of a column's `DEFAULT now()`.\
   It is the real time except inside `clock.at(...)`, which only code in the API's process calls (the Whale simulation, tests); no request can set it.\

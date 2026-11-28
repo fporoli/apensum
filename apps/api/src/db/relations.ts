@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { organizations, organization_ai_keys, users, user_identities, customers, organization_domains, customer_contacts, roles, projects, subprojects, organization_invitations, audit_logs, organization_memberships, teams, timesheet_periods, project_times, versions, workflow_definitions, static_data, workflows, notifications, work_times, documents, absences, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, personnel_documents, ai_usage, exchange_rates, news_posts, assistant_prompts, balance_years, user_two_factor, flow_triggers, flow_trigger_runs, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads } from "./schema";
+import { organizations, organization_ai_keys, users, user_identities, customers, organization_domains, customer_contacts, roles, projects, subprojects, organization_invitations, audit_logs, organization_memberships, teams, timesheet_periods, project_times, versions, workflow_definitions, static_data, workflows, notifications, work_times, documents, absences, field_config, locations, org_holidays, balance_adjustments, vacation_entitlements, work_schedules, project_time_periods, work_time_months, departments, employee_assignments, vault_user_keys, timesheet_documents, flow_messages, flows, saved_reports, report_schedules, report_runs, personnel_documents, ai_usage, exchange_rates, news_posts, assistant_prompts, balance_years, user_two_factor, flow_triggers, flow_trigger_runs, permissions, role_permissions, project_teams, team_members, newsletter_deliveries, newsletter_subscribers, organization_licenses, membership_roles, news_post_reads, vault_object_keys } from "./schema";
 
 export const organization_ai_keysRelations = relations(organization_ai_keys, ({one}) => ({
 	organization: one(organizations, {
@@ -65,6 +65,7 @@ export const organizationsRelations = relations(organizations, ({one, many}) => 
 	flow_triggers: many(flow_triggers),
 	flow_trigger_runs: many(flow_trigger_runs),
 	organization_licenses: many(organization_licenses),
+	vault_object_keys: many(vault_object_keys),
 }));
 
 export const user_identitiesRelations = relations(user_identities, ({one}) => ({
@@ -136,6 +137,7 @@ export const usersRelations = relations(users, ({many}) => ({
 	employee_assignments_user_id: many(employee_assignments, {
 		relationName: "employee_assignments_user_id_users_id"
 	}),
+	vault_user_keys: many(vault_user_keys),
 	documents: many(documents),
 	timesheet_documents: many(timesheet_documents),
 	flow_messages: many(flow_messages),
@@ -169,6 +171,12 @@ export const usersRelations = relations(users, ({many}) => ({
 	flow_trigger_runs: many(flow_trigger_runs),
 	membership_roles: many(membership_roles),
 	news_post_reads: many(news_post_reads),
+	vault_object_keys_granted_by: many(vault_object_keys, {
+		relationName: "vault_object_keys_granted_by_users_id"
+	}),
+	vault_object_keys_user_id: many(vault_object_keys, {
+		relationName: "vault_object_keys_user_id_users_id"
+	}),
 }));
 
 export const customersRelations = relations(customers, ({one, many}) => ({
@@ -604,6 +612,13 @@ export const employee_assignmentsRelations = relations(employee_assignments, ({o
 	}),
 }));
 
+export const vault_user_keysRelations = relations(vault_user_keys, ({one}) => ({
+	user: one(users, {
+		fields: [vault_user_keys.user_id],
+		references: [users.id]
+	}),
+}));
+
 export const timesheet_documentsRelations = relations(timesheet_documents, ({one}) => ({
 	document: one(documents, {
 		fields: [timesheet_documents.document_id],
@@ -899,5 +914,22 @@ export const news_post_readsRelations = relations(news_post_reads, ({one}) => ({
 	user: one(users, {
 		fields: [news_post_reads.user_id],
 		references: [users.id]
+	}),
+}));
+
+export const vault_object_keysRelations = relations(vault_object_keys, ({one}) => ({
+	user_granted_by: one(users, {
+		fields: [vault_object_keys.granted_by],
+		references: [users.id],
+		relationName: "vault_object_keys_granted_by_users_id"
+	}),
+	organization: one(organizations, {
+		fields: [vault_object_keys.organization_id],
+		references: [organizations.id]
+	}),
+	user_user_id: one(users, {
+		fields: [vault_object_keys.user_id],
+		references: [users.id],
+		relationName: "vault_object_keys_user_id_users_id"
 	}),
 }));

@@ -977,7 +977,7 @@ Tables reference core records where appropriate, but polymorphic references such
 
 `cases.assessments` stores the section content, custom values, evidence and assessor guidance; for encrypted cases those sensitive fields are sealed in the `enc` envelope, and plaintext compute requests are not persisted.\
 The `cases.case_documents` and `cases.case_interviews` rows can also carry encrypted content; file bytes remain in the core document store.\
-`cases.user_keys` and `cases.case_keys` store wrapped key material, never a passphrase or an unwrapped private or case key.\
+The core's `vault_user_keys` and `vault_object_keys` (130, docs/VAULT.md) store wrapped key material, never a passphrase or an unwrapped private or object key; `cases.user_keys` and `cases.case_keys` are their old copies (moved by the plugin's changeset 011), unused, to be dropped.\
 `billing.invoice_items` maps source records to invoice lines by `(source_table, source_id)`; `billing.written_off` records written-off expense sources. These polymorphic source ids intentionally have no FK.
 
 The HR and HR Plus plugins use different schemas (`hr` and `hrplus`), and their rows remain separate from the core's `users`, `organizations`, `documents` and `personnel_documents` tables.
