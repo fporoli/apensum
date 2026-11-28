@@ -293,6 +293,8 @@ export { SortHeader, TableSearch, useTableView, type TableColumn, type TableSort
 export * from './icons';
 /** The app's button (MUI's, with the organization's colorful look): use it instead of MUI's. */
 export { Button } from './Button';
+export { TestFileButton } from './TestFileButton';
+export { useTestInstance } from './instance';
 /** Loading from the API: useApi (a page's data, loading, error, reload), apiRequest (one call, ok + data or an error code). */
 export { useApi, type UseApi, type UseApiOptions } from './useApi';
 // Live reloads: an open list loads again when a push about its records arrives (liveEvents.ts).

@@ -3,8 +3,7 @@ import { Box, Tooltip, Typography } from '@mui/material';
 import { useI18n } from './i18n';
 import { formatLocaleDateTime, swissLocale } from './localeFormat';
 import { demoResetCountdown as countdown, nextDemoReset } from './demoReset';
-
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8001/api/v1';
+import { instanceName, loadHealth } from './instance';
 
 /** The instances' names in the box (the same in every language). */
 const LABELS: Record<string, string> = { development: 'Development', local: 'Local', test: 'Test', demo: 'Demo', preprod: 'Preprod' };
@@ -28,10 +27,9 @@ export default function InstanceInfo() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API}/health`, { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        const name = typeof data?.instance?.name === 'string' ? data.instance.name : null;
+    void loadHealth()
+      .then((data: any) => {
+        const name = instanceName(data);
         if (cancelled || !name || !LABELS[name]) return;
         setHealth({
           name,
@@ -39,8 +37,7 @@ export default function InstanceInfo() {
           startedAt: typeof data.startedAt === 'string' ? data.startedAt : null,
           everyHours: Number(data.demoReset?.everyHours) || null,
         });
-      })
-      .catch(() => {});
+      });
     return () => { cancelled = true; };
   }, []);
 
