@@ -51,6 +51,9 @@ import { FlowsService } from './flows.service';
 import { ProjectsService } from './projects.service';
 import { BillablesService } from './billables.service';
 import { PeopleService } from './people.service';
+import { OrganizationsService } from './organizations.service';
+import { StructureService } from './structure.service';
+import { AbsencesReadService } from './absences-read.service';
 import { CustomersService } from './customers.service';
 import { TriggersService } from './triggers.service';
 import { FlowTriggersController } from './flow-triggers.controller';
@@ -162,6 +165,9 @@ const plugins = loadApiPlugins();
     ProjectsService,
     BillablesService,
     PeopleService,
+    OrganizationsService,
+    StructureService,
+    AbsencesReadService,
     CustomersService,
     TriggersService,
     ReportsService,

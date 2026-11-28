@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
-import { DbService } from './db.service';
+import { DbService, type Db } from './db.service';
 import { clock } from './clock';
 
 export type VersionAction = 'insert' | 'update' | 'update_delta' | 'delete';
@@ -49,6 +49,22 @@ export class VersionsService implements OnModuleDestroy {
   private writing: Promise<void> = Promise.resolve();
 
   constructor(private readonly db: DbService) {}
+
+  /** The rows of a table whose history has an entry recording these values (e.g. `{ user_id, org_id }`), deleted ones too. */
+  async idsRecording(db: Db, table: string, values: Record<string, string>): Promise<string[]> {
+    const rows = await db.execute(sql`SELECT v.source_table_uuid AS id FROM versions v
+      WHERE v.source_table = ${table} AND EXISTS (SELECT 1 FROM jsonb_array_elements(v.history) e WHERE e->'record' @> ${JSON.stringify(values)}::jsonb)`);
+    return (rows.rows as { id: string }[]).map((r) => r.id);
+  }
+
+  /** The recorded history of these rows of a table (by id), for a plugin showing its own records' history. */
+  async histories(db: Db, table: string, ids: readonly string[]): Promise<Map<string, unknown[]>> {
+    const ok = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+    if (!ok.length) return new Map();
+    const rows = await db.execute(sql`SELECT source_table_uuid AS id, history FROM versions
+      WHERE source_table = ${table} AND source_table_uuid = ANY(${`{${ok.join(',')}}`}::uuid[])`);
+    return new Map((rows.rows as { id: string; history: unknown }[]).map((r) => [r.id, Array.isArray(r.history) ? r.history : []]));
+  }
 
   record(sourceTable: string, sourceTableUuid: string, action: VersionAction, actorUserId: string | null, record: unknown): Promise<void> {
     if (!this.db.getDb()) return Promise.resolve();

@@ -45,6 +45,12 @@ export const DOCUMENTS_ROOT = process.env.DOCUMENTS_DIR ?? join(__dirname, '..',
  * Files are encrypted at rest when DOCUMENTS_KEY is set (document-crypto.ts); reading always goes
  * through `read`/`send`, which decrypt. Without the key files are stored plain (warned at startup).
  */
+/** A document's row as `rowsOf` gives it: what `read`/`send` take, and whom it belongs to (its source). */
+export interface DocumentRow {
+  id: string; file_name: string; mime_type: string; size_bytes: number | null; storage_path: string; encrypted_key: string | null; key_id: string | null;
+  source_table: string | null; source_table_id: string | null;
+}
+
 @Injectable()
 export class DocumentsService {
   private readonly personalSources = new Map<string, PersonalDocumentSource>();
@@ -114,12 +120,12 @@ export class DocumentsService {
 
   /** A document's content, decrypted. */
   /** The organization's documents with these ids, as `read` takes them (for a plugin that holds their ids). */
-  async rowsOf(db: Db, orgId: string, ids: readonly string[]): Promise<{ id: string; file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }[]> {
+  async rowsOf(db: Db, orgId: string, ids: readonly string[]): Promise<DocumentRow[]> {
     const ok = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
     if (!ok.length) return [];
-    const rows = await db.execute(sql`SELECT id, file_name, mime_type, storage_path, encrypted_key, key_id FROM documents
-      WHERE organization_id = ${orgId}::uuid AND id = ANY(${`{${ok.join(',')}}`}::uuid[])`);
-    return rows.rows as { id: string; file_name: string; mime_type: string; storage_path: string; encrypted_key: string | null; key_id: string | null }[];
+    const rows = await db.execute(sql`SELECT id, file_name, mime_type, size_bytes, storage_path, encrypted_key, key_id, source_table, source_table_id
+      FROM documents WHERE organization_id = ${orgId}::uuid AND id = ANY(${`{${ok.join(',')}}`}::uuid[])`);
+    return rows.rows as unknown as DocumentRow[];
   }
 
   async read(doc: { storage_path: string; encrypted_key: string | null; key_id: string | null }): Promise<Buffer> {

@@ -147,7 +147,7 @@ export {
 } from './access';
 
 // Documents, form templates, approval workflows
-export { DocumentsService, MAX_DOCUMENT_BYTES, type PersonalDocument, type PersonalDocumentSource } from './documents.service';
+export { DocumentsService, MAX_DOCUMENT_BYTES, type DocumentRow, type PersonalDocument, type PersonalDocumentSource } from './documents.service';
 export { FieldsService } from './fields.service';
 // Personal data (users.basicdata): a direct edit with its history entry, as HR's on the Employees page.
 export { BasicDataService } from './basicdata.service';
@@ -175,6 +175,9 @@ export { FlowsService, type SystemTaskInput, type SystemTaskResult } from './flo
 export { ProjectsService, type CustomerProjects, type ProjectRecord, type SubprojectSummary } from './projects.service';
 // The core's data for plugins, instead of its tables (docs/PLUGINS.md): people, customers.
 export { PeopleService } from './people.service';
+export { OrganizationsService } from './organizations.service';
+export { StructureService, type StaffMember } from './structure.service';
+export { AbsencesReadService, type ApprovedAbsence } from './absences-read.service';
 export { CustomersService, type CustomerRecord } from './customers.service';
 // Billables: what modules offer to bill (expenses), read by another module (billing) through the core only.
 export { BillablesService, type BillableItem, type BillableSource } from './billables.service';

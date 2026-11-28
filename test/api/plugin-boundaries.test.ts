@@ -61,13 +61,13 @@ test('no module reads another module\'s tables or imports its code', () => {
  */
 const CORE_TABLES_STILL_DIRECT: Record<string, string[]> = {
   billing: [],
-  cases: ['@worktime3/api/schema', 'documents', 'organization_memberships', 'organizations', 'users'],
+  cases: [],
   expenses: ['@worktime3/api/schema', 'departments', 'documents', 'employee_assignments', 'organizations', 'projects', 'static_data', 'users', 'workflow_definitions', 'workflows'],
   hr: ['absences', 'balance_years', 'departments', 'documents', 'employee_assignments', 'locations', 'organization_memberships', 'organizations', 'personnel_documents', 'project_time_periods', 'project_times', 'projects', 'timesheet_periods', 'users', 'work_schedules', 'workflows'],
-  hrplus: ['departments', 'flows', 'organization_licenses', 'organization_memberships', 'organizations', 'users', 'versions'],
-  notes: ['departments', 'employee_assignments', 'organization_memberships', 'users'],
-  roster: ['absences', 'departments', 'employee_assignments', 'organization_memberships', 'organizations', 'team_members', 'teams', 'users'],
-  whistle: ['organization_licenses', 'organization_memberships', 'organizations', 'users'],
+  hrplus: [],
+  notes: [],
+  roster: [],
+  whistle: [],
 };
 
 test('a plugin reaches the core\'s data through its services, apart from what is still listed', () => {

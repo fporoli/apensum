@@ -367,6 +367,21 @@ export class FlowsService implements OnModuleInit, OnModuleDestroy {
    * an absence shortened), only those due on or after `dueFrom` (past ones stay for the handlers).
    * Returns how many it resolved.
    */
+  /** Of a source's tasks with these keys, the resolved ones and when (for a plugin that keeps its own checklist). */
+  async resolvedTasks(db: Db, orgId: string, source: string, keys: readonly string[]): Promise<{ key: string; resolvedAt: string | null }[]> {
+    if (!keys.length) return [];
+    const rows = await db.execute(sql`SELECT source_key, resolved_at FROM flows WHERE organization_id = ${orgId}::uuid AND source = ${source}
+      AND source_key = ANY(${`{${keys.map((k) => `"${k.replace(/["\\]/g, '')}"`).join(',')}}`}::text[]) AND status = 'resolved'`);
+    return (rows.rows as { source_key: string; resolved_at: string | null }[]).map((r) => ({ key: r.source_key, resolvedAt: r.resolved_at }));
+  }
+
+  /** The keys of a source's tasks not resolved yet (optionally: not starting with `exceptPrefix`). */
+  async openTaskKeys(db: Db, orgId: string, source: string, exceptPrefix?: string): Promise<string[]> {
+    const except = exceptPrefix ? sql`AND left(source_key, ${exceptPrefix.length}) <> ${exceptPrefix}` : sql``;
+    const rows = await db.execute(sql`SELECT source_key FROM flows WHERE organization_id = ${orgId}::uuid AND source = ${source} AND status <> 'resolved' ${except}`);
+    return (rows.rows as { source_key: string }[]).map((r) => r.source_key);
+  }
+
   async closeTasks(db: Db, orgId: string, source: string, keep: readonly string[], dueFrom: string, keyPrefix?: string): Promise<number> {
     const keepList = `{${keep.map((k) => `"${k.replace(/["\\]/g, '')}"`).join(',')}}`;
     // Only the keys under a prefix (one trigger's flows), else all of the source's.
