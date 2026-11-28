@@ -402,6 +402,8 @@ A scanned PDF has no text layer and gives nothing (there is no OCR); the page th
 
 Transcription is Azure OpenAI Whisper (Switzerland North, `azure-transcribe.ts`) and **on by default** wherever the instance has Azure configured (`AZURE_OPENAI_*`, `AZURE_OPENAI_TRANSCRIBE_DEPLOYMENT`, `AI_MONTHLY_BUDGET_CHF` and the prices; `infra/azure/ai-provision.sh local` fills `.env.dev`).\
 Every call goes through the AI budget: the instance's monthly cap and the organization's limit.\
+Higher AI levels ("Gründlich", "Maximal") are offered only where their deployment and prices are set (`AZURE_OPENAI_DEPLOYMENT_ADVANCED`/`_MAX` and their `AZURE_OPENAI_CHF_PER_1M_*` and `AZURE_OPENAI_REASONING_*`, docs/dev/AI.md); leave them unset on dev, test, demo and preprod, which run on our budget.\
+On prod an operator sets per organization the highest level it may use (default "Schnell"); an organization that wants more can enter its own Azure OpenAI resource in Switzerland, billed to it directly.\
 Whoever edits Organization settings can switch it off (Organization settings -> AI and costs); without Azure on the instance the interview page says transcription is not set up.\
 There is no self-hosted transcription.
 

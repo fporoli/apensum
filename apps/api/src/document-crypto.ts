@@ -79,3 +79,18 @@ export function rewrapKey(encryptedKey: string, keyId: string, keys: readonly Ma
   const dataKey = open(from.key, Buffer.from(encryptedKey, 'base64'));
   return { encryptedKey: seal(to.key, dataKey).toString('base64'), keyId: to.id };
 }
+
+/**
+ * A short secret (an organization's own Azure key, organization_ai_keys) sealed with the master key: base64
+ * `iv | tag | ciphertext`, and the master key's id. Not a document: no data key of its own.
+ */
+export function sealSecret(plain: string, master: MasterKey): { sealed: string; keyId: string } {
+  return { sealed: seal(master.key, Buffer.from(plain, 'utf8')).toString('base64'), keyId: master.id };
+}
+
+/** Opens a sealed secret; throws when its key is not configured or it was altered. */
+export function openSecret(sealed: string, keyId: string, keys: readonly MasterKey[]): string {
+  const master = keys.find((k) => k.id === keyId);
+  if (!master) throw new Error(`secret key ${keyId} is not configured (DOCUMENTS_KEY / DOCUMENTS_KEY_PREVIOUS)`);
+  return open(master.key, Buffer.from(sealed, 'base64')).toString('utf8');
+}

@@ -1,4 +1,4 @@
-import { pgTable, index, foreignKey, uuid, timestamp, integer, jsonb, unique, varchar, boolean, check, date, uniqueIndex, text, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, uuid, text, index, unique, varchar, jsonb, timestamp, boolean, check, date, uniqueIndex, integer, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -19,27 +19,16 @@ export const timesheet_status = pgEnum("timesheet_status", ['open', 'submitted',
 export const user_status = pgEnum("user_status", ['active', 'suspended', 'deactivated'])
 
 
-export const flow_trigger_runs = pgTable("flow_trigger_runs", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	ran_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
-	by_user_id: uuid(),
-	opened: integer().default(0).notNull(),
-	updated: integer().default(0).notNull(),
-	closed: integer().default(0).notNull(),
-	errors: integer().default(0).notNull(),
-	details: jsonb().default([]).notNull(),
+export const organization_ai_keys = pgTable("organization_ai_keys", {
+	organization_id: uuid().primaryKey().notNull(),
+	sealed_key: text().notNull(),
+	key_id: text().notNull(),
+	key_hint: text(),
 }, (table) => [
-	index("idx_flow_trigger_runs_org").using("btree", table.organization_id.asc().nullsLast(), table.ran_at.desc().nullsFirst()),
-	foreignKey({
-			columns: [table.by_user_id],
-			foreignColumns: [users.id],
-			name: "flow_trigger_runs_by_user_id_fkey"
-		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
-			name: "flow_trigger_runs_organization_id_fkey"
+			name: "organization_ai_keys_organization_id_fkey"
 		}).onDelete("cascade"),
 ]);
 
@@ -101,64 +90,6 @@ export const permissions = pgTable("permissions", {
 	description: varchar({ length: 255 }).notNull(),
 });
 
-export const projects = pgTable("projects", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	name: varchar({ length: 255 }).notNull(),
-	owner_user_id: uuid(),
-	cost_item: varchar({ length: 255 }),
-	type: project_type().default('internal').notNull(),
-}, (table) => [
-	index("idx_projects_org").using("btree", table.organization_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "projects_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.owner_user_id],
-			foreignColumns: [users.id],
-			name: "projects_owner_user_id_fkey"
-		}).onDelete("set null"),
-]);
-
-export const organization_memberships = pgTable("organization_memberships", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	status: membership_status().default('active').notNull(),
-	scim_external_id: varchar({ length: 255 }),
-	joined_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
-	is_active: boolean().default(true).notNull(),
-	settings: jsonb().default({}).notNull(),
-	exit_at: timestamp({ withTimezone: true, mode: 'string' }),
-	start_date: date(),
-	probation_until: date(),
-	deputy_user_id: uuid(),
-}, (table) => [
-	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast()),
-	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast()),
-	index("idx_memberships_user").using("btree", table.user_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.deputy_user_id],
-			foreignColumns: [users.id],
-			name: "organization_memberships_deputy_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "organization_memberships_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "organization_memberships_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_org_user_membership").on(table.organization_id, table.user_id),
-	check("chk_membership_deputy_not_self", sql`(deputy_user_id IS NULL) OR (deputy_user_id <> user_id)`),
-	check("chk_membership_exit_after_joined", sql`(exit_at IS NULL) OR (joined_at IS NULL) OR (exit_at > joined_at)`),
-]);
-
 export const organization_invitations = pgTable("organization_invitations", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -213,6 +144,43 @@ export const audit_logs = pgTable("audit_logs", {
 		}).onDelete("cascade"),
 ]);
 
+export const organization_memberships = pgTable("organization_memberships", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	status: membership_status().default('active').notNull(),
+	scim_external_id: varchar({ length: 255 }),
+	joined_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow(),
+	is_active: boolean().default(true).notNull(),
+	settings: jsonb().default({}).notNull(),
+	exit_at: timestamp({ withTimezone: true, mode: 'string' }),
+	start_date: date(),
+	probation_until: date(),
+	deputy_user_id: uuid(),
+}, (table) => [
+	index("idx_memberships_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_memberships_scim").using("btree", table.scim_external_id.asc().nullsLast()),
+	index("idx_memberships_user").using("btree", table.user_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.deputy_user_id],
+			foreignColumns: [users.id],
+			name: "organization_memberships_deputy_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "organization_memberships_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "organization_memberships_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_org_user_membership").on(table.organization_id, table.user_id),
+	check("chk_membership_deputy_not_self", sql`(deputy_user_id IS NULL) OR (deputy_user_id <> user_id)`),
+	check("chk_membership_exit_after_joined", sql`(exit_at IS NULL) OR (joined_at IS NULL) OR (exit_at > joined_at)`),
+]);
+
 export const teams = pgTable("teams", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -233,6 +201,27 @@ export const teams = pgTable("teams", {
 			name: "teams_organization_id_fkey"
 		}).onDelete("cascade"),
 	unique("uq_org_team_name").on(table.organization_id, table.name),
+]);
+
+export const projects = pgTable("projects", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	name: varchar({ length: 255 }).notNull(),
+	owner_user_id: uuid(),
+	cost_item: varchar({ length: 255 }),
+	type: project_type().default('internal').notNull(),
+}, (table) => [
+	index("idx_projects_org").using("btree", table.organization_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "projects_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.owner_user_id],
+			foreignColumns: [users.id],
+			name: "projects_owner_user_id_fkey"
+		}).onDelete("set null"),
 ]);
 
 export const users = pgTable("users", {
@@ -282,6 +271,39 @@ export const subprojects = pgTable("subprojects", {
 		}).onDelete("cascade"),
 ]);
 
+export const timesheet_periods = pgTable("timesheet_periods", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	period_start: date().notNull(),
+	period_end: date().notNull(),
+	status: timesheet_status().default('open').notNull(),
+	submitted_at: timestamp({ withTimezone: true, mode: 'string' }),
+	reviewed_by_user_id: uuid(),
+	reviewed_at: timestamp({ withTimezone: true, mode: 'string' }),
+	review_note: text(),
+}, (table) => [
+	index("idx_timesheet_periods_org_status").using("btree", table.organization_id.asc().nullsLast(), table.status.asc().nullsLast()),
+	index("idx_timesheet_periods_user").using("btree", table.user_id.asc().nullsLast(), table.period_start.asc().nullsLast()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "timesheet_periods_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.reviewed_by_user_id],
+			foreignColumns: [users.id],
+			name: "timesheet_periods_reviewed_by_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "timesheet_periods_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_timesheet_period").on(table.organization_id, table.user_id, table.period_start),
+	check("chk_timesheet_period_order", sql`period_end > period_start`),
+]);
+
 export const project_times = pgTable("project_times", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	user_id: uuid().notNull(),
@@ -316,39 +338,6 @@ export const project_times = pgTable("project_times", {
 			name: "project_times_user_id_fkey"
 		}).onDelete("cascade"),
 	check("chk_project_time_order", sql`end_time > start_time`),
-]);
-
-export const timesheet_periods = pgTable("timesheet_periods", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	period_start: date().notNull(),
-	period_end: date().notNull(),
-	status: timesheet_status().default('open').notNull(),
-	submitted_at: timestamp({ withTimezone: true, mode: 'string' }),
-	reviewed_by_user_id: uuid(),
-	reviewed_at: timestamp({ withTimezone: true, mode: 'string' }),
-	review_note: text(),
-}, (table) => [
-	index("idx_timesheet_periods_org_status").using("btree", table.organization_id.asc().nullsLast(), table.status.asc().nullsLast()),
-	index("idx_timesheet_periods_user").using("btree", table.user_id.asc().nullsLast(), table.period_start.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "timesheet_periods_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.reviewed_by_user_id],
-			foreignColumns: [users.id],
-			name: "timesheet_periods_reviewed_by_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "timesheet_periods_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_timesheet_period").on(table.organization_id, table.user_id, table.period_start),
-	check("chk_timesheet_period_order", sql`period_end > period_start`),
 ]);
 
 export const organizations = pgTable("organizations", {
@@ -604,6 +593,29 @@ export const field_config = pgTable("field_config", {
 		}).onDelete("cascade"),
 ]);
 
+export const org_holidays = pgTable("org_holidays", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	date: date().notNull(),
+	name: text(),
+	fraction: numeric({ precision: 3, scale:  2 }).default('1').notNull(),
+	observed: boolean().default(true).notNull(),
+	location_id: uuid(),
+}, (table) => [
+	uniqueIndex("uq_org_holidays").using("btree", sql`organization_id`, sql`date`, sql`COALESCE(location_id, '00000000-0000-0000-0000-000000000000'::uuid)`),
+	foreignKey({
+			columns: [table.location_id],
+			foreignColumns: [locations.id],
+			name: "org_holidays_location_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "org_holidays_organization_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_org_holidays_fraction", sql`(fraction > (0)::numeric) AND (fraction <= (1)::numeric)`),
+]);
+
 export const balance_adjustments = pgTable("balance_adjustments", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -633,6 +645,94 @@ export const balance_adjustments = pgTable("balance_adjustments", {
 		}).onDelete("cascade"),
 	check("chk_balance_adjustments_balance", sql`balance = ANY (ARRAY['overtime'::text, 'vacation'::text, 'legal_overtime'::text])`),
 	check("chk_balance_adjustments_kind", sql`kind = ANY (ARRAY['opening'::text, 'correction'::text, 'payout'::text])`),
+]);
+
+export const vacation_entitlements = pgTable("vacation_entitlements", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	year: integer().notNull(),
+	days: numeric({ precision: 6, scale:  2 }).notNull(),
+	note: text(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "vacation_entitlements_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "vacation_entitlements_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_vacation_entitlements").on(table.organization_id, table.user_id, table.year),
+	check("chk_vacation_entitlements_days", sql`(days >= (0)::numeric) AND (days <= (366)::numeric)`),
+	check("chk_vacation_entitlements_year", sql`(year >= 2000) AND (year <= 2100)`),
+]);
+
+export const work_schedules = pgTable("work_schedules", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	valid_from: date().notNull(),
+	workload_percent: numeric({ precision: 5, scale:  2 }).default('100').notNull(),
+	day_minutes: integer().array().notNull(),
+	time_recording: text().default('full').notNull(),
+	exemption_reason: text(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "work_schedules_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "work_schedules_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_work_schedules").on(table.organization_id, table.user_id, table.valid_from),
+	check("chk_work_schedules_days", sql`array_length(day_minutes, 1) = 7`),
+	check("chk_work_schedules_exemption", sql`((time_recording = 'none'::text) AND (exemption_reason IS NOT NULL) AND (exemption_reason = ANY (ARRAY['senior_executive'::text, 'waiver'::text]))) OR ((time_recording <> 'none'::text) AND (exemption_reason IS NULL))`),
+	check("chk_work_schedules_recording", sql`time_recording = ANY (ARRAY['full'::text, 'daily'::text, 'none'::text])`),
+	check("chk_work_schedules_workload", sql`(workload_percent >= (0)::numeric) AND (workload_percent <= (100)::numeric)`),
+]);
+
+export const project_time_periods = pgTable("project_time_periods", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	project_id: uuid().notNull(),
+	period_start: date().notNull(),
+	period_end: date().notNull(),
+	status: timesheet_status().default('open').notNull(),
+	submitted_at: timestamp({ withTimezone: true, mode: 'string' }),
+	reviewed_by_user_id: uuid(),
+	reviewed_at: timestamp({ withTimezone: true, mode: 'string' }),
+	review_note: text(),
+}, (table) => [
+	index("idx_project_time_periods_project").using("btree", table.project_id.asc().nullsLast(), table.period_start.asc().nullsLast()),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "project_time_periods_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.project_id],
+			foreignColumns: [projects.id],
+			name: "project_time_periods_project_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.reviewed_by_user_id],
+			foreignColumns: [users.id],
+			name: "project_time_periods_reviewed_by_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "project_time_periods_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_project_time_periods").on(table.organization_id, table.user_id, table.project_id, table.period_start),
+	check("chk_project_time_periods_range", sql`period_end > period_start`),
 ]);
 
 export const work_time_months = pgTable("work_time_months", {
@@ -674,117 +774,6 @@ export const work_time_months = pgTable("work_time_months", {
 		}).onDelete("cascade"),
 	unique("uq_work_time_months").on(table.organization_id, table.user_id, table.month),
 	check("chk_work_time_months_first", sql`EXTRACT(day FROM month) = (1)::numeric`),
-]);
-
-export const org_holidays = pgTable("org_holidays", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	date: date().notNull(),
-	name: text(),
-	fraction: numeric({ precision: 3, scale:  2 }).default('1').notNull(),
-	observed: boolean().default(true).notNull(),
-	location_id: uuid(),
-}, (table) => [
-	uniqueIndex("uq_org_holidays").using("btree", sql`organization_id`, sql`date`, sql`COALESCE(location_id, '00000000-0000-0000-0000-000000000000'::uuid)`),
-	foreignKey({
-			columns: [table.location_id],
-			foreignColumns: [locations.id],
-			name: "org_holidays_location_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "org_holidays_organization_id_fkey"
-		}).onDelete("cascade"),
-	check("chk_org_holidays_fraction", sql`(fraction > (0)::numeric) AND (fraction <= (1)::numeric)`),
-]);
-
-export const work_schedules = pgTable("work_schedules", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	valid_from: date().notNull(),
-	workload_percent: numeric({ precision: 5, scale:  2 }).default('100').notNull(),
-	day_minutes: integer().array().notNull(),
-	time_recording: text().default('full').notNull(),
-	exemption_reason: text(),
-}, (table) => [
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "work_schedules_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "work_schedules_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_work_schedules").on(table.organization_id, table.user_id, table.valid_from),
-	check("chk_work_schedules_days", sql`array_length(day_minutes, 1) = 7`),
-	check("chk_work_schedules_exemption", sql`((time_recording = 'none'::text) AND (exemption_reason IS NOT NULL) AND (exemption_reason = ANY (ARRAY['senior_executive'::text, 'waiver'::text]))) OR ((time_recording <> 'none'::text) AND (exemption_reason IS NULL))`),
-	check("chk_work_schedules_recording", sql`time_recording = ANY (ARRAY['full'::text, 'daily'::text, 'none'::text])`),
-	check("chk_work_schedules_workload", sql`(workload_percent >= (0)::numeric) AND (workload_percent <= (100)::numeric)`),
-]);
-
-export const vacation_entitlements = pgTable("vacation_entitlements", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	year: integer().notNull(),
-	days: numeric({ precision: 6, scale:  2 }).notNull(),
-	note: text(),
-}, (table) => [
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "vacation_entitlements_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "vacation_entitlements_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_vacation_entitlements").on(table.organization_id, table.user_id, table.year),
-	check("chk_vacation_entitlements_days", sql`(days >= (0)::numeric) AND (days <= (366)::numeric)`),
-	check("chk_vacation_entitlements_year", sql`(year >= 2000) AND (year <= 2100)`),
-]);
-
-export const project_time_periods = pgTable("project_time_periods", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	project_id: uuid().notNull(),
-	period_start: date().notNull(),
-	period_end: date().notNull(),
-	status: timesheet_status().default('open').notNull(),
-	submitted_at: timestamp({ withTimezone: true, mode: 'string' }),
-	reviewed_by_user_id: uuid(),
-	reviewed_at: timestamp({ withTimezone: true, mode: 'string' }),
-	review_note: text(),
-}, (table) => [
-	index("idx_project_time_periods_project").using("btree", table.project_id.asc().nullsLast(), table.period_start.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "project_time_periods_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.project_id],
-			foreignColumns: [projects.id],
-			name: "project_time_periods_project_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.reviewed_by_user_id],
-			foreignColumns: [users.id],
-			name: "project_time_periods_reviewed_by_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "project_time_periods_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("uq_project_time_periods").on(table.organization_id, table.user_id, table.project_id, table.period_start),
-	check("chk_project_time_periods_range", sql`period_end > period_start`),
 ]);
 
 export const departments = pgTable("departments", {
@@ -852,27 +841,33 @@ export const employee_assignments = pgTable("employee_assignments", {
 	check("chk_employee_assignments_manager", sql`(manager_user_id IS NULL) OR (manager_user_id <> user_id)`),
 ]);
 
-export const flow_messages = pgTable("flow_messages", {
+export const documents = pgTable("documents", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	flow_id: uuid().notNull(),
-	author_user_id: uuid(),
-	kind: text().default('message').notNull(),
-	body: text(),
-	data: jsonb().default({}).notNull(),
-	posted_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	organization_id: uuid().notNull(),
+	file_name: text().notNull(),
+	mime_type: text().notNull(),
+	size_bytes: integer().notNull(),
+	storage_path: text().notNull(),
+	source_table: text(),
+	source_table_id: uuid(),
+	uploaded_by_user_id: uuid(),
+	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	encrypted_key: text(),
+	key_id: text(),
 }, (table) => [
-	index("idx_flow_messages_flow").using("btree", table.flow_id.asc().nullsLast(), table.posted_at.asc().nullsLast()),
+	index("idx_documents_organization").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_documents_source").using("btree", table.source_table.asc().nullsLast(), table.source_table_id.asc().nullsLast()),
 	foreignKey({
-			columns: [table.author_user_id],
-			foreignColumns: [users.id],
-			name: "flow_messages_author_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.flow_id],
-			foreignColumns: [flows.id],
-			name: "flow_messages_flow_id_fkey"
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "documents_organization_id_fkey"
 		}).onDelete("cascade"),
-	check("chk_flow_messages_kind", sql`kind = ANY (ARRAY['message'::text, 'event'::text])`),
+	foreignKey({
+			columns: [table.uploaded_by_user_id],
+			foreignColumns: [users.id],
+			name: "documents_uploaded_by_user_id_fkey"
+		}).onDelete("set null"),
+	check("chk_documents_encryption", sql`(encrypted_key IS NULL) = (key_id IS NULL)`),
 ]);
 
 export const timesheet_documents = pgTable("timesheet_documents", {
@@ -912,33 +907,27 @@ export const timesheet_documents = pgTable("timesheet_documents", {
 	check("chk_timesheet_documents_kind", sql`((kind = 'timesheet'::text) AND (timesheet_period_id IS NOT NULL)) OR ((kind = 'project_timesheet'::text) AND (timesheet_period_id IS NULL))`),
 ]);
 
-export const documents = pgTable("documents", {
+export const flow_messages = pgTable("flow_messages", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	file_name: text().notNull(),
-	mime_type: text().notNull(),
-	size_bytes: integer().notNull(),
-	storage_path: text().notNull(),
-	source_table: text(),
-	source_table_id: uuid(),
-	uploaded_by_user_id: uuid(),
-	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	encrypted_key: text(),
-	key_id: text(),
+	flow_id: uuid().notNull(),
+	author_user_id: uuid(),
+	kind: text().default('message').notNull(),
+	body: text(),
+	data: jsonb().default({}).notNull(),
+	posted_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
-	index("idx_documents_organization").using("btree", table.organization_id.asc().nullsLast()),
-	index("idx_documents_source").using("btree", table.source_table.asc().nullsLast(), table.source_table_id.asc().nullsLast()),
+	index("idx_flow_messages_flow").using("btree", table.flow_id.asc().nullsLast(), table.posted_at.asc().nullsLast()),
 	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "documents_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.uploaded_by_user_id],
+			columns: [table.author_user_id],
 			foreignColumns: [users.id],
-			name: "documents_uploaded_by_user_id_fkey"
+			name: "flow_messages_author_user_id_fkey"
 		}).onDelete("set null"),
-	check("chk_documents_encryption", sql`(encrypted_key IS NULL) = (key_id IS NULL)`),
+	foreignKey({
+			columns: [table.flow_id],
+			foreignColumns: [flows.id],
+			name: "flow_messages_flow_id_fkey"
+		}).onDelete("cascade"),
+	check("chk_flow_messages_kind", sql`kind = ANY (ARRAY['message'::text, 'event'::text])`),
 ]);
 
 export const saved_reports = pgTable("saved_reports", {
@@ -1033,23 +1022,109 @@ export const report_runs = pgTable("report_runs", {
 	unique("report_runs_document_id_key").on(table.document_id),
 ]);
 
-export const exchange_rates = pgTable("exchange_rates", {
+export const personnel_documents = pgTable("personnel_documents", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid(),
-	currency: char({ length: 3 }).notNull(),
-	target_currency: char({ length: 3 }).notNull(),
-	valid_from: date().notNull(),
-	rate: numeric({ precision: 18, scale:  8 }).notNull(),
+	organization_id: uuid().notNull(),
+	user_id: uuid().notNull(),
+	document_id: uuid().notNull(),
+	title: text().notNull(),
+	category: text().notNull(),
+	document_date: date(),
+	visible_to_employee: boolean().default(false).notNull(),
+	uploaded_by_user_id: uuid(),
+	effective_date: date(),
+	follow_up_date: date(),
+	visible_to_manager: boolean().default(false).notNull(),
+	require_ack: boolean().default(false).notNull(),
+	acknowledged_at: timestamp({ withTimezone: true, mode: 'string' }),
 }, (table) => [
+	index("idx_personnel_documents_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.document_id],
+			foreignColumns: [documents.id],
+			name: "personnel_documents_document_id_fkey"
+		}).onDelete("cascade"),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
-			name: "exchange_rates_organization_id_fkey"
+			name: "personnel_documents_organization_id_fkey"
 		}).onDelete("cascade"),
-	unique("uq_exchange_rates").on(table.organization_id, table.currency, table.target_currency, table.valid_from),
-	check("chk_exchange_rates_currency", sql`currency ~ '^[A-Z]{3}$'::text`),
-	check("chk_exchange_rates_rate", sql`rate > (0)::numeric`),
-	check("chk_exchange_rates_target", sql`(target_currency ~ '^[A-Z]{3}$'::text) AND (target_currency <> currency)`),
+	foreignKey({
+			columns: [table.uploaded_by_user_id],
+			foreignColumns: [users.id],
+			name: "personnel_documents_uploaded_by_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.user_id],
+			foreignColumns: [users.id],
+			name: "personnel_documents_user_id_fkey"
+		}).onDelete("cascade"),
+	unique("personnel_documents_document_id_key").on(table.document_id),
+	check("chk_personnel_documents_category", sql`category = ANY (ARRAY['evaluation'::text, 'bonus'::text, 'contract'::text, 'certificate'::text, 'salary'::text, 'other'::text])`),
+	check("chk_personnel_documents_title", sql`length(btrim(title)) > 0`),
+]);
+
+export const flows = pgTable("flows", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	requester_user_id: uuid(),
+	target_kind: text().notNull(),
+	target_department_id: uuid(),
+	subject: text().notNull(),
+	status: text().default('open').notNull(),
+	assignee_user_id: uuid(),
+	opened_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	last_activity_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
+	archived_at: timestamp({ withTimezone: true, mode: 'string' }),
+	flow_type: text(),
+	urgent: boolean().default(false).notNull(),
+	link_url: text(),
+	due_date: date(),
+	overdue_alerted_at: timestamp({ withTimezone: true, mode: 'string' }),
+	source: text(),
+	source_key: text(),
+	source_section: text(),
+	confidential: boolean().default(false).notNull(),
+	custom: jsonb().default({}).notNull(),
+	urgent_alerted_at: timestamp({ withTimezone: true, mode: 'string' }),
+	about_user_id: uuid(),
+	task_data: jsonb(),
+}, (table) => [
+	index("idx_flows_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
+	index("idx_flows_due").using("btree", table.due_date.asc().nullsLast()).where(sql`((due_date IS NOT NULL) AND (overdue_alerted_at IS NULL))`),
+	index("idx_flows_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
+	uniqueIndex("uq_flows_source_key").using("btree", table.organization_id.asc().nullsLast(), table.source_key.asc().nullsLast()).where(sql`(source_key IS NOT NULL)`),
+	foreignKey({
+			columns: [table.about_user_id],
+			foreignColumns: [users.id],
+			name: "flows_about_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.assignee_user_id],
+			foreignColumns: [users.id],
+			name: "flows_assignee_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "flows_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.requester_user_id],
+			foreignColumns: [users.id],
+			name: "flows_requester_user_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.target_department_id],
+			foreignColumns: [departments.id],
+			name: "flows_target_department_id_fkey"
+		}).onDelete("restrict"),
+	check("chk_flows_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
+	check("chk_flows_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND ((target_kind = ANY (ARRAY['department'::text, 'workflow'::text])) OR ((target_kind = ANY (ARRAY['manager'::text, 'person'::text])) AND (about_user_id IS NOT NULL))))`),
+	check("chk_flows_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
+	check("chk_flows_subject", sql`length(btrim(subject)) > 0`),
+	check("chk_flows_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL)) OR ((target_kind = 'workflow'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'person'::text) AND (target_department_id IS NULL) AND (about_user_id IS NOT NULL))`),
 ]);
 
 export const ai_usage = pgTable("ai_usage", {
@@ -1069,6 +1144,7 @@ export const ai_usage = pgTable("ai_usage", {
 	actual_chf: numeric({ precision: 10, scale:  4 }),
 	created_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	finished_at: timestamp({ withTimezone: true, mode: 'string' }),
+	level: text(),
 }, (table) => [
 	index("idx_ai_usage_created").using("btree", table.created_at.asc().nullsLast()),
 	index("idx_ai_usage_org_created").using("btree", table.organization_id.asc().nullsLast(), table.created_at.asc().nullsLast()),
@@ -1086,6 +1162,25 @@ export const ai_usage = pgTable("ai_usage", {
 	check("chk_ai_usage_kind", sql`kind ~ '^[a-z][a-z0-9_.-]*$'::text`),
 	check("chk_ai_usage_status", sql`status = ANY (ARRAY['pending'::text, 'ok'::text, 'failed'::text])`),
 	check("chk_ai_usage_subject", sql`(subject_table IS NULL) = (subject_id IS NULL)`),
+]);
+
+export const exchange_rates = pgTable("exchange_rates", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid(),
+	currency: char({ length: 3 }).notNull(),
+	target_currency: char({ length: 3 }).notNull(),
+	valid_from: date().notNull(),
+	rate: numeric({ precision: 18, scale:  8 }).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "exchange_rates_organization_id_fkey"
+		}).onDelete("cascade"),
+	unique("uq_exchange_rates").on(table.organization_id, table.currency, table.target_currency, table.valid_from),
+	check("chk_exchange_rates_currency", sql`currency ~ '^[A-Z]{3}$'::text`),
+	check("chk_exchange_rates_rate", sql`rate > (0)::numeric`),
+	check("chk_exchange_rates_target", sql`(target_currency ~ '^[A-Z]{3}$'::text) AND (target_currency <> currency)`),
 ]);
 
 export const newsletter_subscribers = pgTable("newsletter_subscribers", {
@@ -1220,48 +1315,6 @@ export const user_two_factor = pgTable("user_two_factor", {
 		}).onDelete("cascade"),
 ]);
 
-export const personnel_documents = pgTable("personnel_documents", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	user_id: uuid().notNull(),
-	document_id: uuid().notNull(),
-	title: text().notNull(),
-	category: text().notNull(),
-	document_date: date(),
-	visible_to_employee: boolean().default(false).notNull(),
-	uploaded_by_user_id: uuid(),
-	effective_date: date(),
-	follow_up_date: date(),
-	visible_to_manager: boolean().default(false).notNull(),
-	require_ack: boolean().default(false).notNull(),
-	acknowledged_at: timestamp({ withTimezone: true, mode: 'string' }),
-}, (table) => [
-	index("idx_personnel_documents_user").using("btree", table.organization_id.asc().nullsLast(), table.user_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.document_id],
-			foreignColumns: [documents.id],
-			name: "personnel_documents_document_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "personnel_documents_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.uploaded_by_user_id],
-			foreignColumns: [users.id],
-			name: "personnel_documents_uploaded_by_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.user_id],
-			foreignColumns: [users.id],
-			name: "personnel_documents_user_id_fkey"
-		}).onDelete("cascade"),
-	unique("personnel_documents_document_id_key").on(table.document_id),
-	check("chk_personnel_documents_category", sql`category = ANY (ARRAY['evaluation'::text, 'bonus'::text, 'contract'::text, 'certificate'::text, 'salary'::text, 'other'::text])`),
-	check("chk_personnel_documents_title", sql`length(btrim(title)) > 0`),
-]);
-
 export const flow_triggers = pgTable("flow_triggers", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -1290,67 +1343,28 @@ export const flow_triggers = pgTable("flow_triggers", {
 	check("chk_flow_triggers_target", sql`target = ANY (ARRAY['department'::text, 'manager'::text, 'person'::text])`),
 ]);
 
-export const flows = pgTable("flows", {
+export const flow_trigger_runs = pgTable("flow_trigger_runs", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
-	requester_user_id: uuid(),
-	target_kind: text().notNull(),
-	target_department_id: uuid(),
-	subject: text().notNull(),
-	status: text().default('open').notNull(),
-	assignee_user_id: uuid(),
-	opened_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	last_activity_at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-	resolved_at: timestamp({ withTimezone: true, mode: 'string' }),
-	archived_at: timestamp({ withTimezone: true, mode: 'string' }),
-	flow_type: text(),
-	urgent: boolean().default(false).notNull(),
-	link_url: text(),
-	due_date: date(),
-	overdue_alerted_at: timestamp({ withTimezone: true, mode: 'string' }),
-	source: text(),
-	source_key: text(),
-	source_section: text(),
-	confidential: boolean().default(false).notNull(),
-	custom: jsonb().default({}).notNull(),
-	urgent_alerted_at: timestamp({ withTimezone: true, mode: 'string' }),
-	about_user_id: uuid(),
-	task_data: jsonb(),
+	ran_at: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
+	by_user_id: uuid(),
+	opened: integer().default(0).notNull(),
+	updated: integer().default(0).notNull(),
+	closed: integer().default(0).notNull(),
+	errors: integer().default(0).notNull(),
+	details: jsonb().default([]).notNull(),
 }, (table) => [
-	index("idx_flows_department").using("btree", table.organization_id.asc().nullsLast(), table.target_department_id.asc().nullsLast()),
-	index("idx_flows_due").using("btree", table.due_date.asc().nullsLast()).where(sql`((due_date IS NOT NULL) AND (overdue_alerted_at IS NULL))`),
-	index("idx_flows_requester").using("btree", table.organization_id.asc().nullsLast(), table.requester_user_id.asc().nullsLast()),
-	uniqueIndex("uq_flows_source_key").using("btree", table.organization_id.asc().nullsLast(), table.source_key.asc().nullsLast()).where(sql`(source_key IS NOT NULL)`),
+	index("idx_flow_trigger_runs_org").using("btree", table.organization_id.asc().nullsLast(), table.ran_at.desc().nullsFirst()),
 	foreignKey({
-			columns: [table.about_user_id],
+			columns: [table.by_user_id],
 			foreignColumns: [users.id],
-			name: "flows_about_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.assignee_user_id],
-			foreignColumns: [users.id],
-			name: "flows_assignee_user_id_fkey"
+			name: "flow_trigger_runs_by_user_id_fkey"
 		}).onDelete("set null"),
 	foreignKey({
 			columns: [table.organization_id],
 			foreignColumns: [organizations.id],
-			name: "flows_organization_id_fkey"
+			name: "flow_trigger_runs_organization_id_fkey"
 		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.requester_user_id],
-			foreignColumns: [users.id],
-			name: "flows_requester_user_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.target_department_id],
-			foreignColumns: [departments.id],
-			name: "flows_target_department_id_fkey"
-		}).onDelete("restrict"),
-	check("chk_flows_link_url", sql`(link_url IS NULL) OR ((link_url ~* '^https?://'::text) AND (length(link_url) <= 2000))`),
-	check("chk_flows_requester_or_source", sql`(requester_user_id IS NOT NULL) OR ((source IS NOT NULL) AND ((target_kind = ANY (ARRAY['department'::text, 'workflow'::text])) OR ((target_kind = ANY (ARRAY['manager'::text, 'person'::text])) AND (about_user_id IS NOT NULL))))`),
-	check("chk_flows_status", sql`status = ANY (ARRAY['open'::text, 'in_progress'::text, 'resolved'::text])`),
-	check("chk_flows_subject", sql`length(btrim(subject)) > 0`),
-	check("chk_flows_target", sql`((target_kind = 'manager'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'department'::text) AND (target_department_id IS NOT NULL)) OR ((target_kind = 'workflow'::text) AND (target_department_id IS NULL)) OR ((target_kind = 'person'::text) AND (target_department_id IS NULL) AND (about_user_id IS NOT NULL))`),
 ]);
 
 export const role_permissions = pgTable("role_permissions", {

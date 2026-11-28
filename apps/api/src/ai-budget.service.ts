@@ -1,8 +1,9 @@
 import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
-import { parseAiSettings } from '@worktime3/shared/ai';
-import { azureOpenAiConfig } from './ai-client';
+import { AI_LEVELS, isAiReasoning, levelAllowed, parseAiSettings, type AiLevel, type AiReasoning, type AiSettings } from '@worktime3/shared/ai';
+import { azureOpenAiClient, azureOpenAiConfig, type AzureOpenAiConfig } from './ai-client';
+import { masterKeys, openSecret } from './document-crypto';
 import { DbService, type Db } from './db.service';
 import { sendMail } from './mailer';
 
@@ -83,8 +84,83 @@ export function estimateChatChf(inputChars: number, maxOutputTokens: number, pri
   return chatChf(Math.ceil(inputChars / ESTIMATE_CHARS_PER_TOKEN) + 200, maxOutputTokens, prices);
 }
 
-export function chatChf(inputTokens: number, outputTokens: number, prices: AzurePrices): number {
+export function chatChf(inputTokens: number, outputTokens: number, prices: Pick<AzurePrices, 'inputPer1M' | 'outputPer1M'>): number {
   return (inputTokens * prices.inputPer1M + outputTokens * prices.outputPer1M) / 1_000_000;
+}
+
+/** The env suffix of a level's settings: AZURE_OPENAI_DEPLOYMENT, …_ADVANCED, …_MAX (likewise the prices and reasoning). */
+const LEVEL_SUFFIX: Record<AiLevel, string> = { standard: '', advanced: '_ADVANCED', max: '_MAX' };
+
+/**
+ * One of the instance's levels (docs/dev/AI.md): its deployment on the instance's resource, its prices and, for a
+ * reasoning model, its effort; null when the level is not set up (deployment or prices missing) or Azure is off.
+ * standard: AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_CHF_PER_1M_INPUT/OUTPUT, AZURE_OPENAI_REASONING (optional);
+ * advanced and max the same names with _ADVANCED / _MAX at the end.
+ */
+export function instanceLevel(level: AiLevel, env: NodeJS.ProcessEnv = process.env): { config: AzureOpenAiConfig; prices: Pick<AzurePrices, 'inputPer1M' | 'outputPer1M'>; reasoning: AiReasoning | null } | null {
+  if (!azureAllowed(env)) return null;
+  const suffix = LEVEL_SUFFIX[level];
+  const base = azureOpenAiConfig(env);
+  if (!base) return null;
+  const deployment = level === 'standard' ? base.deployment : env[`AZURE_OPENAI_DEPLOYMENT${suffix}`]?.trim();
+  if (!deployment || !/^[\w.-]{1,64}$/.test(deployment)) return null;
+  const inputPer1M = positive(env[`AZURE_OPENAI_CHF_PER_1M_INPUT${suffix}`]);
+  const outputPer1M = positive(env[`AZURE_OPENAI_CHF_PER_1M_OUTPUT${suffix}`]);
+  if (!inputPer1M || !outputPer1M) return null;
+  const reasoning = env[`AZURE_OPENAI_REASONING${suffix}`]?.trim().toLowerCase();
+  return { config: { ...base, deployment }, prices: { inputPer1M, outputPer1M }, reasoning: isAiReasoning(reasoning) ? reasoning : null };
+}
+
+/** The levels the instance has set up, cheap to dear. */
+export function instanceLevels(env: NodeJS.ProcessEnv = process.env): AiLevel[] {
+  return AI_LEVELS.filter((level) => instanceLevel(level, env) !== null);
+}
+
+/** usage.provider of a call to an organization's own Azure resource: outside the instance's budget. */
+export const OWN_PROVIDER = 'azure-openai-own';
+
+/**
+ * Where a chat call goes (AiBudgetService.chatTarget): the deployment, its prices (null on the organization's own
+ * resource: Azure bills the organization, the instance's budget does not count it) and a reasoning model's effort.
+ */
+export interface ChatTarget {
+  level: AiLevel;
+  own: boolean;
+  provider: string;
+  config: AzureOpenAiConfig;
+  prices: Pick<AzurePrices, 'inputPer1M' | 'outputPer1M'> | null;
+  reasoning: AiReasoning | null;
+}
+
+/** A reasoning model spends tokens on thinking before it answers, within max_completion_tokens: room for that. */
+const REASONING_ROOM: Record<AiReasoning, number> = { low: 2, medium: 3, high: 4 };
+
+export function completionTokens(maxTokens: number, reasoning: AiReasoning | null): number {
+  return reasoning ? maxTokens * REASONING_ROOM[reasoning] : maxTokens;
+}
+
+/** The request's model, token limit and (reasoning models) effort, for chat.completions.create. */
+export function chatParams(target: ChatTarget, maxTokens: number): { model: string; max_completion_tokens: number; reasoning_effort?: AiReasoning } {
+  return {
+    model: target.config.deployment,
+    max_completion_tokens: completionTokens(maxTokens, target.reasoning),
+    ...(target.reasoning ? { reasoning_effort: target.reasoning } : {}),
+  };
+}
+
+/** The estimate to reserve (0 on the organization's own resource). */
+export function targetEstimateChf(target: ChatTarget, inputChars: number, maxTokens: number): number {
+  return target.prices ? estimateChatChf(inputChars, completionTokens(maxTokens, target.reasoning), { transcribePerHour: 0, ...target.prices }) : 0;
+}
+
+/** What a finished call cost the instance (0 on the organization's own resource). */
+export function targetChf(target: ChatTarget, inputTokens: number, outputTokens: number): number {
+  return target.prices ? chatChf(inputTokens, outputTokens, target.prices) : 0;
+}
+
+/** The client for a target (no retries: every attempt is billed). */
+export function targetClient(target: ChatTarget, timeoutMs?: number) {
+  return azureOpenAiClient(target.config, timeoutMs);
 }
 
 export interface BudgetState {
@@ -98,12 +174,16 @@ export interface BudgetState {
   userPending: number;
   /** That lane's hourly allowance (callsPerHour); USER_CALLS_PER_HOUR when left out. */
   callsPerHour?: number;
+  /** A call to the organization's own Azure resource: only the per-user limits apply. */
+  own?: boolean;
 }
 
 /** Why a call must not be made (an error code), or null. */
 export function budgetRefusal(s: BudgetState): string | null {
   if (s.userPending > 0) return 'ai-user-busy';
   if (s.userCallsLastHour >= (s.callsPerHour ?? USER_CALLS_PER_HOUR)) return 'ai-rate-limited';
+  // The organization's own Azure resource bills the organization: neither budget counts it.
+  if (s.own) return null;
   if (s.instanceSpent + s.estimate > s.instanceBudget) return 'ai-budget-exhausted';
   if (s.orgSpent + s.estimate > s.orgLimit) return 'ai-org-limit-reached';
   return null;
@@ -136,7 +216,62 @@ export class AiBudgetService {
    */
   async orgMonthlyLimitChf(orgId: string): Promise<number> {
     const rows = await this.db.execute(sql`SELECT settings->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
-    return parseAiSettings((rows.rows[0] as { ai?: unknown } | undefined)?.ai).monthlyLimitChf;
+    return (await this.aiSettings(orgId)).monthlyLimitChf;
+  }
+
+  /** The organization's AI settings (limit, highest level, own Azure resource). */
+  async aiSettings(orgId: string): Promise<AiSettings> {
+    const rows = await this.db.execute(sql`SELECT settings->'ai' AS ai FROM organizations WHERE id = ${orgId}::uuid`);
+    return parseAiSettings((rows.rows[0] as { ai?: unknown } | undefined)?.ai);
+  }
+
+  /** The own Azure resource's key, opened; null when none is stored or it cannot be opened (its master key is gone). */
+  async ownKey(orgId: string): Promise<string | null> {
+    const rows = await this.db.execute(sql`SELECT sealed_key, key_id FROM organization_ai_keys WHERE organization_id = ${orgId}::uuid`);
+    const row = rows.rows[0] as { sealed_key: string; key_id: string } | undefined;
+    if (!row) return null;
+    try {
+      return openSecret(row.sealed_key, row.key_id, masterKeys());
+    } catch (error) {
+      this.logger.error(`Own Azure key of org ${orgId} cannot be opened: ${error instanceof Error ? error.message : error}`);
+      return null;
+    }
+  }
+
+  /**
+   * The levels the organization can use now: with its own Azure resource the levels deployed there; else the
+   * instance's levels up to the organization's maximum (an operator sets it).
+   */
+  async levels(orgId: string): Promise<{ levels: AiLevel[]; own: boolean }> {
+    const settings = await this.aiSettings(orgId);
+    if (settings.own) return { levels: AI_LEVELS.filter((l) => settings.own?.deployments[l]), own: true };
+    return { levels: instanceLevels().filter((l) => levelAllowed(l, settings.maxLevel)), own: false };
+  }
+
+  /**
+   * Where a chat call of the organization at a level goes. Its own Azure resource when it has one (every chat call,
+   * not only the levels: its data then goes to its own resource), else the instance's level within its maximum.
+   * Refuses with ai-level-not-allowed (above the maximum), ai-level-unavailable (not set up) or
+   * ai-provider-not-configured.
+   */
+  async chatTarget(orgId: string, level: AiLevel = 'standard'): Promise<ChatTarget> {
+    if (process.env.AI_AZURE_ENABLED?.trim().toLowerCase() === 'false') throw new ServiceUnavailableException('ai-provider-not-configured');
+    const settings = await this.aiSettings(orgId);
+    if (settings.own) {
+      const deployment = settings.own.deployments[level];
+      if (!deployment) throw new HttpException('ai-level-unavailable', 400);
+      const key = await this.ownKey(orgId);
+      if (!key) throw new ServiceUnavailableException('ai-own-key-missing');
+      const endpoint = settings.own.endpoint;
+      return {
+        level, own: true, provider: OWN_PROVIDER, prices: null, reasoning: settings.own.reasoning[level] ?? null,
+        config: { endpoint, baseURL: `${endpoint}/openai/v1/`, key, deployment },
+      };
+    }
+    if (!levelAllowed(level, settings.maxLevel)) throw new HttpException('ai-level-not-allowed', 403);
+    const found = instanceLevel(level);
+    if (!found) throw level === 'standard' ? new ServiceUnavailableException('ai-provider-not-configured') : new HttpException('ai-level-unavailable', 400);
+    return { level, own: false, provider: 'azure-openai', ...found };
   }
 
   /** Reserves the estimated cost or throws the refusal. Returns the usage row's id for finish(). */
@@ -147,19 +282,23 @@ export class AiBudgetService {
     /** The record the call is about (e.g. `{ table: 'cases.cases', id }`), kept with the usage row; none for receipt reading. */
     subject?: { table: string; id: string } | null;
     kind: AiUsageKind;
-    provider: string;
+    /** Where the call goes (chatTarget); without it, `provider` on the instance's resource (transcription). */
+    target?: ChatTarget;
+    provider?: string;
     estimateChf: number;
     orgLimitChf: number;
   }): Promise<string> {
-    const budget = instanceBudgetChf();
-    if (!azureAllowed() || budget === null) throw new ServiceUnavailableException('ai-provider-not-configured');
-    const estimate = round4(input.estimateChf);
+    const own = input.target?.own === true;
+    const provider = input.target?.provider ?? input.provider ?? 'azure-openai';
+    const budget = instanceBudgetChf() ?? 0;
+    if (!own && (!azureAllowed() || !budget)) throw new ServiceUnavailableException('ai-provider-not-configured');
+    const estimate = own ? 0 : round4(input.estimateChf);
     const outcome = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('ai_usage'))`);
       const spent = await tx.execute(sql`
         SELECT
-          COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START}), 0) AS instance_spent,
-          COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START} AND organization_id = ${input.orgId}::uuid), 0) AS org_spent,
+          COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START} AND provider <> ${OWN_PROVIDER}), 0) AS instance_spent,
+          COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE created_at >= ${MONTH_START} AND provider <> ${OWN_PROVIDER} AND organization_id = ${input.orgId}::uuid), 0) AS org_spent,
           COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND created_at > now() - interval '1 hour' -- real time: the AI budget is real money
                              AND (kind = ${ASSISTANT_KIND}) = ${input.kind === ASSISTANT_KIND}) AS user_calls,
           COUNT(*) FILTER (WHERE user_id = ${input.userId}::uuid AND status = 'pending'
@@ -178,19 +317,20 @@ export class AiBudgetService {
         userCallsLastHour: Number(row.user_calls),
         userPending: Number(row.user_pending),
         callsPerHour: callsPerHour(input.kind),
+        own,
       };
       const refusal = budgetRefusal(state);
       if (refusal) return { refusal, state };
       const inserted = await tx.execute(sql`
-        INSERT INTO ai_usage (organization_id, user_id, subject_table, subject_id, kind, provider, estimated_chf)
+        INSERT INTO ai_usage (organization_id, user_id, subject_table, subject_id, kind, provider, level, estimated_chf)
         VALUES (${input.orgId}::uuid, ${input.userId}::uuid, ${input.subject?.table ?? null}, ${input.subject?.id ?? null}::uuid,
-                ${input.kind}, ${input.provider}, ${estimate})
+                ${input.kind}, ${provider}, ${input.target?.level ?? null}, ${estimate})
         RETURNING id
       `);
       return { id: String((inserted.rows[0] as { id: string }).id), state };
     });
     if ('refusal' in outcome && outcome.refusal) {
-      this.logger.warn(`Refused ${input.kind} via ${input.provider} for org ${input.orgId}, user ${input.userId}: ${outcome.refusal} (estimate CHF ${estimate})`);
+      this.logger.warn(`Refused ${input.kind} via ${provider} for org ${input.orgId}, user ${input.userId}: ${outcome.refusal} (estimate CHF ${estimate})`);
       // Mail only when the month's spend is really up (≥ 80 %), not for one oversized call (that is logged above).
       if (outcome.refusal === 'ai-budget-exhausted' && outcome.state.instanceSpent >= budget * 0.8) this.alert('instance', 'exhausted', `Instance AI budget exhausted: CHF ${outcome.state.instanceSpent.toFixed(2)} of ${budget.toFixed(2)} spent this month. Azure calls are refused until next month or a higher AI_MONTHLY_BUDGET_CHF.`);
       if (outcome.refusal === 'ai-org-limit-reached' && input.orgLimitChf > 0 && outcome.state.orgSpent >= input.orgLimitChf * 0.8) this.alert(input.orgId, 'exhausted', `Organization ${input.orgId} reached its monthly AI limit: CHF ${outcome.state.orgSpent.toFixed(2)} of ${input.orgLimitChf.toFixed(2)}. Its Azure calls are refused until next month or a higher limit.`);
@@ -239,8 +379,8 @@ export class AiBudgetService {
   async totals(orgId: string): Promise<{ orgSpentChf: number; instanceSpentChf: number; orgCalls: number }> {
     const result = await this.db.execute(sql`
       SELECT
-        COALESCE(SUM(COALESCE(actual_chf, estimated_chf)), 0) AS instance_spent,
-        COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE organization_id = ${orgId}::uuid), 0) AS org_spent,
+        COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE provider <> ${OWN_PROVIDER}), 0) AS instance_spent,
+        COALESCE(SUM(COALESCE(actual_chf, estimated_chf)) FILTER (WHERE provider <> ${OWN_PROVIDER} AND organization_id = ${orgId}::uuid), 0) AS org_spent,
         COUNT(*) FILTER (WHERE organization_id = ${orgId}::uuid) AS org_calls
       FROM ai_usage
       WHERE created_at >= ${MONTH_START}

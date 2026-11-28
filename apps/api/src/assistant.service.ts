@@ -2,8 +2,8 @@ import { HttpException, Injectable, Logger, ServiceUnavailableException, type Ty
 import { ModuleRef } from '@nestjs/core';
 import { eq } from 'drizzle-orm';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions';
-import { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
-import { AiBudgetService, ASSISTANT_KIND, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf } from './ai-budget.service';
+import { chatErrorCode, retryStaleConnection } from './ai-client';
+import { AiBudgetService, ASSISTANT_KIND, azureOpenAiAvailable, chatParams, targetChf, targetClient, targetEstimateChf, type ChatTarget } from './ai-budget.service';
 import { DbService } from './db.service';
 import { can } from './access';
 import { users } from './db/schema';
@@ -103,11 +103,15 @@ export class AssistantService {
     role: string,
     history: AssistantMessage[],
   ): Promise<{ reply: string; actions: string[] }> {
-    const config = azureOpenAiConfig();
-    const prices = azurePrices();
     const db = this.db.getDb();
     if (!db) return { reply: '', actions: [] };
-    if (!this.isConfigured() || !config || !prices) throw new ServiceUnavailableException('assistant-not-configured');
+    // The organization's own Azure resource when it has one, else the instance's standard level.
+    let target: ChatTarget;
+    try {
+      target = await this.budget.chatTarget(orgId, 'standard');
+    } catch {
+      throw new ServiceUnavailableException('assistant-not-configured');
+    }
 
     const [me] = await db.select({ name: users.display_name, timezone: users.timezone }).from(users).where(eq(users.id, callerId));
     const timeZone = assistantZone(me?.timezone);
@@ -140,11 +144,11 @@ export class AssistantService {
     const inputChars = convo.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : 0), 0) + JSON.stringify(toolDefs).length;
     const orgLimitChf = await this.budget.orgMonthlyLimitChf(orgId);
     const usageId = await this.budget.reserve({
-      orgId, userId: callerId, kind: ASSISTANT_KIND, provider: 'azure-openai',
-      estimateChf: estimateChatChf(inputChars, ASSISTANT_MAX_TOKENS, prices) * ASSISTANT_ROUNDS, orgLimitChf,
+      orgId, userId: callerId, kind: ASSISTANT_KIND, target,
+      estimateChf: targetEstimateChf(target, inputChars, ASSISTANT_MAX_TOKENS) * ASSISTANT_ROUNDS, orgLimitChf,
     });
     const context = { orgId, orgLimitChf };
-    const client = azureOpenAiClient(config);
+    const client = targetClient(target);
     let inputTokens = 0;
     let outputTokens = 0;
     let settled = false;
@@ -153,7 +157,7 @@ export class AssistantService {
       settled = true;
       await this.budget.finish(usageId, {
         ok, error, inputTokens, outputTokens,
-        actualChf: unknownCost ? null : chatChf(inputTokens, outputTokens, prices),
+        actualChf: unknownCost ? null : targetChf(target, inputTokens, outputTokens),
       }, context);
     };
 
@@ -162,7 +166,7 @@ export class AssistantService {
         let completion;
         try {
           completion = await retryStaleConnection(() => client.chat.completions.create({
-            model: config.deployment, messages: convo, tools: toolDefs.length ? toolDefs : undefined, max_completion_tokens: ASSISTANT_MAX_TOKENS,
+            ...chatParams(target, ASSISTANT_MAX_TOKENS), messages: convo, tools: toolDefs.length ? toolDefs : undefined,
           }));
         } catch (error) {
           const status = (error as { status?: number }).status;

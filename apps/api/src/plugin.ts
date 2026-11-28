@@ -178,7 +178,7 @@ export { payrollPersonalien } from './payroll-personalien';
 // AI: Azure OpenAI (Switzerland) only, every call through AiBudgetService
 export { azureOpenAiClient, azureOpenAiConfig, chatErrorCode, retryStaleConnection } from './ai-client';
 export {
-  AiBudgetService, azureAllowed, azureOpenAiAvailable, azurePrices, chatChf, estimateChatChf, estimateTranscribeChf, instanceBudgetChf,
-  transcribeChf, type AiUsageKind, type AzurePrices,
+  AiBudgetService, azureAllowed, azureOpenAiAvailable, azurePrices, chatChf, chatParams, estimateChatChf, estimateTranscribeChf, instanceBudgetChf,
+  targetChf, targetClient, targetEstimateChf, transcribeChf, type AiUsageKind, type AzurePrices, type ChatTarget,
 } from './ai-budget.service';
 export { extractPdfText, isPdf, tidyExtractedText } from './case-document-text';

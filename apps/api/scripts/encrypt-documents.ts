@@ -1,7 +1,8 @@
 /**
  * Encrypts stored documents that are still plain (uploaded before encryption, or while DOCUMENTS_KEY
  * was unset), and with `--rewrap` re-wraps the data keys of documents encrypted with an older master
- * key (DOCUMENTS_KEY_PREVIOUS) under the current DOCUMENTS_KEY, so the old key can then be dropped.
+ * key (DOCUMENTS_KEY_PREVIOUS) under the current DOCUMENTS_KEY, and the organizations' own Azure keys with them,
+ * so the old key can then be dropped.
  * Reads DATABASE_URL, DOCUMENTS_KEY(_PREVIOUS) and DOCUMENTS_DIR from the environment; run it where
  * the API's files are (dev: this machine; Docker stacks: inside the API container).
  * Each file is written to `<file>.enc-tmp`, then its row is marked encrypted, then the file is renamed
@@ -14,7 +15,7 @@ import { Pool } from 'pg';
 import { access, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DOCUMENTS_ROOT } from '../src/documents.service';
-import { currentMasterKey, encryptDocument, masterKeys, rewrapKey } from '../src/document-crypto';
+import { currentMasterKey, encryptDocument, masterKeys, openSecret, rewrapKey, sealSecret } from '../src/document-crypto';
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -61,6 +62,16 @@ async function main() {
       for (const doc of old.rows) {
         const next = rewrapKey(doc.encrypted_key, doc.key_id, keys, master);
         await pool.query('UPDATE documents SET encrypted_key = $1, key_id = $2 WHERE id = $3', [next.encryptedKey, next.keyId, doc.id]);
+        rewrapped += 1;
+      }
+      // Organizations' own Azure keys (organization_ai_keys, 125) are sealed with the same master key.
+      const secrets = await pool.query<{ organization_id: string; sealed_key: string; key_id: string }>(
+        'SELECT organization_id, sealed_key, key_id FROM organization_ai_keys WHERE key_id <> $1',
+        [master.id],
+      );
+      for (const row of secrets.rows) {
+        const next = sealSecret(openSecret(row.sealed_key, row.key_id, keys), master);
+        await pool.query('UPDATE organization_ai_keys SET sealed_key = $1, key_id = $2 WHERE organization_id = $3', [next.sealed, next.keyId, row.organization_id]);
         rewrapped += 1;
       }
     }
