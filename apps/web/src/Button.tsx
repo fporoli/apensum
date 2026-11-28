@@ -5,7 +5,7 @@ import { useI18n, type Locale } from './i18n';
 import { useBranding } from './theme';
 import { ACTION_COLORS, buttonActions, normalizeLabel, type ButtonAction } from './colorful';
 import {
-  AddIcon, ArchiveIcon, BlockIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, ContentCopyIcon, DeleteIcon,
+  AddIcon, ArchiveIcon, AutoAwesomeIcon, BlockIcon, GroupIcon, LockIcon, LockOpenIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, ContentCopyIcon, DeleteIcon,
   DownloadIcon, EditIcon, EventIcon, LoginIcon, LogoutIcon, PlayArrowIcon, PrintIcon, PublicIcon, RefreshIcon,
   RestartAltIcon, SaveIcon, SearchIcon, SendIcon, SettingsIcon, StopIcon, UploadIcon, VisibilityIcon,
 } from './icons';
@@ -16,6 +16,7 @@ const ICONS: Record<ButtonAction, typeof SaveIcon> = {
   print: PrintIcon, refresh: RefreshIcon, copy: ContentCopyIcon, back: ChevronLeftIcon, next: ChevronRightIcon,
   view: VisibilityIcon, publish: PublicIcon, archive: ArchiveIcon, reset: RestartAltIcon, start: PlayArrowIcon,
   stop: StopIcon, login: LoginIcon, logout: LogoutIcon, today: EventIcon, settings: SettingsIcon,
+  lock: LockIcon, unlock: LockOpenIcon, ai: AutoAwesomeIcon, access: GroupIcon,
 };
 
 /** Per language, built on first use (the plugins' texts are merged into the dictionaries before the app renders). */

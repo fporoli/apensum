@@ -67,6 +67,7 @@ Moved from CLAUDE.md as it was; CLAUDE.md keeps the rules that apply everywhere 
   Only `organizations.settings.setupDismissed` is stored; Organization Settings shows it again.
 - Organization look and feel (header/page/sidebar colors, logo as a data URL) lives in `organizations.settings.branding`, validated by `packages/shared/src/branding.ts` (API and browser), served by `GET/PUT organizations/:id/branding` (edit = `nav.orgSettings`).\
   The colorful look (`branding.colorful`, off by default) colors each navigation entry (`colorful.ts` `navColor`: fixed per section, a hash for others) and gives buttons an icon by what their text means: the key of the text (`common.save`, `roster.publish`, ...) names the action (`buttonActionOfKey`; a text several keys share goes by most of them), `Button.tsx` adds it; a button with its own icon keeps it.\
+  Besides save, delete, add and the like there are lock and unlock (padlocks), ai (sparkles: generate, sectionAi), access (people) and settings for setUp; choose means upload, review means view, shorten means edit.\
   App.tsx loads it per org into `BrandingContext`; `createAppTheme(mode, branding)` applies it.\
   Seeded logos are `infra/postgres/seeds/branding/*.svg`, base64-inlined in `seed.sql`.
 - Information (user menu, `AboutDialog.tsx`, `GET about`): four tabs.\

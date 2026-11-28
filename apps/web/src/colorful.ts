@@ -5,7 +5,7 @@
 export type ButtonAction =
   | 'save' | 'cancel' | 'close' | 'delete' | 'add' | 'edit' | 'download' | 'upload' | 'send' | 'approve' | 'reject'
   | 'search' | 'print' | 'refresh' | 'copy' | 'back' | 'next' | 'view' | 'publish' | 'archive' | 'reset' | 'start'
-  | 'stop' | 'login' | 'logout' | 'today' | 'settings';
+  | 'stop' | 'login' | 'logout' | 'today' | 'settings' | 'lock' | 'unlock' | 'ai' | 'access';
 
 /**
  * A text key's last segment (or its first word: `saveAnyway`, `runNow`, `addLabel`) says what a button with that text
@@ -38,7 +38,11 @@ const SEGMENT_ACTIONS: Record<string, ButtonAction> = {
   login: 'login', signIn: 'login', signin: 'login',
   logout: 'logout', signOut: 'logout', signout: 'logout',
   today: 'today', thisMonth: 'today', thisWeek: 'today', thisYear: 'today',
-  settings: 'settings', configure: 'settings',
+  settings: 'settings', configure: 'settings', setUp: 'settings',
+  lock: 'lock', unlock: 'unlock',
+  choose: 'upload', review: 'view', shorten: 'edit',
+  generate: 'ai', sectionAi: 'ai', sectionAiAgain: 'ai',
+  access: 'access',
 };
 
 /** What a button labelled with this key's text does, or null. */
@@ -86,6 +90,7 @@ export const ACTION_COLORS: Record<ButtonAction, string> = {
   edit: '#d97706', reset: '#d97706', archive: '#a16207',
   download: '#0891b2', upload: '#0891b2', print: '#0891b2', copy: '#0891b2',
   search: '#7c3aed', view: '#7c3aed', refresh: '#7c3aed', settings: '#475569', today: '#db2777',
+  lock: '#a16207', unlock: '#d97706', ai: '#9333ea', access: '#0d9488',
 };
 
 /** A color for each navigation entry, by its section; others (a new plugin's) by a hash of it. */
