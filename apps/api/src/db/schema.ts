@@ -393,6 +393,7 @@ export const project_times = pgTable("project_times", {
 	start_time: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 	end_time: timestamp({ withTimezone: true, mode: 'string' }).notNull(),
 	comment: text(),
+	description: text(),
 }, (table) => [
 	index("idx_project_times_org_start").using("btree", table.organization_id.asc().nullsLast(), table.start_time.asc().nullsLast()),
 	index("idx_project_times_project").using("btree", table.project_id.asc().nullsLast()),

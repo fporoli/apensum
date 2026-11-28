@@ -260,6 +260,8 @@ erDiagram
         uuid subproject_id FK "nullable"
         timestamptz start_time
         timestamptz end_time "check: end_time > start_time"
+        text comment "nullable, internal"
+        text description "nullable, item text a customer sees (129)"
     }
     ORGANIZATIONS { uuid id PK }
     USERS { uuid id PK }

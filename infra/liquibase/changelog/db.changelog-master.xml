@@ -144,6 +144,7 @@
     <include file="126-ai-key-hint.sql" relativeToChangelogFile="true"/>
     <include file="127-customers.sql" relativeToChangelogFile="true"/>
     <include file="128-permission-customers.sql" relativeToChangelogFile="true"/>
+    <include file="129-project-time-description.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

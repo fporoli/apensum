@@ -211,7 +211,7 @@ export class ProjectTimesheetsController implements OnModuleInit {
       return { ok: false, error: 'forbidden', entries: [] };
     }
     const result = await db.execute(sql`
-      SELECT pt.id, pt.start_time, pt.end_time, pt.comment, sp.name AS subproject_name,
+      SELECT pt.id, pt.start_time, pt.end_time, pt.comment, pt.description, sp.name AS subproject_name,
              EXTRACT(EPOCH FROM (pt.end_time - pt.start_time)) / 60 AS minutes
       FROM project_times pt
       LEFT JOIN subprojects sp ON sp.id = pt.subproject_id

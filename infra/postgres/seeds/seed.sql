@@ -705,6 +705,13 @@ BEGIN
   END LOOP;
 END $$;
 
+-- Item texts (129) of the time on Acme's customer projects, for the invoices' hours report: the demo's comments read
+-- as work done for the customer, so they serve as the text too. Only where none is set yet.
+UPDATE project_times t SET description = t.comment
+FROM projects p
+WHERE p.id = t.project_id AND p.organization_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' AND p.customer_id IS NOT NULL
+  AND t.description IS NULL AND t.comment IS NOT NULL;
+
 -- Last month still open for Ueli and Uma (see the timesheets below).
 CREATE FUNCTION pg_temp.seed_last_month_open(person uuid, month date) RETURNS boolean LANGUAGE sql STABLE AS
 $$ SELECT person IN ('22222222-2222-2222-2222-222222222227', '22222222-2222-2222-2222-222222222228')

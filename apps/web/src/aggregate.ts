@@ -5,6 +5,8 @@ export interface Entry {
   start_time: string;
   end_time: string;
   comment?: string;
+  /** The item text (Positionstext): a customer sees it on the invoice's hours report. */
+  description?: string | null;
   project_id?: string | null;
   subproject_id?: string | null;
   /** Joined by the API list endpoint so rows render without a lookup. */

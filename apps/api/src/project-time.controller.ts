@@ -8,6 +8,12 @@ import { callerUserId, canEditUserData, canSeeUserData, isOrgMember, isProjectPe
 import type { AuthenticatedRequest } from './jwt.guard';
 import { project_times, projects, subprojects, users } from './db/schema';
 
+/** The item text as stored: trimmed, at most 500 characters, empty = none. */
+export function itemText(v: unknown): string | null {
+  const t = typeof v === 'string' ? v.trim().slice(0, 500) : '';
+  return t || null;
+}
+
 @Controller()
 export class ProjectTimeController {
   constructor(
@@ -27,6 +33,8 @@ export class ProjectTimeController {
       startTime: string;
       endTime: string;
       comment?: string;
+      /** The item text (Positionstext): on a customer project the customer sees it on the invoice's hours report. */
+      description?: string;
       /** Set once the user has seen the overlap warning and chose to add it anyway. */
       acknowledgeOverlap?: boolean;
       /** Set once the user has seen the "more project time than working time" warning and chose to add it anyway. */
@@ -75,6 +83,7 @@ export class ProjectTimeController {
       start_time: body.startTime,
       end_time: body.endTime,
       comment: body.comment ?? null,
+      description: itemText(body.description),
     };
     const [row] = await db.insert(project_times).values(values).returning({ id: project_times.id });
     void this.versions.record('project_times', row.id, 'insert', callerId, { id: row.id, ...values }).catch(() => {});
@@ -141,6 +150,7 @@ export class ProjectTimeController {
       startTime?: string;
       endTime?: string;
       comment?: string;
+      description?: string;
       /** Set once the user has seen the overlap warning and chose to keep it anyway. */
       acknowledgeOverlap?: boolean;
       /** Set once the user has seen the "more project time than working time" warning and chose to keep it anyway. */
@@ -197,6 +207,7 @@ export class ProjectTimeController {
     if (body.startTime !== undefined) patch.start_time = body.startTime;
     if (body.endTime !== undefined) patch.end_time = body.endTime;
     if (body.comment !== undefined) patch.comment = body.comment;
+    if (body.description !== undefined) patch.description = itemText(body.description);
     if (Object.keys(patch).length === 0) return { ok: true };
     // One statement: start/end move together, so chk_project_time_order never sees a half-applied edit.
     await db.update(project_times).set(patch).where(eq(project_times.id, id));

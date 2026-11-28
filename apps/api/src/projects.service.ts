@@ -199,6 +199,29 @@ export class ProjectsService {
       .map((r) => ({ id: r.id, projectId: r.project_id, projectName: r.project_name, userId: r.user_id, userName: r.user_name, minutes: Number(r.minutes), approved: r.approved }));
   }
 
+  /**
+   * These project time entries of the organization for a customer's hours report (e.g. the ones an invoice bills):
+   * the day in the person's time zone, who, project and subproject, minutes and the item text, never the comment.
+   * In order of day and person.
+   */
+  async timeReport(db: Db, orgId: string, ids: readonly string[]):
+    Promise<{ id: string; date: string; userName: string; projectName: string; subprojectName: string | null; minutes: number; description: string | null }[]> {
+    const ok = ids.filter((id) => UUID.test(id));
+    if (!ok.length) return [];
+    const rows = await db.execute(sql`
+      SELECT pt.id, (pt.start_time AT TIME ZONE COALESCE(NULLIF(u.timezone, ''), 'Europe/Zurich'))::date::text AS date,
+        COALESCE(u.display_name, u.email) AS user_name, p.name AS project_name, sp.name AS subproject_name,
+        EXTRACT(EPOCH FROM (pt.end_time - pt.start_time)) / 60 AS minutes, pt.description
+      FROM project_times pt
+      JOIN projects p ON p.id = pt.project_id
+      JOIN users u ON u.id = pt.user_id
+      LEFT JOIN subprojects sp ON sp.id = pt.subproject_id
+      WHERE pt.organization_id = ${orgId}::uuid AND pt.id = ANY(${`{${ok.join(',')}}`}::uuid[])
+      ORDER BY 2, 3, pt.start_time`);
+    return (rows.rows as { id: string; date: string; user_name: string; project_name: string; subproject_name: string | null; minutes: string; description: string | null }[])
+      .map((r) => ({ id: r.id, date: r.date, userName: r.user_name, projectName: r.project_name, subprojectName: r.subproject_name, minutes: Math.round(Number(r.minutes)), description: r.description }));
+  }
+
   /** Names of these projects and subprojects of the organization (by id). */
   async names(db: Db, orgId: string, q: { projectIds?: readonly (string | null)[]; subprojectIds?: readonly (string | null)[] }): Promise<{ projects: Map<string, string>; subprojects: Map<string, string> }> {
     const list = (ids: readonly (string | null)[] | undefined) => `{${[...new Set((ids ?? []).filter((id): id is string => !!id && UUID.test(id)))].join(',')}}`;

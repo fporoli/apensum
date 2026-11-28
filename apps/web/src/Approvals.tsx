@@ -774,6 +774,8 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                     <TableCell align="right">{t('approvals.duration')}</TableCell>
                     <TableCell>{t('common.project')}</TableCell>
                     <TableCell>{t('common.subproject')}</TableCell>
+                    {/* What the customer will see on the hours report: checked here before approving (else sent back). */}
+                    <TableCell>{t('time.description')}</TableCell>
                     <TableCell>{t('common.comment')}</TableCell>
                   </TableRow>
                 </TableHead>
@@ -788,6 +790,7 @@ export default function Approvals({ orgId, role, canDecide, authHeaders, onChang
                         <TableCell align="right">{formatDurationMinutes(minutes(e))}</TableCell>
                         <TableCell>{e.project_name ?? '—'}</TableCell>
                         <TableCell>{e.subproject_name ?? '—'}</TableCell>
+                        <TableCell>{e.description || '—'}</TableCell>
                         <TableCell>{e.comment ?? '—'}</TableCell>
                       </TableRow>
                     );

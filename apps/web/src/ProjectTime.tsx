@@ -56,6 +56,7 @@ interface Draft {
   projectId: string;
   subprojectId: string;
   comment: string;
+  description: string;
 }
 
 interface OverlapEntry {
@@ -132,6 +133,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
   const [entryStartTime, setEntryStartTime] = useState<string | null>(DEFAULT_PROJECT_TIME_START);
   const [entryDurationMinutes, setEntryDurationMinutes] = useState<number | null>(60);
   const [comment, setComment] = useState('');
+  const [description, setDescription] = useState('');
   const [projects, setProjects] = useState<Option[]>([]);
   const [subprojectsByProject, setSubprojectsByProject] = useState<Record<string, Option[]>>({});
   const [projectId, setProjectId] = useState('');
@@ -250,6 +252,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
           projectId: projectId || undefined,
           subprojectId: subprojectId || undefined,
           comment,
+          description,
           acknowledgeOverlap: acknowledgeOverlap || undefined,
           acknowledgeAttendance: acknowledgeAttendance || undefined,
           userId: isSelf ? undefined : personId,
@@ -272,6 +275,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
       setOverlapConfirm(null);
       setAttendanceConfirm(null);
       setComment('');
+      setDescription('');
       setSuccess(t('time.added'));
       await reloadEntries();
     } catch {
@@ -303,6 +307,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
       projectId: draft.projectId || null,
       subprojectId: draft.subprojectId || null,
       comment: draft.comment,
+      description: draft.description,
     };
     try {
       const res = await fetch(`${API}/project-time/${draft.id}`, {
@@ -363,6 +368,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
     setProjectId(e.project_id ?? '');
     setSubprojectId(e.subproject_id ?? '');
     setComment(e.comment ?? '');
+    setDescription(e.description ?? '');
     if (e.project_id) void loadSubprojects(e.project_id);
   }
 
@@ -469,6 +475,18 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
         </Box>
 
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1.5, alignItems: 'flex-start' }}>
+          {/* What the customer sees on the invoice's hours report (customer projects); anything else goes in the comment. */}
+          <Tooltip title={t('time.description.hint')}>
+            <TextField
+              label={t('time.description')}
+              placeholder={t('time.description.placeholder')}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              size="small"
+              inputProps={{ maxLength: 500 }}
+              sx={{ flex: 1, minWidth: 260 }}
+            />
+          </Tooltip>
           <TextField
             label={t('time.comment')}
             value={comment}
@@ -597,6 +615,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                 <TableCell align="right">{t('approvals.duration')}</TableCell>
                 <TableCell>{t('time.project')}</TableCell>
                 <TableCell>{t('time.subproject')}</TableCell>
+                <TableCell>{t('time.description')}</TableCell>
                 <TableCell>{t('time.comment')}</TableCell>
                 <TableCell align="right">{t('common.actions')}</TableCell>
               </TableRow>
@@ -611,6 +630,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                     <TableCell align="right">{formatDurationMinutes(minutes(e))}</TableCell>
                     <TableCell>{e.project_name ?? '—'}</TableCell>
                     <TableCell>{e.subproject_name ?? '—'}</TableCell>
+                    <TableCell>{e.description || '—'}</TableCell>
                     <TableCell>{e.comment || '—'}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {canEdit && (
@@ -637,6 +657,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                                 projectId: e.project_id ?? '',
                                 subprojectId: e.subproject_id ?? '',
                                 comment: e.comment ?? '',
+                                description: e.description ?? '',
                               });
                             }}
                           >
@@ -664,7 +685,7 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                 );
               })}
               {sortedEntries.length === 0 && (
-                <TableEmptyRow colSpan={7} icon={<ScheduleIcon fontSize="inherit" />} title={t('time.noEntries')} />
+                <TableEmptyRow colSpan={8} icon={<ScheduleIcon fontSize="inherit" />} title={t('time.noEntries')} />
               )}
             </TableBody>
           </Table>
@@ -726,6 +747,16 @@ export default function ProjectTime({ orgId, userId, useProjectTimeRanges, authH
                 <MenuItem value=""><em>{t('time.none')}</em></MenuItem>
                 {draftSubprojects.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
               </TextField>
+              <Tooltip title={t('time.description.hint')}>
+                <TextField
+                  label={t('time.description')}
+                  placeholder={t('time.description.placeholder')}
+                  value={draft.description}
+                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                  size="small"
+                  inputProps={{ maxLength: 500 }}
+                />
+              </Tooltip>
               <TextField
                 label={t('time.comment')}
                 value={draft.comment}
