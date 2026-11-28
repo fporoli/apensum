@@ -289,6 +289,32 @@ VALUES ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'cccccccc-cccc-cccc-cccc-ccccccc
        ('dddddddd-dddd-dddd-dddd-ddddddddddd4', 'cccccccc-cccc-cccc-cccc-ccccccccccce', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Novatime Replacement', '22222222-2222-2222-2222-222222222222', 'COST-104', 'phase')
 ON CONFLICT (id) DO NOTHING;
 
+-- Customers (127): two fictitious customers of Acme's two customer projects, with their contact people, and each
+-- project's customer, the customer's reference ("Ihre Referenz") and the contact it goes to ("z. H."). The billing
+-- plugin bills them (its seed adds the rates); a database seeded before keeps what was set by hand.
+INSERT INTO customers (id, organization_id, name, street, house_number, zip, city, country, email, language)
+VALUES
+  ('b1000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Fussballverband Muster',
+   'Stadionweg', '12', '8044', 'Zürich', 'CH', 'buchhaltung@fussballverband.example', 'de'),
+  ('b1000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Banque Exemple SA',
+   'Rue du Marché', '5', '1204', 'Genève', 'CH', 'factures@banque.example', 'fr')
+ON CONFLICT DO NOTHING;
+INSERT INTO customer_contacts (id, organization_id, customer_id, name, role, email, phone, sort)
+VALUES
+  ('b2000000-0000-0000-0000-000000000001', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'b1000000-0000-0000-0000-000000000001',
+   'Frau Petra Beispiel', 'Buchhaltung', 'buchhaltung@fussballverband.example', '044 555 20 10', 0),
+  ('b2000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'b1000000-0000-0000-0000-000000000001',
+   'Herr Marco Vorlage', 'Projektleitung Relaunch', 'projekte@fussballverband.example', '044 555 20 22', 1),
+  ('b2000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'b1000000-0000-0000-0000-000000000002',
+   'Monsieur Jean Modèle', 'Comptabilité fournisseurs', 'factures@banque.example', '022 555 30 40', 0)
+ON CONFLICT DO NOTHING;
+UPDATE projects p SET customer_id = v.customer_id::uuid, customer_reference = v.reference, customer_contact_id = v.contact_id::uuid
+FROM (VALUES
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', 'b1000000-0000-0000-0000-000000000001', 'Auftrag FV-2026-031', 'b2000000-0000-0000-0000-000000000002'),
+  ('cccccccc-cccc-cccc-cccc-cccccccccccd', 'b1000000-0000-0000-0000-000000000002', 'PO 4500-1187', 'b2000000-0000-0000-0000-000000000003')
+) AS v(project_id, customer_id, reference, contact_id)
+WHERE p.id = v.project_id::uuid AND p.customer_id IS NULL;
+
 INSERT INTO project_times (id, user_id, organization_id, project_id, subproject_id, start_time, end_time, comment)
 VALUES
   ('99999999-9999-9999-9999-111111111111', '22222222-2222-2222-2222-222222222226', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'dddddddd-dddd-dddd-dddd-dddddddddddd', NOW() - INTERVAL '3 hours', NOW() - INTERVAL '2 hours', 'Homepage hero'),

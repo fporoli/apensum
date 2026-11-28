@@ -5,6 +5,7 @@ import { bookableProjectCondition, callerUserId, can, canManageItem, canSeeUserD
 import { VersionsService } from './versions.service';
 import type { AuthenticatedRequest } from './jwt.guard';
 import { project_teams, projects, subprojects, users } from './db/schema';
+import { cleanReference } from '@worktime3/shared/customers';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -17,6 +18,9 @@ export function teamIdsFromBody(value: unknown): string[] | null | undefined {
   if (!Array.isArray(value) || !value.every((v) => typeof v === 'string' && UUID.test(v))) return null;
   return [...new Set(value as string[])];
 }
+
+/** A project's or subproject's customer fields as a request sends them (undefined = leave as it is). */
+interface CustomerBody { customerId?: string | null; customerReference?: string | null; customerContactId?: string | null }
 
 @Controller()
 export class ProjectsController {
@@ -60,7 +64,7 @@ export class ProjectsController {
   @Post('organizations/:orgId/projects')
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { name: string; ownerUserId?: string; costItem?: string; type?: string; teamIds?: string[] },
+    @Body() body: { name: string; ownerUserId?: string; costItem?: string; type?: string; teamIds?: string[] } & CustomerBody,
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -79,6 +83,8 @@ export class ProjectsController {
     }
     const teamIds = teamIdsFromBody(body.teamIds);
     if (teamIds === null || (teamIds && !(await this.teamsInOrg(db, orgId, teamIds)))) return { ok: false, error: 'unknown-team' };
+    const customer = await this.projectCustomer(db, orgId, body, null);
+    if (!customer.ok) return customer;
     const [project] = await db
       .insert(projects)
       .values({
@@ -87,6 +93,7 @@ export class ProjectsController {
         owner_user_id: ownerUserId,
         cost_item: body.costItem ?? null,
         type: (body.type as (typeof projects.$inferInsert)['type']) ?? 'internal',
+        ...customer.patch,
       })
       .returning();
     if (teamIds?.length) await this.setTeams(db, project.id, teamIds);
@@ -97,7 +104,7 @@ export class ProjectsController {
   @Patch('projects/:id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; ownerUserId?: string | null; costItem?: string | null; type?: string; teamIds?: string[] },
+    @Body() body: { name?: string; ownerUserId?: string | null; costItem?: string | null; type?: string; teamIds?: string[] } & CustomerBody,
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -124,6 +131,9 @@ export class ProjectsController {
     if (body.ownerUserId !== undefined) patch.owner_user_id = body.ownerUserId || null;
     if (body.costItem !== undefined) patch.cost_item = body.costItem || null;
     if (body.type !== undefined) patch.type = body.type as (typeof projects.$inferInsert)['type'];
+    const customer = await this.projectCustomer(db, project.organization_id, body, project);
+    if (!customer.ok) return customer;
+    Object.assign(patch, customer.patch);
 
     const [updated] = Object.keys(patch).length ? await db.update(projects).set(patch).where(eq(projects.id, id)).returning() : [project];
     if (teamIds) await this.setTeams(db, id, teamIds);
@@ -153,6 +163,50 @@ export class ProjectsController {
   }
 
   /** Whether every id is a team of this organization. */
+  /**
+   * The customer fields of a project from a request (127): the customer is one of the organization's, the contact one of
+   * that customer's (a contact of a former customer goes when the customer changes). `undefined` fields stay.
+   */
+  private async projectCustomer(db: Db, orgId: string, body: CustomerBody, current: { customer_id: string | null; customer_contact_id: string | null } | null):
+    Promise<{ ok: true; patch: Partial<typeof projects.$inferInsert> } | { ok: false; error: string }> {
+    const patch: Partial<typeof projects.$inferInsert> = {};
+    const customerId = body.customerId === undefined ? current?.customer_id ?? null : body.customerId || null;
+    if (body.customerId !== undefined) {
+      if (customerId && !(UUID.test(customerId) && (await this.customerInOrg(db, orgId, customerId)))) return { ok: false, error: 'unknown-customer' };
+      patch.customer_id = customerId;
+    }
+    if (body.customerReference !== undefined) patch.customer_reference = cleanReference(body.customerReference);
+    const contactId = body.customerContactId === undefined ? current?.customer_contact_id ?? null : body.customerContactId || null;
+    if (contactId && !(await this.contactOf(db, orgId, contactId, customerId))) {
+      if (body.customerContactId !== undefined) return { ok: false, error: 'unknown-contact' };
+      patch.customer_contact_id = null;
+    } else if (body.customerContactId !== undefined) patch.customer_contact_id = contactId;
+    return { ok: true, patch };
+  }
+
+  /** A subproject's own reference and contact (one of its project's customer's). */
+  private async subprojectCustomer(db: Db, orgId: string, body: CustomerBody, customerId: string | null):
+    Promise<{ ok: true; patch: Partial<typeof subprojects.$inferInsert> } | { ok: false; error: string }> {
+    const patch: Partial<typeof subprojects.$inferInsert> = {};
+    if (body.customerReference !== undefined) patch.customer_reference = cleanReference(body.customerReference);
+    if (body.customerContactId !== undefined) {
+      const contactId = body.customerContactId || null;
+      if (contactId && !(await this.contactOf(db, orgId, contactId, customerId))) return { ok: false, error: 'unknown-contact' };
+      patch.customer_contact_id = contactId;
+    }
+    return { ok: true, patch };
+  }
+
+  private async customerInOrg(db: Db, orgId: string, customerId: string): Promise<boolean> {
+    return (await db.execute(sql`SELECT 1 FROM customers WHERE id = ${customerId}::uuid AND organization_id = ${orgId}::uuid`)).rows.length > 0;
+  }
+
+  /** Whether a contact is one of the customer's (of this organization). */
+  private async contactOf(db: Db, orgId: string, contactId: string, customerId: string | null): Promise<boolean> {
+    if (!customerId || !UUID.test(contactId)) return false;
+    return (await db.execute(sql`SELECT 1 FROM customer_contacts WHERE id = ${contactId}::uuid AND customer_id = ${customerId}::uuid AND organization_id = ${orgId}::uuid`)).rows.length > 0;
+  }
+
   private async teamsInOrg(db: Db, orgId: string, teamIds: string[]): Promise<boolean> {
     if (teamIds.length === 0) return true;
     const rows = await db.execute(
@@ -215,7 +269,7 @@ export class ProjectsController {
   @Post('projects/:id/subprojects')
   async subCreate(
     @Param('id') id: string,
-    @Body() body: { organizationId?: string; name: string; ownerUserId?: string; costItem?: string; type?: string },
+    @Body() body: { organizationId?: string; name: string; ownerUserId?: string; costItem?: string; type?: string } & CustomerBody,
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -237,6 +291,8 @@ export class ProjectsController {
     const name = (body.name ?? '').trim();
     if (!name) return { ok: false, error: 'name-required' };
     const ownerUserId = body.ownerUserId || callerId;
+    const customer = await this.subprojectCustomer(db, orgId, body, project.customer_id);
+    if (!customer.ok) return customer;
 
     const [subproject] = await db
       .insert(subprojects)
@@ -247,6 +303,7 @@ export class ProjectsController {
         owner_user_id: ownerUserId,
         cost_item: body.costItem ?? null,
         type: (body.type as (typeof subprojects.$inferInsert)['type']) ?? 'phase',
+        ...customer.patch,
       })
       .returning();
     void this.versions.record('subprojects', subproject.id, 'insert', callerId, subproject).catch(() => {});
@@ -259,6 +316,7 @@ export class ProjectsController {
       .select({
         ...getTableColumns(subprojects),
         project_owner_user_id: projects.owner_user_id,
+        project_customer_id: projects.customer_id,
       })
       .from(subprojects)
       .innerJoin(projects, eq(projects.id, subprojects.project_id))
@@ -269,7 +327,7 @@ export class ProjectsController {
   @Patch('subprojects/:id')
   async subUpdate(
     @Param('id') id: string,
-    @Body() body: { name?: string; ownerUserId?: string | null; costItem?: string | null; type?: string },
+    @Body() body: { name?: string; ownerUserId?: string | null; costItem?: string | null; type?: string } & CustomerBody,
     @Req() req: AuthenticatedRequest,
   ) {
     const db = this.db.getDb();
@@ -291,6 +349,9 @@ export class ProjectsController {
     if (body.ownerUserId !== undefined) patch.owner_user_id = body.ownerUserId || null;
     if (body.costItem !== undefined) patch.cost_item = body.costItem || null;
     if (body.type !== undefined) patch.type = body.type as (typeof subprojects.$inferInsert)['type'];
+    const customer = await this.subprojectCustomer(db, subproject.organization_id, body, subproject.project_customer_id);
+    if (!customer.ok) return customer;
+    Object.assign(patch, customer.patch);
 
     const [updated] = await db.update(subprojects).set(patch).where(eq(subprojects.id, id)).returning();
     void this.versions.record('subprojects', id, 'update_delta', callerId, patch).catch(() => {});

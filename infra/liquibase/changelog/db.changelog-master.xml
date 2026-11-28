@@ -142,6 +142,8 @@
     <include file="124-flow-trigger-runs.sql" relativeToChangelogFile="true"/>
     <include file="125-ai-levels-own-azure.sql" relativeToChangelogFile="true"/>
     <include file="126-ai-key-hint.sql" relativeToChangelogFile="true"/>
+    <include file="127-customers.sql" relativeToChangelogFile="true"/>
+    <include file="128-permission-customers.sql" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
 

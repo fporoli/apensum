@@ -39,6 +39,7 @@ import { formatDurationMinutes } from './localeFormat';
 import { PLUGIN_NAV_GROUPS, PLUGIN_NOTIFICATION_SECTIONS, PLUGIN_PAGES, PLUGIN_WORKFLOW_KINDS } from './plugins';
 import { ApensumMark } from './ApensumMark';
 import InstanceInfo from './InstanceInfo';
+import { loadCustomerTerm, termKeyOf, useCustomerTerm } from './customerTerm';
 import { CORE_NAV_GROUPS, CORE_PAGES, type AppPage, type CorePageContext } from './corePages';
 import { buildNavTree, placeForCaller, sectionHashes } from './navigation';
 import { resolveRoleFlags, type RoleFlags } from './roleFlags';
@@ -237,6 +238,11 @@ export default function App() {
   // The organization's look and feel (theme colors, app bar logo); the default theme when signed out.
   const { branding, setBranding } = useBranding();
   const colorful = branding.colorful === true;
+  // What the organization calls its customers (Kunde, Auftraggeber, Mandant): the navbar and texts name them so.
+  const customerTerm = useCustomerTerm();
+  useEffect(() => {
+    if (session && orgId) void loadCustomerTerm(orgId, authHeaders);
+  }, [session?.userId, orgId]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setBranding({});
     if (!session || !orgId) return;
@@ -504,7 +510,7 @@ export default function App() {
   const toNavItem = (p: AppPage): NavSubItem => ({
     id: p.section,
     section: p.section,
-    label: t(p.nav!.label),
+    label: t(termKeyOf(p.nav!.label, customerTerm)),
     icon: p.nav!.icon,
     visible: allowed(p.section),
     badge: badges[p.section],

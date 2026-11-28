@@ -294,6 +294,8 @@ export * from './icons';
 /** The app's button (MUI's, with the organization's colorful look): use it instead of MUI's. */
 export { Button } from './Button';
 export { TestFileButton } from './TestFileButton';
+export { useCustomerTerm, useTermT, termKeyOf } from './customerTerm';
+export { CustomerDialog, EMPTY_CUSTOMER, loadCustomers, type Customer, type CustomerDraft } from './CustomerDialog';
 export { DocumentPreviewDialog, previewKind } from './DocumentPreviewDialog';
 export { useTestInstance } from './instance';
 /** Loading from the API: useApi (a page's data, loading, error, reload), apiRequest (one call, ok + data or an error code). */

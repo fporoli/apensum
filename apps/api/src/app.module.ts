@@ -19,6 +19,7 @@ import { PermissionsController } from './permissions.controller';
 import { OrgRolesController, RolesController } from './roles.controller';
 import { TeamsController } from './teams.controller';
 import { ProjectsController } from './projects.controller';
+import { CustomersController } from './customers.controller';
 import { ProjectTimeController } from './project-time.controller';
 import { WorkTimeController } from './work-time.controller';
 import { WorkTimeService } from './work-time.service';
@@ -103,6 +104,7 @@ const plugins = loadApiPlugins();
     OrgRolesController,
     TeamsController,
     ProjectsController,
+    CustomersController,
     ProjectTimeController,
     WorkTimeController,
     AbsencesController,

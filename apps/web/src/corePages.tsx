@@ -29,6 +29,7 @@ import {
   AccountTreeIcon,
   VerifiedUserIcon,
   WorkspacesIcon,
+  BusinessIcon,
 } from './icons';
 import { OPERATOR_ORG_ID } from '@worktime3/shared/operator';
 
@@ -36,6 +37,7 @@ const Home = lazy(() => import('./Home'));
 const MyData = lazy(() => import('./MyData'));
 const ProjectTime = lazy(() => import('./ProjectTime'));
 const Management = lazy(() => import('./Management'));
+const Customers = lazy(() => import('./Customers'));
 const Invitations = lazy(() => import('./Invitations'));
 const AdminSettings = lazy(() => import('./AdminSettings'));
 const WorkflowSettings = lazy(() => import('./WorkflowSettings'));
@@ -340,6 +342,15 @@ export const CORE_PAGES: AppPage[] = [
       />
     ),
   })),
+  {
+    // Customers (127): whom the organization works for; a project names its customer. The label follows the term.
+    section: 'customers',
+    hash: '#/customers',
+    object: 'nav.customers',
+    allowedByRole: (r) => r.isAdmin || r.isBillingAdmin || r.canManage,
+    nav: { group: 'organization', parent: 'managementProjects', label: 'nav.customers', icon: <BusinessIcon fontSize="small" /> },
+    render: (c) => <Customers orgId={c.orgId} authHeaders={c.authHeaders} />,
+  },
 
   // administration
   {

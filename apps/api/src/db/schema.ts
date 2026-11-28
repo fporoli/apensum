@@ -1,4 +1,4 @@
-import { pgTable, foreignKey, uuid, text, index, unique, varchar, jsonb, timestamp, boolean, check, date, uniqueIndex, integer, inet, numeric, char, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, uuid, text, index, unique, varchar, jsonb, timestamp, check, char, boolean, integer, date, uniqueIndex, inet, numeric, bigint, primaryKey, pgView, pgEnum, customType } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 const citext = customType<{ data: string }>({
@@ -50,6 +50,36 @@ export const user_identities = pgTable("user_identities", {
 	unique("uq_provider_user_id").on(table.provider, table.provider_user_id),
 ]);
 
+export const customers = pgTable("customers", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	name: text().notNull(),
+	street: text(),
+	house_number: text(),
+	zip: text(),
+	city: text(),
+	country: char({ length: 2 }).default('CH').notNull(),
+	email: text(),
+	phone: text(),
+	language: text().default('de').notNull(),
+	active: boolean().default(true).notNull(),
+}, (table) => [
+	index("idx_customers_org").using("btree", sql`organization_id`, sql`lower(name)`),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "customers_organization_id_fkey"
+		}).onDelete("cascade"),
+	check("customers_city_check", sql`(city IS NULL) OR (char_length(city) <= 35)`),
+	check("customers_email_check", sql`(email IS NULL) OR (char_length(email) <= 200)`),
+	check("customers_house_number_check", sql`(house_number IS NULL) OR (char_length(house_number) <= 16)`),
+	check("customers_language_check", sql`language = ANY (ARRAY['de'::text, 'fr'::text, 'it'::text, 'en'::text])`),
+	check("customers_name_check", sql`(char_length(name) >= 1) AND (char_length(name) <= 70)`),
+	check("customers_phone_check", sql`(phone IS NULL) OR (char_length(phone) <= 40)`),
+	check("customers_street_check", sql`(street IS NULL) OR (char_length(street) <= 70)`),
+	check("customers_zip_check", sql`(zip IS NULL) OR (char_length(zip) <= 16)`),
+]);
+
 export const organization_domains = pgTable("organization_domains", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	organization_id: uuid().notNull(),
@@ -65,6 +95,33 @@ export const organization_domains = pgTable("organization_domains", {
 			name: "organization_domains_organization_id_fkey"
 		}).onDelete("cascade"),
 	unique("uq_org_domain").on(table.domain),
+]);
+
+export const customer_contacts = pgTable("customer_contacts", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	customer_id: uuid().notNull(),
+	name: text().notNull(),
+	role: text(),
+	email: text(),
+	phone: text(),
+	sort: integer().default(0).notNull(),
+}, (table) => [
+	index("idx_customer_contacts_customer").using("btree", table.customer_id.asc().nullsLast(), table.sort.asc().nullsLast()),
+	foreignKey({
+			columns: [table.customer_id],
+			foreignColumns: [customers.id],
+			name: "customer_contacts_customer_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "customer_contacts_organization_id_fkey"
+		}).onDelete("cascade"),
+	check("customer_contacts_email_check", sql`(email IS NULL) OR (char_length(email) <= 200)`),
+	check("customer_contacts_name_check", sql`(char_length(name) >= 1) AND (char_length(name) <= 70)`),
+	check("customer_contacts_phone_check", sql`(phone IS NULL) OR (char_length(phone) <= 40)`),
+	check("customer_contacts_role_check", sql`(role IS NULL) OR (char_length(role) <= 70)`),
 ]);
 
 export const roles = pgTable("roles", {
@@ -89,6 +146,78 @@ export const permissions = pgTable("permissions", {
 	id: varchar({ length: 64 }).primaryKey().notNull(),
 	description: varchar({ length: 255 }).notNull(),
 });
+
+export const projects = pgTable("projects", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	organization_id: uuid().notNull(),
+	name: varchar({ length: 255 }).notNull(),
+	owner_user_id: uuid(),
+	cost_item: varchar({ length: 255 }),
+	type: project_type().default('internal').notNull(),
+	customer_id: uuid(),
+	customer_reference: text(),
+	customer_contact_id: uuid(),
+}, (table) => [
+	index("idx_projects_customer").using("btree", table.customer_id.asc().nullsLast()),
+	index("idx_projects_org").using("btree", table.organization_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.customer_contact_id],
+			foreignColumns: [customer_contacts.id],
+			name: "projects_customer_contact_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.customer_id],
+			foreignColumns: [customers.id],
+			name: "projects_customer_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "projects_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.owner_user_id],
+			foreignColumns: [users.id],
+			name: "projects_owner_user_id_fkey"
+		}).onDelete("set null"),
+	check("projects_customer_reference_check", sql`(customer_reference IS NULL) OR (char_length(customer_reference) <= 70)`),
+]);
+
+export const subprojects = pgTable("subprojects", {
+	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
+	project_id: uuid().notNull(),
+	organization_id: uuid().notNull(),
+	name: varchar({ length: 255 }).notNull(),
+	owner_user_id: uuid(),
+	cost_item: varchar({ length: 255 }),
+	type: subproject_type().default('phase').notNull(),
+	customer_reference: text(),
+	customer_contact_id: uuid(),
+}, (table) => [
+	index("idx_subprojects_org").using("btree", table.organization_id.asc().nullsLast()),
+	index("idx_subprojects_project").using("btree", table.project_id.asc().nullsLast()),
+	foreignKey({
+			columns: [table.customer_contact_id],
+			foreignColumns: [customer_contacts.id],
+			name: "subprojects_customer_contact_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.organization_id],
+			foreignColumns: [organizations.id],
+			name: "subprojects_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.owner_user_id],
+			foreignColumns: [users.id],
+			name: "subprojects_owner_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.project_id],
+			foreignColumns: [projects.id],
+			name: "subprojects_project_id_fkey"
+		}).onDelete("cascade"),
+	check("subprojects_customer_reference_check", sql`(customer_reference IS NULL) OR (char_length(customer_reference) <= 70)`),
+]);
 
 export const organization_invitations = pgTable("organization_invitations", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
@@ -203,27 +332,6 @@ export const teams = pgTable("teams", {
 	unique("uq_org_team_name").on(table.organization_id, table.name),
 ]);
 
-export const projects = pgTable("projects", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	organization_id: uuid().notNull(),
-	name: varchar({ length: 255 }).notNull(),
-	owner_user_id: uuid(),
-	cost_item: varchar({ length: 255 }),
-	type: project_type().default('internal').notNull(),
-}, (table) => [
-	index("idx_projects_org").using("btree", table.organization_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "projects_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.owner_user_id],
-			foreignColumns: [users.id],
-			name: "projects_owner_user_id_fkey"
-		}).onDelete("set null"),
-]);
-
 export const users = pgTable("users", {
 	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
 	email: citext("email").notNull(),
@@ -241,34 +349,6 @@ export const users = pgTable("users", {
 	basicdata: jsonb().default({}).notNull(),
 }, (table) => [
 	unique("users_email_key").on(table.email),
-]);
-
-export const subprojects = pgTable("subprojects", {
-	id: uuid().default(sql`uuid_generate_v4()`).primaryKey().notNull(),
-	project_id: uuid().notNull(),
-	organization_id: uuid().notNull(),
-	name: varchar({ length: 255 }).notNull(),
-	owner_user_id: uuid(),
-	cost_item: varchar({ length: 255 }),
-	type: subproject_type().default('phase').notNull(),
-}, (table) => [
-	index("idx_subprojects_org").using("btree", table.organization_id.asc().nullsLast()),
-	index("idx_subprojects_project").using("btree", table.project_id.asc().nullsLast()),
-	foreignKey({
-			columns: [table.organization_id],
-			foreignColumns: [organizations.id],
-			name: "subprojects_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.owner_user_id],
-			foreignColumns: [users.id],
-			name: "subprojects_owner_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.project_id],
-			foreignColumns: [projects.id],
-			name: "subprojects_project_id_fkey"
-		}).onDelete("cascade"),
 ]);
 
 export const timesheet_periods = pgTable("timesheet_periods", {

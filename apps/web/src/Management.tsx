@@ -25,6 +25,17 @@ import { Button } from './Button';
 import type { Session } from './Login';
 import { useT } from './i18n';
 import { ConfirmDialog, PageHeader, TableEmptyRow } from './components';
+import { CustomerFields, NO_CUSTOMER, type CustomerFieldsValue } from './CustomerFields';
+
+/** A project's customer fields for the API (only those the dialog shows; a caller who may not see customers sends them unchanged). */
+function customerBody(v: CustomerFieldsValue) {
+  return { customerId: v.customerId, customerReference: v.customerReference.trim() || null, customerContactId: v.customerContactId };
+}
+
+/** A subproject's own reference and contact for the API. */
+function subprojectCustomerBody(v: CustomerFieldsValue) {
+  return { customerReference: v.customerReference.trim() || null, customerContactId: v.customerContactId };
+}
 import { AddIcon, DeleteIcon, EditIcon, PeopleIcon, WorkspacesIcon } from './icons';
 import { SortHeader, TableSearch, useTableView, type TableColumn } from './TableView';
 import { PLUGIN_PROJECT_DIALOGS } from './plugins';
@@ -76,6 +87,10 @@ export interface ProjectItem {
   subproject_count?: number;
   /** Teams the project is limited to; empty = everyone may book on it. */
   team_ids?: string[];
+  /** Its customer (127), the customer's reference and the contact it goes to. */
+  customer_id?: string | null;
+  customer_reference?: string | null;
+  customer_contact_id?: string | null;
 }
 
 export interface SubprojectItem {
@@ -89,6 +104,9 @@ export interface SubprojectItem {
   owner_name?: string | null;
   owner_email?: string | null;
   project_name?: string | null;
+  /** Its own customer reference and contact (empty = its project's). */
+  customer_reference?: string | null;
+  customer_contact_id?: string | null;
 }
 
 interface ManagementProps {
@@ -161,6 +179,9 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
   const [subprojectDialogOpen, setSubprojectDialogOpen] = useState(false);
   const [editingSubproject, setEditingSubproject] = useState<SubprojectItem | null>(null);
   const [subprojectParentId, setSubprojectParentId] = useState<string>('');
+  // The customer fields of the project or subproject in the dialog (CustomerFields).
+  const [projectCustomer, setProjectCustomer] = useState<CustomerFieldsValue>(NO_CUSTOMER);
+  const [subprojectCustomer, setSubprojectCustomer] = useState<CustomerFieldsValue>(NO_CUSTOMER);
   const [subprojectName, setSubprojectName] = useState('');
   const [subprojectType, setSubprojectType] = useState<'phase' | 'work_package' | 'task'>('phase');
   const [subprojectCost, setSubprojectCost] = useState('');
@@ -366,6 +387,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setProjectCost('');
     setProjectOwner(session.userId);
     setProjectTeamIds([]);
+    setProjectCustomer(NO_CUSTOMER);
     setProjectDialogOpen(true);
   }
 
@@ -376,6 +398,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setProjectCost(proj.cost_item ?? '');
     setProjectOwner(proj.owner_user_id);
     setProjectTeamIds(proj.team_ids ?? []);
+    setProjectCustomer({ customerId: proj.customer_id ?? null, customerReference: proj.customer_reference ?? '', customerContactId: proj.customer_contact_id ?? null });
     setProjectDialogOpen(true);
   }
 
@@ -395,6 +418,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
             costItem: projectCost.trim() || null,
             ownerUserId: projectOwner,
             teamIds: projectTeamIds,
+            ...customerBody(projectCustomer),
           }),
         });
         const data = await res.json();
@@ -414,6 +438,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
             costItem: projectCost.trim() || undefined,
             ownerUserId: projectOwner,
             teamIds: projectTeamIds,
+            ...customerBody(projectCustomer),
           }),
         });
         const data = await res.json();
@@ -472,6 +497,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setSubprojectType('phase');
     setSubprojectCost('');
     setSubprojectOwner(session.userId);
+    setSubprojectCustomer(NO_CUSTOMER);
     setSubprojectDialogOpen(true);
   }
 
@@ -482,6 +508,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
     setSubprojectType(sub.type);
     setSubprojectCost(sub.cost_item ?? '');
     setSubprojectOwner(sub.owner_user_id);
+    setSubprojectCustomer({ customerId: null, customerReference: sub.customer_reference ?? '', customerContactId: sub.customer_contact_id ?? null });
     setSubprojectDialogOpen(true);
   }
 
@@ -500,6 +527,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
             type: subprojectType,
             costItem: subprojectCost.trim() || null,
             ownerUserId: subprojectOwner,
+            ...subprojectCustomerBody(subprojectCustomer),
           }),
         });
         const data = await res.json();
@@ -519,6 +547,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
             type: subprojectType,
             costItem: subprojectCost.trim() || undefined,
             ownerUserId: subprojectOwner,
+            ...subprojectCustomerBody(subprojectCustomer),
           }),
         });
         const data = await res.json();
@@ -1046,6 +1075,7 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                 <MenuItem key={tm.id} value={tm.id}>{tm.name}</MenuItem>
               ))}
             </TextField>
+            {projectDialogOpen && <CustomerFields orgId={orgId} authHeaders={authHeaders} value={projectCustomer} onChange={setProjectCustomer} />}
             {projectDialogOpen && pluginParts('project', editingProject?.id ?? null, null)}
           </DialogContent>
           <DialogActions>
@@ -1079,6 +1109,10 @@ export default function Management({ session, orgId, role, authHeaders, onDataCh
                 </MenuItem>
               ))}
             </TextField>
+            {subprojectDialogOpen && (
+              <CustomerFields orgId={orgId} authHeaders={authHeaders} value={subprojectCustomer} onChange={setSubprojectCustomer}
+                projectCustomerId={projects.find((p) => p.id === subprojectParentId)?.customer_id ?? null} />
+            )}
             {subprojectDialogOpen && pluginParts('subproject', subprojectParentId, editingSubproject?.id ?? null)}
           </DialogContent>
           <DialogActions>

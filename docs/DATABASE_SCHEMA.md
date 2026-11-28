@@ -265,6 +265,9 @@ erDiagram
     USERS { uuid id PK }
 ```
 
+`customers` and `customer_contacts` (127): whom the organization works for, with address, language and contact people; a project names its customer (`projects.customer_id`), the customer's reference (`customer_reference`, e.g. an authority's file number) and the contact it goes to (`customer_contact_id`); a subproject may have its own reference and contact.\
+What the organization calls them (Kunde, Auftraggeber, Mandant) is `organizations.settings.customers.term`.
+
 ## Timesheets (1 table)
 
 Month-end lock/approve state for a person's booked hours.
@@ -961,7 +964,7 @@ Tables reference core records where appropriate, but polymorphic references such
 
 | Plugin / schema | Tables | Purpose |
 |---|---|---|
-| `billing` | `settings`, `customers`, `project_customers`, `person_rates`, `invoices`, `invoice_lines`, `invoice_items`, `written_off` | Organization billing settings and customers; project/customer rates; invoices and their lines; source-record links and write-offs. |
+| `billing` | `settings`, `customer_terms`, `project_rates`, `person_rates`, `invoices`, `invoice_lines`, `invoice_items`, `written_off` | Organization billing settings; each customer's payment term (the customers are the core's `customers`, 127); project and person rates; invoices and their lines; source-record links and write-offs. |
 | `cases` | `cases`, `case_documents`, `case_interviews`, `assessment_templates`, `assessments`, `user_keys`, `case_keys` | Confidential case dossiers, document and interview records, assessment templates and drafts, and the per-user/per-case key envelopes used by browser-side encryption. |
 | `expenses` (`public`) | `expenses`, `expense_reports`, `expense_report_items`, `expense_payruns`, `expense_vat_lines` | Expenses and approval reports; report membership; payout runs; per-expense VAT amounts and booking lines. |
 | `hr` | `work_permits`, `year_statements`, `exit_statements`, `reviews` | Work permits; issued year-end and exit balance statements; employee review records. |

@@ -113,6 +113,7 @@ hashes and who may open a page are built from the core's and the plugins' pages 
 Core groups: `myWork`, `projectTracking`, `organization`, `administration`, `personal`.
 
 A project dialog part (`projectDialog`: `{ id, render(ctx) }`) adds fields below the core's in the project and subproject dialogs of Projects & Teams (`ProjectDialogContext`: `orgId`, `authHeaders`, `kind`, `projectId`, `subprojectId`, `onSave`).\
+The customers are the core's (`customers`, `customer_contacts`, the projects' customer fields, docs/dev/FEATURES.md): a plugin reads them, opens `CustomerDialog`, and names them as the organization does with `useTermT` / `termKeyOf` (its texts' `.client` / `.principal` variants).\
 It renders nothing where it does not apply (its API refuses, the module is off), and registers with `onSave(fn)` what to save once the core saved the project (`fn({ projectId, subprojectId })` returns an error text or null, shown after the save; `onSave(null)` when it unmounts); e.g. Billing's customer, rate and reference.
 
 A settings section (`orgSettings`) is a section of Organization settings of its own, or with

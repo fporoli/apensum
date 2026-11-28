@@ -72,6 +72,8 @@ export const NAV_OBJECTS: PermissionObject[] = [
   { id: 'nav.calendar', kind: 'nav', scopes: ['team', 'reports', 'all'], caption: 'nav.calendar' },
   // Scope here is ownership: `own` = teams you lead and projects/subprojects you own, `all` = every one.
   { id: 'nav.management', kind: 'nav', scopes: ['own', 'all'], caption: 'nav.management' },
+  // Customers (127): whom the organization works for, with address and contact people; a project names its customer.
+  { id: 'nav.customers', kind: 'nav', scopes: ['all'], caption: 'nav.customers' },
   { id: 'nav.orgSettings', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.organizationSettings' },
   { id: 'nav.audit', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.auditLog' },
   { id: 'nav.admin', kind: 'nav', scopes: ORG_SCOPES, caption: 'nav.adminSettings' },
