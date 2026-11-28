@@ -670,6 +670,41 @@ export class WorkflowsService {
   }
 
   /** The pending workflow (if any) for a record — lets a record-specific endpoint (e.g. timesheet-periods/:id/approve) delegate to it. */
+  /** The latest workflow of a record: its id, current step and status, its steps (its own or its definition's), who it waits for. */
+  async latestOf(db: Db, sourceTable: string, sourceTableUuid: string): Promise<{ id: string; step: string; status: string; steps: WorkflowStepDefinition[]; assignees: string[] } | null> {
+    const [w] = (await db.execute(sql`
+      SELECT w.workflow_id AS id, w.step, w.step_status AS status, COALESCE(w.steps, d.steps) AS steps, w.assigned_to_user_id AS assignees
+      FROM workflows w JOIN workflow_definitions d ON d.workflow_def_id = w.workflow_def_id
+      WHERE w.source_table = ${sourceTable} AND w.source_table_uuid = ${sourceTableUuid}::uuid
+      ORDER BY w.workflow_started DESC NULLS LAST LIMIT 1`)).rows as { id: string; step: string; status: string; steps: WorkflowStepDefinition[] | null; assignees: string[] | null }[];
+    return w ? { id: w.id, step: w.step, status: w.status, steps: Array.isArray(w.steps) ? w.steps : [], assignees: w.assignees ?? [] } : null;
+  }
+
+  /** The latest workflow's id of each of these records (by record id). */
+  async latestIds(db: Db, sourceTable: string, ids: readonly string[]): Promise<Map<string, string>> {
+    const ok = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+    if (!ok.length) return new Map();
+    const rows = await db.execute(sql`SELECT DISTINCT ON (source_table_uuid) source_table_uuid AS source, workflow_id
+      FROM workflows WHERE source_table = ${sourceTable} AND source_table_uuid = ANY(${`{${ok.join(',')}}`}::uuid[])
+      ORDER BY source_table_uuid, workflow_started DESC NULLS LAST`);
+    return new Map((rows.rows as { source: string; workflow_id: string }[]).map((r) => [r.source, r.workflow_id]));
+  }
+
+  /**
+   * Ends the pending steps `steps` of these records' workflows as approved, with an event in their history (another
+   * workflow takes over, e.g. a payment run's). Runs in the caller's transaction.
+   */
+  async finishPendingSteps(db: Db, q: { sourceTable: string; ids: readonly string[]; steps: readonly string[]; event: { key: string; by: string; at: string; note: string | null } }): Promise<void> {
+    const ok = q.ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+    if (!ok.length || !q.steps.length) return;
+    await db.execute(sql`
+      UPDATE workflows w SET step_status = 'approved', workflow_step_finished = ${sqlNow()}, workflow_finished = ${sqlNow()},
+        workflow_data = jsonb_set(w.workflow_data, '{history}', COALESCE(w.workflow_data->'history', '[]'::jsonb)
+          || jsonb_build_array(jsonb_build_object('key', ${q.event.key}::text, 'by', ${q.event.by}::text, 'at', ${q.event.at}::text, 'note', ${q.event.note}::text)))
+      WHERE w.source_table = ${q.sourceTable} AND w.source_table_uuid = ANY(${`{${ok.join(',')}}`}::uuid[]) AND w.step_status = 'pending'
+        AND w.step = ANY(${`{${q.steps.map((x) => x.replace(/[{},"\\]/g, '')).join(',')}}`}::text[])`);
+  }
+
   async findPending(db: Db, sourceTable: string, sourceTableUuid: string, definitionName?: string) {
     const conditions = [
       eq(workflows.source_table, sourceTable),

@@ -95,4 +95,16 @@ export class PeopleService {
     return (rows.rows as { user_id: string; name: string; start_date: string | null; last_day: string | null; locale: string | null }[])
       .map((r) => ({ userId: r.user_id, name: r.name, startDate: r.start_date, lastDay: r.last_day, locale: r.locale }));
   }
+
+  /**
+   * Name and basic data (personal details, bank account) of these members, for a plugin that pays them (expense
+   * payment runs). The caller has checked the right to see them.
+   */
+  async basicData(db: Db, orgId: string, userIds: readonly string[]): Promise<Map<string, { name: string; basicdata: unknown }>> {
+    if (!userIds.length) return new Map();
+    const rows = await db.execute(sql`SELECT u.id, COALESCE(u.display_name, u.email) AS name, u.basicdata FROM users u
+      JOIN organization_memberships m ON m.user_id = u.id AND m.organization_id = ${orgId}::uuid
+      WHERE u.id = ANY(${uuidArray(userIds)}::uuid[])`);
+    return new Map((rows.rows as { id: string; name: string; basicdata: unknown }[]).map((r) => [r.id, { name: r.name, basicdata: r.basicdata }]));
+  }
 }

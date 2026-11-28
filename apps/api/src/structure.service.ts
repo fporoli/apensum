@@ -71,4 +71,24 @@ export class StructureService {
       WHERE d.id = ${departmentId}::uuid AND d.organization_id = ${orgId}::uuid`)).rows as { leader_user_id: string | null; locale: string | null }[];
     return row ? { userId: row.leader_user_id, locale: row.locale } : null;
   }
+
+  /** The department (name) of each person's assignment as of a date (per person: `dates`), from the core's assignments. */
+  async departmentNamesAt(db: Db, orgId: string, at: readonly { userId: string; date: string }[]): Promise<Map<string, string | null>> {
+    if (!at.length) return new Map();
+    const rows = await db.execute(sql`
+      SELECT q.user_id, q.date, (SELECT d.name FROM employee_assignments a JOIN departments d ON d.id = a.department_id
+        WHERE a.organization_id = ${orgId}::uuid AND a.user_id = q.user_id AND a.valid_from <= q.date
+        ORDER BY a.valid_from DESC LIMIT 1) AS department
+      FROM jsonb_to_recordset(${JSON.stringify(at.map((x) => ({ user_id: x.userId, date: x.date })))}::jsonb) AS q(user_id uuid, date date)`);
+    return new Map((rows.rows as { user_id: string; date: string; department: string | null }[]).map((r) => [`${r.user_id}|${String(r.date).slice(0, 10)}`, r.department]));
+  }
+
+  /** Whether the person's assignment as of a date is a management one. */
+  async isManagement(db: Db, orgId: string, userId: string, date: string): Promise<boolean> {
+    if (!UUID.test(userId)) return false;
+    const [row] = (await db.execute(sql`SELECT a.is_management FROM employee_assignments a
+      WHERE a.organization_id = ${orgId}::uuid AND a.user_id = ${userId}::uuid AND a.valid_from <= ${date}::date
+      ORDER BY a.valid_from DESC LIMIT 1`)).rows as { is_management: boolean }[];
+    return row?.is_management ?? false;
+  }
 }

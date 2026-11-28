@@ -7,7 +7,7 @@ import { VersionsService } from './versions.service';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A project with its customer fields (127). */
-export interface ProjectRecord { id: string; name: string; type: string; customerId: string | null; customerReference: string | null; customerContactId: string | null }
+export interface ProjectRecord { id: string; name: string; type: string; costItem: string | null; customerId: string | null; customerReference: string | null; customerContactId: string | null }
 
 /** A customer with its projects, for a plugin's choice (e.g. a case's time tracking). */
 export interface CustomerProjects {
@@ -41,7 +41,8 @@ export interface SubprojectSummary {
  */
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly versions: VersionsService) {}
+  // Nest injects it (a provider); a plugin's free function may make one to read (`new ProjectsService()`); writes record in the versions.
+  constructor(private readonly versions?: VersionsService) {}
 
   /** The organization's customers with their contacts and projects. */
   async customersWithProjects(db: Db, orgId: string): Promise<CustomerProjects[]> {
@@ -78,7 +79,7 @@ export class ProjectsService {
       INSERT INTO projects (organization_id, name, owner_user_id, type, customer_id)
       VALUES (${orgId}::uuid, ${name}, ${input.ownerUserId}::uuid, 'customer', ${input.customerId}::uuid)
       RETURNING id, organization_id, name, owner_user_id, type, customer_id`)).rows as { id: string }[];
-    void this.versions.record('projects', row.id, 'insert', actorId, row).catch(() => {});
+    void this.versions?.record('projects', row.id, 'insert', actorId, row).catch(() => {});
     return { ok: true, id: row.id };
   }
 
@@ -100,7 +101,7 @@ export class ProjectsService {
       INSERT INTO subprojects (project_id, organization_id, name, owner_user_id, type, customer_reference, customer_contact_id)
       VALUES (${input.projectId}::uuid, ${orgId}::uuid, ${name}, ${input.ownerUserId}::uuid, 'work_package', ${cleanReference(input.customerReference)}, ${contactId})
       RETURNING id, project_id, organization_id, name, owner_user_id, type, customer_reference, customer_contact_id`)).rows as { id: string }[];
-    void this.versions.record('subprojects', row.id, 'insert', actorId, row).catch(() => {});
+    void this.versions?.record('subprojects', row.id, 'insert', actorId, row).catch(() => {});
     return { ok: true, id: row.id };
   }
 
@@ -130,10 +131,10 @@ export class ProjectsService {
   async projects(db: Db, orgId: string, filter: { ids?: readonly string[]; customerId?: string } = {}): Promise<ProjectRecord[]> {
     const ids = filter.ids ? sql`AND p.id = ANY(${`{${filter.ids.filter((id) => UUID.test(id)).join(',')}}`}::uuid[])` : sql``;
     const customer = filter.customerId !== undefined ? (UUID.test(filter.customerId) ? sql`AND p.customer_id = ${filter.customerId}::uuid` : sql`AND false`) : sql``;
-    const rows = await db.execute(sql`SELECT p.id, p.name, p.type, p.customer_id, p.customer_reference, p.customer_contact_id
+    const rows = await db.execute(sql`SELECT p.id, p.name, p.type, p.cost_item, p.customer_id, p.customer_reference, p.customer_contact_id
       FROM projects p WHERE p.organization_id = ${orgId}::uuid ${ids} ${customer} ORDER BY lower(p.name)`);
-    return (rows.rows as { id: string; name: string; type: string; customer_id: string | null; customer_reference: string | null; customer_contact_id: string | null }[])
-      .map((p) => ({ id: p.id, name: p.name, type: p.type, customerId: p.customer_id, customerReference: p.customer_reference, customerContactId: p.customer_contact_id }));
+    return (rows.rows as { id: string; name: string; type: string; cost_item: string | null; customer_id: string | null; customer_reference: string | null; customer_contact_id: string | null }[])
+      .map((p) => ({ id: p.id, name: p.name, type: p.type, costItem: p.cost_item, customerId: p.customer_id, customerReference: p.customer_reference, customerContactId: p.customer_contact_id }));
   }
 
   /** The subprojects of these projects (of the organization). */
@@ -196,5 +197,32 @@ export class ProjectsService {
         AND (pt.start_time AT TIME ZONE COALESCE(u.timezone, 'Europe/Zurich'))::date BETWEEN ${q.from}::date AND ${q.to}::date ${sub}`);
     return (rows.rows as { id: string; project_id: string; project_name: string; user_id: string; user_name: string; minutes: string; approved: boolean }[])
       .map((r) => ({ id: r.id, projectId: r.project_id, projectName: r.project_name, userId: r.user_id, userName: r.user_name, minutes: Number(r.minutes), approved: r.approved }));
+  }
+
+  /** Names of these projects and subprojects of the organization (by id). */
+  async names(db: Db, orgId: string, q: { projectIds?: readonly (string | null)[]; subprojectIds?: readonly (string | null)[] }): Promise<{ projects: Map<string, string>; subprojects: Map<string, string> }> {
+    const list = (ids: readonly (string | null)[] | undefined) => `{${[...new Set((ids ?? []).filter((id): id is string => !!id && UUID.test(id)))].join(',')}}`;
+    const [p, s] = await Promise.all([
+      q.projectIds?.length ? db.execute(sql`SELECT id, name FROM projects WHERE organization_id = ${orgId}::uuid AND id = ANY(${list(q.projectIds)}::uuid[])`) : Promise.resolve({ rows: [] }),
+      q.subprojectIds?.length ? db.execute(sql`SELECT id, name FROM subprojects WHERE organization_id = ${orgId}::uuid AND id = ANY(${list(q.subprojectIds)}::uuid[])`) : Promise.resolve({ rows: [] }),
+    ]);
+    return {
+      projects: new Map((p.rows as { id: string; name: string }[]).map((r) => [r.id, r.name])),
+      subprojects: new Map((s.rows as { id: string; name: string }[]).map((r) => [r.id, r.name])),
+    };
+  }
+
+  /** The organization's projects and subprojects whose name contains the text (case aside): for a search. */
+  async matching(db: Db, orgId: string, text: string): Promise<{ projectIds: string[]; subprojectIds: string[] }> {
+    return this.matchingPattern(db, orgId, `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+  }
+
+  /** The same with an ILIKE pattern of the caller's (e.g. a search's word, already escaped). */
+  async matchingPattern(db: Db, orgId: string, pattern: string): Promise<{ projectIds: string[]; subprojectIds: string[] }> {
+    const [p, s] = await Promise.all([
+      db.execute(sql`SELECT id FROM projects WHERE organization_id = ${orgId}::uuid AND name ILIKE ${pattern}`),
+      db.execute(sql`SELECT id FROM subprojects WHERE organization_id = ${orgId}::uuid AND name ILIKE ${pattern}`),
+    ]);
+    return { projectIds: (p.rows as { id: string }[]).map((r) => r.id), subprojectIds: (s.rows as { id: string }[]).map((r) => r.id) };
   }
 }

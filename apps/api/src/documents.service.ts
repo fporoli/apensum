@@ -48,7 +48,7 @@ export const DOCUMENTS_ROOT = process.env.DOCUMENTS_DIR ?? join(__dirname, '..',
 /** A document's row as `rowsOf` gives it: what `read`/`send` take, and whom it belongs to (its source). */
 export interface DocumentRow {
   id: string; file_name: string; mime_type: string; size_bytes: number | null; storage_path: string; encrypted_key: string | null; key_id: string | null;
-  source_table: string | null; source_table_id: string | null;
+  source_table: string | null; source_table_id: string | null; created_at: string;
 }
 
 @Injectable()
@@ -123,7 +123,8 @@ export class DocumentsService {
   async rowsOf(db: Db, orgId: string, ids: readonly string[]): Promise<DocumentRow[]> {
     const ok = ids.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
     if (!ok.length) return [];
-    const rows = await db.execute(sql`SELECT id, file_name, mime_type, size_bytes, storage_path, encrypted_key, key_id, source_table, source_table_id
+    const rows = await db.execute(sql`SELECT id, file_name, mime_type, size_bytes, storage_path, encrypted_key, key_id, source_table, source_table_id,
+        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
       FROM documents WHERE organization_id = ${orgId}::uuid AND id = ANY(${`{${ok.join(',')}}`}::uuid[])`);
     return rows.rows as unknown as DocumentRow[];
   }

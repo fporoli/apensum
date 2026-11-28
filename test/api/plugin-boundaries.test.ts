@@ -62,7 +62,7 @@ test('no module reads another module\'s tables or imports its code', () => {
 const CORE_TABLES_STILL_DIRECT: Record<string, string[]> = {
   billing: [],
   cases: [],
-  expenses: ['@worktime3/api/schema', 'departments', 'documents', 'employee_assignments', 'organizations', 'projects', 'static_data', 'users', 'workflow_definitions', 'workflows'],
+  expenses: [],
   hr: ['absences', 'balance_years', 'departments', 'documents', 'employee_assignments', 'locations', 'organization_memberships', 'organizations', 'personnel_documents', 'project_time_periods', 'project_times', 'projects', 'timesheet_periods', 'users', 'work_schedules', 'workflows'],
   hrplus: [],
   notes: [],

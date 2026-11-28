@@ -178,6 +178,7 @@ export { PeopleService } from './people.service';
 export { OrganizationsService } from './organizations.service';
 export { StructureService, type StaffMember } from './structure.service';
 export { AbsencesReadService, type ApprovedAbsence } from './absences-read.service';
+export { StaticDataService, type StaticDataEntry } from './static-data.service';
 export { CustomersService, type CustomerRecord } from './customers.service';
 // Billables: what modules offer to bill (expenses), read by another module (billing) through the core only.
 export { BillablesService, type BillableItem, type BillableSource } from './billables.service';
